@@ -107,10 +107,23 @@ const displayAmount = (value: unknown) => {
   return text.replace(/0+$/, "").replace(/\.$/, "") || "0";
 };
 
-function lotteryTiming(openTime: string | null, now: number) {
-  if (!openTime) return { status: "时间待定", countdown: "-- : -- : --", locked: false };
+function lotteryTiming(lottery: Lottery | undefined, now: number) {
+  const openTime = lottery?.next_open_time ?? null;
+  const cutoffEnabled = lottery?.cutoff_enabled === 1 && Boolean(lottery.cutoff_time);
+  if (cutoffEnabled) {
+    const date = new Date(now);
+    const [hours, minutes] = String(lottery?.cutoff_time).split(":").map(Number);
+    const cutoff = new Date(date.getFullYear(), date.getMonth(), date.getDate(), hours, minutes, 0, 0).getTime();
+    const locked = now >= cutoff;
+    const seconds = Math.max(0, Math.floor((cutoff - now) / 1000));
+    const hh = String(Math.floor(seconds / 3600)).padStart(2, "0");
+    const mm = String(Math.floor((seconds % 3600) / 60)).padStart(2, "0");
+    const ss = String(seconds % 60).padStart(2, "0");
+    return { status: locked ? "已封盘" : "开盘中", countdown: `${hh} : ${mm} : ${ss}`, locked, mask: lottery?.mask_enabled !== 0 };
+  }
+  if (!openTime) return { status: "时间待定", countdown: "-- : -- : --", locked: false, mask: lottery?.mask_enabled !== 0 };
   const target = new Date(openTime.replace(" ", "T")).getTime();
-  if (!Number.isFinite(target)) return { status: "时间待定", countdown: "-- : -- : --", locked: false };
+  if (!Number.isFinite(target)) return { status: "时间待定", countdown: "-- : -- : --", locked: false, mask: lottery?.mask_enabled !== 0 };
   const openingDay = new Date(target);
   openingDay.setHours(0, 0, 0, 0);
   const beforeOpeningDay = now < openingDay.getTime();
@@ -122,7 +135,7 @@ function lotteryTiming(openTime: string | null, now: number) {
   const hours = String(Math.floor(seconds / 3600)).padStart(2, "0");
   const minutes = String(Math.floor((seconds % 3600) / 60)).padStart(2, "0");
   const remaining = String(seconds % 60).padStart(2, "0");
-  return { status, countdown: `${hours} : ${minutes} : ${remaining}`, locked: beforeOpeningDay || now >= target };
+  return { status, countdown: `${hours} : ${minutes} : ${remaining}`, locked: beforeOpeningDay || now >= target, mask: lottery?.mask_enabled !== 0 };
 }
 
 function Header({ name, logout, announcement, balances, lotteries, selectableLottery = false, selectedLotteryId, onSelectLottery }: { name: string; logout: () => void; announcement: Announcement; balances: Balances; lotteries: Lottery[]; selectableLottery?: boolean; selectedLotteryId?: number | null; onSelectLottery?: (id: number) => void }) {
@@ -164,7 +177,7 @@ function Header({ name, logout, announcement, balances, lotteries, selectableLot
           </label>
         </div>
         <ul className={`lottery ${lotteries.length === 1 ? "lottery-single" : ""}`}>{lotteries.map((item) => {
-          const timing = lotteryTiming(item.next_open_time, now);
+          const timing = lotteryTiming(item, now);
           return <li key={item.id} className={selectableLottery && selectedLotteryId === item.id ? "selected" : ""} role={selectableLottery ? "button" : undefined} tabIndex={selectableLottery ? 0 : undefined} onClick={() => selectableLottery && onSelectLottery?.(item.id)} onKeyDown={(event) => { if (selectableLottery && (event.key === "Enter" || event.key === " ")) onSelectLottery?.(item.id); }}><div className="lottery-row"><div className="lottery-name"><span>{item.name}</span><b>{timing.status}</b></div><div className="lottery-meta"><label>{item.next_code || item.latest_code || "--"}</label><strong>{timing.countdown}</strong></div></div></li>;
         })}</ul>
         <nav className="site-navigation">
@@ -205,7 +218,9 @@ function QuickEntry({ lotteries, selectedLottery }: { lotteries: Lottery[]; sele
   const [lottery, setLottery] = useState("福彩3D");
   const [now, setNow] = useState(Date.now());
   useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 1_000); return () => window.clearInterval(timer); }, []);
-  const locked = !import.meta.env.DEV && tab === "快速录入" && Boolean(selectedLottery?.next_open_time && lotteryTiming(selectedLottery.next_open_time, now).locked);
+  const timing = lotteryTiming(selectedLottery, now);
+  const locked = tab === "快速录入" && timing.locked;
+  const showMask = locked && timing.mask;
   const [generatedLines, setGeneratedLines] = useState<QuickEntryLine[]>([]);
   const [generatedTotal, setGeneratedTotal] = useState({ count: 0, amount: "0.00" });
   const [generating, setGenerating] = useState(false);
@@ -229,8 +244,8 @@ function QuickEntry({ lotteries, selectedLottery }: { lotteries: Lottery[]; sele
   const copyTicket = async (sourceText: string, includeHeader: boolean) => { const body = generatedLines.filter((line) => line.status === "success").map((line) => `${line.number_text} ${line.category || ""}各${line.amount}`).join("\n"); const header = includeHeader ? `快排小票\n${new Date().toLocaleString()}\n` : ""; try { await navigator.clipboard.writeText(`${header}${body || sourceText}`); message.success("小票已复制"); } catch { message.error("复制失败，请检查浏览器剪贴板权限"); } };
   const place = () => { const valid = generatedLines.filter((line) => line.status === "success"); if (!valid.length) { message.warning("请先生成有效投注内容"); return; } modal.confirm({ title: "确认下注", content: `共 ${generatedTotal.count} 码，共 ¥ ${generatedTotal.amount}，确认提交吗？`, okText: "确认下注", cancelText: "取消", onOk: async () => { try { const response = await placeQuickEntry({ text, lottery, confirmed: true }); message.success(response.data?.message || "下注提交成功"); if (options[2]) await copyTicket(text, options[3]); setGeneratedLines([]); setGeneratedTotal({ count: 0, amount: "0.00" }); window.dispatchEvent(new Event("bet-records-updated")); window.dispatchEvent(new CustomEvent("profile-updated", { detail: { amount: response.data?.data?.amount || generatedTotal.amount } })); } catch (error) { message.error(apiErrorMessage(error, "下注失败")); } } }); };
   return (
-    <div className={`entry${locked ? " entry-locked" : ""}`}>
-      {locked && <div className="entry-lock-overlay" aria-label="当前不可下注" />}
+    <div className={`entry${showMask ? " entry-locked" : ""}`}>
+      {showMask && <div className="entry-lock-overlay" aria-label="当前不可下注" />}
       <div className="tabs">
         {["快速录入", "投注记录", "停押降水"].map((x) => (
           <button

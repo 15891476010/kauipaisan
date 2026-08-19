@@ -28,6 +28,33 @@ final class UserBusiness
         $from=trim((string)$request->param('from','')); $to=trim((string)$request->param('to',''));
         return [$from !== '' ? $from.' 00:00:00' : null, $to !== '' ? $to.' 23:59:59' : null];
     }
+    private function lotteryControl(array $session, string $lottery): array
+    {
+        $row=Db::name('lotteries')->alias('l')->join('site_lotteries sl','sl.lottery_id=l.id')
+            ->where('sl.site_id',$session['site_id'])->where('sl.tenant_id',$session['tenant_id'])
+            ->where('l.tenant_id',$session['tenant_id'])->where('l.name',$lottery)->whereNull('l.deleted_at')
+            ->field('l.id,l.cutoff_enabled,l.cutoff_time,l.mask_enabled,l.refund_enabled')->find();
+        if (!is_array($row)) return [];
+        $siteControls=json_decode((string)Db::name('settings')->where('site_id',$session['site_id'])->where('key','lottery_betting_controls')->value('value'),true);
+        $siteControl=is_array($siteControls)?($siteControls[(string)$row['id']]??[]):[];
+        if (is_array($siteControl)) foreach (['cutoff_enabled','cutoff_time','mask_enabled','refund_enabled'] as $field) if (array_key_exists($field,$siteControl)) $row[$field]=$siteControl[$field];
+        return $row;
+    }
+    private function cutoffReached(array $control, ?int $now=null): bool
+    {
+        if ((int)($control['cutoff_enabled']??0)!==1) return false;
+        $time=trim((string)($control['cutoff_time']??''));
+        if (!preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/',$time)) return false;
+        $now ??= time();
+        [$hour,$minute]=array_map('intval',explode(':',$time));
+        $today=(new \DateTimeImmutable('today'))->setTime($hour,$minute)->getTimestamp();
+        return $now >= $today;
+    }
+    private function cutoffConfigured(array $control): bool
+    {
+        return (int)($control['cutoff_enabled']??0)===1
+            && preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/',trim((string)($control['cutoff_time']??'')))===1;
+    }
     public function betRecords(Request $request): \think\response\Json
     {
         $s=$this->session($request); [$from,$to]=$this->range($request);
@@ -56,6 +83,8 @@ final class UserBusiness
         if ((string)($record['status']??'')!=='pending' || !$lotteries) return $result;
         $deadlines=[];
         foreach ($lotteries as $lotteryName) {
+            $control=$this->lotteryControl(['site_id'=>(int)$record['site_id'],'tenant_id'=>(int)$record['tenant_id']],$lotteryName);
+            if ((int)($control['refund_enabled']??1)!==1 || $this->cutoffReached($control)) return $result;
             $lotteryId=(int)Db::name('lotteries')->where('tenant_id',(int)$record['tenant_id'])->where('name',$lotteryName)->whereNull('deleted_at')->value('id');
             if ($lotteryId<1 || Db::name('lottery_histories')->where('lottery_id',$lotteryId)->where('code',(string)$record['issue_no'])->count()>0) return $result;
             $deadline=Db::name('lottery_histories')->where('lottery_id',$lotteryId)->where('next_code',(string)$record['issue_no'])->order('open_time','desc')->value('next_open_time');
@@ -160,10 +189,9 @@ final class UserBusiness
         $s=$this->session($request); if (!(bool)$request->post('confirmed',false)) return $this->reply(null,'请确认下注内容后再提交',422);
         if ((string)Db::name('site_users')->where('id',$s['user_id'])->where('site_id',$s['site_id'])->value('account_state')==='bet_paused') return $this->reply(null,'当前账号已暂停下注',403);
         $text=trim((string)$request->post('text','')); if ($text==='' || mb_strlen($text)>10000) return $this->reply(null,'投注文本无效',422); $lottery=trim((string)$request->post('lottery','福彩3D')); if (!in_array($lottery,['福彩3D','排列三'],true)) return $this->reply(null,'彩种无效',422); $this->assertLotteryPermission($s,$lottery,true);
+        $control=$this->lotteryControl($s,$lottery);
         $closingTime=Db::name('lotteries')->alias('l')->join('site_lotteries sl','sl.lottery_id=l.id')->join('lottery_histories lh','lh.lottery_id=l.id')->where('sl.site_id',$s['site_id'])->where('sl.tenant_id',$s['tenant_id'])->where('l.name',$lottery)->whereNull('l.deleted_at')->order('lh.open_time desc')->value('lh.next_open_time');
-        $origin=(string)$request->header('origin');
-        $localTest=preg_match('#^https?://(localhost|127\.0\.0\.1)(:\d+)?$#i',$origin)===1;
-        if (!$localTest && $closingTime && strtotime((string)$closingTime) <= time()) return $this->reply(null,'当前彩种已到开奖时间，已封盘，暂不能下注',423);
+        if ($this->cutoffReached($control) || (!$this->cutoffConfigured($control) && $closingTime && strtotime((string)$closingTime) <= time())) return $this->reply(null,'当前彩种已封盘，暂不能下注',423);
         $lines=$this->quickLines($text,$lottery); $valid=array_values(array_filter($lines,static fn(array $line): bool=>$line['status']==='success')); if (!$valid) return $this->reply(null,'没有可下注的有效内容',422);
         $now=date('Y-m-d H:i:s'); $amount=0.0; $count=0; foreach ($valid as $line) { $amount+=(float)$line['amount']; $count+=(int)$line['count']; }
         $issueNo=(string)Db::name('lotteries')->alias('l')->join('site_lotteries sl','sl.lottery_id=l.id')->join('lottery_histories lh','lh.lottery_id=l.id')->where('sl.site_id',$s['site_id'])->where('sl.tenant_id',$s['tenant_id'])->where('l.name',$lottery)->whereNull('l.deleted_at')->order('lh.open_time desc')->value('lh.next_code');

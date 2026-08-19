@@ -66,6 +66,8 @@ Route::group('api/v1', static function () {
     Route::put('admin/site-settings/agent-announcement', 'SiteSettings/saveAdminAgentAnnouncement');
     Route::get('admin/site-settings/rules', 'SiteSettings/adminRules');
     Route::put('admin/site-settings/rules', 'SiteSettings/saveAdminRules');
+    Route::get('admin/site-settings/betting-controls', 'SiteSettings/adminBettingControls');
+    Route::put('admin/site-settings/betting-controls', 'SiteSettings/saveAdminBettingControls');
     Route::get('admin/lotteries', 'Lottery/index');
     Route::post('admin/lotteries', 'Lottery/create');
     Route::put('admin/lotteries/:id', 'Lottery/update');

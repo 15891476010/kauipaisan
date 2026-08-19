@@ -96,6 +96,35 @@ final class SiteSettings
             'text'=>trim((string)($values['rule_text'] ?? '')) ?: self::DEFAULT_RULE_TEXT,
         ];
     }
+    private function readBettingControls(int $siteId): array
+    {
+        $raw=Db::name('settings')->where('site_id',$siteId)->where('key','lottery_betting_controls')->value('value');
+        $decoded=json_decode((string)$raw,true);
+        return is_array($decoded)?$decoded:[];
+    }
+    public function adminBettingControls(Request $request): \think\response\Json
+    {
+        $siteId=$this->adminSiteId($request,(int)$request->param('site_id',0));
+        if ($siteId<1 || !Db::name('sites')->where('id',$siteId)->whereNull('deleted_at')->find()) throw new \InvalidArgumentException('请选择有效站点');
+        return $this->reply(['site_id'=>$siteId,'controls'=>$this->readBettingControls($siteId)]);
+    }
+    public function saveAdminBettingControls(Request $request): \think\response\Json
+    {
+        $data=$request->put(); $siteId=$this->adminSiteId($request,(int)($data['site_id']??0));
+        if ($siteId<1 || !Db::name('sites')->where('id',$siteId)->whereNull('deleted_at')->find()) throw new \InvalidArgumentException('请选择有效站点');
+        $controls=$data['controls']??[]; if (!is_array($controls)) throw new \InvalidArgumentException('下注控制配置格式错误');
+        $result=[];
+        foreach ($controls as $lotteryId=>$control) {
+            if (!is_numeric($lotteryId) || !is_array($control)) continue;
+            $time=trim((string)($control['cutoff_time']??''));
+            if ($time!=='' && !preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/',$time)) throw new \InvalidArgumentException('截止时间必须是 HH:mm 格式');
+            $result[(string)(int)$lotteryId]=['cutoff_enabled'=>(int)($control['cutoff_enabled']??0)===1?1:0,'cutoff_time'=>$time===''?null:$time,'mask_enabled'=>(int)($control['mask_enabled']??1)===1?1:0,'refund_enabled'=>(int)($control['refund_enabled']??1)===1?1:0];
+        }
+        $tenantId=(int)Db::name('sites')->where('id',$siteId)->value('tenant_id'); $now=date('Y-m-d H:i:s'); $value=json_encode($result,JSON_UNESCAPED_UNICODE);
+        $existing=Db::name('settings')->where('tenant_id',$tenantId)->where('site_id',$siteId)->where('key','lottery_betting_controls')->find();
+        if ($existing) Db::name('settings')->where('id',$existing['id'])->update(['value'=>$value,'updated_at'=>$now]); else Db::name('settings')->insert(['tenant_id'=>$tenantId,'site_id'=>$siteId,'key'=>'lottery_betting_controls','value'=>$value,'updated_at'=>$now]);
+        return $this->reply(['site_id'=>$siteId,'controls'=>$result],'下注控制已保存');
+    }
 
     public function adminAgreement(Request $request): \think\response\Json
     {

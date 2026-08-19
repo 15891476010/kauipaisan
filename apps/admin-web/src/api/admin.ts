@@ -25,10 +25,14 @@ export const saveAgentAnnouncement = (payload: { site_id: number; title: string;
 export type RuleSettings = { site_id?: number; title: string; basic: string; special: string; amount: string; text: string }
 export const getRules = (siteId: number) => http.get<never, Envelope<RuleSettings>>('/admin/site-settings/rules', { params: { site_id: siteId } })
 export const saveRules = (payload: RuleSettings & { site_id: number }) => http.put<never, Envelope<RuleSettings>>('/admin/site-settings/rules', payload)
-export interface Lottery { id: number; name: string; code: string; status: number; sort: number; site_ids: number[] }
+export type SiteBettingControl = { cutoff_enabled: number; cutoff_time: string | null; mask_enabled: number; refund_enabled: number }
+export const getSiteBettingControls = (siteId: number) => http.get<never, Envelope<{ site_id: number; controls: Record<string, SiteBettingControl> }>>('/admin/site-settings/betting-controls', { params: { site_id: siteId } })
+export const saveSiteBettingControls = (payload: { site_id: number; controls: Record<string, SiteBettingControl> }) => http.put<never, Envelope<{ site_id: number; controls: Record<string, SiteBettingControl> }>>('/admin/site-settings/betting-controls', payload)
+export interface Lottery { id: number; name: string; code: string; status: number; sort: number; site_ids: number[]; cutoff_enabled: number; cutoff_time: string | null; mask_enabled: number; refund_enabled: number }
 export const listLotteries = (params?: Record<string, unknown>) => http.get<never, Envelope<{ list: Lottery[]; total: number }>>('/admin/lotteries', { params })
-export const createLottery = (payload: { name: string; code: string; status: number; sort: number }) => http.post<never, Envelope<{ id: number }>>('/admin/lotteries', payload)
-export const updateLottery = (id: number, payload: Partial<{ name: string; code: string; status: number; sort: number }>) => http.put<never, Envelope<null>>(`/admin/lotteries/${id}`, payload)
+export type LotteryBettingControls = { cutoff_enabled: number; cutoff_time: string | null; mask_enabled: number; refund_enabled: number }
+export const createLottery = (payload: { name: string; code: string; status: number; sort: number } & Partial<LotteryBettingControls>) => http.post<never, Envelope<{ id: number }>>('/admin/lotteries', payload)
+export const updateLottery = (id: number, payload: Partial<{ name: string; code: string; status: number; sort: number } & LotteryBettingControls>) => http.put<never, Envelope<null>>(`/admin/lotteries/${id}`, payload)
 export const deleteLottery = (id: number) => http.delete<never, Envelope<null>>(`/admin/lotteries/${id}`)
 export const assignLotterySites = (id: number, site_ids: number[]) => http.put<never, Envelope<{ site_ids: number[] }>>(`/admin/lotteries/${id}/sites`, { site_ids })
 export const getLotteryConfig = () => http.get<never, Envelope<{ base_url: string }>>('/admin/lottery-config')

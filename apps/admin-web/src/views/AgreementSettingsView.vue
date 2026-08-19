@@ -4,7 +4,7 @@ import { ElMessage } from 'element-plus'
 import { createEditor, createToolbar } from '@wangeditor/editor'
 import type { IDomEditor } from '@wangeditor/editor'
 import '@wangeditor/editor/dist/css/style.css'
-import { getAgentAgreement, getAgentAnnouncement, getAgreement, getAnnouncement, getRules, listResource, saveAgentAgreement, saveAgentAnnouncement, saveAgreement, saveAnnouncement, saveRules } from '../api/admin'
+import { getAgentAgreement, getAgentAnnouncement, getAgreement, getAnnouncement, getRules, getSiteBettingControls, listLotteries, listResource, saveAgentAgreement, saveAgentAnnouncement, saveAgreement, saveAnnouncement, saveRules, saveSiteBettingControls, type Lottery, type SiteBettingControl } from '../api/admin'
 import RichTextEditor from '../components/RichTextEditor.vue'
 
 const sites = ref<Record<string, unknown>[]>([])
@@ -18,11 +18,14 @@ const announcement = reactive({ title: '公告', content: '' })
 const agentAgreement = reactive({ title: '代理服务协议', content: '' })
 const agentAnnouncement = reactive({ title: '代理端公告', content: '' })
 const rules = reactive({ title: '规则说明', basic: '', special: '', amount: '', text: '' })
+const lotteries = ref<Lottery[]>([])
+const bettingControls = reactive<Record<string, SiteBettingControl>>({})
 const activeRuleTab = ref('basic')
 const editorHost = ref<HTMLElement>()
 let editor: IDomEditor | null = null
 const selectedSite = computed(() => sites.value.find((site) => Number(site.id) === siteId.value))
 const referenceSites = computed(() => sites.value.filter((site) => Number(site.id) !== siteId.value))
+function control(row: Lottery): SiteBettingControl { const key=String(row.id); if (!bettingControls[key]) bettingControls[key]={ cutoff_enabled: 0, cutoff_time: null, mask_enabled: 1, refund_enabled: 1 }; return bettingControls[key] }
 
 function markdownToHtml(source: string): string {
   if (/<\/?[a-z][^>]*>/i.test(source)) return source
@@ -56,7 +59,7 @@ async function loadAgreement() {
   if (!siteId.value) { form.title = ''; form.content = ''; announcement.title = '公告'; announcement.content = ''; agentAgreement.title = '代理服务协议'; agentAgreement.content = ''; agentAnnouncement.title = '代理端公告'; agentAnnouncement.content = ''; rules.title = '规则说明'; rules.basic = ''; rules.special = ''; rules.amount = ''; rules.text = ''; return }
   loading.value = true
   try {
-    const [agreementResponse, announcementResponse, rulesResponse, agentAgreementResponse, agentAnnouncementResponse] = await Promise.all([getAgreement(siteId.value), getAnnouncement(siteId.value), getRules(siteId.value), getAgentAgreement(siteId.value), getAgentAnnouncement(siteId.value)])
+    const [agreementResponse, announcementResponse, rulesResponse, agentAgreementResponse, agentAnnouncementResponse, controlsResponse] = await Promise.all([getAgreement(siteId.value), getAnnouncement(siteId.value), getRules(siteId.value), getAgentAgreement(siteId.value), getAgentAnnouncement(siteId.value), getSiteBettingControls(siteId.value)])
     form.title = agreementResponse.data.title
     form.content = markdownToHtml(agreementResponse.data.content)
     announcement.title = announcementResponse.data.title
@@ -70,6 +73,7 @@ async function loadAgreement() {
     rules.special = rulesToHtml(rulesResponse.data.special)
     rules.amount = rulesToHtml(rulesResponse.data.amount)
     rules.text = rulesToHtml(rulesResponse.data.text)
+    Object.keys(bettingControls).forEach((key) => delete bettingControls[key]); Object.assign(bettingControls, controlsResponse.data.controls || {})
     editor?.setHtml(form.content)
   } catch (error) { ElMessage.error(error instanceof Error ? error.message : '加载声明配置失败') } finally { loading.value = false }
 }
@@ -117,8 +121,8 @@ async function save() {
       await saveAgentAnnouncement({ site_id: siteId.value, ...agentAnnouncement })
       ElMessage.success('代理端公告已保存')
     } else {
-      await saveRules({ site_id: siteId.value, ...rules })
-      ElMessage.success('规则说明已保存')
+      if (activeTab.value === 'betting-controls') { await saveSiteBettingControls({ site_id: siteId.value, controls: bettingControls }); ElMessage.success('下注控制已保存') }
+      else { await saveRules({ site_id: siteId.value, ...rules }); ElMessage.success('规则说明已保存') }
     }
   } catch (error) { ElMessage.error(error instanceof Error ? error.message : '保存失败') } finally { loading.value = false }
 }
@@ -129,6 +133,7 @@ onMounted(async () => {
   try {
     const response = await listResource('agent-center', { page: 1, page_size: 100 })
     sites.value = response.data.list
+    lotteries.value = (await listLotteries({ page: 1, page_size: 100 })).data.list
     if (sites.value.length) { siteId.value = Number(sites.value[0].id); await loadAgreement() }
   } catch (error) { ElMessage.error(error instanceof Error ? error.message : '加载站点失败') }
 })
@@ -200,6 +205,7 @@ onBeforeUnmount(() => { editor?.destroy(); editor = null })
               <div class="tab-footer"><el-button type="primary" :loading="loading" @click="save">保存规则说明</el-button><span v-if="selectedSite" class="site-hint">当前配置：{{ selectedSite.name }}</span></div>
             </div>
           </el-tab-pane>
+          <el-tab-pane label="下注控制" name="betting-controls"><div class="tab-content betting-controls-content"><el-alert title="以下配置只对当前站点生效，按彩种独立控制。" type="info" :closable="false"/><el-table :data="lotteries" border><el-table-column prop="name" label="彩种" width="150"/><el-table-column label="每日截止"><template #default="{row}"><el-switch v-model="control(row).cutoff_enabled" :active-value="1" :inactive-value="0"/></template></el-table-column><el-table-column label="截止时间" width="150"><template #default="{row}"><el-time-picker v-model="control(row).cutoff_time" value-format="HH:mm" format="HH:mm" placeholder="时间"/></template></el-table-column><el-table-column label="用户端蒙版"><template #default="{row}"><el-switch v-model="control(row).mask_enabled" :active-value="1" :inactive-value="0"/></template></el-table-column><el-table-column label="允许退单"><template #default="{row}"><el-switch v-model="control(row).refund_enabled" :active-value="1" :inactive-value="0"/></template></el-table-column></el-table><div class="tab-footer"><el-button type="primary" :loading="loading" @click="save">保存下注控制</el-button><span v-if="selectedSite" class="site-hint">当前配置：{{ selectedSite.name }}</span></div></div></el-tab-pane>
         </el-tabs>
       </el-form>
     </section>

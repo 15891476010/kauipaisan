@@ -36,7 +36,8 @@ final class Lottery
         $this->session($request,'admin'); $data=$request->post(); $name=trim((string)($data['name']??'')); $code=trim((string)($data['code']??''));
         if ($name==='' || $code==='') throw new \InvalidArgumentException('请输入彩票名称和编码');
         if (!preg_match('/^[A-Za-z0-9_-]+$/',$code)) throw new \InvalidArgumentException('编码只能包含字母、数字、下划线和短横线');
-        $now=date('Y-m-d H:i:s'); $id=Db::name('lotteries')->insertGetId(['tenant_id'=>1,'name'=>$name,'code'=>$code,'status'=>(int)($data['status']??1),'sort'=>(int)($data['sort']??0),'created_at'=>$now,'updated_at'=>$now]);
+        $controls=$this->bettingControls($data);
+        $now=date('Y-m-d H:i:s'); $id=Db::name('lotteries')->insertGetId(array_merge(['tenant_id'=>1,'name'=>$name,'code'=>$code,'status'=>(int)($data['status']??1),'sort'=>(int)($data['sort']??0),'created_at'=>$now,'updated_at'=>$now],$controls));
         return $this->reply(['id'=>$id],'彩票创建成功');
     }
     public function update(Request $request): \think\response\Json
@@ -44,6 +45,7 @@ final class Lottery
         $this->session($request,'admin'); $id=(int)$request->param('id'); $data=$request->put(); unset($data['id'],$data['tenant_id'],$data['site_ids'],$data['created_at'],$data['deleted_at']);
         if (isset($data['name'])) { $data['name']=trim((string)$data['name']); if ($data['name']==='') throw new \InvalidArgumentException('请输入彩票名称'); }
         if (isset($data['code']) && !preg_match('/^[A-Za-z0-9_-]+$/',(string)$data['code'])) throw new \InvalidArgumentException('编码只能包含字母、数字、下划线和短横线');
+        $data=array_merge($data,$this->bettingControls($data,true));
         $data['updated_at']=date('Y-m-d H:i:s'); Db::name('lotteries')->where('id',$id)->whereNull('deleted_at')->update($data); return $this->reply(null,'彩票已更新');
     }
     public function delete(Request $request): \think\response\Json
@@ -73,7 +75,7 @@ final class Lottery
             ->where('l.tenant_id',$tenantId)
             ->where('l.status',1)
             ->whereNull('l.deleted_at')
-            ->field('l.id,l.name,l.code,l.sort')
+            ->field('l.id,l.name,l.code,l.sort,l.cutoff_enabled,l.cutoff_time,l.mask_enabled,l.refund_enabled')
             ->order('l.sort asc')
             ->order('l.id asc')
             ->select()->toArray();
@@ -81,6 +83,9 @@ final class Lottery
         if ($userId > 0) foreach (Db::name('user_lottery_permissions')->where('site_id',$siteId)->where('user_id',$userId)->field('lottery_id,can_view,can_bet')->select()->toArray() as $permission) $permissionMap[(int)$permission['lottery_id']]=$permission;
         if ($permissionMap) $rows=array_values(array_filter($rows,static fn(array $row): bool => (int)($permissionMap[(int)$row['id']]['can_view']??0)===1));
         foreach ($rows as &$row) {
+            $siteControls=json_decode((string)Db::name('settings')->where('site_id',$siteId)->where('key','lottery_betting_controls')->value('value'),true);
+            $siteControl=is_array($siteControls)?($siteControls[(string)$row['id']]??[]):[];
+            if (is_array($siteControl)) foreach (['cutoff_enabled','cutoff_time','mask_enabled','refund_enabled'] as $field) if (array_key_exists($field,$siteControl)) $row[$field]=$siteControl[$field];
             $latest=Db::name('lottery_histories')->where('lottery_id',(int)$row['id'])->order('open_time desc')->order('id desc')->field('code,open_time,next_code,next_open_time,numbers')->find();
             $row['latest_code']=(string)($latest['code']??'');
             $row['latest_numbers']=(string)($latest['numbers']??'');
@@ -91,6 +96,21 @@ final class Lottery
         }
         unset($row);
         return $rows;
+    }
+    private function bettingControls(array $data, bool $partial=false): array
+    {
+        $result=[];
+        foreach (['cutoff_enabled','mask_enabled','refund_enabled'] as $field) {
+            if ($partial && !array_key_exists($field,$data)) continue;
+            $default=$field==='mask_enabled'||$field==='refund_enabled' ? 1 : 0;
+            $result[$field]=(int)($data[$field]??$default)===1 ? 1 : 0;
+        }
+        if (!$partial || array_key_exists('cutoff_time',$data)) {
+            $time=trim((string)($data['cutoff_time']??''));
+            if ($time!=='' && !preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/',$time)) throw new \InvalidArgumentException('截止时间必须是 HH:mm 格式');
+            $result['cutoff_time']=$time===''?null:$time;
+        }
+        return $result;
     }
     public function user(Request $request): \think\response\Json
     {

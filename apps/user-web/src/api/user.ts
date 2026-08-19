@@ -20,7 +20,7 @@ export type StopDrop = { id: number; lottery: string; issue_no: string; number_t
 export type BetDetail = { id: number; issue_no: string; number_text: string; category?: string; play_type?: string; lottery?: string; amount: string; odds?: string; win_amount: string; rebate: string; status: string; placed_at: string; source_text?: string };
 export type Bill = { bill_date: string; bet_count: number; amount: string; rebate: string; offline_rebate: string; win_amount: string; profit: string };
 export type Draw = { lottery: string; issue_no: string; draw_date: string; draw_time?: string; numbers: string; sum_value?: number; size?: string; parity?: string };
-export type Lottery = { id: number; name: string; code: string; sort: number; latest_code: string; latest_numbers: string; next_code: string; next_open_time: string | null; recent_issues?: Array<{ code: string; draw_day: string | null }>; can_bet?: boolean };
+export type Lottery = { id: number; name: string; code: string; sort: number; latest_code: string; latest_numbers: string; next_code: string; next_open_time: string | null; cutoff_enabled?: number; cutoff_time?: string | null; mask_enabled?: number; refund_enabled?: number; recent_issues?: Array<{ code: string; draw_day: string | null }>; can_bet?: boolean };
 export const getLotteries = () => request.get<ApiEnvelope<{ list: Lottery[] }>>("/user/lotteries");
 export const getBetRecords = (params?: Record<string, unknown>) => request.get<ApiEnvelope<{ list: BetRecord[]; total: number; amount_total: string }>>("/user/bet-records", { params });
 export const refundBetRecord = (id: number) => request.post<ApiEnvelope<{ record_id: number; amount: string }>>(`/user/bet-records/${id}/refund`);
