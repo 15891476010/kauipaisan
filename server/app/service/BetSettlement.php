@@ -30,7 +30,7 @@ final class BetSettlement
                 $numbers = preg_split('/\s+/', trim((string)$detail['number_text'])) ?: [];
                 $numbers = array_values(array_filter($numbers, static fn(string $n): bool => preg_match('/^\d{3}$/', $n) === 1));
                 if ($numbers === []) continue;
-                $odds = $this->odds($lotteryId, (string)($detail['source_text'] ?? ''), count($numbers));
+                $odds = $this->oddsFor($lotteryId, (string)($detail['source_text'] ?? ''), count($numbers));
                 $stake = (float)$detail['amount'] / max(1, count($numbers));
                 $matched = 0;
                 foreach ($numbers as $number) if ($this->matches($number, $draw, (string)($detail['source_text'] ?? ''))) $matched++;
@@ -89,14 +89,18 @@ final class BetSettlement
 
     private function matches(string $number, string $draw, string $source): bool
     {
+        if (str_contains($source, '豹子')) return count(array_unique(str_split($draw))) === 1 && $number === $draw;
         if (str_contains($source, '组三')) return count(array_unique(str_split($draw))) === 2 && count(array_unique(str_split($number))) === 2 && count_chars($number, 1) === count_chars($draw, 1);
         if (str_contains($source, '组六')) return count(array_unique(str_split($draw))) === 3 && count(array_unique(str_split($number))) === 3 && count_chars($number, 1) === count_chars($draw, 1);
         return $number === $draw;
     }
 
-    private function odds(int $lotteryId, string $source, int $count): float
+    public function oddsFor(int $lotteryId, string $source, int $count): float
     {
         $category = '直选'; $name = '直选单注';
+        if (str_contains($source, '豹子')) {
+            $category = '和值'; $name = '豹子全包';
+        }
         $positions = preg_match_all('/[百十个]/u', $source, $unused);
         if ($positions === 1) {
             $category = '一码定位';

@@ -6,6 +6,7 @@ use think\Request;
 use think\facade\Db;
 use think\facade\Cache;
 use app\service\LotteryHistorySync;
+use app\service\BetSettlement;
 
 final class Resource
 {
@@ -258,6 +259,9 @@ final class Resource
             $detail['lottery']=(string)($stop['lottery'] ?? '');
             $numberCount=count($numbers);
             $unitAmount=(float)($detail['amount']??0)/$numberCount;
+            $lotteryId=(int)Db::name('lotteries')->where('name',$detail['lottery'])->whereNull('deleted_at')->value('id');
+            $detailOdds=(float)($detail['odds'] ?? 0);
+            if ($detailOdds <= 0 && $lotteryId > 0) $detailOdds=(new BetSettlement())->oddsFor($lotteryId,(string)($detail['source_text'] ?? ''),$numberCount);
             $unitWin=(float)($detail['win_amount']??0)/max(1,count(array_filter($numbers, fn(string $number): bool => $this->numberWon($number,(string)($histories[$detail['lottery']]['numbers']??''),(string)($detail['source_text']??'')))));
             $detail['source_text']=$detail['source_text'] ?? '';
             $detail['play_type'] = (string)($stop['play_type'] ?? $detail['category'] ?? '未识别玩法');
@@ -265,9 +269,10 @@ final class Resource
             foreach ($numbers as $index=>$number) {
                 $won=$record['opened'] && $this->numberWon($number,$detail['draw_numbers'],(string)$detail['source_text']);
                 $expanded[] = array_merge($detail,[
-                    'row_key'=>$detail['id'].'-'.$index, 'number_text'=>$number, 'number_count'=>1,
+                    'row_key'=>$detail['id'].'-'.$index, 'number_index'=>$index, 'number_text'=>$number, 'number_count'=>1,
                     'hundreds'=>$number[0], 'tens'=>$number[1], 'units'=>$number[2],
                     'amount'=>number_format($unitAmount,2,'.',''),
+                    'odds'=>number_format($detailOdds,4,'.',''),
                     'win_amount'=>number_format($won?$unitWin:0,2,'.',''),
                     'result_status'=>$record['opened']?($won?'won':'unwon'):'pending',
                 ]);
@@ -298,20 +303,22 @@ final class Resource
         if ($scopedSiteId !== null) $recordQuery->where('site_id',$scopedSiteId);
         $record=$recordQuery->find();
         if (!$record) throw new \InvalidArgumentException('所属下单记录不存在');
+        if ((string)($record['status'] ?? 'pending') !== 'pending') throw new \RuntimeException('已开奖或已结算注单不能修改');
         $data=$request->put();
-        $digits=[];
-        foreach (['hundreds','tens','units'] as $field) {
-            $value=trim((string)($data[$field] ?? ''));
-            if ($value!=='' && !preg_match('/^[0-9]$/',$value)) throw new \InvalidArgumentException('百十个只能填写单个数字');
-            $digits[]=$value;
-        }
-        $number=implode('',$digits);
-        if ($number==='') throw new \InvalidArgumentException('至少填写一个号码');
-        $amount=array_key_exists('amount',$data) ? (float)$data['amount'] : (float)$detail['amount'];
+        $numbers=preg_split('/\s+/',trim((string)$detail['number_text'])) ?: [];
+        $numbers=array_values(array_filter($numbers,static fn(string $number): bool => preg_match('/^\d{3}$/',$number)===1));
+        $numberIndex=(int)($data['number_index']??0);
+        if (!isset($numbers[$numberIndex])) throw new \InvalidArgumentException('要修改的号码不存在');
+        $number=trim((string)($data['number_text']??''));
+        if (!preg_match('/^\d{3}$/',$number)) throw new \InvalidArgumentException('号码必须是三位数字');
+        $oldUnitAmount=(float)$detail['amount']/max(1,count($numbers));
+        $amount=array_key_exists('amount',$data) ? (float)$data['amount'] : $oldUnitAmount;
         if ($amount<0 || !is_finite($amount)) throw new \InvalidArgumentException('金额必须是非负数字');
-        Db::transaction(function () use ($detail,$record,$number,$amount): void {
-            Db::name('bet_details')->where('id',$detail['id'])->update(['number_text'=>$number,'amount'=>number_format($amount,2,'.','')]);
-            Db::name('user_stop_drops')->where('bet_detail_id',$detail['id'])->update(['number_text'=>$number,'original_amount'=>number_format($amount,2,'.',''),'actual_amount'=>number_format($amount,2,'.','')]);
+        $numbers[$numberIndex]=$number; $numberText=implode(' ',$numbers);
+        $detailAmount=(float)$detail['amount']-$oldUnitAmount+$amount;
+        Db::transaction(function () use ($detail,$record,$numberText,$detailAmount): void {
+            Db::name('bet_details')->where('id',$detail['id'])->update(['number_text'=>$numberText,'amount'=>number_format($detailAmount,2,'.','')]);
+            Db::name('user_stop_drops')->where('bet_detail_id',$detail['id'])->update(['number_text'=>$numberText,'original_amount'=>number_format($detailAmount,2,'.',''),'actual_amount'=>number_format($detailAmount,2,'.','')]);
             $total=(float)Db::name('bet_details')->where('bet_record_id',$record['id'])->sum('amount');
             Db::name('bet_records')->where('id',$record['id'])->update(['amount'=>number_format($total,2,'.','')]);
         });

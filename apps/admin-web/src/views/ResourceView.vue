@@ -12,6 +12,7 @@ import {
   listResource,
   updateResource,
   getBetDetails,
+  updateBetDetail,
   type BetDetail,
 } from "../api/admin";
 
@@ -31,6 +32,8 @@ const detailRows = ref<BetDetail[]>([]);
 const detailPage = ref(1);
 const detailPageSize = ref(30);
 const detailTotal = ref(0);
+const detailSaveTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const detailSaving = new Set<string>();
 const detailRecord = ref<Record<string, unknown> | null>(null);
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
 let realtimeRefreshing = false;
@@ -405,6 +408,35 @@ async function loadBetDetailPage(silent = false) {
     if (!silent) detailLoading.value = false;
   }
 }
+async function saveExpandedBet(row: BetDetail) {
+  const key = row.row_key || String(row.id);
+  if (detailSaving.has(key)) {
+    scheduleExpandedBetSave(row);
+    return;
+  }
+  const number = `${row.hundreds || ""}${row.tens || ""}${row.units || ""}`;
+  if (!/^\d{3}$/.test(number)) return ElMessage.warning("百位、十位、个位都必须填写一位数字");
+  if (!Number.isFinite(Number(row.amount)) || Number(row.amount) < 0) return ElMessage.warning("请输入有效的单注金额");
+  detailSaving.add(key);
+  try {
+    await updateBetDetail(row.id, { number_index: Number(row.number_index || 0), number_text: number, amount: String(row.amount) });
+    row.number_text = number;
+    await load(true);
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : "保存失败");
+  } finally {
+    detailSaving.delete(key);
+  }
+}
+function scheduleExpandedBetSave(row: BetDetail) {
+  const key = row.row_key || String(row.id);
+  const current = detailSaveTimers.get(key);
+  if (current) clearTimeout(current);
+  detailSaveTimers.set(key, setTimeout(() => {
+    detailSaveTimers.delete(key);
+    void saveExpandedBet(row);
+  }, 300));
+}
 async function refreshRealtime() {
   if (resource.value !== "bet-records") return;
   await load(true);
@@ -464,6 +496,8 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   if (refreshTimer) clearInterval(refreshTimer);
   refreshTimer = null;
+  detailSaveTimers.forEach((timer) => clearTimeout(timer));
+  detailSaveTimers.clear();
 });
 </script>
 <template>
@@ -605,9 +639,12 @@ onBeforeUnmount(() => {
         </div>
         <el-table :data="detailRows" :row-key="(row: BetDetail) => row.row_key || row.id" border stripe table-layout="fixed">
           <el-table-column prop="lottery" label="彩种" width="90" />
-          <el-table-column prop="number_text" label="号码" min-width="130"><template #default="scope"><b class="detail-number">{{ scope.row.number_text }}</b></template></el-table-column>
-          <el-table-column prop="amount" label="单注金额" width="130" />
+          <el-table-column label="百位" width="92"><template #default="scope"><el-input v-model="scope.row.hundreds" maxlength="1" :disabled="detailRecord?.status !== 'pending'" @blur="scheduleExpandedBetSave(scope.row)" /></template></el-table-column>
+          <el-table-column label="十位" width="92"><template #default="scope"><el-input v-model="scope.row.tens" maxlength="1" :disabled="detailRecord?.status !== 'pending'" @blur="scheduleExpandedBetSave(scope.row)" /></template></el-table-column>
+          <el-table-column label="个位" width="92"><template #default="scope"><el-input v-model="scope.row.units" maxlength="1" :disabled="detailRecord?.status !== 'pending'" @blur="scheduleExpandedBetSave(scope.row)" /></template></el-table-column>
+          <el-table-column label="单注金额" width="130"><template #default="scope"><el-input v-model="scope.row.amount" type="number" min="0" step="0.01" :disabled="detailRecord?.status !== 'pending'" @blur="scheduleExpandedBetSave(scope.row)" /></template></el-table-column>
           <el-table-column label="专业玩法" min-width="150"><template #default="scope"><el-tag type="info">{{ scope.row.play_type || scope.row.category || '未识别玩法' }}</el-tag></template></el-table-column>
+          <el-table-column prop="odds" label="赔率" width="90" />
           <el-table-column label="中奖" width="180"><template #default="scope"><span v-if="!detailRecord?.opened" class="muted">待开奖</span><span v-else :class="scope.row.result_status === 'won' ? 'win-text' : 'muted'">{{ scope.row.result_status === 'won' ? `已中奖 ¥${scope.row.win_amount || '0.00'}` : '未中奖' }}</span></template></el-table-column>
           <el-table-column prop="source_text" label="原始行" min-width="180" show-overflow-tooltip />
         </el-table>
