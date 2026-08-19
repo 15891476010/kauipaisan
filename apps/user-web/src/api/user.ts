@@ -1,0 +1,41 @@
+import { request, type ApiEnvelope } from "../utils/request";
+
+export type Announcement = { title: string; content: string };
+export type Agreement = { title: string; content: string };
+export type RuleSettings = { title: string; basic: string; special: string; amount: string; text: string };
+export type UserProfile = {
+  balance: string;
+  total_balance: string;
+  credit_balance: string;
+  used_balance: string;
+  available_balance: string;
+};
+
+export const getAnnouncement = () => request.get<ApiEnvelope<Announcement>>("/user/announcement");
+export const getAgreement = () => request.get<ApiEnvelope<Agreement>>("/user/agreement");
+export const getProfile = () => request.get<ApiEnvelope<UserProfile>>("/user/profile");
+export const getRules = () => request.get<ApiEnvelope<RuleSettings>>("/user/rules");
+export type BetRecord = { id: number; issue_no: string; source_text?: string; bet_count: number; amount: string; win_amount: string; status: string; sealed: number; placed_at: string; lottery?: string; open_time?: string | null; can_refund?: boolean };
+export type StopDrop = { id: number; lottery: string; issue_no: string; number_text: string; play_type: string; stop_type: string; original_amount: string; actual_amount: string; stop_amount: string; original_odds?: string | null; actual_odds?: string | null; drop_odds?: string | null; source_text?: string; placed_at: string };
+export type BetDetail = { id: number; issue_no: string; number_text: string; category?: string; play_type?: string; lottery?: string; amount: string; odds?: string; win_amount: string; rebate: string; status: string; placed_at: string; source_text?: string };
+export type Bill = { bill_date: string; bet_count: number; amount: string; rebate: string; offline_rebate: string; win_amount: string; profit: string };
+export type Draw = { lottery: string; issue_no: string; draw_date: string; draw_time?: string; numbers: string; sum_value?: number; size?: string; parity?: string };
+export type Lottery = { id: number; name: string; code: string; sort: number; latest_code: string; latest_numbers: string; next_code: string; next_open_time: string | null; recent_issues?: Array<{ code: string; draw_day: string | null }>; can_bet?: boolean };
+export const getLotteries = () => request.get<ApiEnvelope<{ list: Lottery[] }>>("/user/lotteries");
+export const getBetRecords = (params?: Record<string, unknown>) => request.get<ApiEnvelope<{ list: BetRecord[]; total: number; amount_total: string }>>("/user/bet-records", { params });
+export const refundBetRecord = (id: number) => request.post<ApiEnvelope<{ record_id: number; amount: string }>>(`/user/bet-records/${id}/refund`);
+export const getStopDrops = (params?: Record<string, unknown>) => request.get<ApiEnvelope<{ list: StopDrop[]; total: number }>>("/user/stop-drops", { params });
+export const getBetDetails = (params?: Record<string, unknown>) => request.get<ApiEnvelope<{ list: BetDetail[]; total: number }>>("/user/bet-details", { params });
+export const getBills = (params?: Record<string, unknown>) => request.get<ApiEnvelope<{ list: Bill[]; total: Record<string, string | number> }>>("/user/bills", { params });
+export const getDraws = (params?: Record<string, unknown>) => request.get<ApiEnvelope<{ list: Draw[] }>>("/user/draws", { params });
+export const changePassword = (payload: { old_password: string; password: string; confirm_password: string }) => request.post<ApiEnvelope<null>>("/user/auth/password", payload);
+export type QuickEntryLine = { id: number; raw_text: string; status: "success" | "failed" | "new"; reason?: string | null; number_text: string; category?: string | null; amount: string; count: number };
+export type QuickPreview = { lines: QuickEntryLine[]; count: number; amount: string };
+export type QuickTag = { id: number; name: string };
+export type QuickSettings = { preferences: Record<string, unknown>; tags: QuickTag[] };
+export const previewQuickEntry = (payload: { text: string; lottery: string }) => request.post<ApiEnvelope<QuickPreview>>("/user/quick-entry/preview", payload);
+export const placeQuickEntry = (payload: { text: string; lottery: string; confirmed: boolean }) => request.post<ApiEnvelope<{ record_id: number; count: number; amount: string }>>("/user/quick-entry/place", payload);
+export const getQuickSettings = () => request.get<ApiEnvelope<QuickSettings>>("/user/quick-entry/settings");
+export const saveQuickSettings = (preferences: Record<string, unknown>) => request.put<ApiEnvelope<{ preferences: Record<string, unknown> }>>("/user/quick-entry/settings", { preferences });
+export const createQuickTag = (name: string) => request.post<ApiEnvelope<{ id: number; name: string }>>("/user/quick-entry/tags", { name });
+export const deleteQuickTag = (id: number) => request.delete<ApiEnvelope<null>>(`/user/quick-entry/tags/${id}`);

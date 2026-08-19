@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+PROJECT_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+PHP_BIN="$PROJECT_ROOT/.runtime/php/php"
+COMPOSER_PHAR="$PROJECT_ROOT/.runtime/composer/composer.phar"
+if [ ! -x "$PHP_BIN" ] || [ ! -f "$COMPOSER_PHAR" ]; then
+  echo "Local PHP or Composer is not ready under .runtime" >&2
+  exit 1
+fi
+exec "$PHP_BIN" "$COMPOSER_PHAR" "$@"
+

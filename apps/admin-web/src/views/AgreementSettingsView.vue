@@ -1,0 +1,236 @@
+<script setup lang="ts">
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { ElMessage } from 'element-plus'
+import { createEditor, createToolbar } from '@wangeditor/editor'
+import type { IDomEditor } from '@wangeditor/editor'
+import '@wangeditor/editor/dist/css/style.css'
+import { getAgentAgreement, getAgentAnnouncement, getAgreement, getAnnouncement, getRules, listResource, saveAgentAgreement, saveAgentAnnouncement, saveAgreement, saveAnnouncement, saveRules } from '../api/admin'
+import RichTextEditor from '../components/RichTextEditor.vue'
+
+const sites = ref<Record<string, unknown>[]>([])
+const siteId = ref<number>()
+const referenceSiteId = ref<number>()
+const copying = ref(false)
+const loading = ref(false)
+const activeTab = ref('agreement')
+const form = reactive({ title: '', content: '' })
+const announcement = reactive({ title: '公告', content: '' })
+const agentAgreement = reactive({ title: '代理服务协议', content: '' })
+const agentAnnouncement = reactive({ title: '代理端公告', content: '' })
+const rules = reactive({ title: '规则说明', basic: '', special: '', amount: '', text: '' })
+const activeRuleTab = ref('basic')
+const editorHost = ref<HTMLElement>()
+let editor: IDomEditor | null = null
+const selectedSite = computed(() => sites.value.find((site) => Number(site.id) === siteId.value))
+const referenceSites = computed(() => sites.value.filter((site) => Number(site.id) !== siteId.value))
+
+function markdownToHtml(source: string): string {
+  if (/<\/?[a-z][^>]*>/i.test(source)) return source
+  return source.split(/\r?\n/).map((line) => {
+    const value=line.trim()
+    if (!value) return ''
+    if (value.startsWith('## ')) return `<h2>${value.slice(3)}</h2>`
+    if (value.startsWith('> ')) return `<blockquote><p>${value.slice(2)}</p></blockquote>`
+    const html=value.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    return `<p>${html}</p>`
+  }).join('')
+}
+
+function rulesToHtml(source: string): string {
+  if (/<\/?[a-z][^>]*>/i.test(source)) return source
+  return source.split(/\r?\n/).map((line) => line.trim() ? `<p>${line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>` : '<p><br></p>').join('')
+}
+
+function mountEditor() {
+  if (!editorHost.value || editor) return
+  const editorConfig = {
+    placeholder: '请输入责任声明内容',
+    onChange: (instance: IDomEditor) => { form.content = instance.getHtml() },
+  }
+  const toolbarConfig = { excludeKeys: [] }
+  editor = createEditor({ selector: editorHost.value, html: form.content, config: editorConfig, mode: 'default' })
+  createToolbar({ editor, selector: editorHost.value.parentElement?.querySelector('.rich-text-toolbar') as HTMLElement, config: toolbarConfig, mode: 'default' })
+}
+
+async function loadAgreement() {
+  if (!siteId.value) { form.title = ''; form.content = ''; announcement.title = '公告'; announcement.content = ''; agentAgreement.title = '代理服务协议'; agentAgreement.content = ''; agentAnnouncement.title = '代理端公告'; agentAnnouncement.content = ''; rules.title = '规则说明'; rules.basic = ''; rules.special = ''; rules.amount = ''; rules.text = ''; return }
+  loading.value = true
+  try {
+    const [agreementResponse, announcementResponse, rulesResponse, agentAgreementResponse, agentAnnouncementResponse] = await Promise.all([getAgreement(siteId.value), getAnnouncement(siteId.value), getRules(siteId.value), getAgentAgreement(siteId.value), getAgentAnnouncement(siteId.value)])
+    form.title = agreementResponse.data.title
+    form.content = markdownToHtml(agreementResponse.data.content)
+    announcement.title = announcementResponse.data.title
+    announcement.content = announcementResponse.data.content
+    agentAgreement.title = agentAgreementResponse.data.title
+    agentAgreement.content = markdownToHtml(agentAgreementResponse.data.content)
+    agentAnnouncement.title = agentAnnouncementResponse.data.title
+    agentAnnouncement.content = agentAnnouncementResponse.data.content
+    rules.title = rulesResponse.data.title
+    rules.basic = rulesToHtml(rulesResponse.data.basic)
+    rules.special = rulesToHtml(rulesResponse.data.special)
+    rules.amount = rulesToHtml(rulesResponse.data.amount)
+    rules.text = rulesToHtml(rulesResponse.data.text)
+    editor?.setHtml(form.content)
+  } catch (error) { ElMessage.error(error instanceof Error ? error.message : '加载声明配置失败') } finally { loading.value = false }
+}
+
+async function fillFromSite() {
+  if (!siteId.value || !referenceSiteId.value) { ElMessage.warning('请选择当前站点和参考站点'); return }
+  copying.value = true
+  try {
+    const [agreementResponse, announcementResponse, rulesResponse, agentAgreementResponse, agentAnnouncementResponse] = await Promise.all([
+      getAgreement(referenceSiteId.value), getAnnouncement(referenceSiteId.value), getRules(referenceSiteId.value),
+      getAgentAgreement(referenceSiteId.value), getAgentAnnouncement(referenceSiteId.value),
+    ])
+    form.title = agreementResponse.data.title
+    form.content = markdownToHtml(agreementResponse.data.content)
+    announcement.title = announcementResponse.data.title
+    announcement.content = announcementResponse.data.content
+    agentAgreement.title = agentAgreementResponse.data.title
+    agentAgreement.content = markdownToHtml(agentAgreementResponse.data.content)
+    agentAnnouncement.title = agentAnnouncementResponse.data.title
+    agentAnnouncement.content = agentAnnouncementResponse.data.content
+    rules.title = rulesResponse.data.title
+    rules.basic = rulesToHtml(rulesResponse.data.basic)
+    rules.special = rulesToHtml(rulesResponse.data.special)
+    rules.amount = rulesToHtml(rulesResponse.data.amount)
+    rules.text = rulesToHtml(rulesResponse.data.text)
+    editor?.setHtml(form.content)
+    ElMessage.success('已填充参考站点配置，请检查后分别保存')
+  } catch (error) { ElMessage.error(error instanceof Error ? error.message : '参考站点配置读取失败') } finally { copying.value = false }
+}
+
+async function save() {
+  if (!siteId.value) { ElMessage.warning('请选择站点'); return }
+  loading.value = true
+  try {
+    if (activeTab.value === 'agreement') {
+      await saveAgreement({ site_id: siteId.value, title: form.title, content: editor?.getHtml() || form.content })
+      ElMessage.success('责任声明已保存')
+    } else if (activeTab.value === 'announcement') {
+      await saveAnnouncement({ site_id: siteId.value, title: announcement.title, content: announcement.content })
+      ElMessage.success('首页公告已保存')
+    } else if (activeTab.value === 'agent-agreement') {
+      await saveAgentAgreement({ site_id: siteId.value, ...agentAgreement })
+      ElMessage.success('代理端服务协议已保存')
+    } else if (activeTab.value === 'agent-announcement') {
+      await saveAgentAnnouncement({ site_id: siteId.value, ...agentAnnouncement })
+      ElMessage.success('代理端公告已保存')
+    } else {
+      await saveRules({ site_id: siteId.value, ...rules })
+      ElMessage.success('规则说明已保存')
+    }
+  } catch (error) { ElMessage.error(error instanceof Error ? error.message : '保存失败') } finally { loading.value = false }
+}
+
+onMounted(async () => {
+  await nextTick()
+  mountEditor()
+  try {
+    const response = await listResource('agent-center', { page: 1, page_size: 100 })
+    sites.value = response.data.list
+    if (sites.value.length) { siteId.value = Number(sites.value[0].id); await loadAgreement() }
+  } catch (error) { ElMessage.error(error instanceof Error ? error.message : '加载站点失败') }
+})
+
+onBeforeUnmount(() => { editor?.destroy(); editor = null })
+</script>
+
+<template>
+  <div class="settings-page">
+    <h1 class="page-title">站点配置</h1>
+    <p class="page-subtitle">按站点分别维护用户端和代理端功能配置</p>
+    <section class="settings-panel" v-loading="loading">
+      <el-form label-width="90px" @submit.prevent="save">
+        <el-form-item label="配置站点">
+          <el-select v-model="siteId" filterable placeholder="请选择站点" style="width:360px" @change="loadAgreement">
+            <el-option v-for="site in sites" :key="site.id" :label="String(site.name)" :value="Number(site.id)" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="参考站点">
+          <el-select v-model="referenceSiteId" filterable clearable placeholder="选择其他站点进行填充" style="width:360px">
+            <el-option v-for="site in referenceSites" :key="site.id" :label="String(site.name)" :value="Number(site.id)" />
+          </el-select>
+          <el-button class="fill-button" :loading="copying" :disabled="!referenceSiteId || !siteId" @click="fillFromSite">填充配置</el-button>
+          <span class="fill-tip">只填入当前页面，不会自动保存</span>
+        </el-form-item>
+        <el-tabs v-model="activeTab" class="settings-tabs">
+          <el-tab-pane label="责任声明" name="agreement">
+            <div class="tab-content">
+              <el-form-item label="声明标题"><el-input v-model="form.title" maxlength="120" show-word-limit style="width:560px" placeholder="例如：责任声明" /></el-form-item>
+              <el-form-item label="声明正文"><div class="rich-text-field"><div class="rich-text-toolbar"></div><div ref="editorHost" class="rich-text-editor"></div><span>富文本编辑器：可选中文字设置颜色、加粗、字号、对齐和列表，用户端会保留编辑样式。</span></div></el-form-item>
+              <div class="tab-footer"><el-button type="primary" :loading="loading" @click="save">保存责任声明</el-button><span v-if="selectedSite" class="site-hint">当前配置：{{ selectedSite.name }}</span></div>
+            </div>
+          </el-tab-pane>
+          <el-tab-pane label="首页公告" name="announcement">
+            <div class="tab-content announcement-content">
+              <el-form-item label="公告标题"><el-input v-model="announcement.title" maxlength="120" show-word-limit style="width:560px" placeholder="例如：公告" /></el-form-item>
+              <el-form-item label="公告内容"><el-input v-model="announcement.content" type="textarea" maxlength="20000" show-word-limit class="announcement-editor" placeholder="请输入用户端顶部跑马灯和弹窗中展示的公告内容" /></el-form-item>
+              <div class="tab-footer"><el-button type="primary" :loading="loading" @click="save">保存首页公告</el-button><span v-if="selectedSite" class="site-hint">当前配置：{{ selectedSite.name }}</span></div>
+            </div>
+          </el-tab-pane>
+          <el-tab-pane label="代理端协议" name="agent-agreement">
+            <div class="tab-content">
+              <el-form-item label="协议标题"><el-input v-model="agentAgreement.title" maxlength="120" show-word-limit style="width:560px" placeholder="例如：代理服务协议" /></el-form-item>
+              <el-form-item label="协议正文"><div class="rich-text-field"><RichTextEditor v-model="agentAgreement.content" placeholder="请输入代理端登录后展示的服务协议" /><span>代理账号登录后必须同意该协议才能进入主页面，颜色和排版会完整保留。</span></div></el-form-item>
+              <div class="tab-footer"><el-button type="primary" :loading="loading" @click="save">保存代理端协议</el-button><span v-if="selectedSite" class="site-hint">当前配置：{{ selectedSite.name }}</span></div>
+            </div>
+          </el-tab-pane>
+          <el-tab-pane label="代理端公告" name="agent-announcement">
+            <div class="tab-content announcement-content">
+              <el-form-item label="公告标题"><el-input v-model="agentAnnouncement.title" maxlength="120" show-word-limit style="width:560px" placeholder="例如：代理端公告" /></el-form-item>
+              <el-form-item label="公告内容"><el-input v-model="agentAnnouncement.content" type="textarea" maxlength="20000" show-word-limit class="announcement-editor" placeholder="请输入代理端顶部跑马灯和弹窗展示的公告" /></el-form-item>
+              <div class="tab-footer"><el-button type="primary" :loading="loading" @click="save">保存代理端公告</el-button><span v-if="selectedSite" class="site-hint">当前配置：{{ selectedSite.name }}</span></div>
+            </div>
+          </el-tab-pane>
+          <el-tab-pane label="规则说明" name="rules">
+            <div class="tab-content rules-content">
+              <el-form-item label="弹窗标题"><el-input v-model="rules.title" maxlength="120" show-word-limit style="width:560px" placeholder="例如：规则说明" /></el-form-item>
+              <el-form-item label="规则内容">
+                <div class="rules-editor-wrap">
+                  <el-tabs v-model="activeRuleTab" type="border-card" class="rules-inner-tabs">
+                    <el-tab-pane label="基础玩法" name="basic"><RichTextEditor v-model="rules.basic" placeholder="请输入基础玩法规则" /></el-tab-pane>
+                    <el-tab-pane label="特殊打法" name="special"><RichTextEditor v-model="rules.special" placeholder="请输入特殊打法规则" /></el-tab-pane>
+                    <el-tab-pane label="总金额" name="amount"><RichTextEditor v-model="rules.amount" placeholder="请输入总金额规则" /></el-tab-pane>
+                    <el-tab-pane label="文本规范" name="text"><RichTextEditor v-model="rules.text" placeholder="请输入文本规范" /></el-tab-pane>
+                  </el-tabs>
+                  <span>每行显示为一段；以“【重点】”开头的行会在用户端显示为黄色重点提示。</span>
+                </div>
+              </el-form-item>
+              <div class="tab-footer"><el-button type="primary" :loading="loading" @click="save">保存规则说明</el-button><span v-if="selectedSite" class="site-hint">当前配置：{{ selectedSite.name }}</span></div>
+            </div>
+          </el-tab-pane>
+        </el-tabs>
+      </el-form>
+    </section>
+  </div>
+</template>
+
+<style scoped>
+.settings-page { height: 100%; min-height: 0; padding: 22px 24px; background: #fff; overflow: hidden; display: flex; flex-direction: column; }
+.settings-panel { max-width: 1100px; min-height: 0; flex: 1; padding-top: 12px; overflow: hidden; }
+.settings-panel :deep(.el-form) { height: 100%; display: flex; flex-direction: column; }
+.settings-tabs { min-height: 0; flex: 1; display: flex; flex-direction: column; }
+.settings-tabs :deep(.el-tabs__content) { min-height: 0; flex: 1; overflow: hidden; }
+.settings-tabs :deep(.el-tab-pane) { height: 100%; overflow: hidden; }
+.tab-content { height: 100%; display: flex; flex-direction: column; overflow: hidden; }
+.tab-content :deep(.el-form-item:nth-child(2)) { min-height: 0; flex: 1; }
+.rich-text-field { width: 100%; height: 100%; min-height: 0; display: flex; flex-direction: column; }
+.rich-text-toolbar { border: 1px solid #dcdfe6; border-bottom: 0; }
+.rich-text-editor { min-height: 300px; flex: 1; border: 1px solid #dcdfe6; overflow: hidden; }
+.rich-text-editor :deep(.w-e-text-container) { height: 100%; min-height: 300px; overflow-y: auto; }
+.tab-footer { position: relative; z-index: 2; display: flex; min-height: 50px; flex: 0 0 50px; align-items: center; padding-top: 8px; background: #fff; }
+.announcement-content :deep(.el-form-item:nth-child(2)) { min-height: 0; flex: 1; }
+.announcement-content :deep(.el-form-item:nth-child(2) .el-form-item__content) { min-height: 0; height: 100%; }
+.announcement-editor { min-height: 0; height: 100%; }
+.announcement-editor :deep(.el-textarea__inner) { min-height: 0 !important; height: 100% !important; resize: none; overflow-y: auto; }
+.rules-editor-wrap { width: 100%; height: 100%; min-height: 0; display: flex; flex-direction: column; }
+.rules-inner-tabs { min-height: 0; flex: 1; display: flex; flex-direction: column; }
+.rules-inner-tabs :deep(.el-tabs__content), .rules-inner-tabs :deep(.el-tab-pane), .rules-textarea { min-height: 0; height: 100%; }
+.rules-textarea :deep(.el-textarea__inner) { height: 100%; min-height: 220px; resize: none; overflow-y: auto; }
+.rules-editor-wrap > span { margin-top: 6px; color: #697386; font-size: 12px; }
+.site-hint { margin-left: 14px; color: #697386; font-size: 13px; }
+.rich-text-field > span { display: block; margin-top: 6px; color: #697386; font-size: 12px; line-height: 1.5; }
+.fill-button { margin-left: 10px; }
+.fill-tip { margin-left: 10px; color: #8490a5; font-size: 12px; }
+</style>

@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+PROJECT_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+PHP_BIN="$PROJECT_ROOT/.runtime/php/php"
+if [ ! -x "$PHP_BIN" ]; then
+  echo "PHP runtime is not ready: $PHP_BIN" >&2
+  exit 1
+fi
+cd "$PROJECT_ROOT/server"
+exec "$PHP_BIN" "$@"
+

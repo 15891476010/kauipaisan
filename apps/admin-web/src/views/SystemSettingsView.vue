@@ -1,0 +1,12 @@
+<script setup lang="ts">
+import { onMounted, reactive, ref } from 'vue'
+import { ElMessage } from 'element-plus'
+import { getLotteryConfig, saveLotteryConfig, testLotteryConfig, type LotteryConfigTest } from '../api/admin'
+const loading=ref(false); const testing=ref(false); const testResult=ref<LotteryConfigTest|null>(null); const form=reactive({base_url:''})
+async function load(){loading.value=true;try{form.base_url=(await getLotteryConfig()).data.base_url}catch(e){ElMessage.error(e instanceof Error?e.message:'系统配置加载失败')}finally{loading.value=false}}
+async function save(){if(!form.base_url.trim())return ElMessage.warning('请输入开奖接口 Base URL');loading.value=true;try{await saveLotteryConfig({base_url:form.base_url.trim()});ElMessage.success('系统配置已保存')}catch(e){ElMessage.error(e instanceof Error?e.message:'保存失败')}finally{loading.value=false}}
+async function test(){testing.value=true;testResult.value=null;try{const result=await testLotteryConfig();testResult.value=result.data;result.data.available?ElMessage.success('开奖接口连接成功'):ElMessage.warning('接口已响应，但返回数据未通过校验')}catch(e){ElMessage.error(e instanceof Error?e.message:'开奖接口连接失败')}finally{testing.value=false}}
+onMounted(load)
+</script>
+<template><div class="system-page" v-loading="loading"><h1>系统配置</h1><p>全平台通用配置，只需要设置一次，所有站点生效。</p><el-card shadow="never"><el-tabs><el-tab-pane label="开奖接口"><el-form label-position="top" @submit.prevent="save"><el-form-item label="历史开奖 Base URL"><el-input v-model="form.base_url" maxlength="500" placeholder="https://api.huiniao.top/interface/home/lotteryHistory"/><div class="tip">系统会在此地址后追加 type、page、limit 参数；每种彩票最多同步 10 页，每页最多 1000 条。</div></el-form-item><div class="actions"><el-button type="primary" @click="save">保存开奖接口</el-button><el-button :loading="testing" @click="test">测试接口</el-button><span v-if="testResult" :class="['test-result', testResult.available ? 'ok' : 'bad']">{{ testResult.available ? '接口可用' : '接口异常' }} · HTTP {{ testResult.http_status || '-' }} · 响应 {{ testResult.response_time_ms }} ms</span></div></el-form></el-tab-pane></el-tabs></el-card></div></template>
+<style scoped>.system-page{min-height:100%;padding:22px;background:#fff}.system-page h1{margin:0 0 7px;color:#25314a;font-size:20px}.system-page>p{margin:0 0 20px;color:#8490a5;font-size:13px}.system-page .el-card{max-width:1100px;border:1px solid #e8edf4}.tip{margin-top:8px;color:#8490a5;font-size:12px;line-height:1.5}.actions{display:flex;align-items:center;gap:12px}.test-result{font-size:13px}.test-result.ok{color:#1a9b50}.test-result.bad{color:#d66b00}</style>

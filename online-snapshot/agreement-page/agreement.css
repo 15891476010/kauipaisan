@@ -1,0 +1,93 @@
+.agreement-page {
+  width: 100%;
+  background-color: #8eb7fe;
+  height: 100vh;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 20px;
+}
+
+.agreement-page > div {
+  background-color: white;
+  width: 90%;
+  margin: 0 auto;
+  padding: 15px;
+}
+
+.agreement-page > div > .announcement-header {
+  color: black;
+  font-size: 24px;
+  line-height: 32px;
+  padding-top: 10px;
+  border-bottom: 1px solid #666;
+  text-align: center;
+}
+
+.agreement-page > div > .special-warn {
+  padding: 5px 20px;
+  font-size: 15px;
+}
+
+.agreement-page > div > .special-warn > p {
+  font-weight: bold;
+  color: red;
+}
+
+.agreement-page > div > .special-warn > span {
+  color: red;
+  padding: 5px 0;
+  display: block;
+}
+
+.agreement-page > div > p {
+  padding: 2px 20px;
+  color: black;
+  line-height: 26px;
+  font-size: 15px;
+  margin: 0;
+}
+
+.agreement-page > div > p > span {
+  font-weight: bold;
+  color: red;
+}
+
+.agreement-page > div > .action-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 20px 0;
+}
+
+.agreement-page > div > .action-wrapper > label {
+  color: black;
+  font-size: 15px;
+  font-weight: bold;
+  margin-right: 50px;
+}
+
+.agreement-page > div > .action-wrapper > button {
+  display: inline-block;
+  padding: 6px 12px;
+  min-width: 90px;
+  font-size: 15px;
+  cursor: pointer;
+  margin: 0 15px;
+  color: black;
+}
+
+.agreement-page > div > .action-wrapper > button:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.agreement-page > div > .action-wrapper > button:last-of-type {
+  background-color: darkblue;
+  color: white;
+  border-color: darkblue;
+}
+
+.agreement-page > div > .action-wrapper > button:last-of-type:hover {
+  opacity: 0.7;
+}
