@@ -82,9 +82,9 @@ async function fillFromSite() {
   if (!siteId.value || !referenceSiteId.value) { ElMessage.warning('请选择当前站点和参考站点'); return }
   copying.value = true
   try {
-    const [agreementResponse, announcementResponse, rulesResponse, agentAgreementResponse, agentAnnouncementResponse] = await Promise.all([
+    const [agreementResponse, announcementResponse, rulesResponse, agentAgreementResponse, agentAnnouncementResponse, controlsResponse] = await Promise.all([
       getAgreement(referenceSiteId.value), getAnnouncement(referenceSiteId.value), getRules(referenceSiteId.value),
-      getAgentAgreement(referenceSiteId.value), getAgentAnnouncement(referenceSiteId.value),
+      getAgentAgreement(referenceSiteId.value), getAgentAnnouncement(referenceSiteId.value), getSiteBettingControls(referenceSiteId.value),
     ])
     form.title = agreementResponse.data.title
     form.content = markdownToHtml(agreementResponse.data.content)
@@ -99,6 +99,7 @@ async function fillFromSite() {
     rules.special = rulesToHtml(rulesResponse.data.special)
     rules.amount = rulesToHtml(rulesResponse.data.amount)
     rules.text = rulesToHtml(rulesResponse.data.text)
+    Object.keys(bettingControls).forEach((key) => delete bettingControls[key]); Object.assign(bettingControls, JSON.parse(JSON.stringify(controlsResponse.data.controls || {})))
     editor?.setHtml(form.content)
     ElMessage.success('已填充参考站点配置，请检查后分别保存')
   } catch (error) { ElMessage.error(error instanceof Error ? error.message : '参考站点配置读取失败') } finally { copying.value = false }
