@@ -115,11 +115,14 @@ function lotteryTiming(lottery: Lottery | undefined, now: number) {
     const [hours, minutes] = String(lottery?.cutoff_time).split(":").map(Number);
     const cutoff = new Date(date.getFullYear(), date.getMonth(), date.getDate(), hours, minutes, 0, 0).getTime();
     const locked = now >= cutoff;
-    const seconds = Math.max(0, Math.floor((cutoff - now) / 1000));
+    // The reference site shows the elapsed time from today's midnight while
+    // the lottery is waiting to open, rather than counting down to cutoff.
+    const midnight = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+    const seconds = Math.max(0, Math.floor((now - midnight) / 1000));
     const hh = String(Math.floor(seconds / 3600)).padStart(2, "0");
     const mm = String(Math.floor((seconds % 3600) / 60)).padStart(2, "0");
     const ss = String(seconds % 60).padStart(2, "0");
-    return { status: locked ? "已封盘" : "开盘中", countdown: `${hh} : ${mm} : ${ss}`, locked, mask: lottery?.mask_enabled !== 0 };
+    return { status: locked ? "已封盘" : "即将开盘", countdown: `${hh} : ${mm} : ${ss}`, locked, mask: lottery?.mask_enabled !== 0 };
   }
   if (!openTime) return { status: "时间待定", countdown: "-- : -- : --", locked: false, mask: lottery?.mask_enabled !== 0 };
   const target = new Date(openTime.replace(" ", "T")).getTime();
