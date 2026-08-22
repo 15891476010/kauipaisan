@@ -134,7 +134,8 @@ export function SubordinateEditPage({ agentName }: { agentName: string }) {
       <div className="subordinate-actions"><button type="button" onClick={() => navigate("/subordinates")}>账户列表</button><i /><button className="active" type="button">修改账号</button></div>
     </div>
     {loading ? <div className="subordinate-edit-state">正在加载账号资料...</div> : loadError || !member ? <div className="subordinate-edit-state error"><span>{loadError || "会员不存在"}</span><button type="button" onClick={() => navigate("/subordinates")}>返 回</button></div> : <div className="subordinate-edit-shell">
-      <div className="edit-credit-summary"><strong>{agentName}(代理)</strong><span>总信用额度：</span><b>{displayNumber(summary?.total_credit || 0)}</b><i>（0）</i><span>可分配信用额度：</span><b>{displayNumber(summary?.available_credit || 0)}</b><i>（0）</i><span>已分配信用额度：</span><b>{displayNumber(summary?.allocated_credit || 0)}</b><i>（0）</i></div>
+      <div className="edit-credit-summary"><strong>{agentName}(代理)</strong><span>上级授予额度：</span><b>{displayNumber(summary?.granted_credit || summary?.total_credit || 0)}</b><span>当前可用余额：</span><b>{displayNumber(summary?.current_available_balance || summary?.available_credit || 0)}</b><span>直属会员额度：</span><b>{displayNumber(summary?.direct_member_credit || summary?.allocated_credit || 0)}</b></div>
+      {summary?.credit_unallocated && <div className="credit-allocation-warning">{summary.credit_notice || "上级尚未分配额度，当前不能给会员分配分数"}</div>}
 
       <section className="edit-account-panel">
         <div className="edit-field readonly"><label>账号名</label><strong>{member.username} - 会员</strong></div>

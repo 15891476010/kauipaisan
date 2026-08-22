@@ -1,6 +1,6 @@
 import { App as AntdApp, Button, Input, Modal, Space } from "antd";
 import { LockOutlined, PoweroffOutlined, UserOutlined } from "@ant-design/icons";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import loginLogo from "../../assets/agent-logo.svg";
 import { apiErrorMessage } from "../../utils/request";
 import { getCaptcha, login, verifyCaptcha } from "../../api/auth";
@@ -14,7 +14,7 @@ function shuffledDigits() {
   return digits;
 }
 
-export function Login({ onLogin }: { onLogin: (name: string) => void }) {
+export function Login({ onLogin, siteName }: { onLogin: (name: string) => void; siteName: string }) {
   const { message, modal } = AntdApp.useApp();
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
@@ -24,6 +24,7 @@ export function Login({ onLogin }: { onLogin: (name: string) => void }) {
   const [showCaptcha, setShowCaptcha] = useState(false);
   const [busy, setBusy] = useState(false);
   const [captchaDigits, setCaptchaDigits] = useState<number[]>([]);
+  useEffect(() => { document.title = `${siteName} - 登录`; }, [siteName]);
 
   async function requestCaptcha() {
     setBusy(true);
@@ -50,7 +51,12 @@ export function Login({ onLogin }: { onLogin: (name: string) => void }) {
         return;
       }
       localStorage.setItem("agent_token", token);
-      onLogin(name);
+      localStorage.setItem("agent_permissions", JSON.stringify(response.data.data?.permissions || ["*"]));
+      localStorage.setItem("agent_is_subaccount", response.data.data?.user?.is_subaccount ? "1" : "0");
+      localStorage.setItem("agent_organization_level", response.data.data?.user?.organization_level || "agent");
+      localStorage.setItem("agent_level_label", response.data.data?.user?.level_label || "代理");
+      localStorage.setItem("agent_must_change_password", response.data.data?.user?.must_change_password ? "1" : "0");
+      onLogin(response.data.data?.user?.display_name || name);
     } catch (reason) {
       message.error(apiErrorMessage(reason, "登录失败"));
     } finally { setBusy(false); }
@@ -81,6 +87,7 @@ export function Login({ onLogin }: { onLogin: (name: string) => void }) {
     <div className="login">
       <form className="login-panel" onSubmit={submit}>
         <img className="login-logo" src={loginLogo} alt="代理端" />
+        <div className="login-site-name">{siteName}</div>
         <Space orientation="vertical" size={20} className="login-fields">
           <Input prefix={<UserOutlined />} aria-label="登录名" value={name} onChange={(event) => setName(event.target.value)} />
           <Input type="password" prefix={<LockOutlined />} aria-label="登录密码" value={password} onChange={(event) => setPassword(event.target.value)} />

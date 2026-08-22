@@ -41,7 +41,8 @@ export function SubordinatesPage({ agentName }: { agentName: string }) {
         <div className="subordinate-actions"><button className="active" type="button">账户列表</button><i /><button type="button" onClick={openCreate}>新增下级</button></div>
       </div>
       <div className="subordinate-content">
-        <div className="credit-summary"><strong>{agentName}(代理)</strong><span>总信用额度：</span><b>{result.total_credit}</b><i>（0）</i><span>可分配信用额度：</span><b className="available">{result.available_credit}</b><i>（0）</i><span>已分配信用额度：</span><b className="allocated">{result.allocated_credit}</b><i>（0）</i></div>
+        <div className="credit-summary"><strong>{agentName}(代理)</strong><span>上级授予额度：</span><b>{result.total_credit}</b><span>当前可用余额：</span><b className="available">{result.available_credit}</b><span>直属会员额度：</span><b className="allocated">{result.allocated_credit}</b></div>
+        {Number(result.total_credit || 0) <= 0 && <div className="credit-allocation-warning">上级尚未分配额度，当前不能给会员分配分数</div>}
         <form className="member-filters" onSubmit={(event) => { event.preventDefault(); setPage(1); setApplied({ ...filters }); }}>
           <div className="member-filter-field"><label htmlFor="member-username">用户名：</label><input id="member-username" maxLength={20} value={filters.username} onChange={(event) => setFilters({ ...filters, username: event.target.value })} placeholder="搜索用户名" /></div>
           <div className="member-filter-field"><label htmlFor="member-code">代号：</label><input id="member-code" maxLength={20} value={filters.code} onChange={(event) => setFilters({ ...filters, code: event.target.value })} placeholder="搜索代号" /></div>

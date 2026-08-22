@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watchEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Grid, User, Connection, Lock, Menu as MenuIcon, Document, Setting, Fold, Expand, Tickets, List } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
+import { getBranding, heartbeat } from '../api/admin'
 
 const collapsed = ref(false)
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const platformName = ref('快排 SaaS')
 const menuItems = [
   { path: '/dashboard', title: '数据看板', icon: Grid },
   { path: '/agent-center', title: '代理中心', icon: Connection },
@@ -22,13 +24,19 @@ const menuItems = [
   { path: '/site-settings', title: '站点配置', icon: Setting },
 ]
 const title = computed(() => String(route.meta.title || '控制台'))
+let heartbeatTimer: ReturnType<typeof setInterval> | null = null
+async function refreshBranding() { try { const response = await getBranding(); platformName.value = response.data.platform_name || '快排 SaaS' } catch { /* Keep the default brand if the public endpoint is unavailable. */ } }
+async function sendHeartbeat() { try { await heartbeat() } catch { /* 401 is handled by the shared interceptor. */ } }
+watchEffect(() => { document.title = `${platformName.value} - ${title.value}` })
+onMounted(() => { void refreshBranding(); void sendHeartbeat(); heartbeatTimer = setInterval(sendHeartbeat, 20000); window.addEventListener('platform-branding-changed', refreshBranding) })
+onBeforeUnmount(() => { if (heartbeatTimer) clearInterval(heartbeatTimer); window.removeEventListener('platform-branding-changed', refreshBranding) })
 async function signOut() { await auth.logout(); await router.replace('/login') }
 </script>
 
 <template>
   <div class="shell">
     <aside :class="['sidebar', { collapsed }]">
-      <div class="brand"><span class="brand-mark">K</span><span v-if="!collapsed">快排 SaaS</span></div>
+      <div class="brand"><span class="brand-mark">K</span><span v-if="!collapsed">{{ platformName }}</span></div>
       <el-menu :default-active="route.path" router :collapse="collapsed" background-color="#111827" text-color="#aeb9ca" active-text-color="#fff">
         <el-menu-item v-for="item in menuItems" :key="item.path" :index="item.path"><el-icon><component :is="item.icon" /></el-icon><template #title>{{ item.title }}</template></el-menu-item>
       </el-menu>

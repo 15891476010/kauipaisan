@@ -84,10 +84,12 @@ final class SiteSettings
         }
     }
 
-    private function readRules(int $siteId): array
+    private function readRules(int $siteId, string $lottery = ''): array
     {
         $keys=['rule_title','rule_basic','rule_special','rule_amount','rule_text'];
-        $values=Db::name('settings')->where('site_id',$siteId)->whereIn('key',$keys)->column('value','key');
+        $scopedKeys=$lottery !== '' ? array_map(static fn(string $key): string => $key.'_'.$lottery, $keys) : [];
+        $values=Db::name('settings')->where('site_id',$siteId)->whereIn('key',array_merge($keys,$scopedKeys))->column('value','key');
+        if ($lottery !== '') foreach ($keys as $key) if (isset($values[$key.'_'.$lottery]) && trim((string)$values[$key.'_'.$lottery]) !== '') $values[$key]=$values[$key.'_'.$lottery];
         return [
             'title'=>trim((string)($values['rule_title'] ?? '')) ?: '规则说明',
             'basic'=>trim((string)($values['rule_basic'] ?? '')) ?: self::DEFAULT_RULE_BASIC,
@@ -95,6 +97,20 @@ final class SiteSettings
             'amount'=>trim((string)($values['rule_amount'] ?? '')) ?: self::DEFAULT_RULE_AMOUNT,
             'text'=>trim((string)($values['rule_text'] ?? '')) ?: self::DEFAULT_RULE_TEXT,
         ];
+    }
+    private function readLotteryRule(int $siteId, string $lottery): array
+    {
+        $rules=$this->readRules($siteId,$lottery);
+        $lotteryRow=null;
+        if ($lottery !== '') {
+            $lotteryRow=Db::name('lotteries')->where('tenant_id',1)->whereNull('deleted_at')->where(function ($query) use ($lottery): void {
+                $query->where('code',$lottery)->whereOr('name',$lottery);
+            })->field('id,name')->find();
+        }
+        $content='';
+        if ($lotteryRow) $content=trim((string)Db::name('settings')->where('tenant_id',1)->whereNull('site_id')->where('key','lottery_rule_content_'.(int)$lotteryRow['id'])->value('value'));
+        if ($content === '') $content=implode("\n\n",array_filter([$rules['basic'],$rules['special'],$rules['amount'],$rules['text']],static fn(string $value): bool => trim($value) !== ''));
+        return array_merge($rules,['title'=>'规则说明','content'=>$content]);
     }
     private function readBettingControls(int $siteId): array
     {
@@ -106,13 +122,15 @@ final class SiteSettings
     {
         $siteId=$this->adminSiteId($request,(int)$request->param('site_id',0));
         if ($siteId<1 || !Db::name('sites')->where('id',$siteId)->whereNull('deleted_at')->find()) throw new \InvalidArgumentException('请选择有效站点');
-        return $this->reply(['site_id'=>$siteId,'controls'=>$this->readBettingControls($siteId)]);
+        $limit=(int)Db::name('settings')->where('site_id',$siteId)->where('key','draw_history_limit')->value('value');
+        return $this->reply(['site_id'=>$siteId,'controls'=>$this->readBettingControls($siteId),'draw_history_limit'=>$limit>0?min(200,$limit):80]);
     }
     public function saveAdminBettingControls(Request $request): \think\response\Json
     {
         $data=$request->put(); $siteId=$this->adminSiteId($request,(int)($data['site_id']??0));
         if ($siteId<1 || !Db::name('sites')->where('id',$siteId)->whereNull('deleted_at')->find()) throw new \InvalidArgumentException('请选择有效站点');
         $controls=$data['controls']??[]; if (!is_array($controls)) throw new \InvalidArgumentException('下注控制配置格式错误');
+        $drawLimit=(int)($data['draw_history_limit']??80); if ($drawLimit<1 || $drawLimit>200) throw new \InvalidArgumentException('开奖记录返回条数必须在1到200之间');
         $result=[];
         foreach ($controls as $lotteryId=>$control) {
             if (!is_numeric($lotteryId) || !is_array($control)) continue;
@@ -123,7 +141,9 @@ final class SiteSettings
         $tenantId=(int)Db::name('sites')->where('id',$siteId)->value('tenant_id'); $now=date('Y-m-d H:i:s'); $value=json_encode($result,JSON_UNESCAPED_UNICODE);
         $existing=Db::name('settings')->where('tenant_id',$tenantId)->where('site_id',$siteId)->where('key','lottery_betting_controls')->find();
         if ($existing) Db::name('settings')->where('id',$existing['id'])->update(['value'=>$value,'updated_at'=>$now]); else Db::name('settings')->insert(['tenant_id'=>$tenantId,'site_id'=>$siteId,'key'=>'lottery_betting_controls','value'=>$value,'updated_at'=>$now]);
-        return $this->reply(['site_id'=>$siteId,'controls'=>$result],'下注控制已保存');
+        $limitExisting=Db::name('settings')->where('tenant_id',$tenantId)->where('site_id',$siteId)->where('key','draw_history_limit')->find();
+        if ($limitExisting) Db::name('settings')->where('id',$limitExisting['id'])->update(['value'=>(string)$drawLimit,'updated_at'=>$now]); else Db::name('settings')->insert(['tenant_id'=>$tenantId,'site_id'=>$siteId,'key'=>'draw_history_limit','value'=>(string)$drawLimit,'updated_at'=>$now]);
+        return $this->reply(['site_id'=>$siteId,'controls'=>$result,'draw_history_limit'=>$drawLimit],'下注控制已保存');
     }
 
     public function adminAgreement(Request $request): \think\response\Json
@@ -277,7 +297,7 @@ final class SiteSettings
         if (!is_array($session) || ($session['scope'] ?? '') !== 'user') return $this->reply(null,'未登录或登录已过期',401);
         $siteId=(int)($session['site_id'] ?? 0);
         if ($siteId < 1 || !Db::name('sites')->where('id',$siteId)->whereNull('deleted_at')->find()) return $this->reply(null,'当前站点不可用',422);
-        return $this->reply($this->readRules($siteId));
+        return $this->reply($this->readLotteryRule($siteId, trim((string)$request->param('lottery',''))));
     }
 
     public function agentAgreement(Request $request): \think\response\Json
@@ -301,6 +321,6 @@ final class SiteSettings
         $siteId=$this->agentSiteId($request);
         if ($siteId < 1) return $this->reply(null,'未登录或登录已过期',401);
         if (!Db::name('sites')->where('id',$siteId)->whereNull('deleted_at')->find()) return $this->reply(null,'当前站点不可用',422);
-        return $this->reply($this->readRules($siteId));
+        return $this->reply($this->readLotteryRule($siteId,trim((string)$request->param('lottery',''))));
     }
 }

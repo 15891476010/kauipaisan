@@ -36,8 +36,8 @@ final class Lottery
         $this->session($request,'admin'); $data=$request->post(); $name=trim((string)($data['name']??'')); $code=trim((string)($data['code']??''));
         if ($name==='' || $code==='') throw new \InvalidArgumentException('请输入彩票名称和编码');
         if (!preg_match('/^[A-Za-z0-9_-]+$/',$code)) throw new \InvalidArgumentException('编码只能包含字母、数字、下划线和短横线');
-        $controls=$this->bettingControls($data);
-        $now=date('Y-m-d H:i:s'); $id=Db::name('lotteries')->insertGetId(array_merge(['tenant_id'=>1,'name'=>$name,'code'=>$code,'status'=>(int)($data['status']??1),'sort'=>(int)($data['sort']??0),'created_at'=>$now,'updated_at'=>$now],$controls));
+        $controls=$this->bettingControls($data);$unitStake=$this->unitStake($data['unit_stake']??2);
+        $now=date('Y-m-d H:i:s'); $id=Db::name('lotteries')->insertGetId(array_merge(['tenant_id'=>1,'name'=>$name,'code'=>$code,'unit_stake'=>number_format($unitStake,2,'.',''),'status'=>(int)($data['status']??1),'sort'=>(int)($data['sort']??0),'created_at'=>$now,'updated_at'=>$now],$controls));
         return $this->reply(['id'=>$id],'彩票创建成功');
     }
     public function update(Request $request): \think\response\Json
@@ -45,12 +45,40 @@ final class Lottery
         $this->session($request,'admin'); $id=(int)$request->param('id'); $data=$request->put(); unset($data['id'],$data['tenant_id'],$data['site_ids'],$data['created_at'],$data['deleted_at']);
         if (isset($data['name'])) { $data['name']=trim((string)$data['name']); if ($data['name']==='') throw new \InvalidArgumentException('请输入彩票名称'); }
         if (isset($data['code']) && !preg_match('/^[A-Za-z0-9_-]+$/',(string)$data['code'])) throw new \InvalidArgumentException('编码只能包含字母、数字、下划线和短横线');
+        if(array_key_exists('unit_stake',$data))$data['unit_stake']=number_format($this->unitStake($data['unit_stake']),2,'.','');
         $data=array_merge($data,$this->bettingControls($data,true));
         $data['updated_at']=date('Y-m-d H:i:s'); Db::name('lotteries')->where('id',$id)->whereNull('deleted_at')->update($data); return $this->reply(null,'彩票已更新');
     }
     public function delete(Request $request): \think\response\Json
     {
         $this->session($request,'admin'); $id=(int)$request->param('id'); Db::name('lotteries')->where('id',$id)->update(['deleted_at'=>date('Y-m-d H:i:s'),'updated_at'=>date('Y-m-d H:i:s')]); return $this->reply(null,'彩票已删除');
+    }
+    public function rules(Request $request): \think\response\Json
+    {
+        $this->session($request,'admin');
+        $id=(int)$request->param('id');
+        $lottery=$this->catalog()->where('id',$id)->field('id,name,code')->find();
+        if (!$lottery) throw new \InvalidArgumentException('彩票不存在');
+        if (is_object($lottery)) $lottery=$lottery->toArray();
+        $content=(string)Db::name('settings')->where('tenant_id',1)->whereNull('site_id')->where('key','lottery_rule_content_'.$id)->value('value');
+        return $this->reply(array_merge($lottery,['content'=>$content]));
+    }
+    public function saveRules(Request $request): \think\response\Json
+    {
+        $this->session($request,'admin');
+        $id=(int)$request->param('id');
+        $lottery=$this->catalog()->where('id',$id)->field('id,name,code')->find();
+        if (!$lottery) throw new \InvalidArgumentException('彩票不存在');
+        if (is_object($lottery)) $lottery=$lottery->toArray();
+        $data=$request->put();
+        $content=trim((string)($data['content']??''));
+        if ($content === '') throw new \InvalidArgumentException('请输入规则内容');
+        if (mb_strlen($content)>100000) throw new \InvalidArgumentException('规则内容不能超过100000个字符');
+        $key='lottery_rule_content_'.$id; $now=date('Y-m-d H:i:s');
+        $existing=Db::name('settings')->where('tenant_id',1)->whereNull('site_id')->where('key',$key)->find();
+        if ($existing) Db::name('settings')->where('id',$existing['id'])->update(['value'=>$content,'updated_at'=>$now]);
+        else Db::name('settings')->insert(['tenant_id'=>1,'site_id'=>null,'key'=>$key,'value'=>$content,'updated_at'=>$now]);
+        return $this->reply(array_merge($lottery,['content'=>$content]),'规则配置已保存');
     }
     public function assign(Request $request): \think\response\Json
     {
@@ -75,7 +103,7 @@ final class Lottery
             ->where('l.tenant_id',$tenantId)
             ->where('l.status',1)
             ->whereNull('l.deleted_at')
-            ->field('l.id,l.name,l.code,l.sort,l.cutoff_enabled,l.cutoff_time,l.mask_enabled,l.refund_enabled')
+            ->field('l.id,l.name,l.code,l.sort,l.unit_stake,l.cutoff_enabled,l.cutoff_time,l.mask_enabled,l.refund_enabled')
             ->order('l.sort asc')
             ->order('l.id asc')
             ->select()->toArray();
@@ -86,11 +114,12 @@ final class Lottery
             $siteControls=json_decode((string)Db::name('settings')->where('site_id',$siteId)->where('key','lottery_betting_controls')->value('value'),true);
             $siteControl=is_array($siteControls)?($siteControls[(string)$row['id']]??[]):[];
             if (is_array($siteControl)) foreach (['cutoff_enabled','cutoff_time','mask_enabled','refund_enabled'] as $field) if (array_key_exists($field,$siteControl)) $row[$field]=$siteControl[$field];
-            $latest=Db::name('lottery_histories')->where('lottery_id',(int)$row['id'])->order('open_time desc')->order('id desc')->field('code,open_time,next_code,next_open_time,numbers')->find();
+            $latest=Db::name('lottery_histories')->where('lottery_id',(int)$row['id'])->where(function($q): void { $q->whereNotNull('numbers')->where('numbers','<>',''); })->order('open_time desc')->order('id desc')->field('code,open_time,next_code,next_open_time,numbers')->find();
+            $pending=Db::name('lottery_histories')->where('lottery_id',(int)$row['id'])->where(function($q): void { $q->whereNull('numbers')->whereOr('numbers',''); })->order('open_time asc')->order('id asc')->field('code,open_time')->find();
             $row['latest_code']=(string)($latest['code']??'');
             $row['latest_numbers']=(string)($latest['numbers']??'');
-            $row['next_code']=(string)($latest['next_code']??'');
-            $row['next_open_time']=$latest['next_open_time']??null;
+            $row['next_code']=(string)($latest['next_code']??($pending['code']??''));
+            $row['next_open_time']=$latest['next_open_time']??($pending['open_time']??null);
             $row['recent_issues']=Db::name('lottery_histories')->where('lottery_id',(int)$row['id'])->order('open_time desc')->order('id desc')->limit(10)->field('code,draw_day')->select()->toArray();
             $row['can_bet']=$permissionMap ? (int)($permissionMap[(int)$row['id']]['can_bet']??0)===1 : true;
         }
@@ -112,6 +141,11 @@ final class Lottery
         }
         return $result;
     }
+    private function unitStake(mixed $value): float
+    {
+        if(!is_numeric($value)||(float)$value<=0||(float)$value>1000000)throw new \InvalidArgumentException('单注彩票金额必须大于0且不能超过1000000元');
+        return round((float)$value,2);
+    }
     public function user(Request $request): \think\response\Json
     {
         $session=$this->session($request,'user'); $siteId=(int)($session['site_id']??0); $userId=($session['user_type']??'site-user')==='site-user'?(int)($session['user_id']??0):0; return $this->reply(['list'=>$this->siteList($siteId,(int)($session['tenant_id']??1),$userId)]);
@@ -121,7 +155,9 @@ final class Lottery
         $session=$this->session($request,'agent');
         $siteId=(int)($session['site_id']??0);
         if ($siteId < 1) throw new \RuntimeException('当前代理未绑定站点，无法获取彩票');
-        return $this->reply(['list'=>$this->siteList($siteId,(int)($session['tenant_id']??1)),'site_id'=>$siteId]);
+        $list=$this->siteList($siteId,(int)($session['tenant_id']??1));
+        if (!empty($session['is_subaccount'])) { $allowed=array_map('intval',(array)($session['lottery_permissions']??[])); $list=array_values(array_filter($list,static fn(array $row): bool=>in_array((int)$row['id'],$allowed,true))); }
+        return $this->reply(['list'=>$list,'site_id'=>$siteId]);
     }
     public function config(Request $request): \think\response\Json
     {

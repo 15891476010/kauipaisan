@@ -4,11 +4,34 @@ namespace app\controller;
 use think\Request;
 use think\facade\Db;
 use think\facade\Cache;
+use app\service\AuditLogger;
+use app\service\AccountPresence;
+use app\service\OrganizationHierarchy;
+use app\service\PasswordPolicy;
 
 final class Auth
 {
+    private function log(Request $request, array $context, string $action, string $resource, array $payload = []): void {
+        $payload['_request'] = array_merge((array)($payload['_request'] ?? []), [
+            'method' => strtoupper($request->method(true)),
+            'path' => '/'.trim((string)$request->pathinfo(), '/'),
+            'host' => (string)$request->host(),
+            'referer' => (string)$request->header('referer'),
+            'user_agent' => mb_substr((string)$request->header('user-agent'), 0, 500),
+            'query' => AuditLogger::sanitize($request->get()),
+            'body' => AuditLogger::sanitize($request->post()),
+            'status_code' => $action === 'login_success' || $action === 'logout' ? 200 : 401,
+            'success' => $action === 'login_success' || $action === 'logout',
+        ]);
+        AuditLogger::write($context, $action, $resource, $payload, (string)$request->ip());
+    }
     private function reply(mixed $data = null, string $message = 'ok', int $code = 0): \think\response\Json { return json(['code'=>$code,'message'=>$message,'data'=>$data,'request_id'=>bin2hex(random_bytes(8))]); }
     private function token(int $userId, string $scope, array $context=[]): string { $token=bin2hex(random_bytes(32)); Cache::set('token:'.$token,array_merge(['user_id'=>$userId,'scope'=>$scope],$context),(int)env('TOKEN_TTL',7200)); return $token; }
+    private function sessionToken(Request $request, int $userId, string $scope, array $context, string $accountType): string {
+        $token=$this->token($userId,$scope,$context);
+        AccountPresence::login($request,$token,array_merge(['user_id'=>$userId,'scope'=>$scope],$context),$accountType,$userId);
+        return $token;
+    }
     private function captchaPayload(): array {
         $left = random_int(0, 9); $right = random_int(0, 9);
         $answer = $left + $right;
@@ -36,14 +59,17 @@ final class Auth
         $data=$request->post(); $username=trim((string)($data['username']??'')); $password=(string)($data['password']??'');
         $user=Db::name('admins')->where('username',$username)->where('status',1)->whereNull('deleted_at')->find();
         if ($user && password_verify($password,(string)$user['password'])) {
-            $token=$this->token((int)$user['id'],'admin',['admin_role'=>'platform','site_id'=>null]);
+            $token=$this->sessionToken($request,(int)$user['id'],'admin',['admin_role'=>'platform','tenant_id'=>$user['tenant_id']??null,'site_id'=>null,'account_table'=>'admins','username'=>$user['username']],'platform_admin');
             Db::name('admins')->where('id',$user['id'])->update(['last_login_at'=>date('Y-m-d H:i:s')]);
+            $this->log($request,['tenant_id'=>$user['tenant_id']??null,'user_id'=>$user['id'],'username'=>$user['username']], 'login_success', 'admin');
             return $this->reply(['token'=>$token,'expires_at'=>date(DATE_ATOM,time()+(int)env('TOKEN_TTL',7200)),'user'=>['id'=>$user['id'],'username'=>$user['username'],'display_name'=>$user['display_name'],'tenant_id'=>$user['tenant_id'],'agent_id'=>null,'site_id'=>null,'role'=>'platform'],'menus'=>$this->menuTree(true)]);
         }
         $siteAdmin=Db::name('site_admins')->where('username',$username)->where('status',1)->whereNull('deleted_at')->find();
-        if (!$siteAdmin || !password_verify($password,(string)$siteAdmin['password'])) return $this->reply(null,'账号或密码错误',401);
-        $token=$this->token((int)$siteAdmin['id'],'admin',['admin_role'=>'site','site_id'=>(int)$siteAdmin['site_id']]);
+        if (!$siteAdmin || !password_verify($password,(string)($siteAdmin['password']??''))) { $this->log($request,['username'=>$username], 'login_failed', 'admin'); return $this->reply(null,'账号或密码错误',401); }
+        $agentId=(int)Db::name('sites')->where('id',(int)$siteAdmin['site_id'])->value('agent_id');
+        $token=$this->sessionToken($request,(int)$siteAdmin['id'],'admin',['admin_role'=>'site','tenant_id'=>$siteAdmin['tenant_id']??null,'site_id'=>(int)$siteAdmin['site_id'],'agent_id'=>$agentId,'account_table'=>'site_admins','username'=>$siteAdmin['username']],'site_admin');
         Db::name('site_admins')->where('id',$siteAdmin['id'])->update(['last_login_at'=>date('Y-m-d H:i:s')]);
+        $this->log($request,['tenant_id'=>$siteAdmin['tenant_id']??null,'agent_id'=>$agentId,'user_id'=>$siteAdmin['id'],'username'=>$siteAdmin['username']], 'login_success', 'site_admin');
         return $this->reply(['token'=>$token,'expires_at'=>date(DATE_ATOM,time()+(int)env('TOKEN_TTL',7200)),'user'=>['id'=>$siteAdmin['id'],'username'=>$siteAdmin['username'],'display_name'=>$siteAdmin['display_name'],'tenant_id'=>$siteAdmin['tenant_id'],'agent_id'=>null,'site_id'=>(int)$siteAdmin['site_id'],'role'=>'site'],'menus'=>$this->menuTree(false)]);
     }
 
@@ -55,8 +81,8 @@ final class Auth
         $captchaId=trim((string)($data['captcha_id']??''));
         $captchaAnswer=trim((string)($data['captcha']??''));
         $captcha=$captchaId !== '' ? Cache::get('captcha:'.$captchaId) : null;
-        if (!$captcha) return $this->reply(null,'验证码已失效',422);
-        if (!hash_equals((string)($captcha['answer']??''),$captchaAnswer)) return $this->reply(null,'验证码错误',422);
+        if (!$captcha) { $this->log($request,['username'=>$username], 'login_failed', 'agent'); return $this->reply(null,'验证码已失效',422); }
+        if (!hash_equals((string)($captcha['answer']??''),$captchaAnswer)) { $this->log($request,['username'=>$username], 'login_failed', 'agent'); return $this->reply(null,'验证码错误',422); }
         Cache::delete('captcha:'.$captchaId);
 
         $agentId=(int)($data['agent_id']??0);
@@ -69,10 +95,36 @@ final class Auth
             $siteId=(int)$siteQuery->value('site_id');
             if ($agentId < 1) $agentId=(int)Db::name('domains')->whereIn('domain',$domainCandidates)->where('domain_type','agent')->where('status',1)->value('agent_id');
         }
-        $query=Db::name('agent_admins')->where('username',$username)->where('status',1)->whereNull('deleted_at');
-        if ($agentId > 0) $query->where('agent_id',$agentId);
-        $account=$query->find();
-        $accountTable='agent_admins';
+        $organizationId=0; $organizationLevel='';
+        $orgQuery=Db::name('organization_accounts')->where('username',$username)->where('status',1)->whereNull('deleted_at');
+        if ($siteId > 0) $orgQuery->where('site_id',$siteId);
+        $orgAccount=$orgQuery->find();
+        $account=$orgAccount && password_verify($password,(string)$orgAccount['password']) ? $orgAccount : null;
+        $accountTable=$account ? 'organization_accounts' : 'agent_admins';
+        if ($account) {
+            $siteId=(int)$account['site_id'];
+            $agentId=(int)Db::name('sites')->where('id',$siteId)->value('agent_id');
+            $organizationId=(int)$account['organization_id'];
+            $organizationLevel=(string)Db::name('organization_nodes')->where('id',$organizationId)->value('level');
+        } else {
+            $query=Db::name('agent_admins')->where('username',$username)->where('status',1)->whereNull('deleted_at');
+            if ($agentId > 0) $query->where('agent_id',$agentId);
+            $account=$query->find();
+        }
+        if (!$account || !password_verify($password,(string)$account['password'])) {
+            $subQuery=Db::name('agent_subaccounts')->where('username',$username)->where('status',1)->whereNull('deleted_at');
+            if ($siteId > 0) $subQuery->where('site_id',$siteId);
+            $subAccount=$subQuery->find();
+            if ($subAccount && password_verify($password,(string)$subAccount['password'])) {
+                $account=$subAccount;
+                $accountTable='agent_subaccounts';
+                $agentId=(int)$subAccount['agent_id'];
+                $siteId=(int)$subAccount['site_id'];
+                $organizationId=(int)($subAccount['organization_id']??0);
+                if($organizationId<1){$root=OrganizationHierarchy::rootForSite($siteId);$organizationId=(int)($root['id']??0);}
+                $organizationLevel=(string)Db::name('organization_nodes')->where('id',$organizationId)->value('level');
+            }
+        }
         if (!$account || !password_verify($password,(string)$account['password'])) {
             $siteQuery=Db::name('site_admins')->where('username',$username)->where('status',1)->whereNull('deleted_at');
             if ($siteId > 0) $siteQuery->where('site_id',$siteId);
@@ -82,11 +134,14 @@ final class Auth
                 $accountTable='site_admins';
                 $agentId=(int)Db::name('sites')->where('id',(int)$siteAdmin['site_id'])->value('agent_id');
                 $siteId=(int)$siteAdmin['site_id'];
+                $root=OrganizationHierarchy::rootForSite($siteId);
+                $organizationId=(int)($root['id']??0);
+                $organizationLevel=(string)($root['level']??'shareholder');
             } else {
                 $legacySiteQuery=Db::name('sites')->where('manager_username',$username)->where('status',1)->whereNull('deleted_at');
                 if ($siteId > 0) $legacySiteQuery->where('id',$siteId);
                 $legacySite=$legacySiteQuery->find();
-                if (!$legacySite || !password_verify($password,(string)($legacySite['manager_password']??''))) return $this->reply(null,'账号或密码错误',401);
+                if (!$legacySite || !password_verify($password,(string)($legacySite['manager_password']??''))) { $this->log($request,['username'=>$username], 'login_failed', 'agent'); return $this->reply(null,'账号或密码错误',401); }
                 $account=['id'=>$legacySite['id'],'username'=>$legacySite['manager_username'],'display_name'=>$legacySite['manager_username'],'tenant_id'=>$legacySite['tenant_id']];
                 $accountTable='sites';
                 $agentId=(int)$legacySite['agent_id'];
@@ -94,11 +149,18 @@ final class Auth
             }
         }
         $platformSite=$siteId>0 && (int)Db::name('sites')->where('id',$siteId)->value('is_platform_site')===1;
-        if (!$platformSite && ($agentId < 1 || !Db::name('agents')->where('id',$agentId)->where('status',1)->find())) return $this->reply(null,'当前代理已停用',403);
+        if (!$platformSite && ($agentId < 1 || !Db::name('agents')->where('id',$agentId)->where('status',1)->find())) { $this->log($request,['username'=>$username], 'login_failed', 'agent'); return $this->reply(null,'当前代理已停用',403); }
 
-        $token=$this->token((int)$account['id'],'agent',['tenant_id'=>(int)$account['tenant_id'],'agent_id'=>$agentId,'site_id'=>$siteId,'account_table'=>$accountTable]);
+        $isSubaccount=$accountTable==='agent_subaccounts';
+        $permissions=$accountTable==='organization_accounts'||$accountTable==='agent_subaccounts'?OrganizationHierarchy::effectivePermissions($organizationId,OrganizationHierarchy::decodePermissions($account['permissions']??null)):['*'];
+        $lotteryPermissions=$isSubaccount?(json_decode((string)($account['lottery_permissions']??''),true)?:[]):['*'];
+        if ($accountTable==='organization_accounts' && ($organizationId<1 || $organizationLevel==='')) { $this->log($request,['username'=>$username], 'login_failed', 'agent'); return $this->reply(null,'当前组织已停用或删除',403); }
+        $accountType=match($accountTable){'site_admins'=>'site_admin','agent_subaccounts'=>'agent_subaccount','organization_accounts'=>'organization_account','sites'=>'legacy_site_admin',default=>'agent_admin'};
+        $mustChangePassword=(int)($account['must_change_password']??0)===1;
+        $token=$this->sessionToken($request,(int)$account['id'],'agent',['tenant_id'=>(int)$account['tenant_id'],'agent_id'=>$agentId,'site_id'=>$siteId,'organization_id'=>$organizationId?:null,'organization_level'=>$organizationLevel?:null,'account_table'=>$accountTable,'username'=>(string)$account['username'],'is_subaccount'=>$isSubaccount?1:0,'must_change_password'=>$mustChangePassword?1:0,'permissions'=>$permissions,'lottery_permissions'=>$lotteryPermissions,'report_limit_enabled'=>(int)($account['report_limit_enabled']??0),'report_from_issue'=>$account['report_from_issue']??null,'report_to_issue'=>$account['report_to_issue']??null],$accountType);
         if ($accountTable !== 'sites') Db::name($accountTable)->where('id',$account['id'])->update(['last_login_at'=>date('Y-m-d H:i:s')]);
-        return $this->reply(['token'=>$token,'expires_at'=>date(DATE_ATOM,time()+(int)env('TOKEN_TTL',7200)),'user'=>['id'=>$account['id'],'username'=>$account['username'],'display_name'=>$account['display_name'],'tenant_id'=>$account['tenant_id'],'agent_id'=>$agentId,'site_id'=>$siteId]]);
+        $this->log($request,['tenant_id'=>$account['tenant_id']??null,'agent_id'=>$agentId,'organization_id'=>$organizationId?:null,'user_id'=>$account['id'],'username'=>$account['username']], 'login_success', 'agent');
+        return $this->reply(['token'=>$token,'expires_at'=>date(DATE_ATOM,time()+(int)env('TOKEN_TTL',7200)),'user'=>['id'=>$account['id'],'username'=>$account['username'],'display_name'=>$account['display_name'],'tenant_id'=>$account['tenant_id'],'agent_id'=>$agentId,'site_id'=>$siteId,'organization_id'=>$organizationId?:null,'organization_level'=>$organizationLevel?:null,'level_label'=>$organizationLevel?(OrganizationHierarchy::LABELS[$organizationLevel]??$organizationLevel):'代理','is_subaccount'=>$isSubaccount,'must_change_password'=>$mustChangePassword],'permissions'=>$permissions,'lottery_permissions'=>$lotteryPermissions]);
     }
     public function userLogin(Request $request): \think\response\Json
     {
@@ -116,22 +178,105 @@ final class Auth
         if ($siteIdFromDomain > 0) $query->where('site_id',$siteIdFromDomain);
         if ($request->param('site_id') !== null) $query->where('site_id',(int)$request->param('site_id'));
         $user=$query->find();
-        if (!$user || !password_verify($password,(string)$user['password'])) return $this->reply(null,'账号或密码错误',401);
-        return $this->reply(['token'=>$this->token((int)$user['id'],'user',['tenant_id'=>(int)$user['tenant_id'],'site_id'=>(int)$user['site_id'],'user_type'=>'site-user']),'user'=>['id'=>$user['id'],'username'=>$user['username']]]);
+        $userSiteId=(int)($user['site_id']??$siteIdFromDomain);
+        $userAgentId=$userSiteId>0 ? (int)Db::name('sites')->where('id',$userSiteId)->value('agent_id') : 0;
+        $userLogContext=['tenant_id'=>$user['tenant_id']??null,'agent_id'=>$userAgentId,'organization_id'=>$user['organization_id']??null,'user_id'=>$user['id']??null,'username'=>$username];
+        if (!$user || !password_verify($password,(string)($user['password']??''))) { $this->log($request,$userLogContext, 'login_failed', 'user'); return $this->reply(null,'账号或密码错误',401); }
+        $mustChangePassword=(int)($user['must_change_password']??0)===1;
+        $context=['tenant_id'=>(int)$user['tenant_id'],'agent_id'=>$userAgentId,'site_id'=>(int)$user['site_id'],'organization_id'=>isset($user['organization_id'])?(int)$user['organization_id']:null,'user_type'=>'site-user','username'=>$user['username'],'must_change_password'=>$mustChangePassword?1:0];
+        $token=$this->sessionToken($request,(int)$user['id'],'user',$context,'site_user');
+        Db::name('site_users')->where('id',$user['id'])->update(['last_login_at'=>date('Y-m-d H:i:s')]);
+        $this->log($request,['tenant_id'=>$user['tenant_id'],'agent_id'=>$userAgentId,'organization_id'=>$user['organization_id']??null,'user_id'=>$user['id'],'username'=>$user['username']], 'login_success', 'user');
+        return $this->reply(['token'=>$token,'user'=>['id'=>$user['id'],'username'=>$user['username'],'must_change_password'=>$mustChangePassword]]);
     }
-    public function logout(Request $request): \think\response\Json { $header=(string)$request->header('authorization'); if($header) Cache::delete('token:'.trim(str_ireplace('Bearer ','',$header))); return $this->reply(); }
-    public function userProfile(Request $request): \think\response\Json { $token=trim(str_ireplace('Bearer ','',(string)$request->header('authorization'))); $session=$token !== '' ? Cache::get('token:'.$token) : null; if (!is_array($session) || ($session['scope'] ?? '') !== 'user') return $this->reply(null,'未登录或登录已过期',401); if (($session['user_type'] ?? 'site-user') === 'site-admin') return $this->reply(['balance'=>'0.00','credit_balance'=>'0.00','used_balance'=>'0.00','total_balance'=>'0.00','available_balance'=>'0.00']); $user=Db::name('site_users')->where('id',(int)$session['user_id'])->where('site_id',(int)$session['site_id'])->whereNull('deleted_at')->find(); if (!$user) return $this->reply(null,'用户不存在或已停用',404); $balance=(float)($user['balance']??0); $credit=(float)($user['credit_balance']??0); $used=(float)($user['used_balance']??0); return $this->reply(['balance'=>number_format($balance,2,'.',''),'credit_balance'=>number_format($credit,2,'.',''),'used_balance'=>number_format($used,2,'.',''),'total_balance'=>number_format($balance+$credit,2,'.',''),'available_balance'=>number_format($balance+$credit-$used,2,'.','')]); }
+    public function logout(Request $request): \think\response\Json { $header=(string)$request->header('authorization'); $token=trim(str_ireplace('Bearer ','',$header)); $session=$token!==''?Cache::get('token:'.$token):null; if (is_array($session)) $this->log($request,$session,'logout',(string)($session['scope']??'auth')); AccountPresence::logout($token); if($token!=='') Cache::delete('token:'.$token); return $this->reply(); }
+    public function heartbeat(Request $request): \think\response\Json {
+        $token=trim(str_ireplace('Bearer ','',(string)$request->header('authorization')));
+        $session=$token!==''?Cache::get('token:'.$token):null;
+        if (!is_array($session)) return $this->reply(null,'未登录或登录已过期',401);
+        AccountPresence::resume($request,$token,$session);
+        AccountPresence::touch($token,$session,true);
+        return $this->reply(['online'=>true,'server_time'=>date(DATE_ATOM)]);
+    }
+    public function userProfile(Request $request): \think\response\Json
+    {
+        $token=trim(str_ireplace('Bearer ','',(string)$request->header('authorization')));
+        $session=$token !== '' ? Cache::get('token:'.$token) : null;
+        if (!is_array($session) || ($session['scope'] ?? '') !== 'user') return $this->reply(null,'未登录或登录已过期',401);
+        if (($session['user_type'] ?? 'site-user') === 'site-admin') return $this->reply(['balance'=>'0.00','credit_balance'=>'0.00','used_balance'=>'0.00','total_balance'=>'0.00','available_balance'=>'0.00','odds'=>[]]);
+
+        $siteId=(int)$session['site_id'];
+        $userId=(int)$session['user_id'];
+        $tenantId=(int)($session['tenant_id']??1);
+        $user=Db::name('site_users')->where('id',$userId)->where('site_id',$siteId)->whereNull('deleted_at')->find();
+        if (!$user) return $this->reply(null,'用户不存在或已停用',404);
+
+        $overrides=[];
+        foreach (Db::name('user_lottery_odds')->where('site_id',$siteId)->where('user_id',$userId)->select()->toArray() as $override) {
+            $overrides[(int)$override['lottery_odds_id']]=$override;
+        }
+
+        $lotteryFilter=trim((string)$request->param('lottery',''));
+        $lotteryQuery=Db::name('lotteries')->alias('l')->join('site_lotteries sl','sl.lottery_id=l.id')
+            ->where('sl.site_id',$siteId)->where('l.tenant_id',$tenantId)->where('l.status',1)->whereNull('l.deleted_at');
+        if ($lotteryFilter !== '') {
+            $lotteryQuery->where(function ($query) use ($lotteryFilter): void {
+                $query->where('l.code',$lotteryFilter)->whereOr('l.name',$lotteryFilter);
+            });
+        }
+
+        $odds=[];
+        $lotteries=$lotteryQuery->field('l.id,l.name,l.code')->order('l.sort asc')->order('l.id asc')->select()->toArray();
+        foreach ($lotteries as $lottery) {
+            $rows=Db::name('lottery_odds')->where('lottery_id',(int)$lottery['id'])->where('status',1)->whereNull('deleted_at')->order('sort asc')->order('id asc')->select()->toArray();
+            $categories=Db::name('lottery_odds_categories')->where('lottery_id',(int)$lottery['id'])->where('is_playable',1)->where('status',1)->whereNull('deleted_at')->order('sort asc')->order('id asc')->select()->toArray();
+            foreach ($categories as $category) {
+                $rows[]=['id'=>1000000000+(int)$category['id'],'category_id'=>(int)$category['id'],'category'=>$category['name'],'name'=>$category['name'],'min_bet'=>$category['min_bet'],'odds_limit'=>$category['odds_limit'],'single_bet_limit'=>$category['single_bet_limit'],'single_item_limit'=>$category['single_item_limit'],'odds'=>$category['odds'],'offline_rebate'=>$category['offline_rebate'],'sort'=>$category['sort'],'direct_category'=>1];
+            }
+            usort($rows,static fn(array $a,array $b): int => ((int)$a['sort']<=> (int)$b['sort']) ?: ((int)$a['id']<=> (int)$b['id']));
+            foreach ($rows as $row) {
+                $override=$overrides[(int)$row['id']]??null;
+                foreach (['min_bet','odds_limit','single_bet_limit','single_item_limit','odds','offline_rebate'] as $field) {
+                    if ($override && array_key_exists($field,$override)) $row[$field]=$override[$field];
+                }
+                $row['lottery_name']=$lottery['name'];
+                $row['lottery_code']=$lottery['code'];
+                $odds[]=$row;
+            }
+        }
+
+        $balance=(float)($user['balance']??0);
+        $credit=(float)($user['credit_balance']??0);
+        $used=(float)($user['used_balance']??0);
+        return $this->reply(['balance'=>number_format($balance,2,'.',''),'credit_balance'=>number_format($credit,2,'.',''),'used_balance'=>number_format($used,2,'.',''),'total_balance'=>number_format($balance+$credit,2,'.',''),'available_balance'=>number_format($balance+$credit-$used,2,'.',''),'odds'=>$odds]);
+    }
     public function changeUserPassword(Request $request): \think\response\Json {
         $token=trim(str_ireplace('Bearer ','',(string)$request->header('authorization'))); $session=$token !== '' ? Cache::get('token:'.$token) : null;
         if (!is_array($session) || ($session['scope'] ?? '') !== 'user') return $this->reply(null,'未登录或登录已过期',401);
         $user=Db::name('site_users')->where('id',(int)($session['user_id'] ?? 0))->where('site_id',(int)($session['site_id'] ?? 0))->whereNull('deleted_at')->find();
         if (!$user) return $this->reply(null,'用户不存在或已停用',404);
-        $old=(string)$request->post('old_password',''); $password=(string)$request->post('password',''); $confirm=(string)$request->post('confirm_password','');
-        if (!password_verify($old,(string)$user['password'])) return $this->reply(null,'原密码错误',422);
+        $old=(string)$request->post('old_password',''); $password=(string)$request->post('password',''); $confirm=(string)$request->post('confirm_password',''); $forced=(int)($user['must_change_password']??0)===1;
+        if (!$forced && !password_verify($old,(string)$user['password'])) return $this->reply(null,'原密码错误',422);
         if ($password !== $confirm) return $this->reply(null,'两次输入的新密码不一致',422);
-        if (strlen($password) < 6 || !preg_match('/[A-Za-z]/',$password) || !preg_match('/\d/',$password)) return $this->reply(null,'新密码必须是数字和字母组合，至少6位',422);
-        if ($password === (string)$user['username'] || password_verify($password,(string)$user['password'])) return $this->reply(null,'新密码不能跟账号和原密码相同',422);
-        Db::name('site_users')->where('id',$user['id'])->update(['password'=>password_hash($password,PASSWORD_DEFAULT),'updated_at'=>date('Y-m-d H:i:s')]); return $this->reply(null,'密码修改成功');
+        try { PasswordPolicy::assertValid($password,(string)$user['username'],(string)$user['password']); } catch (\InvalidArgumentException $error) { return $this->reply(null,$error->getMessage(),422); }
+        Db::name('site_users')->where('id',$user['id'])->update(['password'=>password_hash($password,PASSWORD_DEFAULT),'must_change_password'=>0,'updated_at'=>date('Y-m-d H:i:s')]);
+        $session['must_change_password']=0; Cache::set('token:'.$token,$session,(int)env('TOKEN_TTL',7200));
+        return $this->reply(null,'密码修改成功');
+    }
+    public function changeAgentPassword(Request $request): \think\response\Json {
+        $token=trim(str_ireplace('Bearer ','',(string)$request->header('authorization'))); $session=$token!==''?Cache::get('token:'.$token):null;
+        if(!is_array($session)||($session['scope']??'')!=='agent')return $this->reply(null,'未登录或登录已过期',401);
+        $table=(string)($session['account_table']??'');
+        if(!in_array($table,['organization_accounts','agent_subaccounts'],true))return $this->reply(null,'当前账号不支持此修改方式',422);
+        $account=Db::name($table)->where('id',(int)$session['user_id'])->whereNull('deleted_at')->find();
+        if(!$account)return $this->reply(null,'账号不存在或已停用',404);
+        $old=(string)$request->post('old_password','');$password=(string)$request->post('password','');$confirm=(string)$request->post('confirm_password','');$forced=(int)($account['must_change_password']??0)===1;
+        if(!$forced&&!password_verify($old,(string)$account['password']))return $this->reply(null,'原密码错误',422);
+        if($password!==$confirm)return $this->reply(null,'两次输入的新密码不一致',422);
+        try{PasswordPolicy::assertValid($password,(string)$account['username'],(string)$account['password']);}catch(\InvalidArgumentException $error){return $this->reply(null,$error->getMessage(),422);}
+        Db::name($table)->where('id',$account['id'])->update(['password'=>password_hash($password,PASSWORD_DEFAULT),'must_change_password'=>0,'updated_at'=>date('Y-m-d H:i:s')]);
+        $session['must_change_password']=0;Cache::set('token:'.$token,$session,(int)env('TOKEN_TTL',7200));
+        return $this->reply(null,'密码修改成功');
     }
     public function menus(Request $request): \think\response\Json { $token=trim(str_ireplace('Bearer ','',(string)$request->header('authorization'))); $session=$token !== '' ? Cache::get('token:'.$token) : []; return $this->reply($this->menuTree(!is_array($session) || ($session['admin_role'] ?? 'platform') === 'platform')); }
     public function adminEnter(Request $request): \think\response\Json {
@@ -141,7 +286,9 @@ final class Auth
         $domain=Db::name('domains')->where('site_id',$siteId)->where('domain_type','agent')->where('status',1)->order('is_primary desc,id asc')->value('domain');
         if (!$site || (!$admin && empty($site['manager_username'])) || !$domain) return $this->reply(null,'站点未配置可用管理员或反代域名',422);
         $accountId=$admin?(int)$admin['id']:$siteId;
-        $token=$this->token($accountId,'agent',['tenant_id'=>(int)$site['tenant_id'],'agent_id'=>(int)$site['agent_id'],'site_id'=>$siteId,'account_table'=>$admin?'site_admins':'sites']);
+        $root=OrganizationHierarchy::rootForSite($siteId);
+        $context=['tenant_id'=>(int)$site['tenant_id'],'agent_id'=>(int)$site['agent_id'],'site_id'=>$siteId,'organization_id'=>(int)($root['id']??0),'organization_level'=>(string)($root['level']??'shareholder'),'account_table'=>$admin?'site_admins':'sites','username'=>(string)($admin['username']??$site['manager_username']??''),'permissions'=>['*']];
+        $token=$this->sessionToken($request,$accountId,'agent',$context,$admin?'site_admin':'legacy_site_admin');
         $domain=(string)$domain;
         $isLocal=preg_match('/^(localhost|127\\.0\\.0\\.1|\\[::1\\])(?::\\d+)?$/i',$domain) === 1;
         $url=preg_match('/^https?:\\/\\//i',$domain) ? $domain : (($isLocal?'http://':'https://').$domain);

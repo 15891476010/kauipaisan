@@ -4,11 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { createAgentMember, getLotteries, type MemberLotteryPermission } from "../../api/user";
 import { apiErrorMessage } from "../../utils/request";
+import { InitialCredentials } from "../../components/InitialCredentials";
 
 type FormState = { username: string; password: string };
 
 export function SubordinateFormPage() {
-  const { message } = AntdApp.useApp();
+  const { message, modal } = AntdApp.useApp();
   const navigate = useNavigate();
   const [form, setForm] = useState<FormState>({ username: "", password: "" });
   const [permissions, setPermissions] = useState<MemberLotteryPermission[]>([]);
@@ -45,14 +46,13 @@ export function SubordinateFormPage() {
   async function submit() {
     const username = form.username.trim();
     if (!username) return message.warning("请输入账号名");
-    if (form.password.length < 6) return message.warning("密码不能少于6位");
+    if (form.password !== "" && form.password.length < 6) return message.warning("密码不能少于6位");
     if (invalidPassword) return message.warning("密码不能跟账号相同");
     setSaving(true);
     try {
       const payload = { username, display_name: username, password: form.password, permissions: permissions.map(({ lottery_id, can_view, can_bet }) => ({ lottery_id, can_view, can_bet })) };
-      await createAgentMember(payload);
-      message.success("会员创建成功");
-      navigate("/subordinates");
+      const response = await createAgentMember(payload);
+      modal.success({ title: "会员创建成功", content: <InitialCredentials value={response.data.data} />, okText: "我已保存", centered: true, width: 480, onOk: () => navigate("/subordinates") });
     } catch (reason) {
       message.error(apiErrorMessage(reason, "创建失败"));
     } finally { setSaving(false); }
@@ -68,7 +68,7 @@ export function SubordinateFormPage() {
         <div className="subordinate-account-form">
           <div className="account-level"><label>新建账号等级</label><strong>会员</strong></div>
           <div className="account-name"><label htmlFor="subordinate-username">账号名</label><input className="ant-input subordinate-input" id="subordinate-username" maxLength={20} autoComplete="off" placeholder="请输入账号名" value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} /></div>
-          <div className="account-password"><label htmlFor="subordinate-password">密码</label><div><input className="ant-input subordinate-input" id="subordinate-password" type="password" maxLength={20} autoComplete="new-password" placeholder="请输入密码" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /><span className={`password-warning${invalidPassword ? " invalid" : ""}`}>密码不能跟账号相同，尽量不要使用连续的数字和字母，尽量使用数字、大写字母、小写字母的组合。</span></div></div>
+          <div className="account-password"><label htmlFor="subordinate-password">密码</label><div><input className="ant-input subordinate-input" id="subordinate-password" type="password" maxLength={20} autoComplete="new-password" placeholder="可留空，系统将自动生成" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /><span className={`password-warning${invalidPassword ? " invalid" : ""}`}>密码可留空自动生成；填写时必须为数字和字母组合，至少 6 位，且不能跟账号相同。</span></div></div>
         </div>
         <div className="subordinate-permissions">
           {permissions.length === 0 ? <div className="permission-empty">当前站点暂未分配彩票</div> : permissions.map((permission) => <div className="permission-lottery" key={permission.lottery_id}><label>{permission.name}：</label><div className="permission-switches"><div><span>权限</span><Switch checked={permission.can_view} onChange={(value) => updatePermission(permission.lottery_id, "can_view", value)} /></div><div><span>下注</span><Switch checked={permission.can_bet} disabled={!permission.can_view} onChange={(value) => updatePermission(permission.lottery_id, "can_bet", value)} /></div></div></div>)}

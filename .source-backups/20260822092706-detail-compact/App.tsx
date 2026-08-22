@@ -11,7 +11,8 @@ import {
 } from "react-router-dom";
 import "./App.css";
 import axios from "axios";
-import { changePassword, createQuickTag, deleteQuickTag, getAgreement, getAnnouncement, getBetDetails, getBetRecords, getBills, getDraws, getLotteries, getProfile, getQuickSettings, getRules, getStopDrops, placeQuickEntry, previewQuickEntry, refundBetRecord, saveQuickSettings, type BetDetail, type BetRecord, type Bill, type Draw, type Lottery, type QuickEntryLine, type QuickTag, type RuleSettings, type StopDrop } from "./api/user";
+import DOMPurify from "dompurify";
+import { changePassword, createQuickTag, deleteQuickTag, getAgreement, getAnnouncement, getBetDetails, getBetRecords, getBills, getBranding, getDraws, getLineOptions, getLotteries, getProfile, getQuickSettings, getRules, getStopDrops, heartbeat, logoutSession, placeQuickEntry, previewQuickEntry, refundBetRecord, saveQuickSettings, waitDraws, type BetDetail, type BetRecord, type Bill, type Draw, type Lottery, type QuickEntryLine, type QuickPreview, type QuickTag, type RuleSettings, type StopDrop, type UserProfile } from "./api/user";
 import { apiErrorMessage, request } from "./utils/request";
 import loginLogo from "./assets/login-logo.svg";
 import { CaptchaModal } from "./components/CaptchaModal";
@@ -42,6 +43,12 @@ const nav = [
   { path: "gz", title: "规则说明", icon: alertIcon },
   { path: "xgmm", title: "修改密码", icon: keyIcon },
 ];
+function clearUserAuthQuery() {
+  const url = new URL(window.location.href);
+  url.searchParams.delete("auto_token");
+  url.searchParams.delete("line_switch");
+  window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash || "#/kb"}`);
+}
 function LegacyLogin({ onLogin }: { onLogin: (name: string) => void }) {
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
@@ -114,15 +121,16 @@ function lotteryTiming(lottery: Lottery | undefined, now: number) {
     const date = new Date(now);
     const [hours, minutes] = String(lottery?.cutoff_time).split(":").map(Number);
     const cutoff = new Date(date.getFullYear(), date.getMonth(), date.getDate(), hours, minutes, 0, 0).getTime();
-    const locked = now >= cutoff;
-    // The reference site shows the elapsed time from today's midnight while
-    // the lottery is waiting to open, rather than counting down to cutoff.
     const midnight = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
-    const seconds = Math.max(0, Math.floor((now - midnight) / 1000));
+    const nextMidnight = midnight + 24 * 60 * 60 * 1000;
+    const locked = now >= cutoff;
+    // Before cutoff count down to closing; after cutoff count down to next midnight.
+    const countdownTarget = locked ? nextMidnight : cutoff;
+    const seconds = Math.max(0, Math.floor((countdownTarget - now) / 1000));
     const hh = String(Math.floor(seconds / 3600)).padStart(2, "0");
     const mm = String(Math.floor((seconds % 3600) / 60)).padStart(2, "0");
     const ss = String(seconds % 60).padStart(2, "0");
-    return { status: locked ? "已封盘" : "即将开盘", countdown: `${hh} : ${mm} : ${ss}`, locked, mask: lottery?.mask_enabled !== 0 };
+    return { status: locked ? "即将开盘" : "开盘中", countdown: `${hh} : ${mm} : ${ss}`, locked, mask: lottery?.mask_enabled !== 0 };
   }
   if (!openTime) return { status: "时间待定", countdown: "-- : -- : --", locked: false, mask: lottery?.mask_enabled !== 0 };
   const target = new Date(openTime.replace(" ", "T")).getTime();
@@ -144,10 +152,72 @@ function lotteryTiming(lottery: Lottery | undefined, now: number) {
 function Header({ name, logout, announcement, balances, lotteries, selectableLottery = false, selectedLotteryId, onSelectLottery }: { name: string; logout: () => void; announcement: Announcement; balances: Balances; lotteries: Lottery[]; selectableLottery?: boolean; selectedLotteryId?: number | null; onSelectLottery?: (id: number) => void }) {
   const { modal } = AntdApp.useApp();
   const [now, setNow] = useState(Date.now());
+  const [lineOpen, setLineOpen] = useState(false);
+  const [lineLoading, setLineLoading] = useState(false);
+  const [lineResults, setLineResults] = useState<Array<{ line: number; delay: number | null; fastest?: boolean }>>([]);
+  const [lineCountdown, setLineCountdown] = useState<number | null>(null);
+  const lineRedirectTimer = useRef<number | null>(null);
+  const lineCountdownTimer = useRef<number | null>(null);
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1_000);
     return () => window.clearInterval(timer);
   }, []);
+  async function checkLines() {
+    if (lineRedirectTimer.current !== null) window.clearTimeout(lineRedirectTimer.current);
+    if (lineCountdownTimer.current !== null) window.clearInterval(lineCountdownTimer.current);
+    setLineOpen(true);
+    setLineLoading(true);
+    setLineResults([]);
+    setLineCountdown(null);
+    try {
+      const response = await getLineOptions();
+      const options = response.data?.data?.list || [];
+      const results = await Promise.all(options.map(async (option) => {
+        const started = performance.now();
+        const controller = new AbortController();
+        const timeout = window.setTimeout(() => controller.abort(), 6000);
+        try {
+          const response = await fetch(`${option.url}/prod_api/v1/health?line=${option.line}&t=${Date.now()}`, { mode: "cors", cache: "no-store", signal: controller.signal });
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          return { line: option.line, delay: Math.max(1, Math.round(performance.now() - started)) };
+        } catch {
+          return { line: option.line, delay: null };
+        } finally { window.clearTimeout(timeout); }
+      }));
+      const available = results.filter((item) => item.delay !== null) as Array<{ line: number; delay: number }>;
+      const fastest = available.sort((a, b) => a.delay - b.delay)[0]?.line;
+      setLineResults(results.map((item) => ({ ...item, fastest: item.line === fastest })));
+      const target = options.find((option) => option.line === fastest)?.url;
+      if (target) {
+        setLineCountdown(3);
+        lineCountdownTimer.current = window.setInterval(() => setLineCountdown((value) => value !== null && value > 1 ? value - 1 : 1), 1_000);
+        lineRedirectTimer.current = window.setTimeout(() => {
+          if (lineCountdownTimer.current !== null) window.clearInterval(lineCountdownTimer.current);
+          const destination = new URL(`${window.location.pathname}${window.location.search}${window.location.hash}`, `${target}/`);
+          const token = localStorage.getItem("user_token");
+          if (token) destination.searchParams.set("auto_token", token);
+          destination.searchParams.set("line_switch", "1");
+          window.location.assign(destination.toString());
+        }, 3_000);
+      }
+    } catch (error) {
+      modal.error({ title: "线路检测失败", content: apiErrorMessage(error, "暂时无法获取线路") });
+    } finally { setLineLoading(false); }
+  }
+  function closeLineModal() {
+    if (lineRedirectTimer.current !== null) window.clearTimeout(lineRedirectTimer.current);
+    if (lineCountdownTimer.current !== null) window.clearInterval(lineCountdownTimer.current);
+    lineRedirectTimer.current=null;
+    lineCountdownTimer.current=null;
+    setLineCountdown(null);
+    setLineOpen(false);
+  }
+  const delayClass = (delay: number | null) => {
+    if (delay === null) return "line-delay-failed";
+    if (delay <= 100) return "line-delay-fast";
+    if (delay <= 300) return "line-delay-medium";
+    return "line-delay-slow";
+  };
   return (
     <>
       <button className="notice" type="button" onClick={() => modal.info({
@@ -194,7 +264,7 @@ function Header({ name, logout, announcement, balances, lotteries, selectableLot
               {title}
             </NavLink>
           ))}
-          <button className="line" onClick={() => alert("正在测速 10 条线路…")}>
+          <button className="line" onClick={() => void checkLines()}>
             <span className="nav-icon-shell"><img className="nav-icon" src={swapIcon} alt="" aria-hidden="true" /></span>
             <em>更换线路</em>
           </button>
@@ -204,6 +274,14 @@ function Header({ name, logout, announcement, balances, lotteries, selectableLot
           </button>
         </nav>
       </header>
+      <Modal title="切换线路" open={lineOpen} onCancel={closeLineModal} footer={null} width={460} destroyOnHidden>
+        <div className="line-tip">测速完成后将 <b>自动跳转</b> 至 <b>速度最快</b> 的线路</div>
+        <div className="line-tip">数字越 <b>小</b>，速度越 <b>快</b></div>
+        {lineLoading && <div className="line-modal-loading">正在检测线路…</div>}
+        {!lineLoading && lineResults.length === 0 && <div className="line-modal-empty">当前站点暂无可用线路</div>}
+        {lineResults.length > 0 && <div className="line-table"><div className="line-table-row line-table-head"><span>线路</span><span>延时</span></div>{lineResults.map((item) => <div className="line-table-row" key={item.line}><span className="line-name">线路{item.line}</span><strong className={delayClass(item.delay)}>{item.delay === null ? "检测失败" : <>{item.delay}ms{item.fastest && <em className="line-fastest">最快</em>}</>}</strong></div>)}</div>}
+        {lineCountdown !== null && <div className="line-countdown"><b>{lineCountdown}</b> 秒后自动跳转至最快线路</div>}
+      </Modal>
     </>
   );
 }
@@ -226,10 +304,11 @@ function QuickEntry({ lotteries, selectedLottery }: { lotteries: Lottery[]; sele
   const showMask = locked && timing.mask;
   const [generatedLines, setGeneratedLines] = useState<QuickEntryLine[]>([]);
   const [generatedTotal, setGeneratedTotal] = useState({ count: 0, amount: "0.00" });
+  const [generatedFormattedText, setGeneratedFormattedText] = useState("");
   const [generating, setGenerating] = useState(false);
   const [warningAmount, setWarningAmount] = useState("0");
   const suppressResultRecognition = useRef(false);
-  useEffect(() => { getRules().then((response) => { if (response.data?.data) setRuleSettings(response.data.data); }).catch(() => undefined); }, []);
+  useEffect(() => { getRules().then((response) => { if (response.data?.data) setRuleSettings(response.data.data); }).catch(() => setRuleSettings(undefined)); }, []);
   useEffect(() => { getQuickSettings().then((response) => { const data = response.data?.data; if (!data) return; setTags(data.tags || []); const p = data.preferences || {}; setLottery(String(p.lottery || lotteries[0]?.name || "福彩3D")); setWarningAmount(String(p.warningAmount || "0")); setOptions([p.autoBet !== false, p.recognize === true, p.copyTicket === true, p.copyHeader === true, p.textMode === true]); }).catch(() => undefined); }, [lotteries]);
   const [options, setOptions] = useState([true, false, false, false, false]);
   const optionTips = [
@@ -241,11 +320,24 @@ function QuickEntry({ lotteries, selectedLottery }: { lotteries: Lottery[]; sele
   ];
   const optionNames = ["粘贴后自动下注", "立即识别", "自动复制小票", "复制小票头尾", "文本或号码"];
   const persistPreferences = (nextOptions: boolean[], nextLottery = lottery, nextWarning = warningAmount) => { setOptions(nextOptions); void saveQuickSettings({ autoBet: nextOptions[0], recognize: nextOptions[1], copyTicket: nextOptions[2], copyHeader: nextOptions[3], textMode: nextOptions[4], lottery: nextLottery, warningAmount: nextWarning }).catch((error) => message.error(apiErrorMessage(error, "设置保存失败"))); };
-  const generateText = async (sourceText: string, showMessage = true) => { if (!sourceText.trim()) { if (showMessage) message.warning("请输入投注文本"); return false; } setGenerating(true); try { const response = await previewQuickEntry({ text: sourceText, lottery }); const data = response.data?.data; setGeneratedLines(data?.lines || []); setGeneratedTotal({ count: data?.count || 0, amount: data?.amount || "0.00" }); const warning = Number(warningAmount); if (warning > 0 && Number(data?.amount || 0) >= warning) message.warning(`总金额已达到预警金额 ¥${displayAmount(warningAmount)}`); return Boolean(data?.lines?.some((line) => line.status === "success")); } catch (error) { setGeneratedLines([]); setGeneratedTotal({ count: 0, amount: "0.00" }); message.error(apiErrorMessage(error, "生成失败")); return false; } finally { setGenerating(false); } };
+  const generateText = async (sourceText: string, showMessage = true): Promise<QuickPreview | null> => { if (!sourceText.trim()) { if (showMessage) message.warning("请输入投注文本"); return null; } setGenerating(true); try { const response = await previewQuickEntry({ text: sourceText, lottery }); const data = response.data?.data || null; setGeneratedLines(data?.lines || []); setGeneratedTotal({ count: data?.count || 0, amount: data?.amount || "0.00" }); setGeneratedFormattedText(data?.formatted_text || sourceText); const warning = Number(warningAmount); if (warning > 0 && Number(data?.amount || 0) >= warning) message.warning(`总金额已达到预警金额 ¥${displayAmount(warningAmount)}`); return data; } catch (error) { setGeneratedLines([]); setGeneratedTotal({ count: 0, amount: "0.00" }); setGeneratedFormattedText(""); message.error(apiErrorMessage(error, "生成失败")); return null; } finally { setGenerating(false); } };
   const generate = () => void generateText(text);
   useEffect(() => { if (suppressResultRecognition.current) { suppressResultRecognition.current = false; return; } if (!options[1] || !text.trim()) return; const timer = window.setTimeout(() => { void generateText(text, false); }, 450); return () => window.clearTimeout(timer); }, [text, options[1], lottery]);
-  const copyTicket = async (sourceText: string, includeHeader: boolean) => { const body = generatedLines.filter((line) => line.status === "success").map((line) => `${line.number_text} ${line.category || ""}各${line.amount}`).join("\n"); const header = includeHeader ? `快排小票\n${new Date().toLocaleString()}\n` : ""; try { await navigator.clipboard.writeText(`${header}${body || sourceText}`); message.success("小票已复制"); } catch { message.error("复制失败，请检查浏览器剪贴板权限"); } };
-  const place = () => { const valid = generatedLines.filter((line) => line.status === "success"); if (!valid.length) { message.warning("请先生成有效投注内容"); return; } modal.confirm({ title: "确认下注", content: `共 ${generatedTotal.count} 码，共 ¥ ${generatedTotal.amount}，确认提交吗？`, okText: "确认下注", cancelText: "取消", onOk: async () => { try { const response = await placeQuickEntry({ text, lottery, confirmed: true }); message.success(response.data?.message || "下注提交成功"); if (options[2]) await copyTicket(text, options[3]); setGeneratedLines([]); setGeneratedTotal({ count: 0, amount: "0.00" }); window.dispatchEvent(new Event("bet-records-updated")); window.dispatchEvent(new CustomEvent("profile-updated", { detail: { amount: response.data?.data?.amount || generatedTotal.amount } })); } catch (error) { message.error(apiErrorMessage(error, "下注失败")); } } }); };
+  const copyTicket = async (sourceText: string, lines: QuickEntryLine[], includeHeader: boolean) => { const body = lines.filter((line) => line.status === "success").map((line) => `${line.number_text} ${line.category || ""}各${line.amount}`).join("\n"); const ticket = options[4] ? sourceText : body || sourceText; const header = includeHeader ? `快排小票\n${new Date().toLocaleString()}\n` : ""; try { await navigator.clipboard.writeText(`${header}${ticket}`); message.success("小票已复制"); } catch { message.error("复制失败，请检查浏览器剪贴板权限"); } };
+  const submitBet = async (sourceText: string, preview: QuickPreview, showSuccess = true) => {
+    const valid = preview.lines.filter((line) => line.status === "success");
+    if (!valid.length) { if (showSuccess) message.warning("请先生成有效投注内容"); return false; }
+    try {
+      const response = await placeQuickEntry({ text: sourceText, lottery, confirmed: true });
+      if (showSuccess) message.success(response.data?.message || "下注提交成功");
+      if (options[2]) await copyTicket(sourceText, valid, options[3]);
+      setGeneratedLines([]); setGeneratedTotal({ count: 0, amount: "0.00" });
+      window.dispatchEvent(new Event("bet-records-updated"));
+      window.dispatchEvent(new CustomEvent("profile-updated", { detail: { amount: response.data?.data?.amount || preview.amount } }));
+      return true;
+    } catch (error) { message.error(apiErrorMessage(error, "下注失败")); return false; }
+  };
+  const place = () => { const preview: QuickPreview = { lines: generatedLines, count: generatedTotal.count, amount: generatedTotal.amount, formatted_text: generatedFormattedText || text }; if (!preview.lines.some((line) => line.status === "success")) { message.warning("请先生成有效投注内容"); return; } modal.confirm({ title: "确认下注", content: `共 ${preview.count} 码，共 ¥ ${preview.amount}，确认提交吗？`, okText: "确认下注", cancelText: "取消", onOk: () => submitBet(text, preview) }); };
   return (
     <div className={`entry${showMask ? " entry-locked" : ""}`}>
       {showMask && <div className="entry-lock-overlay" aria-label="当前不可下注" />}
@@ -278,8 +370,9 @@ function QuickEntry({ lotteries, selectedLottery }: { lotteries: Lottery[]; sele
               onPaste={(event) => {
                 const pasted = event.clipboardData.getData("text").slice(0, 10000);
                 event.preventDefault();
+                if (options[0] && options[1]) suppressResultRecognition.current = true;
                 setText(pasted);
-                if (options[0]) window.setTimeout(() => { void generateText(pasted); }, 0);
+                if (options[0]) window.setTimeout(() => { void generateText(pasted).then((preview) => { if (preview) void submitBet(pasted, preview); }); }, 0);
               }}
               placeholder="请复制文本"
               maxLength={10000}
@@ -307,7 +400,7 @@ function QuickEntry({ lotteries, selectedLottery }: { lotteries: Lottery[]; sele
                 <Switch
                   checked={options[index]}
                   checkedChildren={index === 4 ? "文" : "是"}
-                  unCheckedChildren={index === 4 ? "文" : "否"}
+                  unCheckedChildren={index === 4 ? "号" : "否"}
                   onChange={(checked) => { const next = options.map((value, item) => item === index ? checked : value); persistPreferences(next); }}
                 />
               </label>
@@ -383,6 +476,15 @@ function Generic({ title }: { title: string }) {
     </div>
   );
 }
+function RulesPage({ selectedLottery }: { selectedLottery?: Lottery }) {
+  const [rules, setRules] = useState<RuleSettings>();
+  const [loading, setLoading] = useState(false);
+  useEffect(() => { setLoading(true); getRules({ lottery: selectedLottery?.code || selectedLottery?.name || "" }).then((response) => setRules(response.data?.data)).catch(() => setRules(undefined)).finally(() => setLoading(false)); }, [selectedLottery?.id]);
+  const content=rules?.content || "";
+  const isHtml=/<\/?[a-z][^>]*>/i.test(content);
+  const safeHtml=isHtml ? DOMPurify.sanitize(content, { FORBID_TAGS: ["script", "iframe", "style"], FORBID_ATTR: ["onerror", "onclick", "onload"] }) : "";
+  return <div className="rules-page"><section className="rules-content">{content ? (isHtml ? <div dangerouslySetInnerHTML={{ __html: safeHtml }} /> : <div>{content}</div>) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无规则内容" />}{loading && <div className="page-local-loading" role="status" aria-label="加载中" />}</section></div>;
+}
 function BettingRecords() {
   const { message } = AntdApp.useApp();
   const today = dayjs().format("YYYY-MM-DD");
@@ -390,17 +492,56 @@ function BettingRecords() {
   const loadRecords = (nextPage = page) => { setLoading(true); getBetRecords({ status: status === "all" ? undefined : status, from, to, source, page: nextPage, page_size: 20 }).then((response) => { setRecords(response.data?.data?.list || []); setTotal(Number(response.data?.data?.total || 0)); setPage(nextPage); }).catch((error) => { setRecords([]); setTotal(0); message.error(apiErrorMessage(error, "投注记录加载失败")); }).finally(() => setLoading(false)); };
   useEffect(() => { loadRecords(1); }, []);
   const exportRecords = () => { if (!records.length) { message.info("当前没有可导出的记录"); return; } const csv=["期号,笔数/金额,中奖金额,原始文本,封盘情况,投注时间",...records.map((r) => [r.issue_no,`${r.bet_count}/${r.amount}`,r.win_amount,`"${(r.source_text || "").replaceAll('"','""')}"`,r.sealed ? "已封盘" : "-",r.placed_at].join(","))].join("\n"); const url=URL.createObjectURL(new Blob([`\ufeff${csv}`],{type:"text/csv;charset=utf-8"})); const a=document.createElement("a"); a.href=url; a.download=`投注记录-${from}-${to}.csv`; a.click(); URL.revokeObjectURL(url); };
-  return <div className="records-panel"><div className="records-filter"><label className="records-field records-prize"><span>中奖</span><select value={status} onChange={(event) => setStatus(event.target.value)}><option value="all">全部</option><option value="won">仅中奖</option><option value="unwon">未中奖</option></select></label><label className="records-field records-source"><span>原始文本搜索</span><textarea rows={1} maxLength={200} value={source} onChange={(event) => setSource(event.target.value)} placeholder="输入文本" /></label><div className="records-time-range"><span>投注时间</span><DatePicker locale={zhCN} showTime allowClear={false} value={dayjs(`${from} 00:00:00`)} format="YYYY-MM-DD HH:mm:ss" onChange={(value) => value && setFrom(value.format("YYYY-MM-DD"))} /><em>至</em><DatePicker locale={zhCN} showTime allowClear={false} value={dayjs(`${to} 23:59:59`)} format="YYYY-MM-DD HH:mm:ss" onChange={(value) => value && setTo(value.format("YYYY-MM-DD"))} /></div><div className="records-buttons"><button type="button" className="records-search" onClick={() => loadRecords(1)} disabled={loading}><SearchOutlined /> 搜索</button><button type="button" className="records-export" onClick={exportRecords}><ExportOutlined /> 导出金额</button></div></div><div className="records-table"><div className="records-head"><span>期号</span><span>笔数/金额</span><span>中奖笔数/金额</span><span>文本</span><span>ⓘ 封盘情况</span><span>投注时间</span><span>退码</span></div>{records.length === 0 ? <div className="records-empty">{loading ? <span>加载中...</span> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" />}</div> : records.map((record) => <div className="records-row" key={record.id}><span>{record.issue_no}</span><span>{record.bet_count}/{record.amount}</span><span>{record.win_amount}</span><span>{record.source_text || "-"}</span><span>{record.sealed ? "已封盘" : "-"}</span><span>{record.placed_at}</span><span>{record.status === "refunded" ? "已退" : "-"}</span></div>)}</div><div className="records-pagination"><span>共 {total} 条</span><button type="button" disabled={page<=1 || loading} onClick={() => loadRecords(page-1)}>上一页</button><span>第 {page} 页</span><button type="button" disabled={page*20>=total || loading} onClick={() => loadRecords(page+1)}>下一页</button></div></div>;
+  return <div className="records-panel"><div className="records-filter"><label className="records-field records-prize"><span>中奖</span><select value={status} onChange={(event) => setStatus(event.target.value)}><option value="all">全部</option><option value="won">仅中奖</option><option value="unwon">未中奖</option></select></label><label className="records-field records-source"><span>原始文本搜索</span><textarea rows={1} maxLength={200} value={source} onChange={(event) => setSource(event.target.value)} placeholder="输入文本" /></label><div className="records-time-range"><span>投注时间</span><DatePicker locale={zhCN} allowClear={false} value={dayjs(from)} format="YYYY-MM-DD" onChange={(value) => value && setFrom(value.format("YYYY-MM-DD"))} /><em>至</em><DatePicker locale={zhCN} allowClear={false} value={dayjs(to)} format="YYYY-MM-DD" onChange={(value) => value && setTo(value.format("YYYY-MM-DD"))} /></div><div className="records-buttons"><button type="button" className="records-search" onClick={() => loadRecords(1)} disabled={loading}><SearchOutlined /> 搜索</button><button type="button" className="records-export" onClick={exportRecords}><ExportOutlined /> 导出金额</button></div></div><div className="records-table"><div className="records-head"><span>期号</span><span>笔数/金额</span><span>中奖笔数/金额</span><span>文本</span><span>ⓘ 封盘情况</span><span>投注时间</span><span>退码</span></div>{records.length ? records.map((record) => <div className="records-row" key={record.id}><span>{record.issue_no}</span><span>{record.bet_count}/{record.amount}</span><span>{record.win_amount}</span><span>{record.source_text || "-"}</span><span>{record.sealed ? "已封盘" : "-"}</span><span>{record.placed_at}</span><span>{record.status === "refunded" ? "已退" : "-"}</span></div>) : !loading && <div className="records-empty"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" /></div>}{loading && <div className="page-local-loading" role="status" aria-label="加载中" />}</div><div className="records-pagination"><span>共 {total} 条</span><button type="button" disabled={page<=1 || loading} onClick={() => loadRecords(page-1)}>上一页</button><span>第 {page} 页</span><button type="button" disabled={page*20>=total || loading} onClick={() => loadRecords(page+1)}>下一页</button></div></div>;
+}
+
+function normalizeDetailLottery(lottery?: string) {
+  const value = String(lottery || "").trim();
+  if (!value) return "其他";
+  if (["福", "福彩", "福彩3D", "FC3D"].includes(value)) return "福彩3D";
+  if (["体", "体彩", "排列三", "PL3"].includes(value)) return "排列三";
+  return value;
+}
+
+function normalizeDetailPlay(detail: BetDetail) {
+  const text = [detail.category, detail.play_type, detail.source_text, detail.number_text].filter(Boolean).join(" ").replace(/\s+/g, "");
+  if (/组六/.test(text)) return /多码|五码|四码|六码|七码|八码|九码|全包/.test(text) ? "组六多码" : "组六";
+  if (/组三/.test(text)) return /多码|五码|四码|六码|七码|八码|九码|全包/.test(text) ? "组三多码" : "组三";
+  if (/对子/.test(text)) return "对子";
+  if (/双飞/.test(text)) return "双飞";
+  if (/胆拖|拖/.test(text)) return "胆拖";
+  if (/直选|单式|直/.test(text)) return "直选";
+  if (/定位胆|一定位/.test(text)) return "定位胆";
+  if (/二定位|2D/.test(text)) return "二定位";
+  if (/和值/.test(text)) return "和值";
+  if (/跨度/.test(text)) return "跨度";
+  if (/豹子/.test(text)) return "豹子";
+  if (/通选/.test(text)) return "通选";
+  return String(detail.category || detail.play_type || "投注").replace(/^体$|^福$|^福彩3D$|^排列三$/, "投注");
 }
 
 function SideBetRecords({ onMore, panelRight, onToggleSide }: { onMore: () => void; panelRight: boolean; onToggleSide: () => void }) {
   const { message, modal } = AntdApp.useApp();
   const [records, setRecords] = useState<BetRecord[]>([]); const [amountTotal, setAmountTotal] = useState("0.00"); const [loading, setLoading] = useState(false); const [details, setDetails] = useState<BetDetail[]>([]); const [detailRecord, setDetailRecord] = useState<BetRecord>(); const [detailMode, setDetailMode] = useState<"detail" | "numbers">("detail"); const [detailLoading, setDetailLoading] = useState(false);
+  const detailGroups = useMemo(() => {
+    const groups = new Map<string, BetDetail[]>();
+    for (const detail of details) {
+      const lottery = normalizeDetailLottery(detail.lottery);
+      const list = groups.get(lottery) || [];
+      list.push(detail);
+      groups.set(lottery, list);
+    }
+    return Array.from(groups.entries()).map(([lottery, rows]) => ({
+      lottery,
+      rows,
+      playNames: Array.from(new Set(rows.map((row) => normalizeDetailPlay(row)))).filter(Boolean),
+    }));
+  }, [details]);
   const load = () => { const today=dayjs().format("YYYY-MM-DD"); setLoading(true); getBetRecords({ from: today, to: today, page: 1, page_size: 100 }).then((response) => { setRecords(response.data?.data?.list || []); setAmountTotal(response.data?.data?.amount_total || "0.00"); }).catch((error) => { setRecords([]); setAmountTotal("0.00"); message.error(apiErrorMessage(error,"下单记录加载失败")); }).finally(() => setLoading(false)); };
   useEffect(() => { load(); const refresh=() => load(); window.addEventListener("bet-records-updated",refresh); return () => window.removeEventListener("bet-records-updated",refresh); }, []);
   const showRecord = async (record: BetRecord, mode: "detail" | "numbers") => { setDetailRecord(record); setDetailMode(mode); setDetailLoading(true); try { const response=await getBetDetails({ bet_record_id: record.id, page: 1, page_size: 100 }); setDetails(response.data?.data?.list || []); } catch (error) { setDetails([]); message.error(apiErrorMessage(error,"注单详情加载失败")); } finally { setDetailLoading(false); } };
   const refund = (record: BetRecord) => modal.confirm({ title:"确认退单", content:`确定退回第 ${record.issue_no} 期注单，金额 ¥ ${record.amount} 吗？`, okText:"确认退单", cancelText:"取消", okButtonProps:{danger:true}, onOk:async()=>{ try { const response=await refundBetRecord(record.id); message.success(response.data?.message || "退单成功"); setDetailRecord(undefined); await load(); window.dispatchEvent(new Event("profile-updated")); } catch(error) { message.error(apiErrorMessage(error,"退单失败")); } } });
-  return <><div className="side-total"><span>总金额: <b>{amountTotal}</b></span><div className="side-actions"><button type="button" onClick={onMore}>更多</button><button className="side-right" type="button" onClick={onToggleSide}><img className={panelRight ? "is-left" : ""} src={arrowRightIcon} alt="" aria-hidden="true" />{panelRight ? "居左" : "居右"}</button></div></div><div className="side-record-list">{records.map((record)=><article className={`side-record-item${record.status==="refunded"?" refunded":""}`} key={record.id}><time>{record.placed_at}</time><div className="side-record-text"><b>{record.lottery || "-"}</b><p>{record.source_text || "-"}</p></div><footer><strong>{record.amount}</strong><div><button type="button" className="side-record-action detail" onClick={()=>showRecord(record,"detail")}>详</button><button type="button" className="side-record-action numbers" onClick={()=>showRecord(record,"numbers")}>号</button><button type="button" className="side-record-action refund" disabled={!record.can_refund || loading} title={record.can_refund?`开奖时间 ${record.open_time}`:"仅开奖前可以退单"} onClick={()=>refund(record)}>{record.status==="refunded"?"已退":"退"}</button></div></footer></article>)}{!records.length&&!loading&&<div className="side-record-empty"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" /></div>}</div><Modal className="record-detail-modal" open={Boolean(detailRecord)} title={detailRecord?`${detailMode==="detail"?"注单详情":"号码"} · ${detailRecord.issue_no}`:""} footer={null} onCancel={()=>setDetailRecord(undefined)} width={760}>{detailLoading?<div className="record-detail-loading">加载中...</div>:details.length?<div className="record-detail-list">{details.map((detail)=><div className="record-detail-line" key={detail.id}><span className={detail.lottery==="福彩3D"?"fu":"ti"}>{detail.lottery==="福彩3D"?"福":detail.lottery==="排列三"?"体":detail.lottery||"-"}</span>{detailMode==="detail"?<><b>{detail.category||detail.play_type||"投注"}</b><p>{detail.source_text||detail.number_text}</p><strong>¥ {detail.amount}</strong></>:<div className="record-number-chips">{detail.number_text.split(/[\s,，]+/).filter(Boolean).map((number,index)=><i key={`${number}-${index}`}>{number}</i>)}</div>}</div>)}</div>:<Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" />}</Modal></>;
+  return <><div className="side-total"><span>总金额: <b>{amountTotal}</b></span><div className="side-actions"><button type="button" onClick={onMore}>更多</button><button className="side-right" type="button" onClick={onToggleSide}><img className={panelRight ? "is-left" : ""} src={arrowRightIcon} alt="" aria-hidden="true" />{panelRight ? "居左" : "居右"}</button></div></div><div className="side-record-list">{records.map((record)=><article className={`side-record-item${record.status==="refunded"?" refunded":""}`} key={record.id}><time>{record.placed_at}</time><div className="side-record-text"><b>{record.lottery || "-"}</b><p>{record.source_text || "-"}</p></div><footer><strong>{record.amount}</strong><div><button type="button" className="side-record-action detail" onClick={()=>showRecord(record,"detail")}>详</button><button type="button" className="side-record-action numbers" onClick={()=>showRecord(record,"numbers")}>号</button><button type="button" className="side-record-action refund" disabled={!record.can_refund || loading} title={record.can_refund?`开奖时间 ${record.open_time}`:"仅开奖前可以退单"} onClick={()=>refund(record)}>{record.status==="refunded"?"已退":"退"}</button></div></footer></article>)}</div><Modal className="record-detail-modal side-record-detail-modal" open={Boolean(detailRecord)} title={detailRecord?`${detailMode==="detail"?"注单详情":"号码"}`:""} footer={<div className="record-detail-footer"><button type="button" className="record-detail-close-btn" onClick={()=>setDetailRecord(undefined)}>关闭</button></div>} onCancel={()=>setDetailRecord(undefined)} width={1000}>{detailLoading?<div className="record-detail-loading">加载中...</div>:details.length&&detailMode==="detail"?<div className="record-detail-reference"><div className="record-detail-tabs">{detailGroups.map((group) => <span key={group.lottery} className={group.lottery === "福彩3D" ? "fu" : "ti"}>{group.lottery}</span>)}</div>{detailGroups.map((group) => <section className={`record-detail-group ${group.lottery === "福彩3D" ? "fu" : "ti"}`} key={group.lottery}><h3>{group.lottery}</h3><h4>{group.playNames.length ? group.playNames.join("、") : "投注"}</h4><table className="record-detail-table"><colgroup><col /><col /><col /><col /></colgroup><thead><tr><th>号码</th><th>金额</th><th>赔率</th><th>中奖</th></tr></thead><tbody>{group.rows.map((detail) => <tr key={detail.id}><td>{detail.number_text || detail.source_text || "-"}</td><td>{detail.amount}</td><td>{detail.odds || "-"}</td><td>{detail.win_amount || "---"}</td></tr>)}</tbody></table></section>)}</div>:details.length?<div className="record-number-chips">{details.flatMap((detail) => (detail.number_text || "").split(/[\s,，]+/).filter(Boolean).map((number, index) => <i key={`${detail.id}-${number}-${index}`}>{number}</i>))}</div>:<Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" />}</Modal></>;
 }
 function StopDrop() {
   const { message } = AntdApp.useApp();
@@ -419,7 +560,7 @@ function StopDrop() {
         <button type="button" className="stop-search-button" onClick={() => load()} disabled={loading}><SearchOutlined /> 搜索</button>
       </div>
       <div className="stop-sort"><strong>停押和降水</strong><span>按下注时间排序:</span><label><input type="radio" name="stop-sort" checked={sort === "desc"} onChange={() => { setSort("desc"); load("desc"); }} /> 倒序</label><label><input type="radio" name="stop-sort" checked={sort === "asc"} onChange={() => { setSort("asc"); load("asc"); }} /> 正序</label></div>
-      <div className="stop-table"><div className="stop-head"><span>编号</span><span>期号</span><span>下单时间</span><span>号码</span><span>应打/实打/停押</span><span>原水/实水/降水</span><span>查看文本</span></div>{rows.length ? rows.map((row) => <div className="stop-row" key={row.id}><span>{row.id}</span><span>{row.issue_no}</span><span>{row.placed_at}</span><span>{row.number_text}</span><span>{row.original_amount}/{row.actual_amount}/{row.stop_amount}</span><span>{row.original_odds || "-"}/{row.actual_odds || "-"}/{row.drop_odds || "-"}</span><span>{row.source_text || "-"}</span></div>) : <div className="records-empty">{loading ? <span>加载中...</span> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" />}</div>}</div>
+      <div className="stop-table"><div className="stop-head"><span>编号</span><span>期号</span><span>下单时间</span><span>号码</span><span>应打/实打/停押</span><span>原水/实水/降水</span><span>查看文本</span></div>{rows.length ? rows.map((row) => <div className="stop-row" key={row.id}><span>{row.id}</span><span>{row.issue_no}</span><span>{row.placed_at}</span><span>{row.number_text}</span><span>{row.original_amount}/{row.actual_amount}/{row.stop_amount}</span><span>{row.original_odds || "-"}/{row.actual_odds || "-"}/{row.drop_odds || "-"}</span><span>{row.source_text || "-"}</span></div>) : !loading && <div className="records-empty"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" /></div>}{loading && <div className="page-local-loading" role="status" aria-label="加载中" />}</div>
     </div>
   );
 }
@@ -427,6 +568,8 @@ function BetDetailsPage({ lotteries, selectedLotteryId }: { lotteries: Lottery[]
   const { message } = AntdApp.useApp();
   const categories = ["所有", "一码定位", "口XX", "X口X", "XX口", "二码定位", "口口X", "口X口", "X口口", "直选", "独胆", "双飞", "组选", "组三多码", "组三二码", "组三三码", "组三四码", "组三五码", "组三六码", "组三七码", "组三八码", "组三九码", "组三全包", "组六多码", "组六四码", "组六五码", "组六六码", "组六七码", "组六八码", "组六九码", "组六全包", "复式多码", "跨度", "和值", "大小单双", "豹子全包", "对子全包"];
   const [rows, setRows] = useState<BetDetail[]>([]);
+  const [previewRow, setPreviewRow] = useState<BetDetail>();
+  const [previewMode, setPreviewMode] = useState<"text" | "numbers">("text");
   const [number, setNumber] = useState(""); const [metric, setMetric] = useState("odds"); const [min, setMin] = useState(""); const [max, setMax] = useState(""); const [category, setCategory] = useState("所有"); const [sort, setSort] = useState("desc"); const [winning, setWinning] = useState(false); const [loading, setLoading] = useState(false); const [issue, setIssue] = useState(""); const [issues, setIssues] = useState<Array<{ code: string; draw_day: string | null }>>([]);
   const selectedLottery=lotteries.find((item) => item.id === selectedLotteryId) || lotteries[0];
   const load = (overrides: Record<string, unknown> = {}) => { setLoading(true); getBetDetails({ number, metric, min, max, category, sort, lottery: selectedLottery?.name, issue_no: issue || undefined, winning: winning ? 1 : undefined, page: 1, page_size: 50, ...overrides }).then((response) => setRows(response.data?.data?.list || [])).catch((error) => { setRows([]); message.error(apiErrorMessage(error, "下注明细加载失败")); }).finally(() => setLoading(false)); };
@@ -448,56 +591,136 @@ function BetDetailsPage({ lotteries, selectedLotteryId }: { lotteries: Lottery[]
     </div>
     <div className="bet-detail-results">
       <div className="bet-detail-sort"><strong>总货明细(红色为退码)</strong><span>按下注时间排序:</span><label><input type="radio" name="detail-sort" checked={sort === "desc"} onChange={() => { setSort("desc"); load({ sort: "desc" }); }} /> 倒序</label><label><input type="radio" name="detail-sort" checked={sort === "asc"} onChange={() => { setSort("asc"); load({ sort: "asc" }); }} /> 正序</label><select aria-label="期号" value={issue} onChange={(event) => { const next=event.target.value; setIssue(next); load({ issue_no: next }); }}>{issues.length ? issues.map((item) => <option key={item.code} value={item.code}>{item.draw_day ? dayjs(item.draw_day).format("M-D") : "--"}({item.code})</option>) : <option value="">暂无期号</option>}</select></div>
-      <div className="bet-detail-table"><div className="bet-detail-head"><span>注单编号</span><span>下单时间</span><span>号码</span><span>金额</span><span>赔率</span><span>中奖</span><span>回水</span><span>离线回水</span><span>盈亏</span><span>状态</span><span>查看文本</span></div>{rows.length ? rows.map((row) => <div className="bet-detail-row" key={row.id}><span>{row.id}</span><span>{row.placed_at}</span><span>{row.number_text}</span><span>{row.amount}</span><span>{row.odds || "-"}</span><span>{row.win_amount}</span><span>{row.rebate}</span><span>-</span><span>{(Number(row.win_amount)-Number(row.amount)+Number(row.rebate)).toFixed(2)}</span><span>{({pending:"未结算",won:"中奖",unwon:"未中奖"} as Record<string,string>)[row.status] || row.status}</span><span title={row.source_text || ""}>{row.source_text ? "查看" : "-"}</span></div>) : <div className="bet-detail-empty">{loading ? <span>加载中...</span> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" />}</div>}</div>
+      <div className="bet-detail-table"><div className="bet-detail-head"><span>注单编号</span><span>下单时间</span><span>号码</span><span>金额</span><span>赔率</span><span>中奖</span><span>回水</span><span>离线回水</span><span>盈亏</span><span>状态</span><span>查看文本</span></div>{rows.length ? rows.map((row) => <div className="bet-detail-row" key={row.id}><span>{row.id}</span><span>{row.placed_at}</span><button type="button" className="bet-number-link" onClick={() => { setPreviewRow(row); setPreviewMode("numbers"); }}>{row.number_text || "-"}</button><span>{row.amount}</span><span>{row.odds || "-"}</span><span>{row.win_amount}</span><span>{row.rebate}</span><span>-</span><span>{(Number(row.win_amount)-Number(row.amount)+Number(row.rebate)).toFixed(2)}</span><span>{({pending:"未结算",won:"中奖",unwon:"未中奖",refunded:"已退码",cancelled:"已取消",failed:"失败"} as Record<string,string>)[row.status] || "未知状态"}</span><button type="button" className="bet-text-link" disabled={!row.source_text} onClick={() => { setPreviewRow(row); setPreviewMode("text"); }}>{row.source_text ? "查看" : "-"}</button></div>) : !loading && <div className="bet-detail-empty"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" /></div>}{loading && <div className="page-local-loading" role="status" aria-label="加载中" />}</div>
+      <Modal className="record-detail-modal" open={Boolean(previewRow)} title={previewRow ? `${previewMode === "text" ? "原始投注文本" : "投注号码"} · 注单 ${previewRow.id}` : ""} footer={null} onCancel={() => setPreviewRow(undefined)} width={760}>
+        {previewRow && previewMode === "text" ? <pre className="bet-text-preview">{previewRow.source_text || "暂无原始文本"}</pre> : <div className="bet-number-preview">{(previewRow?.number_text || "").split(/[\s,，]+/).filter(Boolean).map((number, index) => <i key={`${number}-${index}`}>{number}</i>)}</div>}
+      </Modal>
     </div>
   </div>;
 }
 function BillsPage() {
   const [rows, setRows] = useState<Bill[]>([]);
-  const [period, setPeriod] = useState("today");
-  useEffect(() => { getBills({ period }).then((response) => setRows(response.data?.data?.list || [])).catch(() => setRows([])); }, [period]);
-  const openDatePicker = (event: React.MouseEvent<HTMLDivElement>) => {
-    if ((event.target as HTMLElement).closest(".ant-picker")) return;
-    const range = event.currentTarget;
-    const pickers = Array.from(range.querySelectorAll(".ant-picker-input input")) as HTMLInputElement[];
-    const index = event.clientX > range.getBoundingClientRect().left + range.getBoundingClientRect().width / 2 ? 1 : 0;
-    pickers[Math.min(index, pickers.length - 1)]?.click();
+  const today = dayjs();
+  const [from, setFrom] = useState(today.startOf("month"));
+  const [to, setTo] = useState(today);
+  const [period, setPeriod] = useState("month");
+  const [lotteries, setLotteries] = useState({ fu: true, ti: true });
+  const [total, setTotal] = useState({ bet_count: 0, amount: "0.00", rebate: "0.00", offline_rebate: "0.00", win_amount: "0.00", profit: "0.00" });
+  const [loading, setLoading] = useState(false);
+  const setRange = (nextFrom: dayjs.Dayjs, nextTo: dayjs.Dayjs, nextPeriod: string) => { setFrom(nextFrom.startOf("day")); setTo(nextTo.startOf("day")); setPeriod(nextPeriod); };
+  const applyPeriod = (next: string) => {
+    const now = dayjs();
+    if (next === "today") return setRange(now, now, next);
+    if (next === "yesterday") { const day = now.subtract(1, "day"); return setRange(day, day, next); }
+    if (next === "week") return setRange(now.startOf("week"), now, next);
+    if (next === "last-week") return setRange(now.subtract(1, "week").startOf("week"), now.subtract(1, "week").endOf("week"), next);
+    setRange(now.startOf("month"), now, "month");
   };
-  return <div className="business-page"><div className="business-toolbar bill-toolbar"><label className="bill-lottery-filter"><span>彩种</span><label><input type="checkbox" defaultChecked /> 福</label><label><input type="checkbox" defaultChecked /> 体</label></label><div className="bill-date-range" onClick={openDatePicker}><span>日期</span><DatePicker className="bill-date-picker" defaultValue={dayjs("2026-08-19")} format="YYYY/MM/DD" allowClear={false} /><em>至</em><DatePicker className="bill-date-picker" defaultValue={dayjs("2026-08-19")} format="YYYY/MM/DD" allowClear={false} /></div></div><div className="bill-subbar"><b>历史账单</b><strong className={period === "month" ? "month-selected" : ""} role="button" tabIndex={0} onClick={() => setPeriod("month")}>2026年08月</strong><button type="button" className={period === "today" ? "selected" : ""} onClick={() => setPeriod("today")}>今天</button><button type="button" className={period === "yesterday" ? "selected" : ""} onClick={() => setPeriod("yesterday")}>昨天</button><button type="button" className={period === "week" ? "selected" : ""} onClick={() => setPeriod("week")}>本周</button><button type="button" className={period === "last-week" ? "selected" : ""} onClick={() => setPeriod("last-week")}>上周</button></div><div className="business-table bill-table"><div className="business-head"><span>日期</span><span>笔数</span><span>金额</span><span>总回水</span><span>离线回水</span><span>中奖</span><span>盈亏</span></div>{rows.length ? rows.map((row) => <div className="business-row" key={row.bill_date}><span>{row.bill_date}</span><span>{row.bet_count}</span><span>{row.amount}</span><span>{row.rebate}</span><span>{row.offline_rebate}</span><span>{row.win_amount}</span><span>{row.profit}</span></div>) : null}<div className="bill-total"><span>合计</span><span>0</span><span>0</span><span>0</span><span>0</span><span>0</span><span>0</span></div></div></div>;
+  useEffect(() => { setLoading(true); getBills({ from: from.format("YYYY-MM-DD"), to: to.format("YYYY-MM-DD") }).then((response) => { const data = response.data?.data; setRows(data?.list || []); setTotal((data?.total as typeof total) || { bet_count: 0, amount: "0.00", rebate: "0.00", offline_rebate: "0.00", win_amount: "0.00", profit: "0.00" }); }).catch(() => { setRows([]); setTotal({ bet_count: 0, amount: "0.00", rebate: "0.00", offline_rebate: "0.00", win_amount: "0.00", profit: "0.00" }); }).finally(() => setLoading(false)); }, [from, to]);
+  return <div className="business-page"><div className="business-toolbar bill-toolbar"><fieldset className="bill-lottery-filter"><legend>彩种</legend><label><input type="checkbox" checked={lotteries.fu} onChange={(event) => setLotteries((value) => ({ ...value, fu: event.target.checked }))} /> 福</label><label><input type="checkbox" checked={lotteries.ti} onChange={(event) => setLotteries((value) => ({ ...value, ti: event.target.checked }))} /> 体</label></fieldset><div className="bill-date-range"><span>日期</span><DatePicker className="bill-date-picker" value={from} format="YYYY-MM-DD" allowClear={false} onChange={(value) => value && setRange(value, to.isBefore(value, "day") ? to : value, "custom")} /><em>至</em><DatePicker className="bill-date-picker" value={to} format="YYYY-MM-DD" allowClear={false} onChange={(value) => value && setRange(from, value, "custom")} /></div></div><div className="bill-subbar"><b>历史账单</b><strong className={period === "month" ? "month-selected" : ""} role="button" tabIndex={0} onClick={() => applyPeriod("month")}>{today.format("YYYY年MM月")}</strong><button type="button" className={period === "today" ? "selected" : ""} onClick={() => applyPeriod("today")}>今天</button><button type="button" className={period === "yesterday" ? "selected" : ""} onClick={() => applyPeriod("yesterday")}>昨天</button><button type="button" className={period === "week" ? "selected" : ""} onClick={() => applyPeriod("week")}>本周</button><button type="button" className={period === "last-week" ? "selected" : ""} onClick={() => applyPeriod("last-week")}>上周</button></div><div className="business-table bill-table"><div className="business-head"><span>日期</span><span>笔数</span><span>金额</span><span>总回水</span><span>离线回水</span><span>中奖</span><span>盈亏</span></div>{rows.length ? rows.map((row) => <div className="business-row" key={row.bill_date}><span>{row.bill_date}</span><span>{row.bet_count}</span><span>{row.amount}</span><span>{row.rebate}</span><span>{row.offline_rebate}</span><span>{row.win_amount}</span><span>{row.profit}</span></div>) : <div className="business-empty"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" /></div>}<div className="bill-total"><span>合计</span><span>{total.bet_count}</span><span>{total.amount}</span><span>{total.rebate}</span><span>{total.offline_rebate}</span><span>{total.win_amount}</span><span>{total.profit}</span></div>{loading && <div className="page-local-loading" role="status" aria-label="加载中" />}</div></div>;
 }
-function DrawsPage() {
+function DrawsPage({ selectedLottery }: { selectedLottery?: Lottery }) {
   const [rows, setRows] = useState<Draw[]>([]);
-  useEffect(() => { getDraws().then((response) => setRows(response.data?.data?.list || [])).catch(() => setRows([])); }, []);
-  return <div className="business-page"><div className="business-toolbar"><select defaultValue="all"><option value="all">所有彩种</option><option value="福彩3D">福彩3D</option><option value="排列三">排列三</option></select><button type="button" className="business-primary"><SearchOutlined /> 搜索</button></div><div className="business-table draw-table"><div className="business-head"><span>期号</span><span>开奖时间</span><span>百位</span><span>十位</span><span>个位</span><span>和值/大小/单双</span><span>试机号</span></div>{rows.length ? rows.map((row) => { const n=row.numbers.split(/[,\s]+/); return <div className="business-row" key={`${row.lottery}-${row.issue_no}`}><span>{row.issue_no}</span><span>{row.draw_time || row.draw_date}</span><span>{n[0] || "-"}</span><span>{n[1] || "-"}</span><span>{n[2] || "-"}</span><span>{row.sum_value || "-"} / {row.size || "-"} / {row.parity || "-"}</span><span>-</span></div>; }) : <div className="business-empty"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" /></div>}</div></div>;
+  const [loading, setLoading] = useState(false);
+  const drawRequestId = useRef(0);
+  const drawSignature = useRef("");
+  useEffect(() => {
+    if (!selectedLottery) return;
+    const requestId=++drawRequestId.current;
+    drawSignature.current="";
+    setRows([]);
+    setLoading(true);
+    window.setTimeout(() => {
+      getDraws({ lottery: selectedLottery.name, _t: Date.now() }).then((response) => { if (requestId===drawRequestId.current) setRows(response.data?.data?.list || []); }).catch(() => { if (requestId===drawRequestId.current) setRows([]); }).finally(() => { if (requestId===drawRequestId.current) setLoading(false); });
+    }, 0);
+    let active=true;
+    const watch=async () => {
+      try {
+        const response=await waitDraws({ lottery: selectedLottery.name, since: drawSignature.current });
+        if (!active || requestId!==drawRequestId.current) return;
+        const data=response.data?.data;
+        if (data?.changed) {
+          drawSignature.current=data.signature || "";
+          const refreshed=await getDraws({ lottery: selectedLottery.name, _t: Date.now() });
+          if (active && requestId===drawRequestId.current) setRows(refreshed.data?.data?.list || []);
+        } else if (data?.signature) drawSignature.current=data.signature;
+      } catch { /* reconnect on the next iteration */ }
+      if (active && requestId===drawRequestId.current) void watch();
+    };
+    void watch();
+    return () => { active=false; };
+  }, [selectedLottery?.id]);
+  return <div className="draw-page">{loading ? <div className="draw-loading-only" role="status" aria-label="加载中" /> : <div className="draw-table"><div className="draw-head"><span>期号</span><span>开奖时间</span><span>佰</span><span>拾</span><span>个</span><span>和值</span><span>跨度</span></div><div className="draw-body">{rows.length ? rows.map((row) => { const numbers=row.numbers.split(/[,，\s]+/).filter(Boolean); const pending=numbers.length<3; return <div className="draw-row" key={`${row.lottery}-${row.issue_no}`}><strong>{row.issue_no}</strong><time>{row.draw_time || row.draw_date || "---"}</time>{[0,1,2].map((index)=><span className={`draw-ball${pending ? " pending" : ""}`} key={index}>{numbers[index] || ""}</span>)}<span className="draw-sum">{pending || row.sum_value == null ? "---" : `${row.sum_value} / ${row.size} / ${row.parity}`}</span><b className={`draw-span${pending ? " pending" : ""}`}>{pending || row.span_value == null ? "---" : row.span_value}</b></div>; }) : <div className="draw-empty"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" /></div>}</div></div>}</div>;
 }
-function MemberPage({ name }: { name: string }) { return <div className="member-page"><h3>会员资料</h3><div className="member-grid"><span>账号</span><b>{name}</b><span>代号</span><b>---</b><span>信用额度</span><b>0</b></div><p>投注类别、赔率上限、单注上限等资料由管理端配置。</p></div>; }
-function ChangePasswordPage() {
+function MemberPage({ name, selectedLottery }: { name: string; selectedLottery?: Lottery }) {
+  const [profile, setProfile] = useState<UserProfile>();
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    if (!selectedLottery) { setProfile(undefined); setLoading(false); return; }
+    setProfile(undefined);
+    setLoading(true);
+    getProfile({ lottery: selectedLottery.code || selectedLottery.name })
+      .then((response) => setProfile(response.data?.data))
+      .catch(() => setProfile(undefined))
+      .finally(() => setLoading(false));
+  }, [selectedLottery?.id]);
+  const rows = profile?.odds || [];
+  const displayNumber = (value: string | number | undefined) => { const number = Number(value); return Number.isFinite(number) ? number.toFixed(4).replace(/0+$/, "").replace(/\.$/, "") : String(value ?? "-"); };
+  const directNames = new Set(["三码定位", "双飞", "对子", "组六", "组三"]);
+  const selectedLotteryCode = selectedLottery?.code || rows[0]?.lottery_code;
+  const grouped = rows.filter((row) => !selectedLotteryCode || row.lottery_code === selectedLotteryCode).reduce<Array<{ category: string; rows: typeof rows; direct: boolean }>>((groups, row) => { const direct = Boolean(row.direct_category) || directNames.has(row.name); const category = String(row.category || row.name || "其他"); if (direct) { groups.push({ category, rows: [row], direct: true }); return groups; } const group = groups.find((item) => !item.direct && item.category === category); if (group) group.rows.push(row); else groups.push({ category, rows: [row], direct: false }); return groups; }, []);
+  const displayName = (name: string) => ({ "百位定位": "口XX", "十位定位": "X口X", "个位定位": "XX口", "百十定位": "口口X", "百个定位": "口X口", "十个定位": "X口口" } as Record<string, string>)[name] || name;
+  const rowClass = (row: typeof rows[number]) => row.name === "双飞" || row.name === "对子" ? "member-odds-row direct-cyan" : row.name === "组六" || row.name === "组三" ? "member-odds-row direct-yellow" : "member-odds-row";
+  return <div className="member-page"><div className="member-summary"><div><span>账号</span><b>{name}</b></div><div><span>代号</span><b>---</b></div><div><span>信用额度</span><b>{displayNumber(profile?.credit_balance)}</b></div></div><div className="member-odds-panel"><div className="member-odds-head"><span>类别</span><span>最小下注</span><span>赔率上限</span><span>单注上限</span><span>单项上限</span><span>离线赚水</span><span>赔率</span></div><div className="member-odds-body">{grouped.length ? grouped.map((group, groupIndex) => <div key={`${group.category}-${groupIndex}`}>{!group.direct && <div className="member-odds-category">{group.category}</div>}{group.rows.map((row) => <div className={rowClass(row)} key={row.id}><span>{displayName(row.name)}</span><span>{displayNumber(row.min_bet)}</span><span>{displayNumber(row.odds_limit)}</span><span>{displayNumber(row.single_bet_limit)}</span><span>{displayNumber(row.single_item_limit)}</span><span>{displayNumber(row.offline_rebate)}</span><span>{displayNumber(row.odds)}</span></div>)}</div>) : !loading && <div className="member-odds-empty"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无赔率配置" /></div>}{loading && <div className="page-local-loading" role="status" aria-label="加载中" />}</div></div></div>;
+}
+function ChangePasswordPage({ forced = false, onSuccess }: { forced?: boolean; onSuccess?: () => void }) {
   const [oldPassword, setOldPassword] = useState(""); const [password, setPassword] = useState(""); const [confirm, setConfirm] = useState(""); const [message, setMessage] = useState("");
-  const submit = () => { setMessage(""); changePassword({ old_password: oldPassword, password, confirm_password: confirm }).then(() => { setMessage("密码修改成功"); setOldPassword(""); setPassword(""); setConfirm(""); }).catch((error) => setMessage(error instanceof Error ? error.message : "密码修改失败")); };
-  return <div className="password-page"><div className="password-fields"><label><span>原密码</span><input type="password" maxLength={20} value={oldPassword} onChange={(e) => setOldPassword(e.target.value)} placeholder="请输入原密码" /></label><label className="password-new"><span>新密码</span><input type="password" maxLength={20} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="请输入密码" /><small>1. 新密码不能跟账号和原密码相同<br />2. 必须是数字和字母组合，至少6位以上</small></label><label><span>确认新密码</span><input type="password" maxLength={20} value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="请确认新密码" /></label></div><div className="password-forbidden"><span>系统禁止不可用密码：</span><span>a12345,ab1234,abc123,a1b2c3,aaa111,123qwe</span></div><button type="button" className="password-save" onClick={submit}>保 存</button>{message && <p className="password-message">{message}</p>}</div>;
+  const submit = () => { setMessage(""); changePassword({ old_password: forced ? "" : oldPassword, password, confirm_password: confirm }).then(() => { localStorage.setItem("user_must_change_password", "0"); setMessage("密码修改成功"); setOldPassword(""); setPassword(""); setConfirm(""); onSuccess?.(); }).catch((error) => setMessage(error instanceof Error ? error.message : "密码修改失败")); };
+  return <div className={`password-page${forced ? " forced" : ""}`}>{forced && <div className="password-required-title"><h2>首次登录，请修改密码</h2><p>完成密码修改后才能进入系统</p></div>}<div className="password-fields">{!forced && <label><span>原密码</span><input type="password" maxLength={20} value={oldPassword} onChange={(e) => setOldPassword(e.target.value)} placeholder="请输入原密码" /></label>}<label className="password-new"><span>新密码</span><input type="password" maxLength={20} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="请输入密码" /><small>1. 新密码不能跟账号和原密码相同<br />2. 必须是数字和字母组合，至少6位以上</small></label><label><span>确认新密码</span><input type="password" maxLength={20} value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="请确认新密码" /></label></div><div className="password-forbidden"><span>系统禁止不可用密码：</span><span>a12345,ab1234,abc123,a1b2c3,aaa111,123qwe</span></div><button type="button" className="password-save" onClick={submit}>保 存</button>{message && <p className="password-message">{message}</p>}</div>;
 }
-function MorePanel({ onBack }: { onBack: () => void }) {
+function MorePanel({ onBack, lotteries }: { onBack: () => void; lotteries: Lottery[] }) {
+  const { message } = AntdApp.useApp();
+  const today = dayjs().format("YYYY-MM-DD");
+  const dateOptions = Array.from(new Map(lotteries.flatMap((lottery) => (lottery.recent_issues || []).map((issue) => [issue.draw_day || issue.code, { day: issue.draw_day || today, code: issue.code }]))).values()).slice(0, 30);
+  const [selectedDay, setSelectedDay] = useState(dateOptions[0]?.day || today);
+  const [source, setSource] = useState("");
+  const [records, setRecords] = useState<BetRecord[]>([]);
+  const [amountTotal, setAmountTotal] = useState("0.00");
+  const [loading, setLoading] = useState(false);
+  useEffect(() => { if (dateOptions.length && !dateOptions.some((item) => item.day === selectedDay)) setSelectedDay(dateOptions[0].day); }, [lotteries]);
+  const search = () => {
+    setLoading(true);
+    getBetRecords({ from: selectedDay, to: selectedDay, source: source.trim() || undefined, page: 1, page_size: 100 })
+      .then((response) => { const data = response.data?.data; setRecords(data?.list || []); setAmountTotal(data?.amount_total || "0.00"); })
+      .catch((error) => { setRecords([]); setAmountTotal("0.00"); message.error(apiErrorMessage(error, "投注记录加载失败")); })
+      .finally(() => setLoading(false));
+  };
+  useEffect(() => { if (dateOptions.length) search(); }, [selectedDay]);
   return (
     <section className="more-panel">
       <div className="more-search">
         <label className="more-field more-date-field">
           <span>日期</span>
-          <select defaultValue="today">
-            <option value="today">8-19 (体彩-2026221 福彩-2026221)</option>
+          <select value={selectedDay} onChange={(event) => setSelectedDay(event.target.value)}>
+            {dateOptions.length ? dateOptions.map((item) => <option key={`${item.day}-${item.code}`} value={item.day}>{dayjs(item.day).format("M-D")} ({lotteries.map((lottery) => `${lottery.name === "排列三" ? "体" : "福"}-${item.code}`).join(" ")})</option>) : <option value={today}>{dayjs(today).format("M-D")}</option>}
           </select>
         </label>
         <label className="more-field more-text-field">
           <span>原始文本搜索：</span>
-          <input placeholder="输入文本" />
+          <input value={source} onChange={(event) => setSource(event.target.value)} placeholder="输入文本" onKeyDown={(event) => { if (event.key === "Enter") search(); }} />
         </label>
-        <button className="more-search-button" type="button">⌕ 搜索</button>
+        <button className="more-search-button" type="button" onClick={search} disabled={loading}>⌕ 搜索</button>
         <button className="more-back-button" type="button" onClick={onBack}>返回</button>
       </div>
-      <div className="more-total">总金额: <b>0</b></div>
+      <div className="more-total">总金额: <b>{amountTotal}</b></div>
+      <div className="more-results">
+        {records.length > 0 && <div className="more-table"><div className="more-table-head"><span>期号</span><span>笔数/金额</span><span>中奖金额</span><span>原始文本</span><span>投注时间</span><span>状态</span></div>{records.map((record) => <div className="more-table-row" key={record.id}><span>{record.issue_no}</span><span>{record.bet_count}/{record.amount}</span><span>{record.win_amount}</span><span>{record.source_text || "-"}</span><span>{record.placed_at}</span><span>{record.status === "refunded" ? "已退" : record.status === "won" ? "中奖" : record.status === "unwon" ? "未中奖" : "未结算"}</span></div>)}</div>}
+        {loading && <div className="page-local-loading" role="status" aria-label="加载中" />}
+      </div>
     </section>
   );
 }
-function Main({ name, logout }: { name: string; logout: () => void }) {
+function Main({ name, logout, forcePasswordChange = false, onPasswordChanged }: { name: string; logout: () => void; forcePasswordChange?: boolean; onPasswordChanged?: () => void }) {
   const location = useLocation();
   const [panelRight, setPanelRight] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
@@ -507,6 +730,12 @@ function Main({ name, logout }: { name: string; logout: () => void }) {
   const [announcement, setAnnouncement] = useState<Announcement>({ title: "公告", content: "暂无公告" });
   const [lotteries, setLotteries] = useState<Lottery[]>([]);
   const [selectedLotteryId, setSelectedLotteryId] = useState<number | null>(null);
+  useEffect(() => {
+    const send = () => { void heartbeat().catch(() => undefined); };
+    send();
+    const timer = window.setInterval(send, 20_000);
+    return () => window.clearInterval(timer);
+  }, []);
   useEffect(() => {
     let active = true;
     const token = localStorage.getItem("user_token");
@@ -549,10 +778,12 @@ function Main({ name, logout }: { name: string; logout: () => void }) {
     [location.pathname],
   );
   const fullPage = location.pathname !== "/" && location.pathname !== "/kb";
+  const lotterySwitchPages = new Set(["/zh", "/hyxx", "/jg", "/gz"]);
+  const selectedLottery = lotteries.find((item) => item.id === selectedLotteryId);
   return (
     <div className="app">
-      <Header name={name} logout={logout} announcement={announcement} balances={balances} lotteries={lotteries} selectableLottery={location.pathname === "/zh"} selectedLotteryId={selectedLotteryId} onSelectLottery={setSelectedLotteryId} />
-      {moreOpen ? <MorePanel onBack={() => setMoreOpen(false)} /> : <div className={`body${panelRight ? " panel-right" : ""}${fullPage ? " full-page" : ""}`}>
+      <Header name={name} logout={logout} announcement={announcement} balances={balances} lotteries={lotteries} selectableLottery={lotterySwitchPages.has(location.pathname)} selectedLotteryId={selectedLotteryId} onSelectLottery={setSelectedLotteryId} />
+      {forcePasswordChange ? <div className="body full-page"><main><ChangePasswordPage forced onSuccess={onPasswordChanged} /></main></div> : moreOpen ? <MorePanel lotteries={lotteries} onBack={() => setMoreOpen(false)} /> : <div className={`body${panelRight ? " panel-right" : ""}${fullPage ? " full-page" : ""}`}>
         {!fullPage && <aside><SideBetRecords onMore={() => setMoreOpen(true)} panelRight={panelRight} onToggleSide={() => setPanelRight((value) => !value)} /></aside>}
         <main>
             <Routes>
@@ -560,14 +791,15 @@ function Main({ name, logout }: { name: string; logout: () => void }) {
               <Route path="/kb" element={<QuickEntry lotteries={lotteries} selectedLottery={lotteries.find((item) => item.id === selectedLotteryId)} />} />
               <Route path="/zh" element={<BetDetailsPage lotteries={lotteries} selectedLotteryId={selectedLotteryId} />} />
               <Route path="/zd" element={<BillsPage />} />
-              <Route path="/hyxx" element={<MemberPage name={name} />} />
-              <Route path="/jg" element={<DrawsPage />} />
+              <Route path="/hyxx" element={<MemberPage name={name} selectedLottery={selectedLottery} />} />
+              <Route path="/jg" element={<DrawsPage selectedLottery={selectedLottery} />} />
+              <Route path="/gz" element={<RulesPage selectedLottery={selectedLottery} />} />
               <Route path="/xgmm" element={<ChangePasswordPage />} />
             <Route path="*" element={<Generic title={title} />} />
           </Routes>
         </main>
       </div>}
-      {warmVisible && (
+      {!forcePasswordChange && warmVisible && (
         <section className={`warm${warmOpen ? " is-open" : ""}`} aria-label="温馨提示">
           <header className="warm-header">
             <strong>温馨提示</strong>
@@ -602,6 +834,8 @@ function Main({ name, logout }: { name: string; logout: () => void }) {
 }
 export default function App() {
   const [name, setName] = useState(() => localStorage.getItem("user_token") ? localStorage.getItem("user_name") || "" : "");
+  const [siteName, setSiteName] = useState("站点");
+  const [mustChangePassword, setMustChangePassword] = useState(() => localStorage.getItem("user_must_change_password") === "1");
   const [agreementVisible, setAgreementVisible] = useState(() => {
     const token = localStorage.getItem("user_token");
     return Boolean(token && localStorage.getItem("user_name") && sessionStorage.getItem("agreement_accepted_token") !== token);
@@ -610,7 +844,7 @@ export default function App() {
   useEffect(() => {
     const handleUnauthorized = () => {
       setAgreementVisible(false);
-      setName("");
+      setMustChangePassword(false); setName("");
     };
     window.addEventListener("user:unauthorized", handleUnauthorized);
     return () => window.removeEventListener("user:unauthorized", handleUnauthorized);
@@ -627,45 +861,58 @@ export default function App() {
       .catch(() => setAgreement(defaultAgreement));
   }, [name, agreementVisible]);
   useEffect(() => {
-    const token = new URLSearchParams(window.location.search).get("auto_token");
+    let active = true;
+    getBranding().then((response) => {
+      if (!active) return;
+      const data = response.data?.data;
+      setSiteName(String(data?.site_name || data?.platform_name || "站点"));
+    }).catch(() => { if (active) setSiteName("站点"); });
+    return () => { active = false; };
+  }, []);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const autoToken = params.get("auto_token");
+    const lineSwitch = params.get("line_switch") === "1";
+    if (!autoToken && !lineSwitch) return;
+    const token = autoToken || localStorage.getItem("user_token");
+    clearUserAuthQuery();
     if (!token) return;
-    if (localStorage.getItem("user_token") === token && name) return;
-    localStorage.setItem("user_token", token);
-    localStorage.setItem("user_name", "站点管理员");
-    sessionStorage.removeItem("agreement_accepted_token");
-    setName("站点管理员");
-    setAgreementVisible(true);
-  }, [name]);
+    if (autoToken) localStorage.setItem("user_token", autoToken);
+    const userName = localStorage.getItem("user_name") || "站点管理员";
+    localStorage.setItem("user_name", userName);
+    if (lineSwitch) sessionStorage.setItem("agreement_accepted_token", token);
+    else sessionStorage.removeItem("agreement_accepted_token");
+    setName(userName);
+    setAgreementVisible(!lineSwitch);
+  }, []);
+  const clearSession = () => { clearUserAuthQuery(); localStorage.removeItem("user_name"); localStorage.removeItem("user_token"); localStorage.removeItem("user_must_change_password"); sessionStorage.removeItem("agreement_accepted_token"); setAgreementVisible(false); setMustChangePassword(false); setName(""); };
+  const logout = () => { void logoutSession().catch(() => undefined).finally(clearSession); };
   return (
     <HashRouter>
       {name ? (
         agreementVisible ? (
           <Agreement
             agreement={agreement}
-            onReject={() => {
-              localStorage.removeItem("user_name");
-              localStorage.removeItem("user_token");
-              sessionStorage.removeItem("agreement_accepted_token");
-              setAgreementVisible(false);
-              setName("");
-            }}
+            onReject={logout}
             onAccept={() => {
               const token = localStorage.getItem("user_token");
               if (token) sessionStorage.setItem("agreement_accepted_token", token);
               setAgreementVisible(false);
             }}
           />
-        ) : <Main name={name} logout={() => { localStorage.removeItem("user_name"); localStorage.removeItem("user_token"); sessionStorage.removeItem("agreement_accepted_token"); setName(""); }} />
+        ) : <Main name={name} logout={logout} forcePasswordChange={mustChangePassword} onPasswordChanged={() => setMustChangePassword(false)} />
       ) : (
         <Routes>
           <Route
             path="*"
             element={
-              <Login
-                onLogin={(n) => {
+                <Login
+                  siteName={siteName}
+                  onLogin={(n) => {
                   localStorage.setItem("user_name", n);
                   sessionStorage.removeItem("agreement_accepted_token");
                   setAgreement(defaultAgreement);
+                  setMustChangePassword(localStorage.getItem("user_must_change_password") === "1");
                   setName(n);
                   setAgreementVisible(true);
                 }}

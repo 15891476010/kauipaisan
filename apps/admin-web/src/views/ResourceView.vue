@@ -1,15 +1,17 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { useAuthStore } from "../stores/auth";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Delete, Plus } from "@element-plus/icons-vue";
 import {
   createResource,
+  clearAuditLogs,
   deleteResource,
   enterSite,
   listLotteries,
   listResource,
+  getAuditLog,
   updateResource,
   getBetDetails,
   updateBetDetail,
@@ -17,6 +19,7 @@ import {
 } from "../api/admin";
 
 const route = useRoute();
+const router = useRouter();
 const auth = useAuthStore();
 const loading = ref(false);
 const rows = ref<Record<string, unknown>[]>([]);
@@ -35,6 +38,10 @@ const detailTotal = ref(0);
 const detailSaveTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const detailSaving = new Set<string>();
 const detailRecord = ref<Record<string, unknown> | null>(null);
+const auditDetail = ref<Record<string, unknown> | null>(null);
+const auditDetailVisible = ref(false);
+const auditDetailLoading = ref(false);
+const clearingAuditLogs = ref(false);
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
 let realtimeRefreshing = false;
 const isPlatform = computed(() => auth.user?.role !== "site");
@@ -67,6 +74,8 @@ const form = reactive({
   balance: "0.00",
   credit_balance: "0.00",
   used_balance: "0.00",
+  credit_limit: 0,
+  max_profit_share_rate: 100,
 });
 const resource = computed(() => String(route.meta.resource || ""));
 const title = computed(() => String(route.meta.title || "资源管理"));
@@ -74,10 +83,11 @@ const fields: Record<string, string[]> = {
   "agent-center": [
     "id",
     "name",
-    "manager_username",
-    "manager_phone",
+    "admin_count",
     "agent_domain",
     "user_domain",
+    "credit_limit",
+    "max_profit_share_rate",
     "status",
     "created_at",
   ],
@@ -86,18 +96,25 @@ const fields: Record<string, string[]> = {
     "site_name",
     "username",
     "display_name",
+    "organization_name",
     "balance",
     "credit_balance",
     "used_balance",
     "available_balance",
+    "online",
+    "last_seen_at",
+    "last_login_at",
+    "last_login_device",
+    "last_login_location",
+    "last_login_ip",
     "status",
     "created_at",
   ],
-  "bet-records": ["id", "site_name", "username", "lottery", "issue_no", "bet_count", "amount", "win_amount", "source_text", "status", "sealed", "placed_at"],
-  admins: ["id", "username", "display_name", "status", "last_login_at"],
+  "bet-records": ["id", "site_name", "username", "lottery", "issue_no", "bet_count", "amount", "win_amount", "source_text", "formatted_text", "status", "sealed", "placed_at"],
+  admins: ["id", "username", "display_name", "online", "last_seen_at", "last_login_at", "last_login_device", "last_login_location", "last_login_ip", "status"],
   roles: ["id", "name", "code", "status", "created_at"],
   menus: ["id", "title", "path", "component", "sort", "status"],
-  "audit-logs": ["id", "username", "action", "resource", "ip", "created_at"],
+  "audit-logs": ["id", "username", "site_name", "agent_name", "action", "resource", "ip", "created_at"],
   settings: ["id", "key", "value", "updated_at"],
 };
 const labels: Record<string, string> = {
@@ -112,6 +129,7 @@ const labels: Record<string, string> = {
   agent_name: "所属代理",
   manager_username: "管理员账号",
   manager_phone: "管理员手机号",
+  admin_count: "管理员数量",
   domain: "域名",
   agent_domain: "代理端域名",
   user_domain: "用户端域名",
@@ -120,18 +138,27 @@ const labels: Record<string, string> = {
   is_primary: "主域名",
   username: "账号",
   display_name: "姓名",
+  organization_name: "所属层级",
   phone: "手机号",
   balance: "余额",
   total_balance: "总余额",
   credit_balance: "信用余额",
   used_balance: "已用余额",
   available_balance: "可用余额",
+  credit_limit: "站点分数",
+  max_profit_share_rate: "每级最高占成",
   last_login_at: "最后登录",
+  last_seen_at: "最后活跃",
+  last_login_device: "最后登录设备",
+  last_login_location: "最后登录地点",
+  last_login_ip: "最后登录 IP",
+  online: "在线状态",
   issue_no: "期号",
   bet_count: "笔数",
   amount: "下单金额",
   win_amount: "中奖金额",
   source_text: "原始文本",
+  formatted_text: "规范文本",
   sealed: "封盘状态",
   placed_at: "下单时间",
   title: "菜单名称",
@@ -274,6 +301,8 @@ function resetForm() {
     balance: 0,
     credit_balance: 0,
     used_balance: 0,
+    credit_limit: 0,
+    max_profit_share_rate: 100,
   });
   agentDomains.value = [createDomainItem(true)];
   userDomains.value = [createDomainItem(true)];
@@ -304,6 +333,8 @@ function openEdit(row: Record<string, unknown>) {
     balance: Number(row.balance ?? 0),
     credit_balance: Number(row.credit_balance ?? 0),
     used_balance: Number(row.used_balance ?? 0),
+    credit_limit: Number(row.credit_limit ?? 0),
+    max_profit_share_rate: Number(row.max_profit_share_rate ?? 100),
   });
   agentDomains.value = hydrateDomains(
     row,
@@ -342,10 +373,9 @@ function payload() {
       agent_domain: normalizedAgentDomains[0]?.domain || "",
       user_domain: normalizedUserDomains[0]?.domain || "",
       lottery_ids: [...selectedLotteryIds.value],
+      credit_limit: form.credit_limit,
+      max_profit_share_rate: form.max_profit_share_rate,
       status: form.status,
-      manager_username: form.manager_username,
-      manager_password: form.manager_password,
-      manager_phone: form.manager_phone,
       };
     }
   return { ...form };
@@ -377,6 +407,24 @@ async function remove(id: number) {
   await deleteResource(resource.value, id);
   ElMessage.success("已删除");
   await load();
+}
+async function clearAllAuditLogs() {
+  await ElMessageBox.confirm("将清除全部普通审计日志，操作不可恢复；本次清除记录会保留。", "清除审计日志", {
+    type: "warning",
+    confirmButtonText: "确认清除",
+    cancelButtonText: "取消",
+  });
+  clearingAuditLogs.value = true;
+  try {
+    const response = await clearAuditLogs();
+    ElMessage.success(`已清除 ${Number(response.data.cleared_count || 0)} 条审计日志`);
+    query.page = 1;
+    await load();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : "清除失败");
+  } finally {
+    clearingAuditLogs.value = false;
+  }
 }
 async function openBetDetails(row: Record<string, unknown>) {
   detailLoading.value = true;
@@ -438,8 +486,9 @@ function scheduleExpandedBetSave(row: BetDetail) {
   }, 300));
 }
 async function refreshRealtime() {
-  if (resource.value !== "bet-records") return;
+  if (resource.value !== "bet-records" && resource.value !== "site-users") return;
   await load(true);
+  if (resource.value !== "bet-records") return;
   if (detailDrawer.value && detailRecord.value?.id) {
     const activeTag = document.activeElement?.tagName;
     if (activeTag === "INPUT" || activeTag === "TEXTAREA") return;
@@ -452,6 +501,12 @@ async function refreshRealtime() {
       // Keep the currently visible detail when a transient refresh fails.
     }
   }
+}
+function openSiteAdmins(row: Record<string, unknown>) {
+  void router.push({ name: 'site-admins', params: { siteId: Number(row.id) }, query: { name: String(row.name || '') } });
+}
+function openOrganizations(row: Record<string, unknown>) {
+  void router.push({ name: 'site-organizations', params: { siteId: Number(row.id) }, query: { name: String(row.name || '') } });
 }
 async function openSite(row: Record<string, unknown>) {
   try {
@@ -482,6 +537,32 @@ async function openSite(row: Record<string, unknown>) {
     ElMessage.error("进入站点失败，请检查反代域名和站点管理员配置");
   }
 }
+const auditActionNames: Record<string, string> = { login_success: "登录成功", login_failed: "登录失败", logout: "退出登录", create: "新增", update: "修改", delete: "删除", clear: "清除" };
+const auditResourceNames: Record<string, string> = { admin: "平台管理员", site_admin: "站点管理员", agent: "代理端", user: "用户端", preview: "投注预览", place: "提交下注", members: "会员管理", settings: "系统配置", lotteries: "彩票管理", rules: "规则配置", agreement: "协议配置", announcement: "公告配置", domains: "域名管理", sites: "站点管理", users: "用户管理", password: "修改密码", refund: "退码", tags: "快捷标签", preferences: "快捷设置", controls: "投注控制", audit_logs: "审计日志" };
+function auditAction(value: unknown) { return auditActionNames[String(value || "")] || String(value || "未知操作"); }
+function auditResource(value: unknown) { return auditResourceNames[String(value || "")] || String(value || "未知模块"); }
+function auditPayload(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(auditPayload);
+  if (!value || typeof value !== "object") return value;
+  const names: Record<string,string> = { _request: "请求信息", method: "请求方法", path: "接口路径", host: "访问主机", referer: "来源页面", user_agent: "浏览器信息", query: "查询参数", body: "提交参数", started_at: "调用时间", duration_ms: "响应时长(毫秒)", status_code: "状态码", success: "是否成功", response: "返回结果" };
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, item]) => [names[key] || key, auditPayload(item)]));
+}
+const auditPayloadData = computed(() => { const value=auditDetail.value?.payload; if (typeof value === 'string') { try { return JSON.parse(value) as Record<string, unknown>; } catch { return {}; } } return (value && typeof value === 'object' ? value : {}) as Record<string, unknown>; });
+const auditRequest = computed(() => (auditPayloadData.value._request || {}) as Record<string, unknown>);
+const auditParams = computed(() => ({ query: auditRequest.value.query || {}, body: auditRequest.value.body || {} }));
+const auditResponse = computed(() => auditRequest.value.response || {});
+async function openAuditDetail(row: Record<string, unknown>) {
+  auditDetailLoading.value = true; auditDetailVisible.value = true;
+  try {
+    const response = await getAuditLog(Number(row.id));
+    const raw = response as unknown as Record<string, unknown>;
+    const first = raw.data && typeof raw.data === 'object' ? raw.data as Record<string, unknown> : raw;
+    const value = first.data && typeof first.data === 'object' ? first.data as Record<string, unknown> : first;
+    auditDetail.value = { ...row, ...value };
+  }
+  catch (e) { ElMessage.error(e instanceof Error ? e.message : "日志详情加载失败"); auditDetailVisible.value = false; }
+  finally { auditDetailLoading.value = false; }
+}
 watch(resource, async () => {
   await load();
   if (resource.value === "site-users" || resource.value === "bet-records") await loadSites();
@@ -491,7 +572,7 @@ onMounted(async () => {
   await load();
   if (resource.value === "site-users" || resource.value === "bet-records") await loadSites();
   if (resource.value === "agent-center" || resource.value === "bet-records") await loadLotteryOptions();
-  refreshTimer = setInterval(refreshRealtime, 30000);
+  refreshTimer = setInterval(refreshRealtime, 15000);
 });
 onBeforeUnmount(() => {
   if (refreshTimer) clearInterval(refreshTimer);
@@ -501,7 +582,7 @@ onBeforeUnmount(() => {
 });
 </script>
 <template>
-  <div class="page-card">
+  <div :class="['page-card', { 'audit-page-card': resource === 'audit-logs' }]">
     <h1 class="page-title">{{ title }}</h1>
     <p class="page-subtitle">{{ pageSubtitle }}</p>
     <div class="toolbar">
@@ -542,6 +623,18 @@ onBeforeUnmount(() => {
       <div>
         <el-button @click="load">刷新</el-button
         ><el-button
+          v-if="resource === 'audit-logs' && isPlatform"
+          type="danger"
+          :icon="Delete"
+          :loading="clearingAuditLogs"
+          @click="clearAllAuditLogs"
+          >清除日志</el-button
+        ><el-button
+          v-if="resource === 'bet-records'"
+          type="primary"
+          @click="router.push('/bet-records/batch-replace')"
+          >批量替换</el-button
+        ><el-button
           v-if="resource !== 'audit-logs' && resource !== 'bet-records'"
           type="primary"
           @click="openCreate()"
@@ -557,18 +650,19 @@ onBeforeUnmount(() => {
       v-loading="loading"
       :data="rows"
       stripe
-      height="calc(100vh - 300px)"
+      :height="resource === 'audit-logs' ? 'calc(100% - 172px)' : 'calc(100vh - 300px)'"
       ><el-table-column
         v-for="col in columns"
         :key="col"
         :prop="col"
         :label="labels[col] || col"
-        min-width="120"
+        :min-width="['last_login_device','last_login_location'].includes(col) ? 180 : col === 'last_login_ip' ? 210 : col === 'online' ? 100 : 120"
         ><template #default="scope"
           ><el-tag v-if="col === 'status'"
             :type="resource === 'bet-records' ? (scope.row.status === 'pending' ? 'warning' : 'success') : (Number(scope.row.status) === 1 ? 'success' : 'info')"
             >{{ resource === 'bet-records' ? ({ pending: '待处理', won: '已中奖', unwon: '未中奖' }[String(scope.row.status)] || scope.row.status) : (Number(scope.row.status) === 1 ? "启用" : "停用") }}</el-tag
           ><el-tag v-else-if="col === 'sealed'" :type="Number(scope.row.sealed) === 1 ? 'danger' : 'info'">{{ Number(scope.row.sealed) === 1 ? '已封盘' : '未封盘' }}</el-tag
+          ><el-tag v-else-if="col === 'online'" :type="Number(scope.row.online) === 1 ? 'success' : 'info'" effect="dark">{{ Number(scope.row.online) === 1 ? '在线' : '离线' }}</el-tag
           ><el-tooltip
             v-else-if="col === 'agent_domain' || col === 'user_domain'"
             :content="domainTooltip(scope.row, col) || '暂未配置'"
@@ -579,7 +673,16 @@ onBeforeUnmount(() => {
                 >+{{ domainCount(scope.row, col) - 1 }}</el-tag
               >
             </div></el-tooltip
+          ><span v-else-if="resource === 'audit-logs' && col === 'action'">{{ auditAction(scope.row[col]) }}</span
+          ><span v-else-if="resource === 'audit-logs' && col === 'resource'">{{ auditResource(scope.row[col]) }}</span
           ><span v-else>{{ scope.row[col] ?? "-" }}</span></template
+        ></el-table-column
+      ><el-table-column
+        v-if="resource === 'audit-logs'"
+        label="操作"
+        fixed="right"
+        width="90"
+        ><template #default="scope"><el-button link type="primary" @click="openAuditDetail(scope.row)">详情</el-button></template
         ></el-table-column
       ><el-table-column
         v-if="resource === 'bet-records'"
@@ -593,7 +696,7 @@ onBeforeUnmount(() => {
         v-if="resource !== 'audit-logs' && resource !== 'bet-records'"
         label="操作"
         fixed="right"
-        width="230"
+        :width="resource === 'agent-center' ? 310 : 230"
         ><template #default="scope"
           ><div class="row-actions">
             <el-button
@@ -602,6 +705,18 @@ onBeforeUnmount(() => {
               type="primary"
               @click="openEdit(scope.row)"
               >编辑</el-button
+            ><el-button
+              v-if="resource === 'agent-center'"
+              link
+              type="primary"
+              @click="openSiteAdmins(scope.row)"
+              >管理员</el-button
+            ><el-button
+              v-if="resource === 'agent-center'"
+              link
+              type="primary"
+              @click="openOrganizations(scope.row)"
+              >组织架构</el-button
             ><el-button
               v-if="resource === 'agent-center'"
               link
@@ -623,6 +738,26 @@ onBeforeUnmount(() => {
       layout="total, prev, pager, next"
       style="margin-top: 18px; justify-content: flex-end"
       @change="load"
+    /><el-drawer
+      v-model="auditDetailVisible"
+      title="审计日志详情"
+      direction="rtl"
+      size="min(760px, 92vw)"
+      ><div v-loading="auditDetailLoading" class="audit-detail-panel" v-if="auditDetail">
+        <div class="audit-detail-grid">
+          <span><b>日志编号</b>{{ auditDetail.id }}</span>
+          <span><b>所属站点</b>{{ auditDetail.site_name || '平台' }}</span>
+          <span><b>所属代理</b>{{ auditDetail.agent_name || '平台' }}</span>
+          <span><b>账号</b>{{ auditDetail.username || '-' }}</span>
+          <span><b>操作</b>{{ auditAction(auditDetail.action) }}</span>
+          <span><b>模块</b>{{ auditResource(auditDetail.resource) }}</span>
+          <span><b>调用者 IP</b>{{ auditDetail.ip || '-' }}</span>
+          <span><b>IP 位置</b>{{ auditDetail.ip_location || '-' }}</span>
+          <span><b>记录时间</b>{{ auditDetail.created_at || '-' }}</span>
+        </div>
+        <div class="audit-request-grid"><span><b>请求方法</b>{{ auditRequest.method || '-' }}</span><span><b>接口路径</b>{{ auditRequest.path || '-' }}</span><span><b>调用时间</b>{{ auditRequest.started_at || auditDetail.created_at || '-' }}</span><span><b>响应时长</b>{{ auditRequest.duration_ms != null ? `${auditRequest.duration_ms} 毫秒` : '-' }}</span><span><b>状态码</b>{{ auditRequest.status_code || '-' }}</span><span><b>执行结果</b>{{ auditRequest.success === true ? '成功' : auditRequest.success === false ? '失败' : '-' }}</span></div>
+        <div class="audit-json-block"><h3>请求参数</h3><pre>{{ JSON.stringify(auditPayload(auditParams), null, 2) }}</pre><h3>返回结果</h3><pre>{{ JSON.stringify(auditPayload(auditResponse), null, 2) }}</pre></div>
+      </div></el-drawer
     /><el-drawer
       v-model="detailDrawer"
       title="下单详情"
@@ -690,6 +825,10 @@ onBeforeUnmount(() => {
           </el-checkbox-group>
           <div class="lottery-tip">只显示勾选的彩票；不勾选则该站点的用户端和代理端都不显示彩票。</div>
         </el-form-item
+        ><el-form-item v-if="resource === 'agent-center'" label="站点分数"
+          ><el-input-number v-model="form.credit_limit" :min="0" :precision="2" controls-position="right" style="width: 100%" /><div class="lottery-tip">平台分配给本站点的信用分数总额，站点用户分配总和不能超过此额度。</div></el-form-item
+        ><el-form-item v-if="resource === 'agent-center'" label="每级最高占成"
+          ><el-input-number v-model="form.max_profit_share_rate" :min="0" :max="100" :precision="4" controls-position="right" style="width: 100%" /><div class="lottery-tip">动态限制本站点每一级向直属下级分配的占成比例；逐级按上一级实际占成继续计算。</div></el-form-item
         ><el-form-item
           v-if="resource === 'domains'"
           label="域名"
@@ -730,14 +869,7 @@ onBeforeUnmount(() => {
             v-model="form.status"
             :active-value="1"
             :inactive-value="0" /></el-form-item
-        ><el-form-item v-if="resource === 'agent-center'" label="管理员账号"
-          ><el-input v-model="form.manager_username" /></el-form-item
-        ><el-form-item v-if="resource === 'agent-center'" label="管理员密码"
-          ><el-input
-            v-model="form.manager_password"
-            type="password" /></el-form-item
-        ><el-form-item v-if="resource === 'agent-center'" label="手机号"
-          ><el-input v-model="form.manager_phone" /></el-form-item></el-form
+        ></el-form
       ><template #footer
         ><el-button @click="drawer = false">取消</el-button
         ><el-button type="primary" @click="save">保存</el-button></template
@@ -825,4 +957,13 @@ onBeforeUnmount(() => {
 .bet-detail-panel :deep(.el-input__wrapper) { padding-left: 7px; padding-right: 7px; }
 .detail-number { color: #1f2937; font-size: 15px; font-variant-numeric: tabular-nums; }
 .detail-pagination { justify-content: flex-end; padding-top: 16px; }
+.audit-detail-panel { color: #334155; }
+.audit-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 18px; padding-bottom: 18px; border-bottom: 1px solid #e5e7eb; }
+.audit-detail-grid span { display: flex; flex-direction: column; gap: 4px; word-break: break-word; }
+.audit-detail-grid b { color: #64748b; font-size: 12px; font-weight: 500; }
+.audit-json-block h3 { margin: 18px 0 8px; font-size: 14px; }
+.audit-json-block pre { max-height: 560px; overflow: auto; margin: 0; padding: 14px; border-radius: 4px; background: #f8fafc; color: #334155; font: 12px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-word; }
+.audit-request-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 18px; margin-top: 18px; padding: 14px; border: 1px solid #e5e7eb; border-radius: 5px; background: #fafafa; }
+.audit-request-grid span { display: flex; flex-direction: column; gap: 4px; word-break: break-word; }
+.audit-request-grid b { color: #64748b; font-size: 12px; font-weight: 500; }
 </style>

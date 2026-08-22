@@ -8,7 +8,7 @@ export type ApiEnvelope<T> = {
 };
 
 export const request: AxiosInstance = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || "/api/v1",
+  baseURL: import.meta.env.VITE_API_BASE_URL || "/prod_api/v1",
   timeout: 12000,
 });
 
@@ -17,6 +17,7 @@ let unauthorizedDispatched = false;
 function handleUnauthorized() {
   localStorage.removeItem("user_token");
   localStorage.removeItem("user_name");
+  localStorage.removeItem("user_must_change_password");
   sessionStorage.removeItem("agreement_accepted_token");
   if (unauthorizedDispatched) return;
   unauthorizedDispatched = true;

@@ -1,0 +1,42 @@
+.api-loading {
+  position: fixed;
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: #fff;
+  transition: opacity 400ms ease-in-out, transform 400ms;
+  z-index: 9999;
+}
+
+.api-loading::before,
+.api-loading::after {
+  content: "";
+  inset: 0;
+  margin: auto;
+  position: absolute;
+  box-sizing: border-box;
+  border: 3px solid;
+  border-color: #fff rgba(55, 55, 55, 0.8);
+  border-radius: 50%;
+  background: transparent;
+  animation: reference-loading 2s linear infinite;
+}
+
+.api-loading::before {
+  width: 65px;
+  height: 65px;
+}
+
+.api-loading::after {
+  width: 80px;
+  height: 80px;
+  animation-duration: 1.5s;
+}
+
+@keyframes reference-loading {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

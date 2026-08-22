@@ -17,6 +17,11 @@ let unauthorizedDispatched = false;
 function handleUnauthorized() {
   localStorage.removeItem("agent_token");
   localStorage.removeItem("agent_name");
+  localStorage.removeItem("agent_permissions");
+  localStorage.removeItem("agent_is_subaccount");
+  localStorage.removeItem("agent_organization_level");
+  localStorage.removeItem("agent_level_label");
+  localStorage.removeItem("agent_must_change_password");
   sessionStorage.removeItem("agent_agreement_accepted_token");
   if (unauthorizedDispatched) return;
   unauthorizedDispatched = true;

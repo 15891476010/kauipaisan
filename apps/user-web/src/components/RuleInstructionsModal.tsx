@@ -2,9 +2,9 @@ import { InfoCircleOutlined } from "@ant-design/icons";
 import { Modal, Tabs } from "antd";
 import DOMPurify from "dompurify";
 import type { ReactNode } from "react";
+import type { RuleSettings } from "../api/user";
 
 type Props = { open: boolean; onClose: () => void };
-export type RuleSettings = { title: string; basic: string; special: string; amount: string; text: string };
 
 const Highlight = ({ children }: { children: ReactNode }) => <span className="rule-highlight">{children}</span>;
 
@@ -66,10 +66,10 @@ const panes: Record<string, ReactNode> = {
 
 export function RuleInstructionsModal({ open, onClose, rules }: Props & { rules?: RuleSettings }) {
   const currentPanes: Record<string, ReactNode> = rules ? {
-    基础玩法: <ConfiguredRules source={rules.basic} />,
-    特殊打法: <ConfiguredRules source={rules.special} />,
-    总金额: <ConfiguredRules source={rules.amount} />,
-    文本规范: <ConfiguredRules source={rules.text} />,
+    基础玩法: <ConfiguredRules source={rules.basic || rules.content || ""} />,
+    特殊打法: <ConfiguredRules source={rules.special || ""} />,
+    总金额: <ConfiguredRules source={rules.amount || ""} />,
+    文本规范: <ConfiguredRules source={rules.text || ""} />,
   } : panes;
   return (
     <Modal

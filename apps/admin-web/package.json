@@ -5,13 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc -b && vite build",
+    "build": "vue-tsc -b && node ../../scripts/build-web.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",
     "@wangeditor/editor": "^5.1.23",
     "axios": "^1.19.0",
+    "echarts": "^5.6.0",
     "element-plus": "^2.14.4",
     "md-editor-v3": "^6.5.6",
     "pinia": "^4.0.3",

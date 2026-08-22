@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && node ../../scripts/build-web.mjs --target=/www/wwwroot/kps-shareholder --target=/www/wwwroot/kps-director --target=/www/wwwroot/kps-general-agent --target=/www/wwwroot/kps-agent",
+    "test:routes": "node --experimental-strip-types --test tests/routePermissions.test.ts",
     "lint": "oxlint",
     "preview": "vite preview"
   },

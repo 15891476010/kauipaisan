@@ -2,6 +2,9 @@
 declare(strict_types=1);
 namespace app\controller;
 
+use app\service\OrganizationHierarchy;
+use app\service\PasswordPolicy;
+use app\service\ScoreTransfer;
 use think\Request;
 use think\facade\Cache;
 use think\facade\Db;
@@ -22,14 +25,11 @@ final class AgentMember
         return $session;
     }
 
-    private function summary(int $siteId): array
+    private function summary(array $session): array
     {
-        $allocated=(float)Db::name('site_users')->where('site_id',$siteId)->whereNull('deleted_at')->sum('credit_balance');
-        $settings=Db::name('sites')->where('id',$siteId)->value('settings');
-        $decoded=is_string($settings) ? json_decode($settings,true) : (is_array($settings)?$settings:[]);
-        $configured=(float)($decoded['credit_limit']??0);
-        $total=max($configured,$allocated);
-        return ['total_credit'=>number_format($total,2,'.',''),'allocated_credit'=>number_format($allocated,2,'.',''),'available_credit'=>number_format(max(0,$total-$allocated),2,'.','')];
+        $node=OrganizationHierarchy::nodeForSession($session);
+        if($node)return OrganizationHierarchy::nodeCreditSummary((int)$node['id']);
+        return ['total_credit'=>'0.00','allocated_credit'=>'0.00','available_credit'=>'0.00'];
     }
 
     private function siteLotteries(int $siteId, int $tenantId): array
@@ -115,6 +115,7 @@ final class AgentMember
     {
         $session=$this->session($request); $siteId=(int)$session['site_id'];
         $query=Db::name('site_users')->where('site_id',$siteId)->whereNull('deleted_at');
+        OrganizationHierarchy::applyUserScope($query,$session,'id');
         $username=trim((string)$request->param('username','')); $code=trim((string)$request->param('code','')); $status=$request->param('status','');
         if ($username !== '') $query->whereLike('username','%'.$username.'%');
         if ($code !== '') $query->whereLike('display_name','%'.$code.'%');
@@ -125,54 +126,62 @@ final class AgentMember
             $row['available_balance']=number_format(max(0,(float)$row['balance']+(float)$row['credit_balance']-(float)$row['used_balance']),2,'.','');
             $row['type']='会员';
         }
-        return $this->reply(array_merge(['list'=>$list,'total'=>$total,'page'=>$page,'page_size'=>$pageSize],$this->summary($siteId)));
+        return $this->reply(array_merge(['list'=>$list,'total'=>$total,'page'=>$page,'page_size'=>$pageSize],$this->summary($session)));
     }
 
     public function create(Request $request): \think\response\Json
     {
         $session=$this->session($request); $siteId=(int)$session['site_id']; $tenantId=(int)($session['tenant_id']??1); $data=$request->post();
+        $node=OrganizationHierarchy::nodeForSession($session);
+        if(!$node||(string)$node['level']!=='agent')throw new \InvalidArgumentException('只有代理层级可以直接创建会员');
+        $organizationId=(int)$node['id'];
         $username=trim((string)($data['username']??'')); $displayName=trim((string)($data['display_name']??$username)); $password=(string)($data['password']??''); $credit=$data['credit_balance']??0;
         if ($username==='' || !preg_match('/^[A-Za-z0-9_]{3,40}$/',$username)) throw new \InvalidArgumentException('用户名必须为3-40位字母、数字或下划线');
         if ($displayName==='') throw new \InvalidArgumentException('请输入代号');
-        if (strlen($password)<6) throw new \InvalidArgumentException('登录密码不能少于6位');
+        $password=PasswordPolicy::initial($password,$username);
         if (!is_numeric($credit) || (float)$credit<0) throw new \InvalidArgumentException('信用额度必须为非负数字');
+        $summary=OrganizationHierarchy::agentCreditSummary($organizationId); if ((float)$credit>(float)$summary['available_credit']) throw new \InvalidArgumentException('代理分数不足，无法分配给用户');
         if (Db::name('site_users')->where('site_id',$siteId)->where('username',$username)->whereNull('deleted_at')->find()) throw new \InvalidArgumentException('当前站点已存在该用户名');
         $now=date('Y-m-d H:i:s'); $permissions=$this->normalizePermissions($data['permissions']??null,$siteId,$tenantId);
-        $id=(int)Db::transaction(function () use ($tenantId,$siteId,$username,$displayName,$password,$credit,$data,$now,$permissions): int {
-            $userId=(int)Db::name('site_users')->insertGetId(['tenant_id'=>$tenantId,'site_id'=>$siteId,'username'=>$username,'display_name'=>$displayName,'phone'=>trim((string)($data['phone']??''))?:null,'balance'=>'0.00','credit_balance'=>number_format((float)$credit,2,'.',''),'used_balance'=>'0.00','password'=>password_hash($password,PASSWORD_DEFAULT),'status'=>(int)($data['status']??1)===0?0:1,'created_at'=>$now,'updated_at'=>$now]);
+        $operator=['type'=>'organization_admin','id'=>(int)($session['user_id']??0),'name'=>(string)($session['username']??'')];
+        $id=(int)Db::transaction(function () use ($tenantId,$siteId,$organizationId,$username,$displayName,$password,$credit,$data,$now,$permissions,$operator): int {
+            $userId=(int)Db::name('site_users')->insertGetId(['tenant_id'=>$tenantId,'site_id'=>$siteId,'organization_id'=>$organizationId,'username'=>$username,'display_name'=>$displayName,'phone'=>trim((string)($data['phone']??''))?:null,'balance'=>'0.00','credit_balance'=>'0.00','used_balance'=>'0.00','password'=>password_hash($password,PASSWORD_DEFAULT),'must_change_password'=>1,'status'=>(int)($data['status']??1)===0?0:1,'created_at'=>$now,'updated_at'=>$now]);
+            $user=Db::name('site_users')->where('id',$userId)->find();ScoreTransfer::userAllocation($user,(float)$credit,$operator);Db::name('site_users')->where('id',$userId)->update(['credit_balance'=>number_format((float)$credit,2,'.','')]);
             $this->savePermissions($tenantId,$siteId,$userId,$permissions,$now);
             return $userId;
         });
-        return $this->reply(['id'=>$id],'会员创建成功');
+        return $this->reply(['id'=>$id,'username'=>$username,'initial_password'=>$password,'must_change_password'=>1],'会员创建成功');
     }
 
     public function detail(Request $request): \think\response\Json
     {
         $session=$this->session($request); $siteId=(int)$session['site_id']; $tenantId=(int)($session['tenant_id']??1); $id=(int)$request->param('id');
-        $member=Db::name('site_users')->where('id',$id)->where('site_id',$siteId)->whereNull('deleted_at')->field('id,username,display_name,remark,phone,balance,credit_balance,used_balance,interception_rate,status,account_state,last_login_at,created_at')->find();
+        OrganizationHierarchy::assertVisibleUser($session,$id);
+        $member=Db::name('site_users')->where('id',$id)->where('site_id',$siteId)->whereNull('deleted_at')->field('id,organization_id,username,display_name,remark,phone,balance,credit_balance,used_balance,interception_rate,status,account_state,last_login_at,created_at')->find();
         if (!$member) throw new \InvalidArgumentException('会员不存在');
         $member['permissions']=$this->permissions($siteId,$tenantId,$id);
         $member['odds']=$this->memberOdds($siteId,$tenantId,(int)($session['agent_id']??0),$id);
-        $member['summary']=$this->summary($siteId);
+        $member['summary']=$member['organization_id']?OrganizationHierarchy::agentCreditSummary((int)$member['organization_id']):$this->summary($session);
         return $this->reply($member);
     }
 
     public function update(Request $request): \think\response\Json
     {
-        $session=$this->session($request); $siteId=(int)$session['site_id']; $id=(int)$request->param('id'); $current=Db::name('site_users')->where('id',$id)->where('site_id',$siteId)->whereNull('deleted_at')->find();
-        if (!$current) throw new \InvalidArgumentException('会员不存在');
+        $session=$this->session($request); $siteId=(int)$session['site_id']; $id=(int)$request->param('id'); $current=OrganizationHierarchy::assertVisibleUser($session,$id);
         $data=$request->put(); $update=['updated_at'=>date('Y-m-d H:i:s')];
         if (array_key_exists('display_name',$data)) { $value=trim((string)$data['display_name']); if ($value==='') throw new \InvalidArgumentException('请输入代号'); $update['display_name']=$value; }
         if (array_key_exists('phone',$data)) $update['phone']=trim((string)$data['phone'])?:null;
-        if (array_key_exists('credit_balance',$data)) { if (!is_numeric($data['credit_balance']) || (float)$data['credit_balance']<0) throw new \InvalidArgumentException('信用额度必须为非负数字'); $update['credit_balance']=number_format((float)$data['credit_balance'],2,'.',''); }
+        if (array_key_exists('credit_balance',$data)) { if (!is_numeric($data['credit_balance']) || (float)$data['credit_balance']<0) throw new \InvalidArgumentException('信用额度必须为非负数字'); $credit=(float)$data['credit_balance']; $ownerId=(int)($current['organization_id']??0); if($ownerId<1)throw new \InvalidArgumentException('历史会员尚未归属代理，请先在总平台完成归属设置'); $summary=OrganizationHierarchy::agentCreditSummary($ownerId,$id); $delta=$credit-(float)$current['credit_balance']; if($delta>(float)$summary['available_credit']+0.000001)throw new \InvalidArgumentException('所属代理可用分数不足，无法分配给用户'); $update['credit_balance']=number_format($credit,2,'.',''); }
         if (array_key_exists('status',$data)) $update['status']=(int)$data['status']===0?0:1;
         if (array_key_exists('remark',$data)) $update['remark']=mb_substr(trim((string)$data['remark']),0,255);
         if (array_key_exists('account_state',$data)) { $state=(string)$data['account_state']; if(!in_array($state,['enabled','disabled','bet_paused'],true)) throw new \InvalidArgumentException('账号状态无效'); $update['account_state']=$state; $update['status']=$state==='disabled'?0:1; }
         if (array_key_exists('interception_rate',$data)) { if(!is_numeric($data['interception_rate'])||(float)$data['interception_rate']<0||(float)$data['interception_rate']>100) throw new \InvalidArgumentException('拦货占成必须在0到100之间'); $update['interception_rate']=number_format((float)$data['interception_rate'],4,'.',''); }
-        if (!empty($data['password'])) { if (strlen((string)$data['password'])<6) throw new \InvalidArgumentException('登录密码不能少于6位'); $update['password']=password_hash((string)$data['password'],PASSWORD_DEFAULT); }
+        if (!empty($data['password'])) { PasswordPolicy::assertValid((string)$data['password'],(string)$current['username']); $update['password']=password_hash((string)$data['password'],PASSWORD_DEFAULT); }
         $tenantId=(int)($session['tenant_id']??1); $agentId=(int)($session['agent_id']??0); $permissions=array_key_exists('permissions',$data) ? $this->normalizePermissions($data['permissions'],$siteId,$tenantId) : null;
         $odds=$data['odds']??null;
-        Db::transaction(function () use ($id,$siteId,$tenantId,$agentId,$update,$permissions,$odds): void {
+        $operator=['type'=>'organization_admin','id'=>(int)($session['user_id']??0),'name'=>(string)($session['username']??'')];
+        Db::transaction(function () use ($id,$siteId,$tenantId,$agentId,$current,$update,$permissions,$odds,$operator): void {
+            if(array_key_exists('credit_balance',$update))ScoreTransfer::userAllocation($current,(float)$update['credit_balance']-(float)$current['credit_balance'],$operator);
             Db::name('site_users')->where('id',$id)->where('site_id',$siteId)->update($update);
             if ($permissions !== null) $this->savePermissions($tenantId,$siteId,$id,$permissions,(string)$update['updated_at']);
             if ($odds !== null) $this->saveOdds($tenantId,$siteId,$agentId,$id,$odds,(string)$update['updated_at']);
