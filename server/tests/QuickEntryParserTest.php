@@ -90,6 +90,122 @@ if (($longDirect[0]['status'] ?? null) !== 'success' || ($longDirect[0]['count']
     exit(1);
 }
 
+$duplicateDirect = $parser->parse('668 668 123直30', '福彩3D', 2.0);
+if (($duplicateDirect[0]['status'] ?? null) !== 'success' || ($duplicateDirect[0]['count'] ?? 0) !== 2 || ($duplicateDirect[0]['stake_count'] ?? 0) !== 3 || ($duplicateDirect[0]['amount'] ?? null) !== '90.00') {
+    fwrite(STDERR, "Failed: duplicate direct list\n" . json_encode($duplicateDirect, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+
+$fuTiNumbers = implode(' ', array_map(static fn(int $number): string => str_pad((string)$number, 3, '0', STR_PAD_LEFT), range(0, 427))).' 668 668';
+$fuTiDuplicate = $parser->parse($fuTiNumbers.'福体直30', '福彩3D', 2.0);
+if (($fuTiDuplicate[0]['status'] ?? null) !== 'success' || ($fuTiDuplicate[0]['count'] ?? 0) !== 858 || ($fuTiDuplicate[0]['stake_count'] ?? 0) !== 860 || ($fuTiDuplicate[0]['amount'] ?? null) !== '25800.00') {
+    fwrite(STDERR, "Failed: duplicate Fu/Ti direct list\n" . json_encode($fuTiDuplicate[0] ?? null, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+
+$summaryDirect = $parser->parse($fuTiNumbers.'福430注直30', '福彩3D', 2.0);
+if (($summaryDirect[0]['status'] ?? null) !== 'success' || ($summaryDirect[0]['count'] ?? 0) !== 429 || ($summaryDirect[0]['stake_count'] ?? 0) !== 430 || ($summaryDirect[0]['code_count'] ?? 0) !== 429 || ($summaryDirect[0]['amount'] ?? null) !== '25800.00') {
+    fwrite(STDERR, "Failed: summary direct list\n" . json_encode($summaryDirect[0] ?? null, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+
+$batchLines = [];
+$batchNumbers = array_map(static fn(int $number): string => str_pad((string)$number, 3, '0', STR_PAD_LEFT), range(0, 429));
+$batchNumbers[428] = '668';
+$batchNumbers[429] = '668';
+foreach (array_chunk($batchNumbers, 10) as $batchChunk) {
+    $batchLines[] = implode('，', $batchChunk);
+}
+$batchText = implode("\n", $batchLines).'福430注直30';
+$batch = $parser->parse($batchText, '福彩3D', 2.0);
+if (count($batch) !== 43
+    || array_filter($batch, static fn(array $row): bool => ($row['status'] ?? '') !== 'success')
+    || array_sum(array_map(static fn(array $row): int => (int)($row['code_count'] ?? 0), $batch)) !== 429
+    || array_sum(array_map(static fn(array $row): float => (float)($row['amount'] ?? 0), $batch)) !== 25800.0
+    || ($batch[0]['raw_text'] ?? '') !== $batchLines[0]
+    || !str_contains((string)($batch[0]['parse_text'] ?? ''), '10注直30')
+    || !str_contains((string)($batch[42]['raw_text'] ?? ''), '福430注直30')
+    || ($batch[0]['batch_id'] ?? '') === ''
+    || count(array_unique(array_column($batch, 'batch_id'))) !== 1
+    || ($batch[0]['batch_index'] ?? 0) !== 1
+    || ($batch[0]['batch_end'] ?? true) !== false
+    || ($batch[42]['batch_index'] ?? 0) !== 43
+    || ($batch[42]['batch_size'] ?? 0) !== 43
+    || ($batch[42]['batch_end'] ?? false) !== true
+    || ($batch[42]['batch_count'] ?? 0) !== 429
+    || ($batch[42]['batch_stake_count'] ?? 0) !== 430
+    || ($batch[42]['batch_amount'] ?? null) !== '25800.00'
+    || count(preg_split('/\s+/', trim((string)($batch[42]['batch_number_text'] ?? ''))) ?: []) !== 429
+    || count(preg_split('/\s+/', trim((string)($batch[42]['batch_occurrence_text'] ?? ''))) ?: []) !== 430
+    || str_contains((string)($batch[42]['batch_merged_text'] ?? ''), "\n")
+    || !str_ends_with((string)($batch[42]['batch_merged_text'] ?? ''), '福430注直30')
+    || substr_count((string)($batch[42]['batch_merged_text'] ?? ''), '福430注直30') !== 1
+    || ($batch[42]['batch_has_duplicates'] ?? false) !== true
+    || ($batch[42]['batch_duplicate_numbers'] ?? []) !== ['668']) {
+    fwrite(STDERR, "Failed: per-line direct batch\n" . json_encode($batch, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+
+// A pasted/replaced number list may retain the old declared N in its suffix.
+// The explicit suffix still marks a physical-line batch; it must not collapse
+// back into one wrapped row.
+$replacedBatch = $parser->parse("111，222，333\n444，555，666福430注直30", '福彩3D', 2.0);
+if (count($replacedBatch) !== 2
+    || ($replacedBatch[0]['batch_index'] ?? 0) !== 1
+    || ($replacedBatch[1]['batch_end'] ?? false) !== true
+    || ($replacedBatch[1]['batch_count'] ?? 0) !== 6
+    || ($replacedBatch[1]['batch_declared_stake_count'] ?? 0) !== 430
+    || ($replacedBatch[1]['batch_count_mismatch'] ?? false) !== true
+    || !str_ends_with((string)($replacedBatch[1]['batch_merged_text'] ?? ''), '福6注直30')) {
+    fwrite(STDERR, "Failed: replaced number batch should stay split\n" . json_encode($replacedBatch, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+
+// The shared suffix can also be wrapped onto its own physical line.
+$separateSuffixBatch = $parser->parse("111，222，333\n444，555，666\n福6注直30", '福彩3D', 2.0);
+if (count($separateSuffixBatch) !== 2
+    || ($separateSuffixBatch[1]['batch_end'] ?? false) !== true
+    || !str_contains((string)($separateSuffixBatch[1]['raw_text'] ?? ''), '福6注直30')) {
+    fwrite(STDERR, "Failed: separate suffix batch should stay split\n" . json_encode($separateSuffixBatch, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+
+// The suffix aliases and punctuation are normalized before the batch marker
+// is inspected, so changing the number text does not collapse the rows.
+$normalizedSuffixBatch = $parser->parse("111,222,333\n444、555、666福6注直选30", '福彩3D', 2.0);
+if (count($normalizedSuffixBatch) !== 2
+    || count(array_unique(array_column($normalizedSuffixBatch, 'batch_id'))) !== 1
+    || ($normalizedSuffixBatch[1]['batch_end'] ?? false) !== true
+    || ($normalizedSuffixBatch[1]['batch_count'] ?? 0) !== 6
+    || ($normalizedSuffixBatch[1]['batch_count_mismatch'] ?? true) !== false) {
+    fwrite(STDERR, "Failed: normalized suffix batch\n" . json_encode($normalizedSuffixBatch, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+
+// Multiple marked tickets and an ordinary line may coexist in one paste;
+// each marker owns only the contiguous number lines immediately before it.
+$multipleBatches = $parser->parse("123直2\n111，222\n333，444福4注直30\n555，666\n777，888福4注直20", '福彩3D', 2.0);
+if (count($multipleBatches) !== 5
+    || ($multipleBatches[0]['batch_id'] ?? null) !== null
+    || ($multipleBatches[1]['batch_end'] ?? true) !== false
+    || ($multipleBatches[2]['batch_end'] ?? false) !== true
+    || ($multipleBatches[3]['batch_end'] ?? true) !== false
+    || ($multipleBatches[4]['batch_end'] ?? false) !== true
+    || count(array_unique(array_filter(array_column($multipleBatches, 'batch_id')))) !== 2) {
+    fwrite(STDERR, "Failed: multiple explicit batches\n" . json_encode($multipleBatches, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+
+// Without an explicit N注 marker, physical lines remain independent parse
+// attempts; the parser must not invent a shared batch or amount.
+$withoutMarker = $parser->parse("111，222\n333，444", '福彩3D', 2.0);
+if (count($withoutMarker) !== 2
+    || array_filter($withoutMarker, static fn(array $row): bool => ($row['batch_id'] ?? null) !== null)
+    || array_filter($withoutMarker, static fn(array $row): bool => ($row['status'] ?? '') !== 'failed')) {
+    fwrite(STDERR, "Failed: unmarked physical lines\n" . json_encode($withoutMarker, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+
 $explicitMoneyDirect = $parser->parse('629 269直10元', '福彩3D');
 if (($explicitMoneyDirect[0]['status'] ?? null) !== 'success' || ($explicitMoneyDirect[0]['amount'] ?? null) !== '20.00') {
     fwrite(STDERR, "Failed: explicit direct money\n" . json_encode($explicitMoneyDirect, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
@@ -108,17 +224,28 @@ if (count($wrappedDirectGroup) !== 2
     fwrite(STDERR, "Failed: wrapped direct/group ticket\n" . json_encode($wrappedDirectGroup, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
     exit(1);
 }
-
 $digitSetGroups = $parser->parse('25789 1000元组六600组三共计1600元', '福彩3D', 2.0);
 if (count($digitSetGroups) !== 2
     || ($digitSetGroups[0]['status'] ?? null) !== 'success'
     || ($digitSetGroups[0]['play_type'] ?? null) !== '组六五码'
     || ($digitSetGroups[0]['count'] ?? 0) !== 1
     || ($digitSetGroups[0]['amount'] ?? null) !== '1000.00'
+    || ($digitSetGroups[0]['number_text'] ?? null) !== '257 258 259 278 279 289 578 579 589 789'
     || ($digitSetGroups[1]['play_type'] ?? null) !== '组三五码'
     || ($digitSetGroups[1]['count'] ?? 0) !== 1
-    || ($digitSetGroups[1]['amount'] ?? null) !== '600.00') {
+    || ($digitSetGroups[1]['amount'] ?? null) !== '600.00'
+    || ($digitSetGroups[1]['number_text'] ?? null) !== '225 227 228 229 552 557 558 559 772 775 778 779 882 885 887 889 992 995 997 998') {
     fwrite(STDERR, "Failed: digit-set group ticket\n" . json_encode($digitSetGroups, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+
+$explicitCatalogGroup = $parser->parse('15862组六五码108元', '福彩3D', 2.0);
+if (count($explicitCatalogGroup) !== 1
+    || ($explicitCatalogGroup[0]['status'] ?? null) !== 'success'
+    || ($explicitCatalogGroup[0]['play_type'] ?? null) !== '组六五码'
+    || ($explicitCatalogGroup[0]['amount'] ?? null) !== '108.00'
+    || ($explicitCatalogGroup[0]['number_text'] ?? null) !== '158 156 152 186 182 162 586 582 562 862') {
+    fwrite(STDERR, "Failed: explicit catalog group combinations\n" . json_encode($explicitCatalogGroup, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
     exit(1);
 }
 
@@ -165,8 +292,21 @@ if (count($fuTiGroupEach) !== 1
     || ($fuTiGroupEach[0]['category'] ?? null) !== '福体'
     || ($fuTiGroupEach[0]['play_type'] ?? null) !== '组六五码'
     || ($fuTiGroupEach[0]['count'] ?? 0) !== 2
-    || ($fuTiGroupEach[0]['amount'] ?? null) !== '216.00') {
+    || ($fuTiGroupEach[0]['amount'] ?? null) !== '216.00'
+    || ($fuTiGroupEach[0]['number_text'] ?? null) !== '158 156 152 186 182 162 586 582 562 862') {
     fwrite(STDERR, "Failed: Fu/Ti group-six each amount\n" . json_encode($fuTiGroupEach, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+
+$fuTiGroupThreeEach = $parser->parse('15862福体组三各108', '福彩3D', 2.0);
+if (count($fuTiGroupThreeEach) !== 1
+    || ($fuTiGroupThreeEach[0]['status'] ?? null) !== 'success'
+    || ($fuTiGroupThreeEach[0]['category'] ?? null) !== '福体'
+    || ($fuTiGroupThreeEach[0]['play_type'] ?? null) !== '组三五码'
+    || ($fuTiGroupThreeEach[0]['count'] ?? 0) !== 2
+    || ($fuTiGroupThreeEach[0]['amount'] ?? null) !== '216.00'
+    || ($fuTiGroupThreeEach[0]['number_text'] ?? null) !== '115 118 116 112 551 558 556 552 881 885 886 882 661 665 668 662 221 225 228 226') {
+    fwrite(STDERR, "Failed: Fu/Ti group-three each amount\n" . json_encode($fuTiGroupThreeEach, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
     exit(1);
 }
 

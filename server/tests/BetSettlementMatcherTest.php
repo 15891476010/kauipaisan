@@ -105,6 +105,43 @@ $multiNumbers=['123','456','789'];
 $multiHits=count(array_filter($multiNumbers,static fn(string $number):bool=>$matcher->numberMatches($number,'456','123 456 789直 福')));
 $check($multiHits===1,'多号码直选行没有只计算实际命中的一个号码');
 
+$detailPayout=new ReflectionMethod($matcher,'detailPayout');
+$detailPayout->setAccessible(true);
+$groupSix=['158','156','152','186','182','162','586','582','562','862'];
+$groupSixSource='15862 组六五码 福';
+$groupSixHits=count(array_filter($groupSix,static fn(string $number):bool=>$matcher->numberMatches($number,'851',$groupSixSource)));
+$check($groupSixHits===1,'展开的组六多码包没有只命中真实组合');
+$expandedSix=$detailPayout->invoke($matcher,$groupSix,'851',$groupSixSource,108.0,80.0);
+$legacySix=$detailPayout->invoke($matcher,['000'],'851',$groupSixSource,108.0,80.0);
+$check($expandedSix['matched']===1&&abs($expandedSix['effective_odds']-800.0)<0.000001,'组六多码包的等效赔率错误');
+$check(abs($expandedSix['win']-8640.0)<0.000001&&abs($expandedSix['win']-$legacySix['win'])<0.000001,'展开组六与旧 000 包的赔付不一致');
+$losingSix=$detailPayout->invoke($matcher,$groupSix,'789',$groupSixSource,108.0,80.0);
+$check($losingSix['matched']===0&&abs($losingSix['win'])<0.000001,'组六多码包误中了未选组合');
+
+$groupThree=['115','118','116','112','551','558','556','552','881','885','886','882','661','665','668','662','221','225','228','226'];
+$groupThreeSource='15862 组三五码 福';
+$groupThreeHits=count(array_filter($groupThree,static fn(string $number):bool=>$matcher->numberMatches($number,'511',$groupThreeSource)));
+$check($groupThreeHits===1,'展开的组三多码包没有只命中真实组合');
+$expandedThree=$detailPayout->invoke($matcher,$groupThree,'511',$groupThreeSource,108.0,15.0);
+$legacyThree=$detailPayout->invoke($matcher,['000'],'511',$groupThreeSource,108.0,15.0);
+$check($expandedThree['matched']===1&&abs($expandedThree['effective_odds']-300.0)<0.000001,'组三多码包的等效赔率错误');
+$check(abs($expandedThree['win']-1620.0)<0.000001&&abs($expandedThree['win']-$legacyThree['win'])<0.000001,'展开组三与旧 000 包的赔付不一致');
+
+for($value=0;$value<=999;$value++){
+    $draw=$drawText($value);
+    $expandedSix=$detailPayout->invoke($matcher,$groupSix,$draw,$groupSixSource,108.0,80.0);
+    $legacySix=$detailPayout->invoke($matcher,['000'],$draw,$groupSixSource,108.0,80.0);
+    $check($expandedSix['matched']<=1,"组六展开包在开奖号 {$draw} 重复命中");
+    $check(abs($expandedSix['win']-$legacySix['win'])<0.000001,"组六展开包在开奖号 {$draw} 与旧 000 赔付不一致");
+    $expandedThree=$detailPayout->invoke($matcher,$groupThree,$draw,$groupThreeSource,108.0,15.0);
+    $legacyThree=$detailPayout->invoke($matcher,['000'],$draw,$groupThreeSource,108.0,15.0);
+    $check($expandedThree['matched']<=1,"组三展开包在开奖号 {$draw} 重复命中");
+    $check(abs($expandedThree['win']-$legacyThree['win'])<0.000001,"组三展开包在开奖号 {$draw} 与旧 000 赔付不一致");
+}
+
+$ordinaryMulti=$detailPayout->invoke($matcher,$multiNumbers,'456','123 456 789直 福',324.0,900.0);
+$check($ordinaryMulti['matched']===1&&abs($ordinaryMulti['effective_odds']-900.0)<0.000001&&abs($ordinaryMulti['win']-97200.0)<0.000001,'普通多号码逐注投注被误当成选组包');
+
 $lotteryId=(int)Db::name('lotteries')->where('code','fc3d')->where('status',1)->whereNull('deleted_at')->value('id');
 $configured=array_map(static fn(array $row):string=>$row['category'].'|'.$row['name'],Db::name('lottery_odds')->where('lottery_id',$lotteryId)->where('status',1)->whereNull('deleted_at')->field('category,name')->select()->toArray());
 $configured=array_values(array_unique($configured));$covered=array_values(array_unique($covered));sort($configured);sort($covered);

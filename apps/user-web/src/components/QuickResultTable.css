@@ -68,71 +68,14 @@
   color: #d90000;
 }
 
-.quick-detail-modal .ant-modal-body {
-  padding-top: 12px;
-}
-
-.quick-detail-summary {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
-  color: #222;
-}
-
-.quick-detail-info {
-  color: #096dd9;
-}
-
-.quick-detail-scroll {
-  max-height: 70vh;
-  overflow: auto;
-}
-
-.quick-detail-section {
-  margin-bottom: 16px;
+.quick-merge-text {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 180px;
+  padding: 10px;
   border: 1px solid #d9d9d9;
-}
-
-.quick-detail-type {
-  padding: 6px 10px;
-  font-weight: 700;
-}
-
-.quick-detail-type.ti {
-  background: #eaf3ff;
-}
-
-.quick-detail-type.fu {
-  background: #fff3ea;
-}
-
-.quick-detail-play {
-  padding: 4px 10px;
-  border-top: 1px solid #e5e5e5;
-  border-bottom: 1px solid #e5e5e5;
-}
-
-.quick-detail-table {
-  display: grid;
-}
-
-.quick-detail-header-row,
-.quick-detail-data-row {
-  display: grid;
-  grid-template-columns: repeat(8, 1fr);
-}
-
-.quick-detail-pair {
-  display: grid;
-  grid-template-rows: auto auto;
-  gap: 2px;
-  padding: 6px 4px;
-  border-right: 1px solid #eee;
-  border-bottom: 1px solid #eee;
-  text-align: center;
-}
-
-.quick-detail-pair.is-empty {
-  color: #999;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.6;
+  resize: vertical;
 }

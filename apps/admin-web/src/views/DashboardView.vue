@@ -1,16 +1,19 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Refresh, Wallet } from '@element-plus/icons-vue'
+import { EditPen, Refresh, Wallet } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { BarChart, LineChart } from 'echarts/charts'
 import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'
 import { init, use, type ECharts, type EChartsCoreOption } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
-import { getDashboardScore, type DashboardScoreData, type ScoreLedgerRow } from '../api/admin'
+import { getDashboardScore, updatePlatformTotal, type DashboardScoreData, type ScoreLedgerRow } from '../api/admin'
 
 use([BarChart, LineChart, GridComponent, LegendComponent, TooltipComponent, CanvasRenderer])
 
 const loading = ref(false)
+const savingTotal = ref(false)
+const scoreDialogOpen = ref(false)
+const scoreForm = ref({ total_score: 0, note: '' })
 const dashboard = ref<DashboardScoreData | null>(null)
 const trendChartElement = ref<HTMLDivElement | null>(null)
 let refreshTimer: ReturnType<typeof setInterval> | null = null
@@ -92,6 +95,35 @@ async function load(silent = false) {
   }
 }
 
+function openScoreDialog() {
+  scoreForm.value = {
+    total_score: number(dashboard.value?.overview.total_score),
+    note: '',
+  }
+  scoreDialogOpen.value = true
+}
+
+async function savePlatformScore() {
+  if (!Number.isFinite(scoreForm.value.total_score) || scoreForm.value.total_score < 0) {
+    ElMessage.warning('请输入正确的平台总分')
+    return
+  }
+  savingTotal.value = true
+  try {
+    await updatePlatformTotal({
+      total_score: scoreForm.value.total_score,
+      note: scoreForm.value.note.trim(),
+    })
+    ElMessage.success('总平台分数已更新')
+    scoreDialogOpen.value = false
+    await load(true)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '平台分数更新失败')
+  } finally {
+    savingTotal.value = false
+  }
+}
+
 onMounted(() => { void load(); refreshTimer = setInterval(() => void load(true), 60_000) })
 watch(() => dashboard.value?.trend, async () => { await nextTick(); renderTrendChart() }, { deep: true, flush: 'post' })
 onBeforeUnmount(() => { if (refreshTimer) clearInterval(refreshTimer); trendResizeObserver?.disconnect(); trendChart?.dispose() })
@@ -101,7 +133,10 @@ onBeforeUnmount(() => { if (refreshTimer) clearInterval(refreshTimer); trendResi
   <div class="dashboard-page" v-loading="loading">
     <header class="dashboard-header">
       <div><h1>分数总览</h1><p>统计时间 {{ generatedAt }}</p></div>
-      <el-button :icon="Refresh" :loading="loading" @click="load()">刷新</el-button>
+      <div class="dashboard-actions">
+        <el-button :icon="EditPen" type="primary" plain @click="openScoreDialog">设置平台分数</el-button>
+        <el-button :icon="Refresh" :loading="loading" @click="load()">刷新</el-button>
+      </div>
     </header>
 
     <template v-if="dashboard">
@@ -151,10 +186,32 @@ onBeforeUnmount(() => { if (refreshTimer) clearInterval(refreshTimer); trendResi
         </section>
       </div>
     </template>
+
+    <el-dialog v-model="scoreDialogOpen" title="设置平台分数" width="460px" destroy-on-close>
+      <el-form label-width="100px">
+        <el-form-item label="当前总分">
+          <el-input :model-value="money(dashboard?.overview.total_score)" disabled />
+        </el-form-item>
+        <el-form-item label="可分配">
+          <el-input :model-value="money(dashboard?.overview.available_score)" disabled />
+        </el-form-item>
+        <el-form-item label="新的总分">
+          <el-input-number v-model="scoreForm.total_score" :min="0" :precision="2" controls-position="right" style="width:100%" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="scoreForm.note" type="textarea" :rows="3" maxlength="120" show-word-limit placeholder="例如：初始化平台总分、追加平台分数" />
+        </el-form-item>
+      </el-form>
+      <p class="score-dialog-tip">新的总分不能小于已经下发给总监/站点的分数；减少总分时，平台可分配分数必须足够收回。</p>
+      <template #footer>
+        <el-button @click="scoreDialogOpen=false">取消</el-button>
+        <el-button type="primary" :loading="savingTotal" @click="savePlatformScore">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <style scoped>
-.dashboard-page{min-height:100%;padding:22px;background:#fff;color:#28344a}.dashboard-header,.section-heading{display:flex;align-items:center;justify-content:space-between;gap:16px}.dashboard-header{margin-bottom:18px}.dashboard-header h1,.section-heading h2{margin:0;font-size:20px;letter-spacing:0}.dashboard-header p,.section-heading span{margin:6px 0 0;color:#8792a6;font-size:12px}.score-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.score-card{min-width:0;padding:16px 18px;border:1px solid #e8edf4;border-left:4px solid #2f6fed;border-radius:6px;background:#fff}.score-card>div{display:flex;align-items:center;justify-content:space-between;color:#778297;font-size:13px}.score-card .el-icon{font-size:17px}.score-card strong{display:block;margin:10px 0 5px;color:#1f2b40;font-size:26px;line-height:1.2}.score-card small{color:#8994a8;font-size:12px}.score-card.green{border-left-color:#159b6c}.score-card.orange{border-left-color:#d68718}.score-card.cyan{border-left-color:#168aa3}.score-card.violet{border-left-color:#7357c8}.score-card.red{border-left-color:#d84b55}.distribution-section,.dashboard-section{margin-top:16px;padding:18px 0;border-top:1px solid #e8edf4}.section-heading h2{font-size:16px}.section-heading>div>span{display:block}.section-heading>b{font-size:13px;font-weight:600}.balanced,.positive{color:#12885d}.unbalanced,.negative{color:#cf3f4b}.distribution-bar{display:flex;width:100%;height:14px;margin-top:16px;overflow:hidden;border-radius:3px;background:#edf1f6}.distribution-bar i{display:block;height:100%;min-width:0}.distribution-legend{display:flex;flex-wrap:wrap;gap:10px 24px;margin-top:12px}.distribution-legend span{display:flex;align-items:center;gap:7px;color:#69758a;font-size:12px}.distribution-legend i{width:8px;height:8px;border-radius:2px}.distribution-legend b{margin-left:2px;color:#2b364b}.dashboard-grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.65fr);gap:24px}.trend-section{min-width:0}.trend-chart{width:100%;height:258px;margin-top:8px}.today-totals{display:grid;grid-template-columns:1fr 1fr;margin-top:16px;border:1px solid #e5eaf1}.today-totals>div{padding:13px 14px}.today-totals>div+div{border-left:1px solid #e5eaf1}.today-totals span{display:block;color:#7d889b;font-size:12px}.today-totals strong{display:block;margin-top:5px;font-size:17px}.category-list{margin-top:10px}.category-list>div{display:grid;grid-template-columns:minmax(100px,1fr) 90px 90px;gap:8px;padding:9px 2px;border-bottom:1px solid #edf0f4;font-size:12px;text-align:right}.category-list>div>span{text-align:left}.category-list small{margin-left:6px;color:#929cad}.table-scroll{margin-top:14px;overflow:auto}table{width:100%;min-width:980px;border-collapse:collapse;font-size:12px}th,td{padding:11px 12px;border-bottom:1px solid #e8edf3;text-align:right;white-space:nowrap}th{background:#f6f8fb;color:#69758a;font-weight:600}th:first-child,td:first-child{text-align:left}tbody tr:hover{background:#f9fbfe}.status{display:inline-flex;padding:2px 7px;border-radius:3px}.status.enabled{background:#e8f7ef;color:#16875d}.status.disabled{background:#f2f3f5;color:#8b94a4}.lower-grid{grid-template-columns:minmax(320px,.7fr) minmax(0,1.3fr)}.level-list{margin-top:14px}.level-list>div{display:grid;grid-template-columns:105px minmax(80px,1fr) 190px;align-items:center;gap:14px;padding:12px 0;border-bottom:1px solid #edf0f4}.level-list span{display:flex;align-items:center;gap:8px}.level-list small{color:#929cad;font-size:11px;font-weight:400}.level-list>div>div{height:7px;overflow:hidden;border-radius:2px;background:#edf1f5}.level-list i{display:block;height:100%;background:#3975df}.level-list strong{text-align:right;font-size:13px}.recent-list{margin-top:8px}.recent-list>div{display:grid;grid-template-columns:minmax(140px,.8fr) minmax(150px,1fr) 110px 145px;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #edf0f4;font-size:12px}.recent-account{display:flex;min-width:0;flex-direction:column}.recent-account b,.recent-account small,.recent-reason{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.recent-account small{margin-top:3px;color:#8b96a8}.recent-reason{color:#5f6b80}.recent-list strong,.recent-list time{text-align:right}.recent-list time{color:#8b96a8;font-size:11px}.empty-row{padding:22px!important;color:#98a1b1!important;text-align:center!important}.dashboard-page :deep(.el-loading-mask){background:rgba(255,255,255,.78)}
-@media(max-width:1100px){.score-cards{grid-template-columns:repeat(2,minmax(0,1fr))}.dashboard-grid,.lower-grid{grid-template-columns:1fr}}@media(max-width:680px){.dashboard-page{padding:14px}.score-cards{grid-template-columns:1fr}.distribution-legend{display:grid;grid-template-columns:1fr 1fr}.trend-chart{height:230px}.level-list>div{grid-template-columns:86px 1fr 145px}.recent-list>div{grid-template-columns:1fr 95px}.recent-reason,.recent-list time{display:none}}
+.dashboard-page{min-height:100%;padding:22px;background:#fff;color:#28344a}.dashboard-header,.section-heading{display:flex;align-items:center;justify-content:space-between;gap:16px}.dashboard-header{margin-bottom:18px}.dashboard-actions{display:flex;align-items:center;gap:10px}.dashboard-header h1,.section-heading h2{margin:0;font-size:20px;letter-spacing:0}.dashboard-header p,.section-heading span{margin:6px 0 0;color:#8792a6;font-size:12px}.score-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.score-card{min-width:0;padding:16px 18px;border:1px solid #e8edf4;border-left:4px solid #2f6fed;border-radius:6px;background:#fff}.score-card>div{display:flex;align-items:center;justify-content:space-between;color:#778297;font-size:13px}.score-card .el-icon{font-size:17px}.score-card strong{display:block;margin:10px 0 5px;color:#1f2b40;font-size:26px;line-height:1.2}.score-card small{color:#8994a8;font-size:12px}.score-card.green{border-left-color:#159b6c}.score-card.orange{border-left-color:#d68718}.score-card.cyan{border-left-color:#168aa3}.score-card.violet{border-left-color:#7357c8}.score-card.red{border-left-color:#d84b55}.distribution-section,.dashboard-section{margin-top:16px;padding:18px 0;border-top:1px solid #e8edf4}.section-heading h2{font-size:16px}.section-heading>div>span{display:block}.section-heading>b{font-size:13px;font-weight:600}.balanced,.positive{color:#12885d}.unbalanced,.negative{color:#cf3f4b}.distribution-bar{display:flex;width:100%;height:14px;margin-top:16px;overflow:hidden;border-radius:3px;background:#edf1f6}.distribution-bar i{display:block;height:100%;min-width:0}.distribution-legend{display:flex;flex-wrap:wrap;gap:10px 24px;margin-top:12px}.distribution-legend span{display:flex;align-items:center;gap:7px;color:#69758a;font-size:12px}.distribution-legend i{width:8px;height:8px;border-radius:2px}.distribution-legend b{margin-left:2px;color:#2b364b}.dashboard-grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.65fr);gap:24px}.trend-section{min-width:0}.trend-chart{width:100%;height:258px;margin-top:8px}.today-totals{display:grid;grid-template-columns:1fr 1fr;margin-top:16px;border:1px solid #e5eaf1}.today-totals>div{padding:13px 14px}.today-totals>div+div{border-left:1px solid #e5eaf1}.today-totals span{display:block;color:#7d889b;font-size:12px}.today-totals strong{display:block;margin-top:5px;font-size:17px}.category-list{margin-top:10px}.category-list>div{display:grid;grid-template-columns:minmax(100px,1fr) 90px 90px;gap:8px;padding:9px 2px;border-bottom:1px solid #edf0f4;font-size:12px;text-align:right}.category-list>div>span{text-align:left}.category-list small{margin-left:6px;color:#929cad}.table-scroll{margin-top:14px;overflow:auto}table{width:100%;min-width:980px;border-collapse:collapse;font-size:12px}th,td{padding:11px 12px;border-bottom:1px solid #e8edf3;text-align:right;white-space:nowrap}th{background:#f6f8fb;color:#69758a;font-weight:600}th:first-child,td:first-child{text-align:left}tbody tr:hover{background:#f9fbfe}.status{display:inline-flex;padding:2px 7px;border-radius:3px}.status.enabled{background:#e8f7ef;color:#16875d}.status.disabled{background:#f2f3f5;color:#8b94a4}.lower-grid{grid-template-columns:minmax(320px,.7fr) minmax(0,1.3fr)}.level-list{margin-top:14px}.level-list>div{display:grid;grid-template-columns:105px minmax(80px,1fr) 190px;align-items:center;gap:14px;padding:12px 0;border-bottom:1px solid #edf0f4}.level-list span{display:flex;align-items:center;gap:8px}.level-list small{color:#929cad;font-size:11px;font-weight:400}.level-list>div>div{height:7px;overflow:hidden;border-radius:2px;background:#edf1f5}.level-list i{display:block;height:100%;background:#3975df}.level-list strong{text-align:right;font-size:13px}.recent-list{margin-top:8px}.recent-list>div{display:grid;grid-template-columns:minmax(140px,.8fr) minmax(150px,1fr) 110px 145px;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #edf0f4;font-size:12px}.recent-account{display:flex;min-width:0;flex-direction:column}.recent-account b,.recent-account small,.recent-reason{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.recent-account small{margin-top:3px;color:#8b96a8}.recent-reason{color:#5f6b80}.recent-list strong,.recent-list time{text-align:right}.recent-list time{color:#8b96a8;font-size:11px}.empty-row{padding:22px!important;color:#98a1b1!important;text-align:center!important}.score-dialog-tip{margin:0;color:#7b8798;font-size:12px;line-height:1.7}.dashboard-page :deep(.el-loading-mask){background:rgba(255,255,255,.78)}
+@media(max-width:1100px){.score-cards{grid-template-columns:repeat(2,minmax(0,1fr))}.dashboard-grid,.lower-grid{grid-template-columns:1fr}}@media(max-width:680px){.dashboard-page{padding:14px}.dashboard-header{align-items:flex-start;flex-direction:column}.dashboard-actions{width:100%;justify-content:flex-start}.score-cards{grid-template-columns:1fr}.distribution-legend{display:grid;grid-template-columns:1fr 1fr}.trend-chart{height:230px}.level-list>div{grid-template-columns:86px 1fr 145px}.recent-list>div{grid-template-columns:1fr 95px}.recent-reason,.recent-list time{display:none}}
 </style>

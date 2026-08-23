@@ -120,7 +120,10 @@ final class Lottery
             $row['latest_numbers']=(string)($latest['numbers']??'');
             $row['next_code']=(string)($latest['next_code']??($pending['code']??''));
             $row['next_open_time']=$latest['next_open_time']??($pending['open_time']??null);
-            $row['recent_issues']=Db::name('lottery_histories')->where('lottery_id',(int)$row['id'])->order('open_time desc')->order('id desc')->limit(10)->field('code,draw_day')->select()->toArray();
+            // The detail page exposes the same recent issue window as the
+            // reference layout (enough entries for the 40-row pager). Keep
+            // the list bounded so the header payload remains small.
+            $row['recent_issues']=Db::name('lottery_histories')->where('lottery_id',(int)$row['id'])->order('open_time desc')->order('id desc')->limit(40)->field('code,draw_day')->select()->toArray();
             $row['can_bet']=$permissionMap ? (int)($permissionMap[(int)$row['id']]['can_bet']??0)===1 : true;
         }
         unset($row);

@@ -42,10 +42,11 @@ final class InterceptionAllocator
 
         $follow=(bool)$configuration['follow'];
         $platformLimit=max(0,(float)($odds['platform_single_item_limit']??$odds['single_item_limit']??0));
-        $numbers=$this->numbers((string)($context['number_text']??''));
-        if($numbers===[]) return [];
-        $stake=$actual/count($numbers); $now=date('Y-m-d H:i:s'); $results=[];
-        foreach($numbers as $number) {
+        $stakes=$this->stakes((string)($context['number_text']??''),$actual);
+        if($stakes===[]) return [];
+        $now=date('Y-m-d H:i:s'); $results=[];
+        foreach($stakes as $entry) {
+            $number=$entry['number'];$stake=$entry['amount'];
             $wanted=round($stake*$rate/100,2);
             $agentTaken=$this->reserve('organization',$organizationId,$tenantId,$lotteryId,$issue,$oddsId,$number,$agentLimit,$wanted,$now);
             $taken=$agentTaken; $reason=$agentTaken+0.000001<$wanted?'agent_full':'allocated';
@@ -106,7 +107,18 @@ final class InterceptionAllocator
     private function numbers(string $text): array
     {
         $parts=preg_split('/[\s,，]+/u',trim($text),-1,PREG_SPLIT_NO_EMPTY)?:[];
-        $parts=array_values(array_unique(array_map(static fn(string $value): string=>mb_substr(trim($value),0,64),$parts)));
+        // Keep every stake occurrence. The same number may be intentionally
+        // entered more than once, and each occurrence carries its own amount.
+        $parts=array_map(static fn(string $value): string=>mb_substr(trim($value),0,64),$parts);
         return array_values(array_filter($parts,static fn(string $value): bool=>$value!==''));
+    }
+
+    /** @return array<int,array{number:string,amount:float}> */
+    private function stakes(string $numberText,float $actual): array
+    {
+        $numbers=$this->numbers($numberText);
+        if($numbers===[]||$actual<=0) return [];
+        $amount=$actual/count($numbers);
+        return array_map(static fn(string $number): array=>['number'=>$number,'amount'=>$amount],$numbers);
     }
 }

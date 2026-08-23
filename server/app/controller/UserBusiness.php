@@ -4,6 +4,7 @@ namespace app\controller;
 
 use app\service\InterceptionAllocator;
 use app\service\CreditLedger;
+use app\service\BetSettlement;
 use app\service\LotteryHistorySync;
 use app\service\QuickEntryParser;
 use think\Request;
@@ -95,7 +96,7 @@ final class UserBusiness
     }
     private function applyLineLimits(array $session, string $lottery, array $line): array
     {
-        $requested=(float)($line['amount']??0); $count=max(1,(int)($line['count']??1)); $odds=$this->lineOdds($session,$lottery,$line);
+        $requested=(float)($line['amount']??0); $count=max(1,(int)($line['stake_count']??$line['count']??1)); $odds=$this->lineOdds($session,$lottery,$line);
         if (!$odds) throw new \InvalidArgumentException('当前玩法无法唯一匹配赔率，已禁止下注');
         $actual=$requested;
         $minimum=(float)($odds['min_bet']??0);$perNumber=$requested/$count;
@@ -269,29 +270,110 @@ final class UserBusiness
         $total=(clone $query)->count(); $page=max(1,(int)$request->param('page',1)); $size=min(100,max(1,(int)$request->param('page_size',50))); $sort=(string)$request->param('sort','desc');
         return $this->reply(['list'=>$query->order('placed_at',$sort==='asc'?'asc':'desc')->page($page,$size)->select()->toArray(),'total'=>$total,'page'=>$page,'page_size'=>$size]);
     }
+    /** @return array<int,string> */
+    private function detailNumberTokens(mixed $value): array
+    {
+        $tokens=preg_split('/[\s,，、]+/u',trim((string)$value),-1,PREG_SPLIT_NO_EMPTY)?:[];
+        return array_values(array_filter(array_map(static fn(string $token): string=>mb_substr(trim($token),0,64),$tokens),static fn(string $token): bool=>$token!==''));
+    }
+
+    private function detailPlayLabel(mixed $playType,mixed $category): string
+    {
+        $value=trim((string)($playType?:$category));
+        if ($value==='') return '';
+        if (str_contains($value,'直选')||$value==='直') return '直';
+        if (str_contains($value,'组三')) return '组3';
+        if (str_contains($value,'组六')) return '组6';
+        if (str_contains($value,'组选')) return '组';
+        return mb_substr($value,0,4);
+    }
+
+    private function detailOrderNumber(array $row): string
+    {
+        $explicit=trim((string)($row['submission_order_no']??$row['order_no']??''));
+        if ($explicit!=='') return $explicit;
+        $parent=(int)($row['submission_id']??0); if ($parent<1) $parent=(int)($row['bet_record_id']??$row['id']??0);
+        $stamp=preg_replace('/\D+/','',(string)($row['placed_at']??''))??'';
+        $stamp=substr($stamp,2,12); if (strlen($stamp)<12) $stamp=str_pad($stamp,12,'0');
+        return $stamp.str_pad((string)($parent%100),2,'0');
+    }
+
+    private function detailMoney(float $amount): string
+    {
+        $value=rtrim(rtrim(number_format($amount,2,'.',''),'0'),'.');
+        return $value===''?'0':$value;
+    }
+
+    /** @return array<int,string> */
+    private function splitDetailMoney(float $amount,int $count): array
+    {
+        $count=max(1,$count); $cents=(int)round($amount*100); $base=intdiv($cents,$count); $remainder=$cents-($base*$count); $parts=[];
+        for($index=0;$index<$count;$index++) $parts[]=$this->detailMoney(($base+($index<$remainder?1:0))/100);
+        return $parts;
+    }
+
+    /** @param array<int,string> $tokens */
+    private function isExpandedGroupPackage(array $tokens,string $source): bool
+    {
+        if(count($tokens)<2||preg_match('/(?<!\d)([0-9]{3,10})\s*(组三|组六)[一二两三四五六七八九1-9]码/u',$source,$match)!==1)return false;
+        $selected=array_values(array_unique(str_split((string)$match[1])));$required=$match[2]==='组三'?2:3;
+        foreach($tokens as $token){$digits=array_values(array_unique(str_split($token)));if(preg_match('/^\d{3}$/',$token)!==1||count($digits)!==$required||array_diff($digits,$selected)!==[])return false;}
+        return true;
+    }
+
+    /** @param array<int,array<string,mixed>> $rows @return array<string,string> */
+    private function detailDrawMap(array $rows,int $tenantId): array
+    {
+        $lotteries=[];$issues=[];
+        foreach($rows as $row){$lottery=trim((string)($row['lottery']??''));$issue=trim((string)($row['issue_no']??''));if($lottery!==''&&$issue!==''){$lotteries[$lottery]=true;$issues[$issue]=true;}}
+        if($lotteries===[]||$issues===[])return [];
+        $histories=Db::name('lottery_histories')->alias('h')->join('lotteries l','l.id=h.lottery_id')
+            ->where('l.tenant_id',$tenantId)->whereIn('l.name',array_keys($lotteries))->whereIn('h.code',array_keys($issues))
+            ->field('l.name AS lottery,h.code,h.one,h.two,h.three,h.numbers')->select()->toArray();
+        $map=[];
+        foreach($histories as $history){$draw=(string)($history['one']??'').(string)($history['two']??'').(string)($history['three']??'');if(preg_match('/^\d{3}$/',$draw)!==1)$draw=preg_replace('/\D/','',(string)($history['numbers']??''))?:'';if(preg_match('/^\d{3}$/',$draw)===1)$map[(string)$history['lottery'].'|'.(string)$history['code']]=$draw;}
+        return $map;
+    }
+
+    /** @param array<int,array<string,mixed>> $rows */
+    private function detailTotals(array $rows): array
+    {
+        $totals=['amount'=>0.0,'win_amount'=>0.0,'rebate'=>0.0,'offline_rebate'=>0.0,'profit'=>0.0];
+        foreach($rows as $row) foreach($totals as $key=>$value) $totals[$key]+=(float)($row[$key]??0);
+        foreach($totals as $key=>$value) $totals[$key]=$this->detailMoney($value);
+        return $totals;
+    }
+
     public function betDetails(Request $request): \think\response\Json
     {
-        $s=$this->session($request); [$from,$to]=$this->range($request);
-        $query=Db::name('bet_details')->alias('d')->leftJoin('user_stop_drops s','s.bet_detail_id=d.id')->where('d.site_id',$s['site_id'])->where('d.user_id',$s['user_id'])->field('d.*,s.play_type,s.lottery');
-        $submissionId=(int)$request->param('submission_id',0);
-        $recordId=(int)$request->param('bet_record_id',0);
-        if ($submissionId>0) {
-            $recordIds=$this->submissionRecordIds($submissionId);
-            $query->whereIn('d.bet_record_id',$recordIds ?: [-1]);
-        } elseif ($recordId>0) {
-            $query->where('d.bet_record_id',$recordId);
-        }
-        if ($from) $query->where('d.placed_at','>=',$from); if ($to) $query->where('d.placed_at','<=',$to);
-        $issue=trim((string)$request->param('issue_no','')); if ($issue !== '') $query->where('d.issue_no',$issue);
-        $number=trim((string)$request->param('number','')); if ($number !== '') $query->whereLike('d.number_text','%'.$number.'%');
-        $lottery=trim((string)$request->param('lottery','')); if ($lottery !== '') $query->where('s.lottery',$lottery);
-        $category=trim((string)$request->param('category','')); if ($category !== '' && $category !== '所有') $query->where('s.play_type',$category);
-        $metric=(string)$request->param('metric','odds'); $metric=in_array($metric,['odds','amount'],true)?$metric:'odds';
-        $min=$request->param('min'); $max=$request->param('max'); if ($min !== null && $min !== '' && is_numeric($min)) $query->where('d.'.$metric,'>=',(float)$min); if ($max !== null && $max !== '' && is_numeric($max)) $query->where('d.'.$metric,'<=',(float)$max);
-        if ((string)$request->param('winning','') === '1') $query->where('d.status','won');
-        $total=(clone $query)->count(); $page=max(1,(int)$request->param('page',1)); $size=min(100,max(1,(int)$request->param('page_size',50)));
+        $s=$this->session($request); [$from,$to]=$this->range($request); $query=Db::name('bet_details')->alias('d')
+            ->leftJoin('bet_records r','r.id=d.bet_record_id')->leftJoin('user_stop_drops s','s.bet_detail_id=d.id')
+            ->where('d.site_id',$s['site_id'])->where('d.user_id',$s['user_id']);
+        $hasSubmissions=$this->betSubmissionsAvailable(); if($hasSubmissions) $query->leftJoin('bet_submissions b','b.id=r.submission_id');
+        $submissionId=(int)$request->param('submission_id',0); $recordId=(int)$request->param('bet_record_id',0);
+        if($submissionId>0){$recordIds=$this->submissionRecordIds($submissionId);$query->whereIn('d.bet_record_id',$recordIds?:[-1]);}elseif($recordId>0)$query->where('d.bet_record_id',$recordId);
+        if($from)$query->where('d.placed_at','>=',$from);if($to)$query->where('d.placed_at','<=',$to);
+        $issue=trim((string)$request->param('issue_no',''));if($issue!=='')$query->where('d.issue_no',$issue);
+        $number=trim((string)$request->param('number',''));if($number!=='')$query->whereLike('d.number_text','%'.$number.'%');
+        $lottery=trim((string)$request->param('lottery',''));if($lottery!=='')$query->where('s.lottery',$lottery);
+        $category=trim((string)$request->param('category',''));if($category!==''&&$category!=='所有')$query->where('s.play_type',$category);
+        $metric=(string)$request->param('metric','odds');$metric=in_array($metric,['odds','amount'],true)?$metric:'odds';$min=$request->param('min');$max=$request->param('max');
+        if($min!==null&&$min!==''&&is_numeric($min))$query->where('d.'.$metric,'>=',(float)$min);if($max!==null&&$max!==''&&is_numeric($max))$query->where('d.'.$metric,'<=',(float)$max);if((string)$request->param('winning','')==='1')$query->where('d.status','won');
         $sort=(string)$request->param('sort','desc')==='asc'?'asc':'desc';
-        return $this->reply(['list'=>$query->order('d.placed_at',$sort)->page($page,$size)->select()->toArray(),'total'=>$total,'page'=>$page,'page_size'=>$size]);
+        $fields='d.id,d.bet_record_id,d.issue_no,d.number_text,d.category,d.amount,d.odds,d.win_amount,d.rebate,d.status,d.placed_at,d.source_text AS detail_source,s.play_type,s.lottery,r.submission_id,r.source_text AS record_source,r.status AS record_status';
+        if($hasSubmissions)$fields.=',b.id AS submission_row_id';
+        $detailRows=$query->field($fields)->order('d.placed_at',$sort)->order('d.id',$sort)->select()->toArray(); $expanded=[];$draws=$this->detailDrawMap($detailRows,(int)$s['tenant_id']);$matcher=new BetSettlement();
+        foreach($detailRows as $row){
+            $source=(string)($row['detail_source']??'');if($source==='')$source=(string)($row['record_source']??'');$storedNumberText=trim((string)($row['number_text']??''));$tokens=$this->detailNumberTokens($storedNumberText);
+            if($tokens===[])$tokens=['-'];if($sort==='desc')$tokens=array_reverse($tokens);$count=count($tokens);
+            $amounts=$this->splitDetailMoney((float)$row['amount'],$count);$wins=$this->splitDetailMoney((float)$row['win_amount'],$count);$rebates=$this->splitDetailMoney((float)$row['rebate'],$count);$orderNo=$this->detailOrderNumber($row);$resolved=(float)$row['win_amount']<=0;$winningIndexes=[];
+            $draw=$draws[(string)($row['lottery']??'').'|'.(string)($row['issue_no']??'')]??'';
+            if((float)$row['win_amount']>0&&$draw!==''){$winningIndexes=array_keys(array_filter($tokens,static fn(string $token):bool=>$matcher->numberMatches($token,$draw,$source)));if($winningIndexes!==[]){$wins=array_fill(0,$count,'0');$winningParts=$this->splitDetailMoney((float)$row['win_amount'],count($winningIndexes));foreach($winningIndexes as $winningIndex=>$tokenIndex)$wins[$tokenIndex]=$winningParts[$winningIndex];$resolved=true;}}
+            $groupPackage=$this->isExpandedGroupPackage($tokens,$source);$displayOdds=$row['odds']===null?null:(float)$row['odds']*($groupPackage?$count:1);$oddsText=$displayOdds===null?'-':rtrim(rtrim(number_format($displayOdds,3,'.',''),'0'),'.');
+            foreach($tokens as $index=>$token){$amount=(float)$amounts[$index];$win=(float)$wins[$index];$rebate=(float)$rebates[$index];$tokenStatus=(string)($row['status']??$row['record_status']??'pending');if($resolved&&$tokenStatus==='won')$tokenStatus=$win>0?'won':'unwon';$groupFirst=$index===0;$expanded[]=['id'=>(int)$row['id'],'row_key'=>(int)$row['id'].'-'.$index,'detail_group_id'=>(int)$row['id'],'detail_group_index'=>$index,'detail_group_size'=>$count,'group_first'=>$groupFirst,'is_group_first'=>$groupFirst,'show_text_button'=>$groupFirst,'bet_record_id'=>(int)($row['bet_record_id']??0),'submission_id'=>(int)($row['submission_id']??0)?:null,'order_no'=>$orderNo,'issue_no'=>(string)$row['issue_no'],'number_text'=>$token,'stored_number_text'=>$storedNumberText,'category'=>(string)($row['category']??''),'play_type'=>(string)($row['play_type']??''),'play_label'=>$this->detailPlayLabel($row['play_type']??'',$row['category']??''),'lottery'=>(string)($row['lottery']??''),'amount'=>$amounts[$index],'odds'=>$oddsText,'win_amount'=>$wins[$index],'is_winning_number'=>in_array($index,$winningIndexes,true),'win_projection_resolved'=>$resolved,'rebate'=>$rebates[$index],'offline_rebate'=>'0','profit'=>$this->detailMoney($win-$amount+$rebate),'status'=>$tokenStatus,'placed_at'=>(string)$row['placed_at'],'source_text'=>$source];}
+        }
+        $total=count($expanded);$page=max(1,(int)$request->param('page',1));$size=min(100,max(1,(int)$request->param('page_size',40)));$pageRows=array_slice($expanded,($page-1)*$size,$size);$allTotals=$this->detailTotals($expanded);$pageTotals=$this->detailTotals($pageRows);
+        return $this->reply(['list'=>$pageRows,'total'=>$total,'page'=>$page,'page_size'=>$size,'total_amount'=>$allTotals['amount'],'win_amount'=>$allTotals['win_amount'],'rebate'=>$allTotals['rebate'],'offline_rebate'=>$allTotals['offline_rebate'],'profit'=>$allTotals['profit'],'page_total'=>$pageTotals]);
     }
     public function bills(Request $request): \think\response\Json
     {
@@ -383,7 +465,7 @@ final class UserBusiness
     }
     private function lineForLottery(array $line,string $lottery,int $tenantId): array
     {
-        $raw=trim((string)($line['raw_text']??''));
+        $raw=trim((string)($line['parse_text']??$line['raw_text']??''));
         if($raw==='')throw new \InvalidArgumentException('投注行缺少原始文本，无法按彩种计算金额');
         $signature=(string)($line['play_type']??'').'|'.(string)($line['number_text']??'');
         $matches=[];
@@ -400,6 +482,16 @@ final class UserBusiness
             $count=(int)($line['count']??0);
             if ($count<1 || $count%$parts!==0) throw new \InvalidArgumentException('福体投注注数无法按彩种拆分');
             $line['count']=intdiv($count,$parts);
+            if (isset($line['stake_count'])) {
+                $stakeCount=(int)$line['stake_count'];
+                if ($stakeCount<1 || $stakeCount%$parts!==0) throw new \InvalidArgumentException('福体投注金额注数无法按彩种拆分');
+                $line['stake_count']=intdiv($stakeCount,$parts);
+            }
+            if (isset($line['code_count'])) {
+                $codeCount=(int)$line['code_count'];
+                if ($codeCount<1 || $codeCount%$parts!==0) throw new \InvalidArgumentException('福体投注码数无法按彩种拆分');
+                $line['code_count']=intdiv($codeCount,$parts);
+            }
             $line['amount']=number_format((float)($line['amount']??0)/$parts,2,'.','');
         }
         $category=$lottery==='福彩3D'?'福':'体';
@@ -410,7 +502,7 @@ final class UserBusiness
     private function submissionFingerprint(array $session,array $groups): string
     {
         ksort($groups);$payload=[];
-        foreach($groups as $lottery=>$group){$lines=[];foreach($group['lines'] as $entry){$lines[]=['play'=>(string)($entry['line']['play_type']??''),'numbers'=>(string)($entry['line']['number_text']??''),'requested'=>number_format((float)$entry['rule']['requested'],2,'.',''),'actual'=>number_format((float)$entry['rule']['actual'],2,'.','')];}$payload[]=['lottery'=>$lottery,'issue'=>(string)$group['issue_no'],'lines'=>$lines];}
+        foreach($groups as $lottery=>$group){$lines=[];foreach($group['lines'] as $entry){$line=$entry['line'];$selection=(string)($line['settlement_text']??$line['parse_text']??$line['raw_text']??'');$lines[]=['play'=>(string)($line['play_type']??''),'numbers'=>(string)($line['number_text']??''),'selection'=>$selection,'requested'=>number_format((float)$entry['rule']['requested'],2,'.',''),'actual'=>number_format((float)$entry['rule']['actual'],2,'.','')];}$payload[]=['lottery'=>$lottery,'issue'=>(string)$group['issue_no'],'lines'=>$lines];}
         return hash('sha256',json_encode(['site'=>(int)$session['site_id'],'user'=>(int)$session['user_id'],'bets'=>$payload],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
     }
     private function recentDuplicateRecords(array $session,string $fingerprint): array
@@ -436,18 +528,43 @@ final class UserBusiness
     {
         $s=$this->session($request); $text=trim((string)$request->post('text','')); if (mb_strlen($text)>10000) return $this->reply(null,'投注文本不能超过10000个字符',422); $lottery=trim((string)$request->post('lottery','福彩3D')); if (!in_array($lottery,['福彩3D','排列三'],true)) return $this->reply(null,'彩种无效',422);
         if ($text==='') return $this->reply(['lines'=>[],'count'=>0,'amount'=>'0.00'],'请输入投注文本',422);
-        $lines=$this->quickLines($text,$lottery,(int)$s['tenant_id']); $count=0; $amount=0.0;
+        $lines=$this->quickLines($text,$lottery,(int)$s['tenant_id']); $count=0; $codeCount=0; $amount=0.0;
         foreach ($lines as &$line) if ($line['status']==='success') {
             $lineLotteries=$this->lotteriesForLine($line,$lottery);$oddsReady=true;
             $lineAmount=0.0;$lineCount=0;
+            $lineCodeCount=(int)($line['code_count']??$line['count']??0);
             try{foreach($lineLotteries as $lineLottery){$this->assertLotteryPermission($s,$lineLottery);$splitLine=$this->lineForLottery($line,$lineLottery,(int)$s['tenant_id']);if(!$this->lineOdds($s,$lineLottery,$splitLine))$oddsReady=false;$lineAmount+=(float)$splitLine['amount'];$lineCount+=(int)$splitLine['count'];}}
             catch(\InvalidArgumentException $e){$oddsReady=false;$line['reason']=$e->getMessage();}
             if (!$oddsReady) { $line['status']='failed'; $line['reason']=$line['reason']??'当前玩法无法唯一匹配赔率'; $line['amount']='0.00'; $line['count']=0; continue; }
-            $line['amount']=number_format($lineAmount,2,'.','');$line['count']=$lineCount;if(isset($line['ast']))$line['ast']['amount']=$lineAmount;
-            $count+=$lineCount; $amount+=$lineAmount;
+            $line['amount']=number_format($lineAmount,2,'.','');$line['count']=$lineCount;$line['code_count']=$lineCodeCount;if(isset($line['ast']))$line['ast']['amount']=$lineAmount;
+            $count+=$lineCount; $codeCount+=$lineCodeCount; $amount+=$lineAmount;
         }
         unset($line);
-        return $this->reply(['lines'=>$lines,'count'=>$count,'amount'=>number_format($amount,2,'.',''),'formatted_text'=>(new QuickEntryParser())->formatText($text)]);
+        $batchStats=[];
+        foreach($lines as $line){
+            $batchId=(string)($line['batch_id']??'');if($batchId==='')continue;
+            if(!isset($batchStats[$batchId]))$batchStats[$batchId]=['valid'=>true,'rows'=>0,'expected'=>(int)($line['batch_size']??0),'numbers'=>[],'seen'=>[],'occurrences'=>[],'frequency'=>[],'category_multiplier'=>1,'stake_count'=>0,'amount'=>0.0];
+            $batchStats[$batchId]['rows']++;$batchStats[$batchId]['expected']=max((int)$batchStats[$batchId]['expected'],(int)($line['batch_size']??0));
+            if(($line['status']??'')!=='success'){$batchStats[$batchId]['valid']=false;continue;}
+            $numbers=preg_split('/\s+/',trim((string)($line['number_text']??'')))?:[];
+            foreach($numbers as $number){if(preg_match('/^\d{3}$/',$number)!==1)continue;$key='n'.$number;$batchStats[$batchId]['occurrences'][]=$number;$batchStats[$batchId]['frequency'][$key]=($batchStats[$batchId]['frequency'][$key]??0)+1;if(!isset($batchStats[$batchId]['seen'][$key])){$batchStats[$batchId]['seen'][$key]=true;$batchStats[$batchId]['numbers'][]=$number;}}
+            $batchStats[$batchId]['category_multiplier']=max((int)$batchStats[$batchId]['category_multiplier'],count($this->lotteriesForLine($line,$lottery)));$batchStats[$batchId]['stake_count']+=(int)($line['stake_count']??$line['count']??0);$batchStats[$batchId]['amount']+=(float)($line['amount']??0);
+        }
+        foreach($lines as &$line){
+            $batchId=(string)($line['batch_id']??'');if($batchId===''||($line['batch_end']??false)!==true)continue;$stats=$batchStats[$batchId]??null;
+            $valid=is_array($stats)&&($stats['valid']??false)===true&&(int)($stats['rows']??0)===(int)($stats['expected']??-1);$line['batch_valid']=$valid;
+            if(!$valid){unset($line['batch_count'],$line['batch_stake_count'],$line['batch_amount'],$line['batch_number_text'],$line['batch_occurrence_text'],$line['batch_has_duplicates'],$line['batch_duplicate_numbers']);continue;}
+            $duplicates=[];foreach($stats['frequency'] as $key=>$frequency)if((int)$frequency>1)$duplicates[]=substr((string)$key,1);
+            $line['batch_count']=count($stats['numbers'])*(int)$stats['category_multiplier'];$line['batch_stake_count']=(int)$stats['stake_count'];$line['batch_amount']=number_format((float)$stats['amount'],2,'.','');$line['batch_number_text']=implode(' ',$stats['numbers']);$line['batch_occurrence_text']=implode(' ',$stats['occurrences']);$line['batch_has_duplicates']=$duplicates!==[];$line['batch_duplicate_numbers']=$duplicates;
+        }
+        unset($line);
+        $count=0;$codeCount=0;$amount=0.0;
+        foreach($lines as $line){
+            $batchId=(string)($line['batch_id']??'');
+            if($batchId!==''){if(($line['batch_end']??false)===true&&($line['batch_valid']??false)===true){$batchCount=(int)($line['batch_count']??0);$count+=$batchCount;$codeCount+=$batchCount;$amount+=(float)($line['batch_amount']??0);}continue;}
+            if(($line['status']??'')!=='success')continue;$lineCount=(int)($line['count']??0);$count+=$lineCount;$codeCount+=(int)($line['code_count']??$lineCount);$amount+=(float)($line['amount']??0);
+        }
+        return $this->reply(['lines'=>$lines,'count'=>$count,'code_count'=>$codeCount,'amount'=>number_format($amount,2,'.',''),'formatted_text'=>(new QuickEntryParser())->formatText($text)]);
     }
     public function quickPlace(Request $request): \think\response\Json
     {
@@ -527,7 +644,7 @@ final class UserBusiness
             return $this->reply(['record_id'=>(int)$recordIds[0],'record_ids'=>$recordIds,'count'=>$count,'amount'=>number_format($amount,2,'.',''),'formatted_text'=>$formattedText],'下注提交成功');
         }
         try {
-            $transactionResult=Db::transaction(function () use ($s,$text,$formattedText,$groups,$amount,$now,$submissionFingerprint): array {
+            $transactionResult=Db::transaction(function () use ($s,$text,$formattedText,$groups,$amount,$count,$now,$submissionFingerprint): array {
                 $lockedUser=Db::name('site_users')->where('id',(int)$s['user_id'])->where('site_id',(int)$s['site_id'])->lock(true)->find();
                 if (!$lockedUser) throw new \RuntimeException('用户不存在或已停用');
                 $duplicates=$this->recentDuplicateRecords($s,$submissionFingerprint);

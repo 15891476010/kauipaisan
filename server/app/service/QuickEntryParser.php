@@ -29,7 +29,28 @@ final class QuickEntryParser
         $lineId = 1;
         $lineCount = count($lines);
 
+        // A pasted direct ticket may use one physical line per group of
+        // numbers and put the shared stake/play suffix on the last line,
+        // e.g. "...\n999福430注直30". Those line breaks are meaningful in
+        // the result table: each physical line is one result row. Detect
+        // every explicit "N注" segment before the generic wrapped-ticket
+        // merger. Scanning segments (instead of treating the whole input as
+        // one batch) also keeps two marked tickets and ordinary lines in the
+        // same paste independent.
+        $batchSegments = $this->findNumberLineBatchSegments($lines, $lottery, $unitStake);
+
         for ($index = 0; $index < $lineCount; $index++) {
+            if (isset($batchSegments[$index])) {
+                foreach ($batchSegments[$index]['rows'] as $row) {
+                    $row['id'] = $lineId++;
+                    if (($row['status'] ?? '') === 'success') {
+                        $row['ast'] = $this->astFor($row, $lottery);
+                    }
+                    $result[] = $row;
+                }
+                $index = $batchSegments[$index]['end'];
+                continue;
+            }
             $rawOriginal = trim((string) $lines[$index]);
             if ($rawOriginal === '') continue;
 
@@ -109,6 +130,207 @@ final class QuickEntryParser
         }
 
         return $result;
+    }
+
+    /**
+     * Find explicit physical-line batches embedded in a larger paste.
+     *
+     * A marker is an N注 + play + amount suffix. The marker may be attached
+     * to the final number line or be on its own line. Number-only lines
+     * immediately before it belong to that batch until a blank/non-number
+     * line or another marker is reached.
+     *
+     * @param array<int, string> $lines
+     * @return array<int, array{end: int, rows: array<int, array<string, mixed>>}>
+     */
+    private function findNumberLineBatchSegments(array $lines, string $lottery, float $unitStake): array
+    {
+        $segments = [];
+        $claimedUntil = -1;
+        $lineCount = count($lines);
+        for ($suffixIndex = 0; $suffixIndex < $lineCount; $suffixIndex++) {
+            if ($suffixIndex <= $claimedUntil) continue;
+            $suffix = $this->batchSuffixInfo((string)$lines[$suffixIndex]);
+            if ($suffix === null) continue;
+
+            $numberEnd = $suffix['prefix'] !== '' ? $suffixIndex : $suffixIndex - 1;
+            if ($numberEnd < 0) continue;
+            if ($suffix['prefix'] !== '' && !$this->isStandaloneNumberLine($suffix['prefix'])) continue;
+            if ($suffix['prefix'] === '' && !$this->isStandaloneNumberLine($this->rules->normalize((string)$lines[$numberEnd]))) continue;
+
+            $start = $numberEnd;
+            while ($start > 0) {
+                $previous = trim((string)$lines[$start - 1]);
+                if ($previous === '' || !$this->isStandaloneNumberLine($this->rules->normalize($previous))) break;
+                $start--;
+            }
+
+            $batchRows = $this->parseNumberLineBatch(
+                array_slice($lines, $start, $suffixIndex - $start + 1),
+                $lottery,
+                $unitStake
+            );
+            if ($batchRows === null) continue;
+            $segments[$start] = ['end' => $suffixIndex, 'rows' => $batchRows];
+            $claimedUntil = $suffixIndex;
+        }
+        return $segments;
+    }
+
+    /** @return ?array{normalized: string, prefix: string} */
+    private function batchSuffixInfo(string $line): ?array
+    {
+        $normalized = trim($this->rules->normalize($line));
+        // normalize() already maps aliases such as “直选” to “直” and
+        // Chinese numerals in the declaration to Arabic digits.
+        $pattern = '/(?:(福体|福|体)\s*)?(\d+)\s*注\s*(直|单|组三|组六|组)\s*(\d+(?:\.\d+)?)\s*(元|米|块|角|毛|倍)?\s*$/u';
+        if (preg_match($pattern, $normalized, $match, PREG_OFFSET_CAPTURE) !== 1) return null;
+        $offset = (int)$match[0][1];
+        return ['normalized' => $normalized, 'prefix' => trim(substr($normalized, 0, $offset))];
+    }
+
+    /**
+     * Parse a multi-line number list whose final line declares the total
+     * number of stakes and a shared play/amount suffix.
+     *
+     * @param array<int, string> $lines
+     * @return ?array<int, array<string, mixed>>
+     */
+    private function parseNumberLineBatch(array $lines, string $lottery, float $unitStake): ?array
+    {
+        $entries = [];
+        foreach ($lines as $line) {
+            $value = trim((string)$line);
+            if ($value !== '') {
+                $entries[] = $value;
+            }
+        }
+        if (count($entries) < 2) {
+            return null;
+        }
+
+        $lastIndex = count($entries) - 1;
+        $last = $entries[$lastIndex];
+        $suffix = $this->batchSuffixInfo($last);
+        if ($suffix === null) return null;
+
+        $lastNumbersText = $suffix['prefix'];
+        $numberLastIndex = $lastIndex;
+        $suffixOnSeparateLine = $lastNumbersText === '';
+        if ($suffixOnSeparateLine) {
+            // Some editors wrap the shared suffix onto its own physical line.
+            // It still belongs to the preceding number line and must not cause
+            // the whole ticket to fall back to the generic wrapped merger.
+            if ($lastIndex < 1) {
+                return null;
+            }
+            $numberLastIndex = $lastIndex - 1;
+            $lastNumbersText = trim($entries[$numberLastIndex]);
+        }
+        if (!$this->isStandaloneNumberLine($this->rules->normalize($lastNumbersText))) {
+            return null;
+        }
+
+        $numberLines = [];
+        $batchNumbers = [];
+        $batchOccurrences = [];
+        $batchNumberFrequency = [];
+        $seenBatchNumbers = [];
+        $totalStakeCount = 0;
+        $numberEntries = array_slice($entries, 0, $numberLastIndex + 1);
+        foreach ($numberEntries as $index => $entry) {
+            $numberText = $index === $numberLastIndex ? $lastNumbersText : $entry;
+            if (!$this->isStandaloneNumberLine($this->rules->normalize($numberText))) {
+                return null;
+            }
+            $numbers = $this->standaloneNumbers($this->rules->normalize($numberText));
+            if ($numbers === []) {
+                return null;
+            }
+            $rawLine = $entry;
+            if ($suffixOnSeparateLine && $index === $numberLastIndex) {
+                $rawLine .= ' ' . $last;
+            }
+            $numberLines[] = ['raw' => $rawLine, 'number_raw' => $numberText, 'numbers' => $numbers];
+            $totalStakeCount += count($numbers);
+            foreach ($numbers as $number) {
+                $batchOccurrences[] = $number;
+                $batchNumberFrequency[$number] = ($batchNumberFrequency[$number] ?? 0) + 1;
+                if (!isset($seenBatchNumbers[$number])) {
+                    $seenBatchNumbers[$number] = true;
+                    $batchNumbers[] = $number;
+                }
+            }
+        }
+
+        // The explicit "N注" suffix is the batch marker. Its count is useful
+        // as a consistency hint, but pasted/replaced number lists frequently
+        // leave the old N behind. Keep the physical rows and calculate the
+        // effective batch from the actual numbers instead of silently merging
+        // the ticket into one generic wrapped row.
+        $normalizedLast = $suffix['normalized'];
+        preg_match('/(?:(福体|福|体)\s*)?(\d+)\s*注\s*(直|单|组三|组六|组)\s*(\d+(?:\.\d+)?)\s*(元|米|块|角|毛|倍)?\s*$/u', $normalizedLast, $suffixValues);
+        $declaredStakeCount = (int)($suffixValues[2] ?? 0);
+        $countMismatch = $declaredStakeCount !== $totalStakeCount;
+
+        $category = trim((string)($suffixValues[1] ?? ''));
+        if ($category === '') {
+            $category = $lottery === '排列三' ? '体' : '福';
+        }
+        $play = $this->rules->normalizePlay((string)($suffixValues[3] ?? '直'));
+        $amount = (string)($suffixValues[4] ?? '0');
+        $unit = (string)($suffixValues[5] ?? '');
+
+        $rows = [];
+        foreach ($numberLines as $numberLine) {
+            $localCount = count($numberLine['numbers']);
+            $annotation = $category.$localCount.'注'.$play.$amount.$unit;
+            $parseText = rtrim((string)$numberLine['number_raw']).$annotation;
+            $parsed = $this->parseLine($parseText, $lottery, 1, $unitStake);
+            $parsedRows = isset($parsed[0]) && is_array($parsed[0]) ? $parsed : [$parsed];
+            foreach ($parsedRows as $row) {
+                $row['raw_text'] = $numberLine['raw'];
+                $row['parse_text'] = $parseText;
+                $rows[] = $row;
+            }
+        }
+
+        $batchId = 'number-'.substr(hash('sha256', implode("\n", $entries)), 0, 16);
+        $batchSize = count($rows);
+        $batchCategoryCount = $category === '福体' ? 2 : 1;
+        $batchDuplicateNumbers = array_map(
+            static fn($number): string => str_pad((string)$number, 3, '0', STR_PAD_LEFT),
+            array_keys(array_filter(
+                $batchNumberFrequency,
+                static fn(int $frequency): bool => $frequency > 1
+            ))
+        );
+        $batchAmount = number_format(array_sum(array_map(
+            static fn(array $row): float => ($row['status'] ?? '') === 'success' ? (float)($row['amount'] ?? 0) : 0.0,
+            $rows
+        )), 2, '.', '');
+        $batchMergedText = implode('，', $batchOccurrences).$category.$totalStakeCount.'注'.$play.$amount.$unit;
+        foreach ($rows as $batchIndex => &$row) {
+            $row['batch_id'] = $batchId;
+            $row['batch_index'] = $batchIndex + 1;
+            $row['batch_size'] = $batchSize;
+            $row['batch_end'] = $batchIndex === $batchSize - 1;
+            if ($row['batch_end']) {
+                $row['batch_count'] = count($batchNumbers) * $batchCategoryCount;
+                $row['batch_stake_count'] = $totalStakeCount * $batchCategoryCount;
+                $row['batch_amount'] = $batchAmount;
+                $row['batch_number_text'] = implode(' ', $batchNumbers);
+                $row['batch_occurrence_text'] = implode(' ', $batchOccurrences);
+                $row['batch_merged_text'] = $batchMergedText;
+                $row['batch_has_duplicates'] = $batchDuplicateNumbers !== [];
+                $row['batch_duplicate_numbers'] = $batchDuplicateNumbers;
+                $row['batch_declared_stake_count'] = $declaredStakeCount;
+                $row['batch_count_mismatch'] = $countMismatch;
+            }
+        }
+        unset($row);
+
+        return $rows;
     }
 
     public function formatText(string $text): string
@@ -258,6 +480,10 @@ final class QuickEntryParser
     /** @return ?array<int, array<string, mixed>> */
     private function parseExplicitPlayBets(string $rawOriginal, string $working, string $category, int $lineId, ?float $declaredTotal, float $unitStake): ?array
     {
+        $useStakeForBareAmount = preg_match('/(?<!\d)\d+\s*注(?=\s*(?:直|单|组|组三|组六|胆拖|和值|跨度|豹子|对子|双飞|包选|全包|飞|定位胆|定位|复式))/u', $working) === 1;
+        if ($useStakeForBareAmount) {
+            $working = preg_replace('/(?<!\d)\d+\s*注(?=\s*(?:直|单|组|组三|组六|胆拖|和值|跨度|豹子|对子|双飞|包选|全包|飞|定位胆|定位|复式))/u', ' ', $working) ?? $working;
+        }
         $specs = [];
         $remove = [];
         $combinedMatched = preg_match_all($this->rules->pattern('combined_direct_group'), $working, $combined, PREG_SET_ORDER) ?: 0;
@@ -279,7 +505,11 @@ final class QuickEntryParser
         if ($combinedMatched === 0 && preg_match_all($this->rules->pattern('amount_after_play'), $working, $matches, PREG_SET_ORDER)) {
             foreach ($matches as $match) {
                 $unit=trim((string)($match[3]??''));
-                $unitAmount=$unit==='倍'?(float)$match[2]*$unitStake:$this->rules->amountWithUnit((float)$match[2],$unit,$unitStake);
+                $unitAmount=$unit==='倍'
+                    ? (float)$match[2] * $unitStake
+                    : ($unit === '' && $useStakeForBareAmount
+                        ? (float)$match[2] * $unitStake
+                        : $this->rules->amountWithUnit((float)$match[2], $unit, $unitStake));
                 $specs[] = ['play' => $this->rules->normalizePlay($match[1]), 'unit_amount' => $unitAmount];
                 $remove[] = $match[0];
             }
@@ -358,12 +588,17 @@ final class QuickEntryParser
             if(strlen($rawSelection)===3&&in_array($play,['组三','组六'],true)){
                 $uniqueCount=count($digits);
                 if(($play==='组三'&&$uniqueCount===2)||($play==='组六'&&$uniqueCount===3)){$playType=$play;$numberText=$rawSelection;}
-                elseif($play==='组三'&&$uniqueCount===3){$identity=$this->rules->inferredCatalogPlay($play,3);$playType=$identity['name'];$numberText='000';}
+                elseif($play==='组三'&&$uniqueCount===3){$identity=$this->rules->inferredCatalogPlay($play,3);$playType=$identity['name'];$numberText=implode(' ',$this->groupThreeCombinations($digits));}
                 else return [$this->failure($lineId,$rawOriginal,'号码形态与玩法不一致')];
             } else {
                 $identity = $this->rules->inferredCatalogPlay($play, count($digits));
                 if ($identity === null) return [$this->failure($lineId,$rawOriginal,'所选数字数量与玩法不一致')];
-                $playType=$identity['name']; $numberText='000';
+                $playType=$identity['name'];
+                $numberText=match($play){
+                    '组三'=>implode(' ',$this->groupThreeCombinations($digits)),
+                    '组六'=>implode(' ',$this->groupSixCombinations($digits)),
+                    default=>'000',
+                };
             }
             $amount = $perUnit ? $unitAmount * $categoryCount : $unitAmount;
             $rows[] = [
@@ -473,11 +708,16 @@ final class QuickEntryParser
             }
             $identity=$this->rules->inferredCatalogPlay($spec['play'],strlen($uniqueSelection));
             if($identity===null)return [$this->failure($lineId,$rawOriginal,'所选数字数量与玩法不一致')];
-            $rows[]=['id'=>$lineId,'raw_text'=>$rawOriginal,'status'=>'success','reason'=>null,'number_text'=>'000','category'=>$category,'amount'=>number_format($spec['amount']*$categoryCount,2,'.',''),'count'=>$categoryCount,'play_type'=>$identity['name'],'settlement_text'=>$uniqueSelection.' '.$identity['name'].' '.$category];
+            $numberText=match($spec['play']){
+                '组三'=>implode(' ',$this->groupThreeCombinations(str_split($uniqueSelection))),
+                '组六'=>implode(' ',$this->groupSixCombinations(str_split($uniqueSelection))),
+                default=>'000',
+            };
+            $rows[]=['id'=>$lineId,'raw_text'=>$rawOriginal,'status'=>'success','reason'=>null,'number_text'=>$numberText,'category'=>$category,'amount'=>number_format($spec['amount']*$categoryCount,2,'.',''),'count'=>$categoryCount,'play_type'=>$identity['name'],'settlement_text'=>$uniqueSelection.' '.$identity['name'].' '.$category];
         }
         $merged=[];
         foreach($rows as $row){
-            if($row['number_text']==='000'){$merged[]=$row;continue;}
+            if(!in_array($row['play_type'],['组三','组六'],true)){$merged[]=$row;continue;}
             $key=$row['play_type'].'|'.$row['category'];
             if(!isset($merged[$key])){$merged[$key]=$row;continue;}
             $merged[$key]['number_text'].=' '.$row['number_text'];
@@ -516,6 +756,7 @@ final class QuickEntryParser
     private function parseCatalogBet(string $rawOriginal, string $raw, string $category, int $lineId, float $unitStake): ?array
     {
         $selection = '';
+        $numberText = '000';
         $playType = null;
         $amount = 0.0;
         if (preg_match($this->rules->pattern('catalog_digit_set_bet'), $raw, $match)) {
@@ -525,6 +766,8 @@ final class QuickEntryParser
                 return $this->failure($lineId, $rawOriginal, '所选数字数量与玩法不一致');
             }
             $playType = $identity['name'];
+            if ($match[2] === '组三') $numberText = implode(' ', $this->groupThreeCombinations(str_split($selection)));
+            if ($match[2] === '组六') $numberText = implode(' ', $this->groupSixCombinations(str_split($selection)));
             $amount = $this->rules->amountWithUnit((float)$match[4], (string)($match[5] ?? ''), $unitStake);
         } elseif (preg_match($this->rules->pattern('group_package_bet'), $raw, $match)) {
             $playType = $match[1];
@@ -535,7 +778,7 @@ final class QuickEntryParser
         $settlementText = trim(($selection === '' ? '' : $selection.' ').$playType.' '.$category);
         return [
             'id'=>$lineId, 'raw_text'=>$rawOriginal, 'status'=>'success', 'reason'=>null,
-            'number_text'=>'000', 'category'=>$category, 'amount'=>number_format($amount*$categoryCount,2,'.',''),
+            'number_text'=>$numberText, 'category'=>$category, 'amount'=>number_format($amount*$categoryCount,2,'.',''),
             'count'=>$categoryCount, 'play_type'=>$playType, 'settlement_text'=>$settlementText,
         ];
     }
@@ -660,10 +903,7 @@ final class QuickEntryParser
         preg_match_all($this->rules->pattern('standalone_number'), $raw, $matches);
         $numbers = [];
         foreach (($matches[1] ?? []) as $number) {
-            $number = str_pad((string) $number, 3, '0', STR_PAD_LEFT);
-            if (!in_array($number, $numbers, true)) {
-                $numbers[] = $number;
-            }
+            $numbers[] = str_pad((string) $number, 3, '0', STR_PAD_LEFT);
         }
         return $numbers;
     }
@@ -691,6 +931,9 @@ final class QuickEntryParser
         if ($declaredTotal !== null && $unitAmount > 0 && abs($declaredTotal - $calculated) > 0.001) {
             return $this->failure($lineId, $rawOriginal, '句末总金额与识别笔数、单注金额不一致', $numbers);
         }
+        $numberCount = count($numbers);
+        $categoryCount = $numberCount > 0 ? max(1, (int) round($count / $numberCount)) : 1;
+        $recordCount = count(array_unique($numbers)) * $categoryCount;
 
         return [
             'id' => $lineId,
@@ -700,7 +943,9 @@ final class QuickEntryParser
             'number_text' => implode(' ', $numbers),
             'category' => $category,
             'amount' => number_format($totalAmount, 2, '.', ''),
-            'count' => $count,
+            'count' => $recordCount,
+            'stake_count' => $count,
+            'code_count' => $recordCount,
         ];
     }
 

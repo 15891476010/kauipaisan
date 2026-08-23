@@ -53,6 +53,7 @@ export function QuickEntryPage({
   const [generatedLines, setGeneratedLines] = useState<QuickEntryLine[]>([]);
   const [generatedTotal, setGeneratedTotal] = useState({
     count: 0,
+    codeCount: 0,
     amount: "0.00",
   });
   const [generating, setGenerating] = useState(false);
@@ -130,6 +131,7 @@ export function QuickEntryPage({
       setGeneratedLines(data?.lines || []);
       setGeneratedTotal({
         count: data?.count || 0,
+        codeCount: data?.code_count ?? data?.count ?? 0,
         amount: data?.amount || "0.00",
       });
       const warning = Number(warningAmount);
@@ -140,7 +142,7 @@ export function QuickEntryPage({
       return data;
     } catch (error) {
       setGeneratedLines([]);
-      setGeneratedTotal({ count: 0, amount: "0.00" });
+      setGeneratedTotal({ count: 0, codeCount: 0, amount: "0.00" });
       message.error(apiErrorMessage(error, "生成失败"));
       return null;
     } finally {
@@ -201,7 +203,7 @@ export function QuickEntryPage({
         message.success(response.data?.message || "下注提交成功");
       if (options[2]) await copyTicket(sourceText, valid, options[3]);
       setGeneratedLines([]);
-      setGeneratedTotal({ count: 0, amount: "0.00" });
+      setGeneratedTotal({ count: 0, codeCount: 0, amount: "0.00" });
       window.dispatchEvent(new Event("bet-records-updated"));
       window.dispatchEvent(
         new CustomEvent("profile-updated", {
@@ -227,7 +229,7 @@ export function QuickEntryPage({
     }
     modal.confirm({
       title: "确认下注",
-      content: `共 ${preview.count} 码，共 ¥ ${preview.amount}，确认提交吗？`,
+      content: `共 ${generatedTotal.codeCount} 码，共 ¥ ${preview.amount}，确认提交吗？`,
       okText: "确认下注",
       cancelText: "取消",
       onOk: () => submitBet(text, preview),
@@ -406,7 +408,7 @@ export function QuickEntryPage({
             <span className="action-total">
               <span>
                 <i>共</i>
-                <b>{generatedTotal.count}</b>
+                <b>{generatedTotal.codeCount}</b>
                 <i>码</i>
               </span>
               <span>
@@ -444,6 +446,10 @@ export function QuickEntryPage({
               setGeneratedTotal({
                 count: successful.reduce(
                   (total, line) => total + line.count,
+                  0,
+                ),
+                codeCount: successful.reduce(
+                  (total, line) => total + (line.code_count ?? line.count),
                   0,
                 ),
                 amount: successful
