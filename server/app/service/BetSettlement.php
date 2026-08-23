@@ -164,7 +164,7 @@ final class BetSettlement
         $nodeId = (int)($user['organization_id'] ?? 0);
         if ($nodeId < 1) {
             $root = OrganizationHierarchy::rootForSite((int)$record['site_id']);
-            if (!$root) throw new \RuntimeException('结算站点未配置根股东，无法分配盈亏');
+            if (!$root) throw new \RuntimeException('结算站点未配置根总监，无法分配盈亏');
             $nodeId = (int)$root['id'];
         }
         $siteSettings=Db::name('sites')->where('id',(int)$record['site_id'])->value('settings');

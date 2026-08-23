@@ -19,7 +19,7 @@ function accountTotal(int $tenantId): float
 $user=Db::name('site_users')->whereNull('organization_id')->where('status',1)->whereNull('deleted_at')->order('id desc')->find();
 if(!$user)throw new RuntimeException('缺少未归属用户守恒测试数据');
 $root=app\service\OrganizationHierarchy::rootForSite((int)$user['site_id']);
-if(!$root)throw new RuntimeException('测试站点未配置根股东');
+if(!$root)throw new RuntimeException('测试站点未配置根总监');
 $platform=Db::name('platform_credit_accounts')->where('tenant_id',(int)$user['tenant_id'])->find();
 if(!$platform)throw new RuntimeException('测试租户未配置平台分数账户');
 $sourceRecord=Db::name('bet_records')->where('user_id',(int)$user['id'])->order('id desc')->find();

@@ -24,7 +24,7 @@ const credentialDialog=ref(false)
 const credential=reactive({username:'',initial_password:''})
 const editingNodeId=ref<number|null>(null)
 const editingAccountId=ref<number|null>(null)
-const nodeForm=reactive({parent_id:0,level:'shareholder' as OrganizationLevel,name:'',credit_limit:0,permissions:[] as string[],status:1})
+const nodeForm=reactive({parent_id:0,level:'director' as OrganizationLevel,name:'',credit_limit:0,permissions:[] as string[],status:1})
 const accountForm=reactive({organization_id:0,username:'',display_name:'',phone:'',password:'',permissions:[] as string[],status:1})
 const selectedNode=computed(()=>nodes.value.find(item=>item.id===selectedId.value)||null)
 const selectedAccounts=computed(()=>accounts.value.filter(item=>item.organization_id===selectedId.value))
@@ -32,7 +32,7 @@ const selectedAccounts=computed(()=>accounts.value.filter(item=>item.organizatio
 async function load(){loading.value=true;try{const response=await getSiteOrganizations(siteId);siteName.value=response.data.site.name;nodes.value=response.data.nodes;accounts.value=response.data.accounts;catalog.value=response.data.catalog;if(!selectedId.value||!nodes.value.some(item=>item.id===selectedId.value))selectedId.value=nodes.value[0]?.id||null}catch(error){ElMessage.error(error instanceof Error?error.message:'组织架构加载失败')}finally{loading.value=false}}
 function parentName(row:OrganizationNode){return nodes.value.find(item=>item.id===row.parent_id)?.name||'站点根节点'}
 function permissionsFor(parentId:number){const parent=nodes.value.find(item=>item.id===parentId);return parent?.permissions.includes('*')?catalog.value.permissions.map(item=>item.code):(parent?.permissions||catalog.value.permissions.map(item=>item.code))}
-function openCreate(parent?:OrganizationNode){editingNodeId.value=null;const level=(parent?.next_level||'shareholder') as OrganizationLevel;Object.assign(nodeForm,{parent_id:parent?.id||0,level,name:'',credit_limit:Number(parent?.credit_limit||0),permissions:permissionsFor(parent?.id||0),status:1});nodeDrawer.value=true}
+function openCreate(parent?:OrganizationNode){editingNodeId.value=null;const level=(parent?.next_level||'director') as OrganizationLevel;Object.assign(nodeForm,{parent_id:parent?.id||0,level,name:'',credit_limit:Number(parent?.credit_limit||0),permissions:permissionsFor(parent?.id||0),status:1});nodeDrawer.value=true}
 function openEdit(row:OrganizationNode){editingNodeId.value=row.id;Object.assign(nodeForm,{parent_id:row.parent_id,level:row.level,name:row.name,credit_limit:Number(row.credit_limit),permissions:row.permissions.includes('*')?catalog.value.permissions.map(item=>item.code):[...row.permissions],status:row.status});nodeDrawer.value=true}
 async function saveNode(){if(!nodeForm.name.trim())return ElMessage.warning('请输入组织名称');const payload={...nodeForm,name:nodeForm.name.trim()};try{if(editingNodeId.value)await updateOrganization(editingNodeId.value,payload);else await createOrganization(siteId,payload);nodeDrawer.value=false;ElMessage.success(editingNodeId.value?'组织已更新':'组织创建成功');await load()}catch(error){ElMessage.error(error instanceof Error?error.message:'保存失败')}}
 async function removeNode(row:OrganizationNode){await ElMessageBox.confirm(`确定删除“${row.name}”吗？只能删除没有下级的组织。`,'删除组织',{type:'warning'});try{await deleteOrganization(row.id);ElMessage.success('组织已删除');await load()}catch(error){ElMessage.error(error instanceof Error?error.message:'删除失败')}}
@@ -49,9 +49,9 @@ onMounted(()=>void load())
 <template>
   <div class="organization-page">
     <header class="organization-toolbar">
-      <div><h2>{{ siteName }} · 组织架构</h2><p>站点是配置和数据边界，股东、总监、总代理、代理按层级继承权限与额度。</p></div>
+      <div><h2>{{ siteName }} · 组织架构</h2><p>站点是配置和数据边界，总监、大股东、小股东、总代理、代理按层级继承权限与额度。</p></div>
       <el-button :icon="Refresh" @click="load">刷新</el-button>
-      <el-button type="primary" :icon="Plus" @click="openCreate()">新增股东</el-button>
+      <el-button type="primary" :icon="Plus" @click="openCreate()">新增总监</el-button>
       <el-button :icon="ArrowLeft" @click="router.push('/agent-center')">返回代理中心</el-button>
     </header>
     <div class="organization-summary"><div><span>组织数量</span><b>{{ nodes.length }}</b></div><div><span>管理员数量</span><b>{{ accounts.length }}</b></div><div><span>当前站点</span><strong>{{ siteName }}</strong></div></div>

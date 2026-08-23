@@ -21,7 +21,7 @@ final class ReconcileUnassignedBetSettlement extends Migrator
             $user=Db::name('site_users')->where('id',(int)$record['user_id'])->where('site_id',(int)$record['site_id'])->lock(true)->find();
             if(!$user)throw new RuntimeException('待补账用户不存在');
             $root=OrganizationHierarchy::rootForSite((int)$record['site_id']);
-            if(!$root)throw new RuntimeException('待补账站点未配置根股东');
+            if(!$root)throw new RuntimeException('待补账站点未配置根总监');
             $root=Db::name('organization_nodes')->where('id',(int)$root['id'])->lock(true)->find();
             $settings=Db::name('sites')->where('id',(int)$record['site_id'])->value('settings');
             $settings=is_string($settings)?json_decode($settings,true):(is_array($settings)?$settings:[]);

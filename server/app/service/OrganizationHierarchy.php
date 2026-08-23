@@ -7,8 +7,15 @@ use think\facade\Db;
 
 final class OrganizationHierarchy
 {
-    public const LEVELS = ['shareholder','director','general_agent','agent'];
-    public const LABELS = ['shareholder'=>'股东','director'=>'总监','general_agent'=>'总代理','agent'=>'代理'];
+    public const LEVELS = ['director','shareholder','small_shareholder','general_agent','agent'];
+    public const LABELS = ['director'=>'总监','shareholder'=>'大股东','small_shareholder'=>'小股东','general_agent'=>'总代理','agent'=>'代理'];
+    public const CHILD_LEVELS = [
+        'director' => ['shareholder'],
+        'shareholder' => ['small_shareholder'],
+        'small_shareholder' => ['general_agent'],
+        'general_agent' => ['agent'],
+        'agent' => [],
+    ];
     public const PERMISSIONS = [
         'overview'=>'数据概览','order_details'=>'总货明细','winning_details'=>'中奖明细','bet_details'=>'投注明细',
         'contribution'=>'贡献度','daily_ledger'=>'日分类账','monthly_ledger'=>'月分类账','daily_path'=>'日路径账','monthly_path'=>'月路径账',
@@ -19,8 +26,17 @@ final class OrganizationHierarchy
 
     public static function nextLevel(string $level): ?string
     {
-        $index=array_search($level,self::LEVELS,true);
-        return $index===false ? null : (self::LEVELS[$index+1]??null);
+        return self::CHILD_LEVELS[$level][0] ?? null;
+    }
+
+    public static function childLevels(string $level): array
+    {
+        return self::CHILD_LEVELS[$level] ?? [];
+    }
+
+    public static function canParentLevelAccept(string $parentLevel, string $childLevel): bool
+    {
+        return in_array($childLevel, self::childLevels($parentLevel), true);
     }
 
     public static function normalizePermissions(mixed $value, array $parentPermissions=['*']): array
@@ -40,7 +56,8 @@ final class OrganizationHierarchy
 
     public static function rootForSite(int $siteId): ?array
     {
-        return Db::name('organization_nodes')->where('site_id',$siteId)->where('parent_id',0)->where('level','shareholder')->whereNull('deleted_at')->find() ?: null;
+        $query=Db::name('organization_nodes')->where('site_id',$siteId)->where('parent_id',0)->whereNull('deleted_at');
+        return $query->where('level','director')->find() ?: null;
     }
 
     public static function accountContext(array $account): array
@@ -142,7 +159,7 @@ final class OrganizationHierarchy
         $directChildCredit=(float)Db::name('organization_nodes')->where('parent_id',$organizationId)->whereNull('deleted_at')->sum('credit_limit');
         $directMemberCredit=(float)Db::name('site_users')->where('organization_id',$organizationId)->whereNull('deleted_at')->sum('credit_balance');
         $unassignedCredit=0.0;$unassignedNet=0.0;
-        if((string)$node['level']==='shareholder'&&(int)$node['parent_id']===0){
+        if((string)$node['level']==='director'&&(int)$node['parent_id']===0){
             $unassigned=Db::name('site_users')->where('site_id',(int)$node['site_id'])->whereNull('organization_id')->whereNull('deleted_at');
             $unassignedCredit=(float)(clone $unassigned)->sum('credit_balance');
             $row=(clone $unassigned)->fieldRaw('COALESCE(SUM(credit_balance + balance),0) AS net_score')->find();

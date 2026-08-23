@@ -136,7 +136,7 @@ final class Auth
                 $siteId=(int)$siteAdmin['site_id'];
                 $root=OrganizationHierarchy::rootForSite($siteId);
                 $organizationId=(int)($root['id']??0);
-                $organizationLevel=(string)($root['level']??'shareholder');
+                $organizationLevel=(string)($root['level']??'director');
             } else {
                 $legacySiteQuery=Db::name('sites')->where('manager_username',$username)->where('status',1)->whereNull('deleted_at');
                 if ($siteId > 0) $legacySiteQuery->where('id',$siteId);
@@ -287,7 +287,7 @@ final class Auth
         if (!$site || (!$admin && empty($site['manager_username'])) || !$domain) return $this->reply(null,'站点未配置可用管理员或反代域名',422);
         $accountId=$admin?(int)$admin['id']:$siteId;
         $root=OrganizationHierarchy::rootForSite($siteId);
-        $context=['tenant_id'=>(int)$site['tenant_id'],'agent_id'=>(int)$site['agent_id'],'site_id'=>$siteId,'organization_id'=>(int)($root['id']??0),'organization_level'=>(string)($root['level']??'shareholder'),'account_table'=>$admin?'site_admins':'sites','username'=>(string)($admin['username']??$site['manager_username']??''),'permissions'=>['*']];
+        $context=['tenant_id'=>(int)$site['tenant_id'],'agent_id'=>(int)$site['agent_id'],'site_id'=>$siteId,'organization_id'=>(int)($root['id']??0),'organization_level'=>(string)($root['level']??'director'),'account_table'=>$admin?'site_admins':'sites','username'=>(string)($admin['username']??$site['manager_username']??''),'permissions'=>['*']];
         $token=$this->sessionToken($request,$accountId,'agent',$context,$admin?'site_admin':'legacy_site_admin');
         $domain=(string)$domain;
         $isLocal=preg_match('/^(localhost|127\\.0\\.0\\.1|\\[::1\\])(?::\\d+)?$/i',$domain) === 1;

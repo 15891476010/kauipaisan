@@ -92,7 +92,7 @@ final class Resource
     {
         Db::name('organization_profit_shares')->where('site_id',$siteId)->where('share_rate','>',$cap)->update(['share_rate'=>number_format($cap,4,'.',''),'updated_at'=>date('Y-m-d H:i:s')]);
         Db::name('organization_profit_shares')->where('site_id',$siteId)->where('max_share_rate','>',$cap)->update(['max_share_rate'=>number_format($cap,4,'.',''),'updated_at'=>date('Y-m-d H:i:s')]);
-        $root=Db::name('organization_nodes')->where('site_id',$siteId)->where('parent_id',0)->where('level','shareholder')->whereNull('deleted_at')->find();
+        $root=Db::name('organization_nodes')->where('site_id',$siteId)->where('parent_id',0)->where('level','director')->whereNull('deleted_at')->find();
         if (!$root) return;
         $existing=Db::name('organization_profit_shares')->where('child_organization_id',(int)$root['id'])->find();
         if ($existing) return;
@@ -111,12 +111,12 @@ final class Resource
 
     private function ensureSiteRootOrganization(array $site): array
     {
-        $root=Db::name('organization_nodes')->where('site_id',(int)$site['id'])->where('parent_id',0)->where('level','shareholder')->whereNull('deleted_at')->lock(true)->find();
+        $root=Db::name('organization_nodes')->where('site_id',(int)$site['id'])->where('parent_id',0)->where('level','director')->whereNull('deleted_at')->lock(true)->find();
         if ($root) return $root;
         $now=date('Y-m-d H:i:s');
         $id=(int)Db::name('organization_nodes')->insertGetId([
-            'tenant_id'=>(int)$site['tenant_id'],'site_id'=>(int)$site['id'],'parent_id'=>0,'level'=>'shareholder','depth'=>1,'path'=>'',
-            'name'=>(string)$site['name'].' · 根股东','code'=>'SH-'.(int)$site['id'],'credit_limit'=>'0.00','balance'=>'0.00',
+            'tenant_id'=>(int)$site['tenant_id'],'site_id'=>(int)$site['id'],'parent_id'=>0,'level'=>'director','depth'=>1,'path'=>'',
+            'name'=>(string)$site['name'].' · 根总监','code'=>'DIR-'.(int)$site['id'],'credit_limit'=>'0.00','balance'=>'0.00',
             'permissions'=>json_encode(['*'],JSON_UNESCAPED_UNICODE),'settings'=>json_encode([],JSON_UNESCAPED_UNICODE),
             'status'=>(int)($site['status']??1),'created_at'=>$now,'updated_at'=>$now,
         ]);
@@ -131,7 +131,7 @@ final class Resource
         ScoreTransfer::organizationAllocation($root,$delta,$operator);
         Db::name('organization_nodes')->where('id',(int)$root['id'])->update([
             'credit_limit'=>number_format($creditLimit,2,'.',''),
-            'name'=>(string)$site['name'].' · 根股东',
+            'name'=>(string)$site['name'].' · 根总监',
             'status'=>(int)($site['status']??1),
             'updated_at'=>date('Y-m-d H:i:s'),
         ]);
@@ -284,12 +284,12 @@ final class Resource
             $siteNames=$ids ? Db::name('sites')->whereIn('id',$ids)->column('name','id') : [];
             $organizationIds=array_values(array_unique(array_filter(array_map('intval',array_column($list,'organization_id')))));
             $organizationNames=$organizationIds?Db::name('organization_nodes')->whereIn('id',$organizationIds)->whereNull('deleted_at')->column('name','id'):[];
-            $roots=$ids?Db::name('organization_nodes')->whereIn('site_id',$ids)->where('parent_id',0)->where('level','shareholder')->whereNull('deleted_at')->field('id,site_id,name')->select()->toArray():[];
+            $roots=$ids?Db::name('organization_nodes')->whereIn('site_id',$ids)->where('parent_id',0)->where('level','director')->whereNull('deleted_at')->field('id,site_id,name')->select()->toArray():[];
             $rootsBySite=[];foreach($roots as $root)$rootsBySite[(int)$root['site_id']]=$root;
             foreach ($list as &$siteUser) {
                 $siteId=(int)$siteUser['site_id'];$organizationId=(int)($siteUser['organization_id']??0);
                 $siteUser['site_name']=$siteNames[$siteId] ?? '站点已删除';
-                $siteUser['organization_name']=$organizationId>0?($organizationNames[$organizationId]??'所属层级已删除'):'未归属（结算归根股东）';
+                $siteUser['organization_name']=$organizationId>0?($organizationNames[$organizationId]??'所属层级已删除'):'未归属（结算归根总监）';
                 $siteUser['settlement_organization_id']=$organizationId>0?$organizationId:(int)($rootsBySite[$siteId]['id']??0);
                 $siteUser['settlement_organization_name']=$organizationId>0?($organizationNames[$organizationId]??''):((string)($rootsBySite[$siteId]['name']??''));
                 $siteUser['assignment_status']=$organizationId>0?'assigned':'unassigned';

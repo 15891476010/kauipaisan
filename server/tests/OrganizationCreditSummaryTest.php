@@ -19,7 +19,7 @@ foreach($nodes as $node){
     $nodeId=(int)$node['id'];$summary=OrganizationHierarchy::nodeCreditSummary($nodeId);
     $childCredit=(float)Db::name('organization_nodes')->where('parent_id',$nodeId)->whereNull('deleted_at')->sum('credit_limit');
     $memberCredit=(float)Db::name('site_users')->where('organization_id',$nodeId)->whereNull('deleted_at')->sum('credit_balance');
-    $isRoot=(string)$node['level']==='shareholder'&&(int)$node['parent_id']===0;
+    $isRoot=(string)$node['level']==='director'&&(int)$node['parent_id']===0;
     $unassignedCredit=0.0;$unassignedNet=0.0;
     if($isRoot){
         $unassigned=Db::name('site_users')->where('site_id',(int)$node['site_id'])->whereNull('organization_id')->whereNull('deleted_at');

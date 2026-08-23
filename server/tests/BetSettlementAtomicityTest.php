@@ -84,8 +84,8 @@ try{
     [$failureRecordId,$failureDetailId]=createSettlementFixture($failureUser,$lottery,$failureIssue,3.0);
     $failureState=Db::name('site_users')->where('id',(int)$failureUser['id'])->find();
     $failureLedgerBefore=(int)Db::name('organization_credit_ledger')->where('related_bet_record_id',$failureRecordId)->count();
-    try{$service->settleForHistory(['code'=>$failureIssue,'numbers'=>'999'],$lottery);throw new RuntimeException('缺少根股东时结算没有失败');}
-    catch(RuntimeException $error){if(!str_contains($error->getMessage(),'未配置根股东'))throw $error;}
+    try{$service->settleForHistory(['code'=>$failureIssue,'numbers'=>'999'],$lottery);throw new RuntimeException('缺少根总监时结算没有失败');}
+    catch(RuntimeException $error){if(!str_contains($error->getMessage(),'未配置根总监'))throw $error;}
     $failedRecord=Db::name('bet_records')->where('id',$failureRecordId)->find();
     $failedDetail=Db::name('bet_details')->where('id',$failureDetailId)->find();
     $failedUser=Db::name('site_users')->where('id',(int)$failureUser['id'])->find();

@@ -27,7 +27,7 @@ export type BatchBetOptions = { lotteries: BatchBetLottery[]; lottery: BatchBetL
 export const getBatchBetOptions = (lotteryId?: number) => http.get<never, Envelope<BatchBetOptions>>('/admin/bet-details/batch-options', { params: { lottery_id: lotteryId } })
 export const replaceBatchBetNumbers = (payload: { lottery_id: number; issue_no: string; selections: Array<{ detail_id: number; number_index: number }>; replacements: { hundreds: string; tens: string; units: string } }) => http.put<never, Envelope<{ changed: number }>>('/admin/bet-details/batch-replace', payload)
 export const enterSite = (id: number) => http.get<never, Envelope<{ url: string; token: string; name?: string }>>(`/admin/agent-center/${id}/enter`)
-export type OrganizationLevel = 'shareholder' | 'director' | 'general_agent' | 'agent'
+export type OrganizationLevel = 'director' | 'shareholder' | 'small_shareholder' | 'general_agent' | 'agent'
 export type OrganizationNode = { id: number; site_id: number; parent_id: number; level: OrganizationLevel; level_label: string; next_level: OrganizationLevel | null; depth: number; path: string; name: string; code: string; credit_limit: string; permissions: string[]; settings: Record<string, unknown>; status: number }
 export type OrganizationAccount = { id: number; organization_id: number; username: string; display_name: string; phone?: string; permissions: string[]; status: number; online?: number; last_seen_at?: string; last_login_at?: string; last_login_ip?: string; last_login_location?: string; last_login_device?: string }
 export type OrganizationCatalog = { levels: Array<{ value: OrganizationLevel; label: string }>; permissions: Array<{ code: string; label: string }> }

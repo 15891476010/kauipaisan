@@ -23,8 +23,8 @@ final class ScoreTransfer
             if($delta>0&&(float)$parent['balance']+0.000001<$delta)throw new \InvalidArgumentException('上级可用分数不足，无法继续分配');
             self::changeOrganization($parent,-$delta,$tx,'层级分数分配',$childId,'organization',$operator);
         }else{
-            $platform=self::platformAccount($tenantId,true);if($delta>0&&(float)$platform['balance']+0.000001<$delta)throw new \InvalidArgumentException('总平台可用分数不足，无法分配给股东');
-            self::changePlatform($platform,-$delta,$siteId,$tx,'平台向股东分配分数',$childId,'organization',$operator);
+            $platform=self::platformAccount($tenantId,true);if($delta>0&&(float)$platform['balance']+0.000001<$delta)throw new \InvalidArgumentException('总平台可用分数不足，无法分配给总监');
+            self::changePlatform($platform,-$delta,$siteId,$tx,'平台向总监分配分数',$childId,'organization',$operator);
         }
         self::changeOrganization($lockedChild,$delta,$tx,'收到上级分配分数',$parentId,$parentId>0?'organization':'platform',$operator);
     }
@@ -41,7 +41,7 @@ final class ScoreTransfer
 
     public static function adjustPlatformTotal(int $tenantId,float $newTotal,array $operator=[],?string $note=null): array
     {
-        if($newTotal<0)throw new \InvalidArgumentException('总平台总分不能小于0');$allocated=(float)Db::name('organization_nodes')->where('tenant_id',$tenantId)->where('parent_id',0)->whereNull('deleted_at')->sum('credit_limit');if($newTotal+0.000001<$allocated)throw new \InvalidArgumentException('新的总分不能低于已经分配给股东的分数');$account=self::platformAccount($tenantId,true);$delta=round($newTotal-(float)$account['total_score'],2);
+        if($newTotal<0)throw new \InvalidArgumentException('总平台总分不能小于0');$allocated=(float)Db::name('organization_nodes')->where('tenant_id',$tenantId)->where('parent_id',0)->whereNull('deleted_at')->sum('credit_limit');if($newTotal+0.000001<$allocated)throw new \InvalidArgumentException('新的总分不能低于已经分配给总监的分数');$account=self::platformAccount($tenantId,true);$delta=round($newTotal-(float)$account['total_score'],2);
         if($delta<0&&(float)$account['balance']+0.000001<abs($delta))throw new \InvalidArgumentException('总平台可用分数不足，已有分数已向下分配，不能降低到该数值');
         $before=(float)$account['balance'];$after=$before+$delta;$now=date('Y-m-d H:i:s');Db::name('platform_credit_accounts')->where('id',(int)$account['id'])->update(['total_score'=>number_format($newTotal,2,'.',''),'balance'=>number_format($after,2,'.',''),'updated_at'=>$now]);
         if(abs($delta)>=0.005)CreditLedger::writeExtended(['tenant_id'=>$tenantId,'site_id'=>0],self::transactionNo('PT'),null,'platform',(int)$account['id'],null,null,null,null,$delta,$before,$after,$delta>0?'设置总平台分数':'减少总平台总分','platform_total_adjustment','adjustment',$operator,null,null,$note);
