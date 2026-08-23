@@ -2,6 +2,7 @@ import { Button } from "antd";
 import DOMPurify from "dompurify";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import "./Agreement.css";
 
 export type AgreementData = { title: string; content: string };
 

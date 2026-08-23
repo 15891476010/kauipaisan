@@ -4,6 +4,7 @@ import { useState } from "react";
 import loginLogo from "../../assets/login-logo.svg";
 import { apiErrorMessage } from "../../utils/request";
 import { getCaptcha, login, verifyCaptcha } from "../../api/auth";
+import "./Login.css";
 
 function shuffledDigits() {
   const digits = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
@@ -72,6 +73,7 @@ export function Login({ onLogin, siteName }: { onLogin: (name: string) => void; 
   }
 
   function submit(event: React.FormEvent) {
+    console.log(siteName);
     event.preventDefault();
     if (!name) { message.error("请输入登录名"); return; }
     if (!password) { message.error("请输入登录密码"); return; }
@@ -82,7 +84,7 @@ export function Login({ onLogin, siteName }: { onLogin: (name: string) => void; 
     <div className="login">
       <form className="login-panel" onSubmit={submit}>
         <img className="login-logo" src={loginLogo} alt="快排" />
-        <div className="login-site-name">{siteName}</div>
+        {/* <div className="login-site-name">{siteName}</div> */}
         <Space direction="vertical" size={20} className="login-fields">
           <Input prefix={<UserOutlined />} aria-label="登录名" value={name} onChange={(event) => setName(event.target.value)} />
           <Input type="password" prefix={<LockOutlined />} aria-label="登录密码" value={password} onChange={(event) => setPassword(event.target.value)} />

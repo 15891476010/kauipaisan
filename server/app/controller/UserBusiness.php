@@ -110,17 +110,42 @@ final class UserBusiness
         $stopAmount=max(0,$requested-$actual); $stopType=$stopAmount>0.0001?'stop':($rebate>0.000001?'drop':'none');
         return ['requested'=>$requested,'actual'=>$actual,'stop_amount'=>$stopAmount,'stop_type'=>$stopType,'original_odds'=>$baseOdds,'actual_odds'=>$actualOdds,'drop_odds'=>$rebate,'odds_row'=>$odds];
     }
+    private function betSubmissionsAvailable(): bool
+    {
+        static $available = null;
+        if ($available !== null) return $available;
+        try { $available = Db::query("SHOW TABLES LIKE 'bet_submissions'") !== []; }
+        catch (\Throwable) { $available = false; }
+        return $available;
+    }
     public function betRecords(Request $request): \think\response\Json
     {
         $s=$this->session($request); [$from,$to]=$this->range($request);
-        $query=Db::name('bet_records')->where('site_id',$s['site_id'])->where('user_id',$s['user_id']);
+        if (!$this->betSubmissionsAvailable()) {
+            $query=Db::name('bet_records')->where('site_id',$s['site_id'])->where('user_id',$s['user_id']);
+            if ($from) $query->where('placed_at','>=',$from); if ($to) $query->where('placed_at','<=',$to);
+            $status=(string)$request->param('status',''); if (in_array($status,['won','unwon'],true)) $query->where('status',$status);
+            $source=trim((string)$request->param('source','')); if ($source !== '') $query->where(function($nested)use($source):void{$nested->whereLike('source_text','%'.$source.'%')->whereOrLike('formatted_text','%'.$source.'%');});
+            $total=(clone $query)->count(); $amountTotal=(float)(clone $query)->sum('amount'); $page=max(1,(int)$request->param('page',1)); $size=min(100,max(1,(int)$request->param('page_size',20)));
+            $list=$query->order('placed_at','desc')->page($page,$size)->select()->toArray();
+            foreach ($list as &$record) {
+                $refundState=$this->betSubmissionRefundState($record);
+                $record['lottery']=$refundState['lottery'];
+                $record['open_time']=$refundState['open_time'];
+                $record['can_refund']=$refundState['can_refund'];
+                $record['amount']=number_format((float)$record['amount'],2,'.','');
+                $record['win_amount']=number_format((float)$record['win_amount'],2,'.','');
+            }
+            return $this->reply(['list'=>$list,'total'=>$total,'amount_total'=>number_format($amountTotal,2,'.',''),'page'=>$page,'page_size'=>$size]);
+        }
+        $query=Db::name('bet_submissions')->where('site_id',$s['site_id'])->where('user_id',$s['user_id']);
         if ($from) $query->where('placed_at','>=',$from); if ($to) $query->where('placed_at','<=',$to);
         $status=(string)$request->param('status',''); if (in_array($status,['won','unwon'],true)) $query->where('status',$status);
         $source=trim((string)$request->param('source','')); if ($source !== '') $query->where(function($nested)use($source):void{$nested->whereLike('source_text','%'.$source.'%')->whereOrLike('formatted_text','%'.$source.'%');});
         $total=(clone $query)->count(); $amountTotal=(float)(clone $query)->sum('amount'); $page=max(1,(int)$request->param('page',1)); $size=min(100,max(1,(int)$request->param('page_size',20)));
         $list=$query->order('placed_at','desc')->page($page,$size)->select()->toArray();
         foreach ($list as &$record) {
-            $refundState=$this->betRecordRefundState($record);
+            $refundState=$this->betSubmissionRefundState($record);
             $record['lottery']=$refundState['lottery'];
             $record['open_time']=$refundState['open_time'];
             $record['can_refund']=$refundState['can_refund'];
@@ -130,9 +155,42 @@ final class UserBusiness
         return $this->reply(['list'=>$list,'total'=>$total,'amount_total'=>number_format($amountTotal,2,'.',''),'page'=>$page,'page_size'=>$size]);
     }
 
-    private function betRecordRefundState(array $record): array
+    private function submissionRecordIds(int $submissionId): array
     {
-        $details=Db::name('bet_details')->where('bet_record_id',(int)$record['id'])->column('id');
+        if ($submissionId < 1) return [];
+        if (!$this->betSubmissionsAvailable()) return [$submissionId];
+        return Db::name('bet_records')->where('submission_id',$submissionId)->column('id');
+    }
+
+    private function betSubmissionRefundState(array $record): array
+    {
+        if (!$this->betSubmissionsAvailable()) {
+            $details=Db::name('bet_details')->where('bet_record_id',(int)$record['id'])->column('id');
+            $lotteries=$details ? array_values(array_unique(array_filter(Db::name('user_stop_drops')->whereIn('bet_detail_id',$details)->column('lottery')))) : [];
+            $result=['lottery'=>implode('',array_map(static fn(string $name): string=>$name==='福彩3D'?'福':($name==='排列三'?'体':$name),$lotteries)),'open_time'=>null,'can_refund'=>false];
+            if ((string)($record['status']??'')!=='pending' || !$lotteries) return $result;
+            $deadlines=[];
+            foreach ($lotteries as $lotteryName) {
+                $control=$this->lotteryControl(['site_id'=>(int)$record['site_id'],'tenant_id'=>(int)$record['tenant_id']],$lotteryName);
+                if ((int)($control['refund_enabled']??1)!==1 || $this->cutoffReached($control)) return $result;
+                $lotteryId=(int)Db::name('lotteries')->where('tenant_id',(int)$record['tenant_id'])->where('name',$lotteryName)->whereNull('deleted_at')->value('id');
+                if ($lotteryId<1) return $result;
+                $drawn=Db::name('lottery_histories')->where('lottery_id',$lotteryId)->where('code',(string)$record['issue_no'])->order('open_time','desc')->find();
+                if (is_array($drawn) && !empty($drawn['open_time']) && strtotime((string)$drawn['open_time']) <= time()) return $result;
+                $deadline=Db::name('lottery_histories')->where('lottery_id',$lotteryId)->where('next_code',(string)$record['issue_no'])->order('open_time','desc')->value('next_open_time');
+                if (!$deadline || strtotime((string)$deadline)<=time()) return $result;
+                $deadlines[]=(string)$deadline;
+            }
+            sort($deadlines);
+            $result['open_time']=$deadlines[0]??null;
+            $result['can_refund']=true;
+            return $result;
+        }
+        $recordIds=$this->submissionRecordIds((int)$record['id']);
+        if ($recordIds === []) {
+            return ['lottery'=>'','open_time'=>null,'can_refund'=>false];
+        }
+        $details=Db::name('bet_details')->whereIn('bet_record_id',$recordIds)->column('id');
         $lotteries=$details ? array_values(array_unique(array_filter(Db::name('user_stop_drops')->whereIn('bet_detail_id',$details)->column('lottery')))) : [];
         $result=['lottery'=>implode('',array_map(static fn(string $name): string=>$name==='福彩3D'?'福':($name==='排列三'?'体':$name),$lotteries)),'open_time'=>null,'can_refund'=>false];
         if ((string)($record['status']??'')!=='pending' || !$lotteries) return $result;
@@ -158,16 +216,38 @@ final class UserBusiness
     public function refundBetRecord(Request $request): \think\response\Json
     {
         $s=$this->session($request); $id=(int)$request->param('id');
+        if (!$this->betSubmissionsAvailable()) {
+            try {
+                $amount=Db::transaction(function () use ($s,$id): float {
+                    $record=Db::name('bet_records')->where('id',$id)->where('site_id',$s['site_id'])->where('user_id',$s['user_id'])->lock(true)->find();
+                    if (!$record) throw new \InvalidArgumentException('投注记录不存在');
+                    $state=$this->betSubmissionRefundState($record);
+                    if (!$state['can_refund']) throw new \DomainException((string)($record['status']??'')==='refunded'?'该注单已经退回':'该期已开奖或已到开奖时间，不能退回');
+                    $now=date('Y-m-d H:i:s'); $amount=(float)$record['amount'];
+                    Db::name('bet_records')->where('id',$id)->update(['status'=>'refunded','sealed'=>1,'refunded_at'=>$now]);
+                    Db::name('bet_details')->where('bet_record_id',$id)->update(['status'=>'refunded']);
+                    (new InterceptionAllocator())->releaseForRecord($id);
+                    Db::name('site_users')->where('id',$s['user_id'])->where('site_id',$s['site_id'])->update(['used_balance'=>Db::raw('GREATEST(used_balance - '.number_format($amount,2,'.','').', 0)'),'updated_at'=>$now]);
+                    return $amount;
+                });
+            } catch (\InvalidArgumentException $e) { return $this->reply(null,$e->getMessage(),404); }
+              catch (\DomainException $e) { return $this->reply(null,$e->getMessage(),409); }
+              catch (\Throwable $e) { return $this->reply(null,'退单失败，请稍后重试',500); }
+            return $this->reply(['record_id'=>$id,'amount'=>number_format($amount,2,'.','')],'退单成功');
+        }
         try {
             $amount=Db::transaction(function () use ($s,$id): float {
-                $record=Db::name('bet_records')->where('id',$id)->where('site_id',$s['site_id'])->where('user_id',$s['user_id'])->lock(true)->find();
+                $record=Db::name('bet_submissions')->where('id',$id)->where('site_id',$s['site_id'])->where('user_id',$s['user_id'])->lock(true)->find();
                 if (!$record) throw new \InvalidArgumentException('投注记录不存在');
-                $state=$this->betRecordRefundState($record);
+                $recordIds=$this->submissionRecordIds((int)$record['id']);
+                if ($recordIds === []) throw new \InvalidArgumentException('投注记录不存在');
+                $state=$this->betSubmissionRefundState($record);
                 if (!$state['can_refund']) throw new \DomainException((string)($record['status']??'')==='refunded'?'该注单已经退回':'该期已开奖或已到开奖时间，不能退回');
                 $now=date('Y-m-d H:i:s'); $amount=(float)$record['amount'];
-                Db::name('bet_records')->where('id',$id)->update(['status'=>'refunded','sealed'=>1,'refunded_at'=>$now]);
-                Db::name('bet_details')->where('bet_record_id',$id)->update(['status'=>'refunded']);
-                (new InterceptionAllocator())->releaseForRecord($id);
+                Db::name('bet_submissions')->where('id',$id)->update(['status'=>'refunded','sealed'=>1,'refunded_at'=>$now]);
+                Db::name('bet_records')->whereIn('id',$recordIds)->update(['status'=>'refunded','sealed'=>1,'refunded_at'=>$now]);
+                Db::name('bet_details')->whereIn('bet_record_id',$recordIds)->update(['status'=>'refunded']);
+                foreach ($recordIds as $recordId) (new InterceptionAllocator())->releaseForRecord((int)$recordId);
                 Db::name('site_users')->where('id',$s['user_id'])->where('site_id',$s['site_id'])->update(['used_balance'=>Db::raw('GREATEST(used_balance - '.number_format($amount,2,'.','').', 0)'),'updated_at'=>$now]);
                 return $amount;
             });
@@ -193,7 +273,14 @@ final class UserBusiness
     {
         $s=$this->session($request); [$from,$to]=$this->range($request);
         $query=Db::name('bet_details')->alias('d')->leftJoin('user_stop_drops s','s.bet_detail_id=d.id')->where('d.site_id',$s['site_id'])->where('d.user_id',$s['user_id'])->field('d.*,s.play_type,s.lottery');
-        $recordId=(int)$request->param('bet_record_id',0); if ($recordId>0) $query->where('d.bet_record_id',$recordId);
+        $submissionId=(int)$request->param('submission_id',0);
+        $recordId=(int)$request->param('bet_record_id',0);
+        if ($submissionId>0) {
+            $recordIds=$this->submissionRecordIds($submissionId);
+            $query->whereIn('d.bet_record_id',$recordIds ?: [-1]);
+        } elseif ($recordId>0) {
+            $query->where('d.bet_record_id',$recordId);
+        }
         if ($from) $query->where('d.placed_at','>=',$from); if ($to) $query->where('d.placed_at','<=',$to);
         $issue=trim((string)$request->param('issue_no','')); if ($issue !== '') $query->where('d.issue_no',$issue);
         $number=trim((string)$request->param('number','')); if ($number !== '') $query->whereLike('d.number_text','%'.$number.'%');
@@ -328,7 +415,10 @@ final class UserBusiness
     }
     private function recentDuplicateRecords(array $session,string $fingerprint): array
     {
-        return Db::name('bet_records')->where('site_id',$session['site_id'])->where('user_id',$session['user_id'])->where('submission_fingerprint',$fingerprint)->where('created_at','>=',date('Y-m-d H:i:s',time()-15))->order('id')->select()->toArray();
+        if (!$this->betSubmissionsAvailable()) {
+            return Db::name('bet_records')->where('site_id',$session['site_id'])->where('user_id',$session['user_id'])->where('submission_fingerprint',$fingerprint)->where('created_at','>=',date('Y-m-d H:i:s',time()-15))->order('id')->select()->toArray();
+        }
+        return Db::name('bet_submissions')->where('site_id',$session['site_id'])->where('user_id',$session['user_id'])->where('submission_fingerprint',$fingerprint)->where('created_at','>=',date('Y-m-d H:i:s',time()-15))->order('id')->select()->toArray();
     }
     private function assertLotteryPermission(array $session, string $lottery, bool $bet=false): void
     {
@@ -398,6 +488,44 @@ final class UserBusiness
         $user=Db::name('site_users')->where('id',$s['user_id'])->where('site_id',$s['site_id'])->whereNull('deleted_at')->field('balance,credit_balance,used_balance')->find();
         if (!$user) return $this->reply(null,'用户不存在或已停用',404);
         $available=(float)$user['balance']+(float)$user['credit_balance']-(float)$user['used_balance']; if ($amount>$available) return $this->reply(null,'可用余额不足，无法下注',422);
+        if (!$this->betSubmissionsAvailable()) {
+            try {
+                $transactionResult=Db::transaction(function () use ($s,$text,$formattedText,$groups,$amount,$now,$submissionFingerprint): array {
+                    $lockedUser=Db::name('site_users')->where('id',(int)$s['user_id'])->where('site_id',(int)$s['site_id'])->lock(true)->find();
+                    if (!$lockedUser) throw new \RuntimeException('用户不存在或已停用');
+                    $duplicates=$this->recentDuplicateRecords($s,$submissionFingerprint);
+                    if($duplicates!==[]){return ['duplicate'=>true,'record_ids'=>array_map(static fn(array $row):int=>(int)$row['id'],$duplicates),'count'=>array_sum(array_map(static fn(array $row):int=>(int)$row['bet_count'],$duplicates)),'amount'=>array_sum(array_map(static fn(array $row):float=>(float)$row['amount'],$duplicates))];}
+                    $before=(float)$lockedUser['balance']+(float)$lockedUser['credit_balance']-(float)$lockedUser['used_balance'];
+                    if ($amount>$before) throw new \RuntimeException('可用余额不足，无法下注');
+                    $recordIds=[]; $ledgerBefore=$before;
+                    foreach ($groups as $lineLottery=>$group) {
+                        $issueNo=(string)$group['issue_no']; $recordAmount=(float)$group['amount']; $recordCount=(int)$group['count']; $lotteryId=(int)$group['lottery_id'];
+                        $recordId=(int)Db::name('bet_records')->insertGetId(['tenant_id'=>$s['tenant_id'],'site_id'=>$s['site_id'],'user_id'=>$s['user_id'],'issue_no'=>$issueNo,'source_text'=>$text,'formatted_text'=>$formattedText,'submission_fingerprint'=>$submissionFingerprint,'bet_count'=>$recordCount,'amount'=>$recordAmount,'win_amount'=>0,'status'=>'pending','sealed'=>0,'placed_at'=>$now,'created_at'=>$now]);
+                        $recordIds[]=$recordId;
+                        foreach ($group['lines'] as $entry) {
+                        $line=$entry['line']; $rule=$entry['rule'];
+                        $settlementText=(string)($line['settlement_text']??$line['raw_text']);
+                        $detailId=(int)Db::name('bet_details')->insertGetId(['tenant_id'=>$s['tenant_id'],'site_id'=>$s['site_id'],'user_id'=>$s['user_id'],'bet_record_id'=>$recordId,'issue_no'=>$issueNo,'number_text'=>$line['number_text'],'category'=>$line['category'],'amount'=>number_format($rule['actual'],2,'.',''),'odds'=>$rule['actual_odds']===null?null:number_format($rule['actual_odds'],4,'.',''),'win_amount'=>0,'rebate'=>0,'status'=>'pending','placed_at'=>$now,'source_text'=>$settlementText]);
+                        preg_match('/直|组三|组六|组|胆|拖|跨|和|单双|大小|飞|定位|复式|豹子/u',$settlementText,$playMatch); $playType=(string)($line['play_type']??($playMatch[0] ?? ''));
+                        Db::name('user_stop_drops')->insert(['tenant_id'=>$s['tenant_id'],'site_id'=>$s['site_id'],'user_id'=>$s['user_id'],'bet_detail_id'=>$detailId,'lottery'=>$lineLottery,'issue_no'=>$issueNo,'number_text'=>$line['number_text'],'play_type'=>$playType,'stop_type'=>$rule['stop_type'],'original_amount'=>number_format($rule['requested'],2,'.',''),'actual_amount'=>number_format($rule['actual'],2,'.',''),'stop_amount'=>number_format($rule['stop_amount'],2,'.',''),'original_odds'=>$rule['original_odds']===null?null:number_format($rule['original_odds'],4,'.',''),'actual_odds'=>$rule['actual_odds']===null?null:number_format($rule['actual_odds'],4,'.',''),'drop_odds'=>number_format($rule['drop_odds'],4,'.',''),'source_text'=>$settlementText,'placed_at'=>$now,'created_at'=>$now]);
+                        (new InterceptionAllocator())->allocate(['tenant_id'=>$s['tenant_id'],'site_id'=>$s['site_id'],'user_id'=>$s['user_id'],'lottery_id'=>$lotteryId,'issue_no'=>$issueNo,'bet_record_id'=>$recordId,'bet_detail_id'=>$detailId,'number_text'=>$line['number_text'],'amount'=>$rule['actual'],'odds'=>$rule['odds_row']]);
+                        }
+                        CreditLedger::userBet($s,(int)$s['user_id'],$recordAmount,$ledgerBefore,$recordId,$issueNo);
+                        $ledgerBefore-=$recordAmount;
+                    }
+                    Db::name('site_users')->where('id',$s['user_id'])->where('site_id',$s['site_id'])->update(['used_balance'=>Db::raw('used_balance + '.number_format($amount,2,'.',''))]);
+                    return ['duplicate'=>false,'record_ids'=>$recordIds];
+                });
+            } catch (\Throwable $e) {
+                Log::error('quickPlace failed: '.$e->getMessage().' at '.$e->getFile().':'.$e->getLine());
+                $origin=(string)$request->header('origin');
+                $localTest=preg_match('#^https?://(localhost|127\.0\.0\.1)(:\d+)?$#i',$origin)===1;
+                return $this->reply(null,$localTest ? '下注保存失败：'.$e->getMessage() : '下注保存失败，请稍后重试',500);
+            }
+            $recordIds=$transactionResult['record_ids'];
+            if(($transactionResult['duplicate']??false)===true)return $this->reply(['record_id'=>(int)$recordIds[0],'record_ids'=>$recordIds,'count'=>(int)$transactionResult['count'],'amount'=>number_format((float)$transactionResult['amount'],2,'.','')],'请勿重复提交',409);
+            return $this->reply(['record_id'=>(int)$recordIds[0],'record_ids'=>$recordIds,'count'=>$count,'amount'=>number_format($amount,2,'.',''),'formatted_text'=>$formattedText],'下注提交成功');
+        }
         try {
             $transactionResult=Db::transaction(function () use ($s,$text,$formattedText,$groups,$amount,$now,$submissionFingerprint): array {
                 $lockedUser=Db::name('site_users')->where('id',(int)$s['user_id'])->where('site_id',(int)$s['site_id'])->lock(true)->find();
@@ -406,10 +534,26 @@ final class UserBusiness
                 if($duplicates!==[]){return ['duplicate'=>true,'record_ids'=>array_map(static fn(array $row):int=>(int)$row['id'],$duplicates),'count'=>array_sum(array_map(static fn(array $row):int=>(int)$row['bet_count'],$duplicates)),'amount'=>array_sum(array_map(static fn(array $row):float=>(float)$row['amount'],$duplicates))];}
                 $before=(float)$lockedUser['balance']+(float)$lockedUser['credit_balance']-(float)$lockedUser['used_balance'];
                 if ($amount>$before) throw new \RuntimeException('可用余额不足，无法下注');
+                $submissionId=(int)Db::name('bet_submissions')->insertGetId([
+                    'tenant_id'=>$s['tenant_id'],
+                    'site_id'=>$s['site_id'],
+                    'user_id'=>$s['user_id'],
+                    'issue_no'=>array_key_first($groups) ? (string)($groups[array_key_first($groups)]['issue_no'] ?? '') : '',
+                    'source_text'=>$text,
+                    'formatted_text'=>$formattedText,
+                    'submission_fingerprint'=>$submissionFingerprint,
+                    'bet_count'=>$count,
+                    'amount'=>number_format($amount,2,'.',''),
+                    'win_amount'=>'0.00',
+                    'status'=>'pending',
+                    'sealed'=>0,
+                    'placed_at'=>$now,
+                    'created_at'=>$now,
+                ]);
                 $recordIds=[]; $ledgerBefore=$before;
                 foreach ($groups as $lineLottery=>$group) {
                     $issueNo=(string)$group['issue_no']; $recordAmount=(float)$group['amount']; $recordCount=(int)$group['count']; $lotteryId=(int)$group['lottery_id'];
-                    $recordId=(int)Db::name('bet_records')->insertGetId(['tenant_id'=>$s['tenant_id'],'site_id'=>$s['site_id'],'user_id'=>$s['user_id'],'issue_no'=>$issueNo,'source_text'=>$text,'formatted_text'=>$formattedText,'submission_fingerprint'=>$submissionFingerprint,'bet_count'=>$recordCount,'amount'=>$recordAmount,'win_amount'=>0,'status'=>'pending','sealed'=>0,'placed_at'=>$now,'created_at'=>$now]);
+                    $recordId=(int)Db::name('bet_records')->insertGetId(['submission_id'=>$submissionId,'tenant_id'=>$s['tenant_id'],'site_id'=>$s['site_id'],'user_id'=>$s['user_id'],'issue_no'=>$issueNo,'source_text'=>$text,'formatted_text'=>$formattedText,'submission_fingerprint'=>$submissionFingerprint,'bet_count'=>$recordCount,'amount'=>$recordAmount,'win_amount'=>0,'status'=>'pending','sealed'=>0,'placed_at'=>$now,'created_at'=>$now]);
                     $recordIds[]=$recordId;
                     foreach ($group['lines'] as $entry) {
                     $line=$entry['line']; $rule=$entry['rule'];
@@ -419,11 +563,11 @@ final class UserBusiness
                     Db::name('user_stop_drops')->insert(['tenant_id'=>$s['tenant_id'],'site_id'=>$s['site_id'],'user_id'=>$s['user_id'],'bet_detail_id'=>$detailId,'lottery'=>$lineLottery,'issue_no'=>$issueNo,'number_text'=>$line['number_text'],'play_type'=>$playType,'stop_type'=>$rule['stop_type'],'original_amount'=>number_format($rule['requested'],2,'.',''),'actual_amount'=>number_format($rule['actual'],2,'.',''),'stop_amount'=>number_format($rule['stop_amount'],2,'.',''),'original_odds'=>$rule['original_odds']===null?null:number_format($rule['original_odds'],4,'.',''),'actual_odds'=>$rule['actual_odds']===null?null:number_format($rule['actual_odds'],4,'.',''),'drop_odds'=>number_format($rule['drop_odds'],4,'.',''),'source_text'=>$settlementText,'placed_at'=>$now,'created_at'=>$now]);
                     (new InterceptionAllocator())->allocate(['tenant_id'=>$s['tenant_id'],'site_id'=>$s['site_id'],'user_id'=>$s['user_id'],'lottery_id'=>$lotteryId,'issue_no'=>$issueNo,'bet_record_id'=>$recordId,'bet_detail_id'=>$detailId,'number_text'=>$line['number_text'],'amount'=>$rule['actual'],'odds'=>$rule['odds_row']]);
                     }
-                    CreditLedger::userBet($s,(int)$s['user_id'],$recordAmount,$ledgerBefore,$recordId,$issueNo);
+                    CreditLedger::userBet($s,(int)$s['user_id'],$recordAmount,$ledgerBefore,$submissionId,$issueNo);
                     $ledgerBefore-=$recordAmount;
                 }
                 Db::name('site_users')->where('id',$s['user_id'])->where('site_id',$s['site_id'])->update(['used_balance'=>Db::raw('used_balance + '.number_format($amount,2,'.',''))]);
-                return ['duplicate'=>false,'record_ids'=>$recordIds];
+                return ['duplicate'=>false,'record_ids'=>$recordIds,'submission_id'=>$submissionId];
             });
         } catch (\Throwable $e) {
             Log::error('quickPlace failed: '.$e->getMessage().' at '.$e->getFile().':'.$e->getLine());
@@ -432,8 +576,9 @@ final class UserBusiness
             return $this->reply(null,$localTest ? '下注保存失败：'.$e->getMessage() : '下注保存失败，请稍后重试',500);
         }
         $recordIds=$transactionResult['record_ids'];
-        if(($transactionResult['duplicate']??false)===true)return $this->reply(['record_id'=>(int)$recordIds[0],'record_ids'=>$recordIds,'count'=>(int)$transactionResult['count'],'amount'=>number_format((float)$transactionResult['amount'],2,'.','')],'请勿重复提交',409);
-        return $this->reply(['record_id'=>(int)$recordIds[0],'record_ids'=>$recordIds,'count'=>$count,'amount'=>number_format($amount,2,'.',''),'formatted_text'=>$formattedText],'下注提交成功');
+        $submissionId=(int)($transactionResult['submission_id'] ?? ($recordIds[0] ?? 0));
+        if(($transactionResult['duplicate']??false)===true)return $this->reply(['record_id'=>$submissionId,'record_ids'=>$recordIds,'count'=>(int)$transactionResult['count'],'amount'=>number_format((float)$transactionResult['amount'],2,'.','')],'请勿重复提交',409);
+        return $this->reply(['record_id'=>$submissionId,'record_ids'=>$recordIds,'count'=>$count,'amount'=>number_format($amount,2,'.',''),'formatted_text'=>$formattedText],'下注提交成功');
     }
     public function quickSettings(Request $request): \think\response\Json
     {

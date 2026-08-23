@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --host",
     "build": "tsc -b && node ../../scripts/build-web.mjs",
     "lint": "oxlint",
     "preview": "vite preview"
@@ -29,6 +29,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.4",
     "oxlint": "^1.75.0",
+    "sass": "^1.103.1",
     "typescript": "~6.0.2",
     "vite": "^8.2.0"
   }

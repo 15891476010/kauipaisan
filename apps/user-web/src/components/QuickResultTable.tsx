@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { QuickEntryLine } from "../api/user";
 import { Button, Modal } from "antd";
 import { InfoCircleOutlined } from "@ant-design/icons";
+import "./QuickResultTable.css";
 
 type QuickResultTableProps = {
   lines: QuickEntryLine[];

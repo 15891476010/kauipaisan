@@ -3,6 +3,7 @@ import { Modal, Tabs } from "antd";
 import DOMPurify from "dompurify";
 import type { ReactNode } from "react";
 import type { RuleSettings } from "../api/user";
+import "./RuleInstructionsModal.css";
 
 type Props = { open: boolean; onClose: () => void };
 

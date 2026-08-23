@@ -6,10 +6,10 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      '/prod_api': {
-        target: 'http://127.0.0.1:8000',
+      '/dev': {
+        target: 'http://kuaipaisanapi.tzgpt.top:5095',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/prod_api/, '/api'),
+        rewrite: (path) => path.replace(/^\/dev/, '/api/v1'),
       },
     },
   },

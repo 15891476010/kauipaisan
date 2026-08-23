@@ -1,0 +1,230 @@
+.login {
+  height: 100vh;
+  min-height: 520px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #4d4dff;
+}
+
+.login-panel {
+  width: 250px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.login-site-name {
+  margin-bottom: 10px;
+  color: #fff;
+  font-size: 18px;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.login-fields {
+  width: 250px;
+}
+
+.login-fields .ant-space-item {
+  width: 250px;
+}
+
+.login-fields .ant-input-affix-wrapper {
+  height: 40px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 20px;
+  box-shadow: none;
+}
+
+.login-fields .ant-input-prefix {
+  margin-inline-end: 10px;
+  color: #000;
+  font-size: 22px;
+}
+
+.login-fields .ant-input,
+.login-fields .ant-input-password {
+  color: #22206c;
+}
+
+.login-submit {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  margin-top: 10px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid #000;
+  border-radius: 50%;
+  background: #efefef;
+  color: darkblue;
+  cursor: pointer;
+}
+
+.login-submit:hover,
+.login-submit:focus,
+.login-submit:active {
+  outline: 0;
+  background: #6666e8;
+  color: #fff;
+  box-shadow: none;
+}
+
+.login-submit .anticon {
+  font-size: 24px;
+}
+
+.login button:disabled {
+  opacity: .65;
+  cursor: wait;
+}
+
+.captcha-modal .ant-modal-header,
+.login .ant-modal-header {
+  border-bottom: 1px solid #e5e5e5;
+}
+
+.captcha-modal .ant-modal-footer,
+.login .ant-modal-footer {
+  border-top: 1px solid #e5e5e5;
+}
+
+.captcha-card {
+  width: min(520px, calc(100vw - 32px));
+  padding: 22px 24px 26px;
+  border-radius: 4px;
+  background: #fff;
+  box-shadow: 0 12px 36px #11115a55;
+}
+
+.captcha-card h2 {
+  margin: 0 0 18px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #555666;
+  color: #555666;
+  font-size: 20px;
+  text-align: center;
+}
+
+.captcha-equation {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 66px;
+  padding-bottom: 12px;
+}
+
+.captcha-image,
+.captcha-equation strong {
+  display: inline-flex;
+  height: 47px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #4f4f4f;
+  font-size: 20px;
+  letter-spacing: 3px;
+}
+
+.captcha-image {
+  width: 102px;
+  gap: 2px;
+  background: #e8e8e8;
+  color: #334ba9;
+  transform: rotate(-2deg);
+  object-fit: contain;
+}
+
+.captcha-equation strong {
+  width: 78px;
+  color: #222;
+}
+
+.captcha-equation .ant-btn-link {
+  appearance: none;
+  border: 0 !important;
+  background: transparent !important;
+  color: darkblue !important;
+  cursor: pointer;
+  font-size: 18px;
+  box-shadow: none !important;
+  transition: none !important;
+}
+
+.captcha-equation .ant-btn-link:hover,
+.captcha-equation .ant-btn-link:focus,
+.captcha-equation .ant-btn-link:active,
+.captcha-equation .ant-btn-link:focus-visible {
+  outline: none !important;
+  border: 0 !important;
+  background: transparent !important;
+  color: darkblue !important;
+  box-shadow: none !important;
+  transition: none !important;
+}
+
+.digit-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 56px);
+  justify-content: center;
+  gap: 6px 10px;
+  margin-top: 0;
+  padding-top: 12px;
+  border-top: 1px solid #e5e5e5;
+}
+
+.digit-grid .captcha-digit {
+  height: 40px;
+  padding: 0;
+  border: 1px dashed #22206c !important;
+  border-radius: 3px;
+  background: #fff !important;
+  color: #22206c !important;
+  font-size: 18px;
+  box-shadow: none !important;
+  transition: none !important;
+}
+
+.digit-grid .captcha-digit:hover,
+.digit-grid .captcha-digit:focus,
+.digit-grid .captcha-digit:active,
+.digit-grid .captcha-digit:focus-visible {
+  outline: none !important;
+  border-color: #22206c !important;
+  background: #22206c !important;
+  color: #fff !important;
+  box-shadow: none !important;
+  transition: none !important;
+}
+
+.captcha-footer {
+  display: flex;
+  justify-content: center;
+  padding-top: 12px;
+}
+
+.captcha-footer .ant-btn {
+  min-width: 52px;
+  height: 30px;
+  border-radius: 0;
+  background: #22206c !important;
+  border-color: #22206c !important;
+  color: #fff !important;
+  box-shadow: none !important;
+  transition: none !important;
+}
+
+.captcha-footer .ant-btn:hover,
+.captcha-footer .ant-btn:focus,
+.captcha-footer .ant-btn:active,
+.captcha-footer .ant-btn:focus-visible {
+  outline: none !important;
+  background: #22206c !important;
+  border-color: #22206c !important;
+  color: #fff !important;
+  box-shadow: none !important;
+  transition: none !important;
+}

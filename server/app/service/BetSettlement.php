@@ -53,6 +53,7 @@ final class BetSettlement
                     'win_amount' => number_format($totalWin, 2, '.', ''),
                     'status' => $status,
                 ]);
+                if (!empty($lockedRecord['submission_id'])) $this->syncSubmissionSummary((int)$lockedRecord['submission_id']);
                 $userId = (int)$lockedRecord['user_id']; $siteId = (int)$lockedRecord['site_id'];
                 $amount = (float)$lockedRecord['amount'];
                 $user = Db::name('site_users')->where('id', $userId)->where('site_id', $siteId)->lock(true)->find();
@@ -88,6 +89,39 @@ final class BetSettlement
             if($settled!==null){$processed++;if((float)$settled['win']>0)$won++;}
         }
         return ['records' => $processed, 'won' => $won];
+    }
+
+    private function syncSubmissionSummary(int $submissionId): void
+    {
+        if ($submissionId < 1) return;
+        $records=Db::name('bet_records')->where('submission_id',$submissionId)->select()->toArray();
+        if ($records===[]) return;
+        $amount=0.0;$betCount=0;$winAmount=0.0;$sealed=0;$status='pending';$refundedAt=null;
+        foreach ($records as $record) {
+            $amount+=(float)($record['amount']??0);
+            $betCount+=(int)($record['bet_count']??0);
+            $winAmount+=(float)($record['win_amount']??0);
+            $sealed=max($sealed,(int)($record['sealed']??0));
+            $rowStatus=(string)($record['status']??'pending');
+            if ($rowStatus==='refunded') {
+                $status='refunded';
+                $refundedAt = $refundedAt ?: ($record['refunded_at'] ?? null);
+            } elseif ($status==='pending' && $rowStatus==='won') {
+                $status='won';
+            } elseif ($status==='pending' && $rowStatus==='unwon') {
+                $status='unwon';
+            }
+            if ($rowStatus==='pending') $status='pending';
+        }
+        if ($status!=='refunded') $status=$winAmount>0 ? 'won' : ($status==='pending' ? 'pending' : $status);
+        Db::name('bet_submissions')->where('id',$submissionId)->update([
+            'bet_count'=>$betCount,
+            'amount'=>number_format($amount,2,'.',''),
+            'win_amount'=>number_format($winAmount,2,'.',''),
+            'status'=>$status,
+            'sealed'=>$sealed,
+            'refunded_at'=>$refundedAt,
+        ]);
     }
 
     /** @return array{0:float,1:bool} */

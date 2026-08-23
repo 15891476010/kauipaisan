@@ -52,9 +52,33 @@ request.interceptors.response.use(
 );
 
 export function apiErrorMessage(error: unknown, fallback: string): string {
+  const extract = (value: unknown): string | undefined => {
+    if (!value) return undefined;
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (!trimmed) return undefined;
+      try {
+        const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+        return extract(parsed);
+      } catch {
+        return trimmed;
+      }
+    }
+    if (typeof value === "object") {
+      const record = value as Record<string, unknown>;
+      return (
+        (typeof record.message === "string" && record.message) ||
+        (typeof record.msg === "string" && record.msg) ||
+        (typeof record.error === "string" && record.error) ||
+        extract(record.data) ||
+        extract(record.detail)
+      );
+    }
+    return undefined;
+  };
   if (axios.isAxiosError(error)) {
-    const response = error.response?.data as ApiEnvelope<unknown> | undefined;
-    return String(response?.message || error.message || fallback);
+    const response = error.response?.data as ApiEnvelope<unknown> | string | undefined;
+    return extract(response) || error.message || fallback;
   }
-  return error instanceof Error ? error.message : fallback;
+  return extract(error) || (error instanceof Error ? error.message : fallback);
 }

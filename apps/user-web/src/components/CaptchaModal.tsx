@@ -1,3 +1,5 @@
+import "./CaptchaModal.css";
+
 type CaptchaModalProps = {
   value: string;
   busy: boolean;
