@@ -13,7 +13,7 @@ use think\facade\Db;
 final class AgentSubaccount
 {
     public const PERMISSIONS = [
-        'overview' => '总货概览', 'order_details' => '总货明细', 'bet_details' => '投注明细', 'winning_details' => '中奖明细',
+        'overview' => '总货概览', 'order_details' => '总货明细', 'bet_details' => '投注明细', 'winning_details' => '中奖明细', 'refunds' => '查看退码',
         'reports' => '综合报表', 'monthly_reports' => '月报表', 'results' => '开奖号码', 'contribution' => '贡献度',
         'daily_ledger' => '日分类账', 'monthly_ledger' => '月分类账', 'daily_path' => '日路径账', 'monthly_path' => '月路径账',
         'interception_details' => '拦货明细', 'interception_winning' => '拦货中奖', 'interception_plate' => '拦货盘', 'subordinates' => '下级管理',
@@ -50,7 +50,8 @@ final class AgentSubaccount
         $lotteries = Db::name('lotteries')->alias('l')->join('site_lotteries sl', 'sl.lottery_id=l.id')->where('sl.site_id', $siteId)->where('l.status', 1)->whereNull('l.deleted_at')->field('l.id,l.name,l.code')->order('l.sort asc')->order('l.id asc')->select()->toArray();
         $issues = Db::name('lottery_histories')->alias('h')->join('site_lotteries sl', 'sl.lottery_id=h.lottery_id')->where('sl.site_id', $siteId)->where('h.draw_day', '>=', date('Y-m-01'))->where('h.draw_day', '<=', date('Y-m-t'))->field('h.code AS issue_no,h.draw_day AS date')->order('h.draw_day desc')->order('h.code desc')->select()->toArray();
         $seen = []; $issueList = []; foreach ($issues as $row) if (!isset($seen[(string)$row['issue_no']])) { $seen[(string)$row['issue_no']] = true; $issueList[] = $row; }
-        $permissionList = []; foreach (self::PERMISSIONS as $key => $label) $permissionList[] = ['key' => $key, 'label' => $label];
+        $allowed=array_map('strval',(array)($session['permissions']??[]));
+        $permissionList = []; foreach (self::PERMISSIONS as $key => $label) if(in_array('*',$allowed,true)||in_array($key,$allowed,true))$permissionList[] = ['key' => $key, 'label' => $label];
         return $this->reply(['permissions' => $permissionList, 'lotteries' => $lotteries, 'issues' => $issueList]);
     }
 

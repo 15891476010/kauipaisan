@@ -40,6 +40,11 @@ export const deleteOrganization = (id: number) => http.delete<never, Envelope<nu
 export const createOrganizationAccount = (organizationId: number, payload: Record<string, unknown>) => http.post<never, Envelope<InitialCredential>>(`/admin/organizations/${organizationId}/accounts`, payload)
 export const updateOrganizationAccount = (id: number, payload: Record<string, unknown>) => http.put<never, Envelope<null>>(`/admin/organization-accounts/${id}`, payload)
 export const deleteOrganizationAccount = (id: number) => http.delete<never, Envelope<null>>(`/admin/organization-accounts/${id}`)
+export type AgentPermissionNode = { code: string; label: string; type: 'route' | 'page' | 'button'; children?: AgentPermissionNode[] }
+export type AgentPermissionLevel = { value: OrganizationLevel; label: string }
+export type SiteAgentPermissions = { site: { id: number; name: string }; levels: AgentPermissionLevel[]; tree: AgentPermissionNode[]; allowed_codes_by_level: Record<OrganizationLevel, string[]>; permissions_by_level: Record<OrganizationLevel, string[]> }
+export const getSiteAgentPermissions = (siteId: number) => http.get<never, Envelope<SiteAgentPermissions>>(`/admin/sites/${siteId}/agent-permissions`)
+export const saveSiteAgentPermissions = (siteId: number, permissionsByLevel: Record<OrganizationLevel, string[]>) => http.put<never, Envelope<{ permissions_by_level: Record<OrganizationLevel, string[]> }>>(`/admin/sites/${siteId}/agent-permissions`, { permissions_by_level: permissionsByLevel })
 export type ScoreOverview = { total_score: string; available_score: string; allocated_score: string; organization_available: string; user_available: string; user_locked: string }
 export type DashboardScoreData = {
   overview: ScoreOverview & { accounted_score: string; difference_score: string }

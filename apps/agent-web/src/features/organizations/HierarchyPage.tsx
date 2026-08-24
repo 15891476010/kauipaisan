@@ -4,6 +4,7 @@ import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined } from "@ant
 import { createAgentOrganization, deleteAgentOrganization, getAgentOrganizations, updateAgentOrganization, type AgentOrganizationList, type AgentOrganizationMember, type AgentOrganizationNode } from "../../api/user";
 import { apiErrorMessage } from "../../utils/request";
 import { InitialCredentials } from "../../components/InitialCredentials";
+import { hasAgentPermission } from "../../routePermissions";
 
 export function HierarchyPage() {
   const { message, modal } = App.useApp();
@@ -31,6 +32,9 @@ export function HierarchyPage() {
   const maximumCredit = availableCredit + Number(editing?.credit_limit || 0);
   const siteMaxShareRate = Number(data?.site_max_share_rate || 100);
   const canManage = data?.current.can_manage === true;
+  const canCreate = canManage && hasAgentPermission("organization.create");
+  const canUpdate = canManage && hasAgentPermission("organization.update");
+  const canDelete = canManage && hasAgentPermission("organization.delete");
 
   function openCreate() {
     setEditing(null);
@@ -69,7 +73,7 @@ export function HierarchyPage() {
     { title: "最后登录", dataIndex: "last_login_at", width: 165, render: (value: string) => value || "-" },
     { title: "最后登录地点", dataIndex: "last_login_location", width: 180, render: (value: string) => value || "-" },
     { title: "状态", dataIndex: "status", width: 80, render: (value: number) => <Tag color={value === 1 ? "green" : "default"}>{value === 1 ? "启用" : "停用"}</Tag> },
-    { title: "操作", width: 145, render: (_: unknown, row: AgentOrganizationNode) => canManage ? <Space><Button type="link" icon={<EditOutlined />} onClick={() => openEdit(row)}>编辑</Button><Button type="link" danger icon={<DeleteOutlined />} onClick={() => removeNode(row)}>删除</Button></Space> : <span className="hierarchy-readonly">只读浏览</span> },
+    { title: "操作", width: 145, render: (_: unknown, row: AgentOrganizationNode) => canUpdate || canDelete ? <Space>{canUpdate && <Button type="link" icon={<EditOutlined />} onClick={() => openEdit(row)}>编辑</Button>}{canDelete && <Button type="link" danger icon={<DeleteOutlined />} onClick={() => removeNode(row)}>删除</Button>}</Space> : <span className="hierarchy-readonly">只读浏览</span> },
   ];
   const memberColumns = [
     { title: "账号", dataIndex: "username", render: (value: string) => <b>{value}</b> },
@@ -82,7 +86,7 @@ export function HierarchyPage() {
   ];
 
   return <section className="hierarchy-page">
-    <header className="hierarchy-heading"><div><h2>下级管理</h2><p>{data ? `${data.current.level_label} · ${data.current.name}` : "正在读取当前层级"}，点击下级名称可继续查看其直属下级。</p></div><Space><Button icon={<ReloadOutlined />} onClick={() => void load(contextId || undefined)}>刷新</Button>{canManage && data?.current.next_level && <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增{levelLabel}</Button>}</Space></header>
+    <header className="hierarchy-heading"><div><h2>下级管理</h2><p>{data ? `${data.current.level_label} · ${data.current.name}` : "正在读取当前层级"}，点击下级名称可继续查看其直属下级。</p></div><Space><Button icon={<ReloadOutlined />} onClick={() => void load(contextId || undefined)}>刷新</Button>{canCreate && data?.current.next_level && <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增{levelLabel}</Button>}</Space></header>
     {data && <div className="hierarchy-breadcrumb"><span>当前位置：</span>{data.breadcrumbs.map((crumb, index) => <span key={crumb.id}>{index > 0 && <span className="hierarchy-breadcrumb-separator">/</span>}<button type="button" onClick={() => void load(crumb.id)} className={crumb.id === data.current.id ? "current" : ""}>{crumb.level_label} · {crumb.name}</button></span>)}</div>}
     <div className="hierarchy-stats"><div><span>上级授予额度</span><b>{data?.current.credit.granted_credit || "0.00"}</b><small>初始额度上限</small></div><div><span>当前可用余额</span><b className="available">{data?.current.credit.current_available_balance || "0.00"}</b><small>已包含结算变动</small></div><div><span>直属下级额度</span><b className="allocated">{data?.current.credit.direct_child_credit || "0.00"}</b><small>仅统计直属下级</small></div>{data?.current.level === "shareholder" && <><div><span>未归属会员额度</span><b>{data.current.credit.unassigned_member_credit}</b><small>结算盈亏归根股东</small></div><div><span>未归属会员当前净分</span><b>{data.current.credit.unassigned_member_net_score}</b><small>较额度变动 {data.current.credit.unassigned_member_settlement_change}</small></div></>}<div><span>直属下级</span><b>{data?.nodes.length || 0}</b></div><div><span>在线下级</span><b>{data?.nodes.filter((item) => item.online === 1).length || 0}</b></div></div>
     <div className="hierarchy-accounting-note">当前列表只展示所选组织的直属下级；后代组织仅在点击进入后加载，避免跨分支或把整条线混在一起。</div>

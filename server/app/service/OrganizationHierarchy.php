@@ -17,11 +17,16 @@ final class OrganizationHierarchy
         'agent' => [],
     ];
     public const PERMISSIONS = [
-        'overview'=>'数据概览','order_details'=>'总货明细','winning_details'=>'中奖明细','bet_details'=>'投注明细',
+        'route.overview'=>'路由：总货概览','route.ledger'=>'路由：贡献度/分类账','route.reports'=>'路由：报表','route.results'=>'路由：开奖号码',
+        'route.organizations'=>'路由：组织架构','route.subordinates'=>'路由：会员/下级管理','route.intercept'=>'路由：拦货','route.logs'=>'路由：日志',
+        'route.rules'=>'路由：规则说明','route.settings'=>'路由：业务设置','route.subaccounts'=>'路由：子账号',
+        'overview'=>'数据概览','order_details'=>'总货明细','winning_details'=>'中奖明细','bet_details'=>'投注明细','refunds'=>'查看退码',
         'contribution'=>'贡献度','daily_ledger'=>'日分类账','monthly_ledger'=>'月分类账','daily_path'=>'日路径账','monthly_path'=>'月路径账',
         'reports'=>'报表','monthly_reports'=>'月报表','results'=>'开奖号码','subordinates'=>'下级管理',
         'interception_details'=>'拦货明细','interception_winning'=>'拦货中奖','interception_plate'=>'拦货盘面',
-        'rules'=>'规则说明','settings'=>'业务设置','logs'=>'日志','subaccounts'=>'子账号','organization.manage'=>'下级管理',
+        'rules'=>'规则说明','settings'=>'业务设置','settings.update'=>'保存业务设置','logs'=>'日志','subaccounts'=>'子账号','organization.manage'=>'下级管理',
+        'organization.create'=>'新增下级','organization.update'=>'修改下级','organization.delete'=>'删除下级',
+        'member.create'=>'新增会员','member.update'=>'修改会员','subaccount.create'=>'新建子账号','subaccount.update'=>'修改子账号','subaccount.delete'=>'删除子账号',
     ];
 
     public static function nextLevel(string $level): ?string
@@ -43,15 +48,17 @@ final class OrganizationHierarchy
     {
         $items=is_array($value)?$value:[];
         $items=array_values(array_unique(array_filter(array_map('strval',$items),static fn(string $item): bool=>$item==='*'||isset(self::PERMISSIONS[$item]))));
-        if (in_array('*',$parentPermissions,true)) return $items ?: ['*'];
+        $items=AgentAuthorization::expandLegacyRoutes($items);
+        $parentPermissions=AgentAuthorization::expandLegacyRoutes($parentPermissions);
+        if (in_array('*',$parentPermissions,true)) return $items;
         return array_values(array_intersect($items,$parentPermissions));
     }
 
     public static function decodePermissions(mixed $value): array
     {
-        if (is_array($value)) return array_values(array_map('strval',$value));
+        if (is_array($value)) return AgentAuthorization::expandLegacyRoutes(array_values(array_map('strval',$value)));
         $decoded=is_string($value)?json_decode($value,true):null;
-        return is_array($decoded)?array_values(array_map('strval',$decoded)):[];
+        return is_array($decoded)?AgentAuthorization::expandLegacyRoutes(array_values(array_map('strval',$decoded))):[];
     }
 
     public static function rootForSite(int $siteId): ?array
@@ -77,7 +84,7 @@ final class OrganizationHierarchy
         $effective=['*'];
         foreach(array_reverse($chain) as $item){$allowed=self::decodePermissions($item['permissions']??null);if(!$allowed)$allowed=[];if(!in_array('*',$effective,true))$effective=array_values(array_intersect($effective,$allowed));elseif(!in_array('*',$allowed,true))$effective=$allowed;}
         if(!in_array('*',$accountPermissions,true))$effective=in_array('*',$effective,true)?$accountPermissions:array_values(array_intersect($effective,$accountPermissions));
-        return $effective;
+        return AgentAuthorization::intersect($effective,AgentAuthorization::sitePermissions((int)$node['site_id'],(string)$node['level']));
     }
 
     public static function rebuildPath(int $id): void

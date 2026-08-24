@@ -6,6 +6,7 @@ namespace app\controller;
 use app\service\AccountPresence;
 use app\service\OrganizationHierarchy;
 use app\service\PasswordPolicy;
+use app\service\AgentAuthorization;
 use app\service\ScoreTransfer;
 use think\Request;
 use think\facade\Cache;
@@ -44,9 +45,20 @@ final class Organization
         $token=trim(str_ireplace('Bearer ','',(string)$request->header('authorization')));$session=$token!==''?Cache::get('token:'.$token):[];return['type'=>(string)(($session['scope']??'admin')==='agent'?'organization_admin':'platform_admin'),'id'=>(int)($session['user_id']??0),'name'=>(string)($session['username']??'')];
     }
 
-    private function catalog(): array
+    private function catalog(int $siteId,?string $level=null,array $parentPermissions=['*']): array
     {
-        return ['levels'=>array_map(static fn(string $level): array=>['value'=>$level,'label'=>OrganizationHierarchy::LABELS[$level]],OrganizationHierarchy::LEVELS),'permissions'=>array_map(static fn(string $code,string $label): array=>['code'=>$code,'label'=>$label],array_keys(OrganizationHierarchy::PERMISSIONS),array_values(OrganizationHierarchy::PERMISSIONS))];
+        if($level!==null&&isset(AgentAuthorization::LEVELS[$level]))$sitePermissions=AgentAuthorization::sitePermissions($siteId,$level);
+        else {
+            $sitePermissions=[];
+            foreach(AgentAuthorization::sitePermissionsByLevel($siteId) as $allowed){
+                if(in_array('*',$allowed,true)){$sitePermissions=['*'];break;}
+                $sitePermissions=array_values(array_unique(array_merge($sitePermissions,$allowed)));
+            }
+        }
+        $sitePermissions=AgentAuthorization::intersect($sitePermissions,$parentPermissions);
+        $permissions=OrganizationHierarchy::PERMISSIONS;
+        if(!in_array('*',$sitePermissions,true))$permissions=array_intersect_key($permissions,array_flip($sitePermissions));
+        return ['target_level'=>$level,'levels'=>array_map(static fn(string $level): array=>['value'=>$level,'label'=>OrganizationHierarchy::LABELS[$level]],OrganizationHierarchy::LEVELS),'permissions'=>array_map(static fn(string $code,string $label): array=>['code'=>$code,'label'=>$label],array_keys($permissions),array_values($permissions))];
     }
 
     private function generateNodeCode(int $siteId, string $level): string
@@ -68,6 +80,7 @@ final class Organization
         if ($level==='director'&&$parentId!==0) throw new \InvalidArgumentException('总监必须是站点根节点');
         if ($level!=='director'&&(!$parent||!OrganizationHierarchy::canParentLevelAccept((string)$parent['level'],$level))) throw new \InvalidArgumentException('上下级关系不符合总监、大股东、小股东、总代理、代理的顺序');
         $parentPermissions=$parent?OrganizationHierarchy::decodePermissions($parent['permissions']??null):['*'];
+        $parentPermissions=AgentAuthorization::intersect($parentPermissions,AgentAuthorization::sitePermissions((int)$site['id'],$level));
         $permissions=OrganizationHierarchy::normalizePermissions($request->post('permissions',$current?OrganizationHierarchy::decodePermissions($current['permissions']??null):$parentPermissions),$parentPermissions);
         $name=trim((string)$request->post('name',$current['name']??''));
         $code=$current?(string)$current['code']:$this->generateNodeCode((int)$site['id'],$level);
@@ -92,6 +105,7 @@ final class Organization
             if ($duplicate && empty($duplicate['deleted_at'])) throw new \InvalidArgumentException('当前站点已存在账号 '.$username.'，请更换账号名');
         }
         $nodePermissions=OrganizationHierarchy::decodePermissions($node['permissions']??null);
+        $nodePermissions=AgentAuthorization::intersect($nodePermissions,AgentAuthorization::sitePermissions((int)$node['site_id'],(string)$node['level']));
         $permissions=OrganizationHierarchy::normalizePermissions($request->post('permissions',$current?OrganizationHierarchy::decodePermissions($current['permissions']??null):$nodePermissions),$nodePermissions);
         $data=['tenant_id'=>(int)$node['tenant_id'],'site_id'=>(int)$node['site_id'],'organization_id'=>(int)$node['id'],'username'=>$username,'display_name'=>$displayName?:$username,'phone'=>trim((string)$request->post('phone',$current['phone']??'')),'permissions'=>json_encode($permissions,JSON_UNESCAPED_UNICODE),'status'=>(int)$request->post('status',$current['status']??1)===0?0:1,'updated_at'=>date('Y-m-d H:i:s')];
         $password=(string)$request->post('password','');
@@ -124,6 +138,8 @@ final class Organization
     private function responseForSite(int $siteId,?int $parentId=null): array
     {
         $site=$this->site($siteId);$siteCap=$this->siteMaxShareRate($site);
+        $catalogLevel=null;$catalogParentPermissions=['*'];
+        if($parentId!==null){$catalogParent=Db::name('organization_nodes')->where('id',$parentId)->where('site_id',$siteId)->whereNull('deleted_at')->find();if($catalogParent){$catalogLevel=OrganizationHierarchy::nextLevel((string)$catalogParent['level'])??(string)$catalogParent['level'];$catalogParentPermissions=OrganizationHierarchy::decodePermissions($catalogParent['permissions']??null);}}
         $query=Db::name('organization_nodes')->where('site_id',$siteId)->whereNull('deleted_at');
         if ($parentId!==null) $query->where('parent_id',$parentId);
         $nodes=$query->order('path asc,id asc')->select()->toArray();
@@ -159,7 +175,7 @@ final class Organization
                 } unset($member);
             }
         }
-        return ['nodes'=>$nodes,'members'=>$members,'accounts'=>$accounts,'catalog'=>$this->catalog(),'site_max_share_rate'=>number_format($siteCap,4,'.','')];
+        return ['nodes'=>$nodes,'members'=>$members,'accounts'=>$accounts,'catalog'=>$this->catalog($siteId,$catalogLevel,$catalogParentPermissions),'site_max_share_rate'=>number_format($siteCap,4,'.','')];
     }
 
     private function breadcrumbs(int $siteId, int $organizationId, int $rootId): array

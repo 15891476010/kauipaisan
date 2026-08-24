@@ -508,6 +508,9 @@ function openSiteAdmins(row: Record<string, unknown>) {
 function openOrganizations(row: Record<string, unknown>) {
   void router.push({ name: 'site-organizations', params: { siteId: Number(row.id) }, query: { name: String(row.name || '') } });
 }
+function openPermissions(row: Record<string, unknown>) {
+  void router.push({ name: 'site-permissions', params: { siteId: Number(row.id) }, query: { name: String(row.name || '') } });
+}
 async function openSite(row: Record<string, unknown>) {
   try {
     const res = await enterSite(Number(row.id));
@@ -696,7 +699,7 @@ onBeforeUnmount(() => {
         v-if="resource !== 'audit-logs' && resource !== 'bet-records'"
         label="操作"
         fixed="right"
-        :width="resource === 'agent-center' ? 310 : 230"
+        :width="resource === 'agent-center' ? 380 : 230"
         ><template #default="scope"
           ><div class="row-actions">
             <el-button
@@ -717,6 +720,12 @@ onBeforeUnmount(() => {
               type="primary"
               @click="openOrganizations(scope.row)"
               >组织架构</el-button
+            ><el-button
+              v-if="resource === 'agent-center'"
+              link
+              type="primary"
+              @click="openPermissions(scope.row)"
+              >路由权限</el-button
             ><el-button
               v-if="resource === 'agent-center'"
               link

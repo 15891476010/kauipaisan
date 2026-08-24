@@ -112,6 +112,8 @@ Route::group('api/v1', static function () {
     Route::delete('admin/organization-accounts/:id', 'Organization/adminDeleteAccount');
     Route::get('admin/sites/:siteId/profit-shares', 'Organization/adminProfitShare');
     Route::put('admin/sites/:siteId/profit-shares/:childId', 'Organization/adminSaveProfitShare');
+    Route::get('admin/sites/:siteId/agent-permissions', 'SitePermissions/show');
+    Route::put('admin/sites/:siteId/agent-permissions', 'SitePermissions/save');
     Route::get('admin/agent-center', 'Resource/index')->append(['resource' => 'agent-center']);
     Route::post('admin/agent-center', 'Resource/create')->append(['resource' => 'agent-center']);
     Route::put('admin/agent-center/:id', 'Resource/update')->append(['resource' => 'agent-center']);

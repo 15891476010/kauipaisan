@@ -3,6 +3,7 @@ import { App as AntdApp, Spin, Switch, Tooltip } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { getAgentSettings, saveAgentSettings, type AgentSettingOdds, type AgentSettingProfile } from '../../api/user';
 import { apiErrorMessage } from '../../utils/request';
+import { hasAgentPermission } from '../../routePermissions';
 
 const emptyProfile: AgentSettingProfile = { username: '', display_name: '', remark: '', share_limit: '0', follow_share: 0, total_credit: '0', allocated_credit: '0', available_credit: '0', organization_level: '', interception_editable: 0, interception_notice: '' };
 const showNumber = (value: string | null | undefined) => { const number = Number(value); return Number.isFinite(number) ? String(number) : '---'; };
@@ -17,6 +18,7 @@ export function SettingsPage({ lottery }: { lottery: string }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const interceptionEditable = profile.interception_editable === 1;
+  const canSave = hasAgentPermission('settings.update');
 
   useEffect(() => {
     let active = true; setLoading(true); setRows([]); setAmounts({});
@@ -57,7 +59,7 @@ export function SettingsPage({ lottery }: { lottery: string }) {
         <ProfileItem label="代号" value={profile.display_name || '---'} />
         <ProfileItem label="备注" value={profile.remark || '---'} />
         <ProfileItem label="占成上限" value={showNumber(profile.share_limit)} />
-        <div className="agent-settings-profile-item follow"><Tooltip title="开启后将跟随总后台吃货；总后台该号码已吃满时，本代理停止继续吃货。"><span><QuestionCircleOutlined /> 随盘占成</span></Tooltip><Switch aria-label="是否跟随总后台吃货" checked={followShare} disabled={!interceptionEditable} onChange={setFollowShare} /></div>
+        <div className="agent-settings-profile-item follow"><Tooltip title="开启后将跟随总后台吃货；总后台该号码已吃满时，本代理停止继续吃货。"><span><QuestionCircleOutlined /> 随盘占成</span></Tooltip><Switch aria-label="是否跟随总后台吃货" checked={followShare} disabled={!interceptionEditable || !canSave} onChange={setFollowShare} /></div>
       </div>
       <div className="agent-settings-credit">
         <ProfileItem label="总信用额度" value={showNumber(profile.total_credit)} tone="orange" />
@@ -65,10 +67,10 @@ export function SettingsPage({ lottery }: { lottery: string }) {
         <ProfileItem label="可分配信用额度" value={showNumber(profile.available_credit)} tone="green" />
       </div>
       {!interceptionEditable && <div className="credit-allocation-warning">{profile.interception_notice}</div>}
-      <div className="agent-settings-actions"><span>{interceptionEditable ? '拦货金额设置100 = 本代理每个号码可以独立拦到100' : '以下为本站玩法限额，只能在直属代理账号中设置拦货金额'}</span>{interceptionEditable && <button type="button" disabled={saving} onClick={submit}>{saving?'保存中':'提 交'}</button>}</div>
+      <div className="agent-settings-actions"><span>{interceptionEditable ? '拦货金额设置100 = 本代理每个号码可以独立拦到100' : '以下为本站玩法限额，只能在直属代理账号中设置拦货金额'}</span>{interceptionEditable && canSave && <button type="button" disabled={saving} onClick={submit}>{saving?'保存中':'提 交'}</button>}</div>
       <div className="agent-settings-table-wrap"><table className="agent-settings-table"><thead><tr><th>类别</th><th>最小下注</th><th>赔率上限</th><th>拦货金额(同 □)</th><th>单注上限</th><th>单项上限</th></tr></thead><tbody>{groups.flatMap((group) => {
-        const categoryRow = group.rows.length > 1 ? <tr className="settings-category-row" key={`category-${group.name}`}><td>{group.name}</td><td /><td /><td>{interceptionEditable ? <>（同 <input type="checkbox" checked={Boolean(synced[group.name])} onChange={(event) => setSynced((current) => ({...current,[group.name]:event.target.checked}))} />）</> : '—'}</td><td /><td /></tr> : null;
-        return [categoryRow,...group.rows.map((row) => <tr key={row.id}><td>{row.name}</td><td>{showNumber(row.min_bet)}</td><td className="settings-odds">{showNumber(row.odds_limit)}</td><td>{interceptionEditable ? <input className="settings-amount-input" inputMode="decimal" value={amounts[String(row.id)] ?? '0'} onChange={(event) => changeAmount(row,event.target.value)} /> : '—'}</td><td>{showNumber(row.single_bet_limit)}</td><td>{showNumber(row.single_item_limit)}</td></tr>)];
+        const categoryRow = group.rows.length > 1 ? <tr className="settings-category-row" key={`category-${group.name}`}><td>{group.name}</td><td /><td /><td>{interceptionEditable && canSave ? <>（同 <input type="checkbox" checked={Boolean(synced[group.name])} onChange={(event) => setSynced((current) => ({...current,[group.name]:event.target.checked}))} />）</> : '—'}</td><td /><td /></tr> : null;
+        return [categoryRow,...group.rows.map((row) => <tr key={row.id}><td>{row.name}</td><td>{showNumber(row.min_bet)}</td><td className="settings-odds">{showNumber(row.odds_limit)}</td><td>{interceptionEditable && canSave ? <input className="settings-amount-input" inputMode="decimal" value={amounts[String(row.id)] ?? '0'} onChange={(event) => changeAmount(row,event.target.value)} /> : '—'}</td><td>{showNumber(row.single_bet_limit)}</td><td>{showNumber(row.single_item_limit)}</td></tr>)];
       })}</tbody></table></div>
     </>}
   </section>;

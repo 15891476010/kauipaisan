@@ -12,6 +12,7 @@ import LotteryRulesView from '../views/LotteryRulesView.vue'
 import BetBatchReplaceView from '../views/BetBatchReplaceView.vue'
 import SiteAdminsView from '../views/SiteAdminsView.vue'
 import OrganizationsView from '../views/OrganizationsView.vue'
+import SitePermissionsView from '../views/SitePermissionsView.vue'
 import { useAuthStore } from '../stores/auth'
 
 const child = (path: string, name: string, title: string, resource: string): RouteRecordRaw => ({
@@ -26,6 +27,7 @@ const routes: RouteRecordRaw[] = [
       child('agent-center', 'agent-center', '代理中心', 'agent-center'),
       { path: 'agent-center/:siteId/admins', name: 'site-admins', component: SiteAdminsView, meta: { title: '站点后台管理员' } },
       { path: 'agent-center/:siteId/organizations', name: 'site-organizations', component: OrganizationsView, meta: { title: '组织架构' } },
+      { path: 'agent-center/:siteId/permissions', name: 'site-permissions', component: SitePermissionsView, meta: { title: '路由权限' } },
       child('site-users', 'site-users', '站点用户', 'site-users'),
       child('bet-records', 'bet-records', '下单记录', 'bet-records'),
       { path: 'bet-records/batch-replace', name: 'bet-batch-replace', component: BetBatchReplaceView, meta: { title: '批量替换号码' } },
