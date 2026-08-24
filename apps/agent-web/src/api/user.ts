@@ -31,7 +31,7 @@ export type Lottery = {
 };
 export type AgentLineOption = { url: string; line: number };
 export type InitialCredential = { id: number; username: string; initial_password: string; must_change_password: number };
-export type OrganizationLevel = "shareholder" | "director" | "general_agent" | "agent";
+export type OrganizationLevel = "director" | "shareholder" | "small_shareholder" | "general_agent" | "agent";
 export type AgentCreditSummary = {
   granted_credit: string;
   current_available_balance: string;
@@ -47,11 +47,13 @@ export type AgentCreditSummary = {
   allocated_credit: string;
 };
 export type AgentOrganizationProfile = { site: { id: number; name: string }; organization: { id: number; name: string; level: OrganizationLevel; level_label: string; next_level: OrganizationLevel | null; credit: AgentCreditSummary } | null; permissions: string[]; username: string };
-export type AgentOrganizationNode = { id: number; parent_id: number; name: string; code: string; level: OrganizationLevel; level_label: string; next_level: OrganizationLevel | null; credit_limit: string; balance?: string; permissions: string[]; status: number; account_id?: number | null; username?: string | null; display_name?: string | null; phone?: string | null; online?: number; last_login_at?: string | null; last_login_ip?: string | null; last_login_location?: string | null; last_login_device?: string | null; share_rate?: string; max_share_rate?: string };
+export type AgentOrganizationNode = { id: number; parent_id: number; name: string; code: string; level: OrganizationLevel; level_label: string; next_level: OrganizationLevel | null; credit_limit: string; balance?: string; permissions: string[]; status: number; account_id?: number | null; username?: string | null; display_name?: string | null; phone?: string | null; online?: number; last_login_at?: string | null; last_login_ip?: string | null; last_login_location?: string | null; last_login_device?: string | null; share_rate?: string; max_share_rate?: string; child_count?: number };
 export type AgentProfitShare = { child_organization_id: number; parent_organization_id: number; share_rate: string; max_share_rate: string };
-export type AgentOrganizationAccount = { id: number; organization_id: number; username: string; display_name: string; phone?: string; permissions: string[]; status: number; online?: number; last_login_at?: string; last_login_ip?: string };
+export type AgentOrganizationAccount = { id: number; organization_id: number; username: string; display_name: string; phone?: string; permissions: string[]; status: number; online?: number; last_login_at?: string; last_login_ip?: string; last_login_location?: string };
 export type OrganizationCatalog = { levels: Array<{ value: OrganizationLevel; label: string }>; permissions: Array<{ code: string; label: string }> };
-export type AgentOrganizationList = { current: { id: number; name: string; level: OrganizationLevel; level_label: string; next_level: OrganizationLevel | null; credit: AgentCreditSummary }; site_max_share_rate: string; nodes: AgentOrganizationNode[]; accounts: AgentOrganizationAccount[]; catalog: OrganizationCatalog };
+export type AgentOrganizationMember = { id: number; organization_id: number; username: string; display_name: string; phone?: string | null; balance: string; credit_balance: string; used_balance: string; available_balance: string; status: number; online?: number; last_login_at?: string | null; last_login_ip?: string | null; last_login_location?: string | null; created_at?: string | null };
+export type AgentOrganizationBreadcrumb = { id: number; name: string; level: OrganizationLevel; level_label: string };
+export type AgentOrganizationList = { current: { id: number; parent_id: number; name: string; node_name?: string; level: OrganizationLevel; level_label: string; next_level: OrganizationLevel | null; credit: AgentCreditSummary; can_manage?: boolean }; root_organization_id: number; breadcrumbs: AgentOrganizationBreadcrumb[]; site_max_share_rate: string; nodes: AgentOrganizationNode[]; members?: AgentOrganizationMember[]; accounts: AgentOrganizationAccount[]; catalog: OrganizationCatalog };
 export type MemberLotteryPermission = { lottery_id: number; name: string; code: string; can_view: boolean; can_bet: boolean; offline_rebate: string };
 export type MemberLotteryOdds = {
   id: number;
@@ -83,6 +85,8 @@ export type AgentMember = {
   interception_rate?: string;
   type: string;
   last_login_at: string | null;
+  last_login_ip?: string | null;
+  last_login_location?: string | null;
   created_at: string | null;
   permissions?: MemberLotteryPermission[];
   odds?: MemberLotteryOdds[];
@@ -106,7 +110,7 @@ export const getProfile = () => request.get<ApiEnvelope<UserProfile>>("/user/pro
 export const getLotteries = () => request.get<ApiEnvelope<{ list: Lottery[] }>>("/agent/lotteries");
 export const getAgentLineOptions = () => request.get<ApiEnvelope<{ list: AgentLineOption[] }>>("/agent/line-options");
 export const getAgentOrganizationProfile = () => request.get<ApiEnvelope<AgentOrganizationProfile>>("/agent/profile");
-export const getAgentOrganizations = () => request.get<ApiEnvelope<AgentOrganizationList>>("/agent/organizations");
+export const getAgentOrganizations = (params?: { organization_id?: number }) => request.get<ApiEnvelope<AgentOrganizationList>>("/agent/organizations", { params });
 export const createAgentOrganization = (payload: Record<string, unknown>) => request.post<ApiEnvelope<InitialCredential & { node_id: number }>>("/agent/organizations", payload);
 export const updateAgentOrganization = (id: number, payload: Record<string, unknown>) => request.put<ApiEnvelope<null>>(`/agent/organizations/${id}`, payload);
 export const deleteAgentOrganization = (id: number) => request.delete<ApiEnvelope<null>>(`/agent/organizations/${id}`);
@@ -122,8 +126,8 @@ export const updateAgentMember = (id: number, payload: Record<string, unknown>) 
 export type AuditLog = { id: number; username: string | null; action: string; resource?: string | null; ip?: string | null; created_at: string; target_username?: string; content?: string; before_value?: string; after_value?: string; device?: string };
 export type AuditLogList = { list: AuditLog[]; total: number; page: number; page_size: number };
 export const getAuditLogs = (params: Record<string, unknown>) => request.get<ApiEnvelope<AuditLogList>>('/agent/audit-logs', { params });
-export type LedgerRow = { label: string; category: string; bet_count: number; amount: string; rebate: string; win_amount: string; profit: string };
-export type ContributionRow = { member: string; share_amount: string; share_total_amount: string; share_total_profit: string; percentage_share_profit: string; actual_share_profit: string; share_percentage: string; contribution: string };
+export type LedgerRow = { label: string; category: string; bet_count: number; amount: string; rebate: string; offline_water: string; win_amount: string; profit: string };
+export type ContributionRow = { member: string; share_amount: string; share_total_amount: string; share_total_profit: string; offline_water: string; percentage_share_profit: string; actual_share_profit: string; share_percentage: string; contribution: string };
 export type LedgerIssue = { issue_no: string; date: string };
 export const getLedger = (params: Record<string, unknown>) => request.get<ApiEnvelope<{ list: Array<LedgerRow|ContributionRow>; total: number }>>('/agent/ledger', { params });
 export const getLedgerIssues = (params: Record<string, unknown>) => request.get<ApiEnvelope<{ list: LedgerIssue[] }>>('/agent/ledger/issues', { params });
@@ -150,7 +154,7 @@ export const getInterceptionIssues = (params: Record<string, unknown>) => reques
 export const getInterceptionCategories = (params: Record<string, unknown>) => request.get<ApiEnvelope<{ list: InterceptionCategory[] }>>('/agent/interceptions/categories', { params });
 export const getInterceptions = (params: Record<string, unknown>) => request.get<ApiEnvelope<{ list: InterceptionRow[]; total: number; summary: InterceptionSummary }>>('/agent/interceptions', { params });
 export const getInterceptionPlate = (params: Record<string, unknown>) => request.get<ApiEnvelope<{ issue_no: string; groups: InterceptionPlateGroup[] }>>('/agent/interceptions/plate', { params });
-export type AgentSubaccount = { id: number; username: string; display_name: string; status: number; last_login_at: string | null; created_at: string; permissions?: string[]; lottery_permissions?: number[]; report_limit_enabled?: number; report_from_issue?: string | null; report_to_issue?: string | null };
+export type AgentSubaccount = { id: number; username: string; display_name: string; status: number; last_login_at: string | null; last_login_ip?: string | null; last_login_location?: string | null; created_at: string; permissions?: string[]; lottery_permissions?: number[]; report_limit_enabled?: number; report_from_issue?: string | null; report_to_issue?: string | null };
 export type AgentSubaccountOption = { key: string; label: string };
 export type AgentSubaccountLottery = { id: number; name: string; code: string };
 export type AgentSubaccountIssue = { issue_no: string; date: string };

@@ -27,7 +27,7 @@ final class BetSettlement
                 $detailIds=array_map('intval',array_column($details,'id'));
                 $stopRows=Db::name('user_stop_drops')->whereIn('bet_detail_id',$detailIds)->lock(true)->select()->toArray();
                 $stops=[];foreach($stopRows as $stop)$stops[(int)$stop['bet_detail_id']]=$stop;
-                $totalWin=0.0;$totalRebate=0.0;$matchedLottery=false;
+                $totalWin=0.0;$totalRebate=0.0;$totalOffline=0.0;$matchedLottery=false;$waterItems=[];
                 foreach($details as $detail){
                     $stop=$stops[(int)$detail['id']]??null;
                     if(!$stop||(string)$stop['lottery']!==$lotteryName)continue;
@@ -38,6 +38,7 @@ final class BetSettlement
                     [$odds,$legacyFallback]=$this->lockedOdds($detail,$stop,$lotteryId,count($numbers));
                     $payout=$this->detailPayout($numbers,$draw,(string)($detail['source_text']??''),(float)$detail['amount'],$odds);
                     $win=$payout['win'];$totalWin+=$win;$totalRebate+=(float)($detail['rebate']??0);
+                    $totalOffline+=WaterLedger::calculate((float)$detail['amount'],(float)($stop['drop_odds']??0))['amount'];$waterItems[]=['detail'=>$detail,'stop'=>$stop];
                     $detailUpdate=['win_amount'=>number_format($win,2,'.',''),'status'=>$win>0?'won':'unwon'];
                     if($legacyFallback)$detailUpdate['odds']=number_format($odds,4,'.','');
                     Db::name('bet_details')->where('id',(int)$detail['id'])->update($detailUpdate);
@@ -67,6 +68,7 @@ final class BetSettlement
                     'updated_at' => date('Y-m-d H:i:s'),
                 ]);
                 CreditLedger::userSettlement(array_merge($lockedRecord, ['organization_id'=>$user['organization_id'] ?? null]), $totalWin, $availableBefore, $availableBefore + $totalWin);
+                foreach ($waterItems as $waterItem) WaterLedger::recordForDetail($lockedRecord, $user, $waterItem['detail'], $waterItem['stop']);
                 $houseProfit = $amount - $totalWin - $totalRebate;
                 $this->allocateOrganizationProfit($lockedRecord, $user, $houseProfit);
                 $billDate = substr((string)$lockedRecord['placed_at'], 0, 10);
@@ -75,13 +77,14 @@ final class BetSettlement
                     'bet_count' => (int)$bill['bet_count'] + (int)$lockedRecord['bet_count'],
                     'amount' => number_format((float)$bill['amount'] + $amount, 2, '.', ''),
                     'win_amount' => number_format((float)$bill['win_amount'] + $totalWin, 2, '.', ''),
-                    'profit' => number_format((float)$bill['profit'] + $totalWin - $amount, 2, '.', ''),
+                    'offline_rebate' => number_format((float)$bill['offline_rebate'] + $totalOffline, 2, '.', ''),
+                    'profit' => number_format((float)$bill['profit'] + $totalWin - $amount + $totalOffline, 2, '.', ''),
                 ]);
                 else Db::name('bills')->insert([
                     'tenant_id' => (int)$lockedRecord['tenant_id'], 'site_id' => $siteId, 'user_id' => $userId,
                     'bill_date' => $billDate, 'bet_count' => (int)$lockedRecord['bet_count'], 'amount' => number_format($amount, 2, '.', ''),
-                    'rebate' => '0.00', 'offline_rebate' => '0.00', 'win_amount' => number_format($totalWin, 2, '.', ''),
-                    'profit' => number_format($totalWin - $amount, 2, '.', ''), 'created_at' => date('Y-m-d H:i:s'),
+                    'rebate' => '0.00', 'offline_rebate' => number_format($totalOffline, 2, '.', ''), 'win_amount' => number_format($totalWin, 2, '.', ''),
+                    'profit' => number_format($totalWin - $amount + $totalOffline, 2, '.', ''), 'created_at' => date('Y-m-d H:i:s'),
                 ]);
                 return ['win'=>$totalWin];
             });
@@ -171,34 +174,30 @@ final class BetSettlement
         $siteCap=max(0,min(100,(float)($siteSettings['max_profit_share_rate']??100)));
         $chain=[];$visited=[];
         while($nodeId>0&&!in_array($nodeId,$visited,true)){
-            $visited[]=$nodeId;$node=Db::name('organization_nodes')->where('id',$nodeId)->whereNull('deleted_at')->lock(true)->find();if(!$node)break;$chain[]=$node;$nodeId=(int)$node['parent_id'];
+            $visited[]=$nodeId;$node=Db::name('organization_nodes')->where('id',$nodeId)->whereNull('deleted_at')->lock(true)->find();if(!$node)break;
+            $share=Db::name('organization_profit_shares')->where('child_organization_id',(int)$node['id'])->where('parent_organization_id',(int)$node['parent_id'])->where('status',1)->find();
+            $node['share_rate']=$share?(float)$share['share_rate']:0.0;
+            $chain[]=$node;$nodeId=(int)$node['parent_id'];
         }
         if($chain===[])return;
-        $chain=array_reverse($chain);$effective=[];$currentRate=100.0;
-        foreach($chain as $index=>$node){
-            $share=Db::name('organization_profit_shares')->where('child_organization_id',(int)$node['id'])->where('parent_organization_id',(int)$node['parent_id'])->where('status',1)->find();
-            $edgeRate=$share?max(0,min($siteCap,(float)$share['share_rate'])):($index===0?$siteCap:0.0);
-            $currentRate*=$edgeRate/100;$effective[$index]=$currentRate;
-        }
-        $distributed=0.0;$last=count($chain)-1;
-        foreach($chain as $index=>$node){
-            $ownedRate=$effective[$index]-($index<$last?$effective[$index+1]:0.0);
-            $amount=$index===$last?round($houseProfit-$distributed-round($houseProfit*(100-$effective[0])/100,2),2):round($houseProfit*$ownedRate/100,2);
-            $distributed+=$amount;
+        foreach(SequentialProfitShare::allocate($houseProfit,$chain,$siteCap) as $allocation){
+            $node=$allocation['node'];$amount=$allocation['amount'];
             if(abs($amount)<0.005)continue;
             $before=(float)$node['balance'];Db::name('organization_nodes')->where('id',(int)$node['id'])->update(['balance'=>Db::raw('balance + '.number_format($amount,2,'.','')),'updated_at'=>date('Y-m-d H:i:s')]);
-            CreditLedger::organizationSettlement($record,(int)$node['id'],$amount,$before,$before+$amount,$amount>=0?'本期投注盈利分成':'本期投注亏损承担');
+            CreditLedger::organizationSettlement(
+                $record,(int)$node['id'],$amount,$before,$before+$amount,
+                $amount>=0?'本期投注盈利占成':'本期投注亏损承担',
+                [
+                    'allocation_method'=>'sequential_remainder',
+                    'line_organization_id'=>(int)($user['organization_id']??0),
+                    'organization_level'=>(string)($node['level']??''),
+                    'incoming_amount'=>$allocation['incoming_amount'],
+                    'share_rate'=>$allocation['share_rate'],
+                    'share_amount'=>$allocation['amount'],
+                    'remaining_amount'=>$allocation['remaining_amount'],
+                ],
+            );
         }
-        $platformAmount=round($houseProfit-$distributed,2);
-        if(abs($platformAmount)>=0.005)$this->applyPlatformProfit($record,$platformAmount);
-    }
-
-    private function applyPlatformProfit(array $record,float $amount): void
-    {
-        $tenantId=(int)$record['tenant_id'];$now=date('Y-m-d H:i:s');$account=Db::name('platform_credit_accounts')->where('tenant_id',$tenantId)->lock(true)->find();
-        if(!$account){$id=(int)Db::name('platform_credit_accounts')->insertGetId(['tenant_id'=>$tenantId,'balance'=>'0.00','created_at'=>$now,'updated_at'=>$now]);$account=['id'=>$id,'balance'=>0];}
-        $before=(float)$account['balance'];Db::name('platform_credit_accounts')->where('id',(int)$account['id'])->update(['balance'=>Db::raw('balance + '.number_format($amount,2,'.','')),'updated_at'=>$now]);
-        CreditLedger::platformSettlement($record,(int)$account['id'],$amount,$before,$before+$amount);
     }
 
     private function digits(array $history): string

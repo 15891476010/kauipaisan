@@ -24,7 +24,7 @@ const routes: RouteRecordRaw[] = [
     path: '/', component: AdminLayout, redirect: '/dashboard', children: [
       { path: 'dashboard', name: 'dashboard', component: DashboardView, meta: { title: '数据看板' } },
       child('agent-center', 'agent-center', '代理中心', 'agent-center'),
-      { path: 'agent-center/:siteId/admins', name: 'site-admins', component: SiteAdminsView, meta: { title: '站点管理员' } },
+      { path: 'agent-center/:siteId/admins', name: 'site-admins', component: SiteAdminsView, meta: { title: '站点后台管理员' } },
       { path: 'agent-center/:siteId/organizations', name: 'site-organizations', component: OrganizationsView, meta: { title: '组织架构' } },
       child('site-users', 'site-users', '站点用户', 'site-users'),
       child('bet-records', 'bet-records', '下单记录', 'bet-records'),

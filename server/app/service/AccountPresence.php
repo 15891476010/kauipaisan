@@ -15,6 +15,7 @@ final class AccountPresence
     {
         try {
             $ip=self::clientIp($request);
+            $location=self::location($request,$ip);
             $now=date('Y-m-d H:i:s');
             Db::name('account_sessions')->insert([
                 'token_hash'=>hash('sha256',$token),
@@ -25,12 +26,14 @@ final class AccountPresence
                 'site_id'=>isset($session['site_id'])?(int)$session['site_id']:null,
                 'organization_id'=>isset($session['organization_id'])?(int)$session['organization_id']:null,
                 'ip'=>$ip,
-                'location'=>self::location($request,$ip),
+                'location'=>$location,
                 'device'=>self::device((string)$request->header('user-agent')),
                 'user_agent'=>mb_substr((string)$request->header('user-agent'),0,500),
                 'login_at'=>$loginAt?:$now,
                 'last_seen_at'=>$now,
             ]);
+            $accountTable=self::accountTable($accountType);
+            if ($accountTable !== '') Db::name($accountTable)->where('id',$accountId)->update(['last_login_ip'=>$ip,'last_login_location'=>$location]);
         } catch (\Throwable $e) {
             // Presence tracking must not block authentication.
         }
@@ -119,28 +122,60 @@ final class AccountPresence
 
     private static function location(Request $request, string $ip): string
     {
+        if (!filter_var($ip,FILTER_VALIDATE_IP,FILTER_FLAG_NO_PRIV_RANGE|FILTER_FLAG_NO_RES_RANGE)) return '内网或本机地址';
         $parts=[];
         foreach (['cf-ipcountry','cf-region','cf-ipcity'] as $header) {
             $value=trim(urldecode((string)$request->header($header)));
             if ($value!=='' && !in_array($value,$parts,true)) $parts[]=$value;
         }
         if ($parts) return mb_substr(implode(' ',$parts),0,180);
-        if (!filter_var($ip,FILTER_VALIDATE_IP,FILTER_FLAG_NO_PRIV_RANGE|FILTER_FLAG_NO_RES_RANGE)) return '内网或本机地址';
         $cacheKey='ip-location:'.sha1($ip); $cached=Cache::get($cacheKey);
         if (is_string($cached) && $cached!=='') return $cached;
         $location='公网地址';
         if (function_exists('curl_init')) {
-            $curl=curl_init('http://ip-api.com/json/'.rawurlencode($ip).'?lang=zh-CN&fields=status,country,regionName,city');
-            curl_setopt_array($curl,[CURLOPT_RETURNTRANSFER=>true,CURLOPT_CONNECTTIMEOUT_MS=>800,CURLOPT_TIMEOUT_MS=>1200]);
+            $configured=trim((string)env('IP_GEOLOCATION_URL',''));
+            $url=$configured!==''?str_replace('{ip}',rawurlencode($ip),$configured):'http://ip-api.com/json/'.rawurlencode($ip).'?lang=zh-CN&fields=status,country,regionName,city,district';
+            $token=trim((string)env('IP_GEOLOCATION_TOKEN',''));
+            if ($configured!=='' && !str_contains($url,'{ip}') && !str_contains($url,'ip=')) $url.=str_contains($url,'?')?'&ip='.rawurlencode($ip):'?ip='.rawurlencode($ip);
+            if ($token!=='') $url=str_replace('{token}',rawurlencode($token),$url);
+            $timeout=max(300,min(5000,(int)env('IP_GEOLOCATION_TIMEOUT_MS',1500)));
+            $curl=curl_init($url);
+            $headers=[];if($token!==''&&!str_contains($configured,'{token}'))$headers[]='Authorization: Bearer '.$token;
+            curl_setopt_array($curl,[CURLOPT_RETURNTRANSFER=>true,CURLOPT_CONNECTTIMEOUT_MS=>$timeout,CURLOPT_TIMEOUT_MS=>$timeout,CURLOPT_HTTPHEADER=>$headers]);
             $result=curl_exec($curl); curl_close($curl);
             $decoded=is_string($result)?json_decode($result,true):null;
-            if (is_array($decoded) && ($decoded['status']??'')==='success') {
-                $values=array_values(array_filter([(string)($decoded['country']??''),(string)($decoded['regionName']??''),(string)($decoded['city']??'')]));
-                if ($values) $location=implode(' ',$values);
-            }
+            if (is_array($decoded)) { $values=self::addressParts($decoded);if($values)$location=implode(' ',$values); }
         }
         Cache::set($cacheKey,$location,604800);
         return mb_substr($location,0,180);
+    }
+
+    /** @return array<int,string> */
+    private static function addressParts(array $payload): array
+    {
+        $keys=['country','country_name','nation','province','state','regionName','region','city','city_name','district','county','town','township','street','village','village_name'];$values=[];
+        foreach($keys as $key){$found=self::findAddressValues($payload,$key);foreach($found as $value){$value=trim((string)$value);if($value!==''&&!in_array($value,$values,true))$values[]=$value;}}
+        if($values)return $values;
+        foreach(['address','formatted_address','display_name'] as $key){$found=self::findAddressValues($payload,$key);if($found&&trim((string)$found[0])!=='')return [trim((string)$found[0])];}
+        return [];
+    }
+
+    /** @return array<int,string> */
+    private static function findAddressValues(mixed $value,string $wanted): array
+    {
+        if (!is_array($value)) return [];
+        $found=[];
+        foreach($value as $key=>$child){if((string)$key===$wanted&&is_scalar($child))$found[]=(string)$child;if(is_array($child))$found=array_merge($found,self::findAddressValues($child,$wanted));}
+        return $found;
+    }
+
+    private static function accountTable(string $accountType): string
+    {
+        return match($accountType){
+            'platform_admin'=>'admins','site_admin'=>'site_admins','site_user'=>'site_users',
+            'agent_admin'=>'agent_admins','agent_subaccount'=>'agent_subaccounts',
+            'organization_account'=>'organization_accounts','legacy_site_admin'=>'sites',default=>'',
+        };
     }
 
     private static function device(string $userAgent): string

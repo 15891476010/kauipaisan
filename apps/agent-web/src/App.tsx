@@ -4,7 +4,7 @@ import { HashRouter, Navigate, NavLink, Route, Routes } from "react-router-dom";
 import {
   AccountBookOutlined, AlertOutlined, FileDoneOutlined, FileTextOutlined,
   FolderOutlined, LogoutOutlined,
-  BellOutlined, MenuFoldOutlined, MenuUnfoldOutlined, SettingOutlined, ShareAltOutlined, SwapOutlined, TeamOutlined, TrophyOutlined,
+  SettingOutlined, ShareAltOutlined, SwapOutlined, TeamOutlined, TrophyOutlined,
   TransactionOutlined,
 } from "@ant-design/icons";
 import "./App.css";
@@ -27,6 +27,7 @@ import { HierarchyPage } from "./features/organizations/HierarchyPage";
 import { heartbeat, logout as logoutSession } from "./api/auth";
 import { ForcedPasswordPage } from "./features/auth/ForcedPasswordPage";
 import { firstAllowedRoute, isRouteAllowed } from "./routePermissions";
+import fishLogo from "./assets/login-logo.svg";
 
 const menus = [
   { path: "overview", title: "总货概览", icon: FileDoneOutlined },
@@ -47,13 +48,6 @@ const levelSystemNames: Record<string, string> = {
   director: "总监系统",
   general_agent: "总代理系统",
   agent: "代理系统",
-};
-
-const levelWorkspaceNames: Record<string, string> = {
-  shareholder: "股东工作台",
-  director: "总监工作台",
-  general_agent: "总代理工作台",
-  agent: "代理工作台",
 };
 
 function clearAgentAuthQuery() {
@@ -154,7 +148,6 @@ function AgentMain({ name, onLogout, announcement, siteName }: { name: string; o
   const [lineLoading, setLineLoading] = useState(false);
   const [lineResults, setLineResults] = useState<Array<{ line: number; delay: number | null; fastest?: boolean }>>([]);
   const [lineCountdown, setLineCountdown] = useState<number | null>(null);
-  const [collapsed, setCollapsed] = useState(false);
   const [organizationProfile, setOrganizationProfile] = useState<AgentOrganizationProfile | null>(null);
   const [permissions, setPermissions] = useState<string[]>(() => { try { const value=JSON.parse(localStorage.getItem("agent_permissions")||"[]");return Array.isArray(value)?value.map(String):[]; } catch { return []; } });
   const [permissionsReady, setPermissionsReady] = useState(false);
@@ -166,7 +159,6 @@ function AgentMain({ name, onLogout, announcement, siteName }: { name: string; o
   const currentLevel = organizationProfile?.organization?.level || localStorage.getItem("agent_organization_level") || "agent";
   const systemName = levelSystemNames[currentLevel] || "业务系统";
   const resolvedSiteName = organizationProfile?.site.name || siteName || "站点管理系统";
-  const workspaceName = levelWorkspaceNames[currentLevel] || "业务工作台";
   const accessContext = { permissions, level: currentLevel, isSubaccount };
   const visibleMenus = permissionsReady && !permissionsFailed ? menus.filter((item) => isRouteAllowed(item.path, accessContext)) : [];
   const firstRoute = firstAllowedRoute(menus.map((item) => item.path), accessContext);
@@ -290,21 +282,31 @@ function AgentMain({ name, onLogout, announcement, siteName }: { name: string; o
     return "agent-line-delay-slow";
   };
   return (
-    <div className={`app agent-app management-shell${collapsed ? " collapsed" : ""}`}>
-      <aside className="management-sidebar">
-        <div className="management-brand"><span className="management-brand-mark">K</span>{!collapsed && <div><b>{resolvedSiteName}</b><small>{systemName}</small></div>}</div>
-        <nav className="management-navigation">
-          {visibleMenus.map(({ path, title, icon: Icon }) => <NavLink key={path} to={"/" + path} title={title} className={({ isActive }) => isActive ? "selected" : ""}><Icon /><span>{title}</span></NavLink>)}
+    <div className="app agent-app">
+      <button className="notice" type="button" onClick={() => modal.info({ title: announcement.title, content: <div className="announcement-modal-content">{announcement.content}</div>, okText: "关闭" })}>
+        <span className="notice-track">{announcement.content || "暂无公告"}</span>
+        <span className="notice-track" aria-hidden="true">{announcement.content || "暂无公告"}</span>
+      </button>
+      <header className="site-header">
+        <img className="fish-logo" src={fishLogo} alt="快排" />
+        <div className="account">
+          <label className="account-field"><span>账号</span><input value={name} readOnly /></label>
+          <label className="account-field account-credit"><span>信用</span><input value={organizationProfile?.organization?.credit.total_credit || "0"} readOnly /></label>
+          <label className="account-field account-used"><span>已用</span><input value={organizationProfile?.organization?.credit.allocated_credit || "0"} readOnly /></label>
+          <label className="account-field account-available"><span>可用</span><input value={organizationProfile?.organization?.credit.available_credit || "0"} readOnly /></label>
+        </div>
+        <ul className="lottery">
+          {lotteriesLoading ? <li>正在加载彩票...</li> : lotteries.length === 0 ? <li>当前站点暂未分配彩票</li> : lotteries.map((item) => {
+            const timing = lotteryTiming(item.next_open_time, now);
+            return <li key={item.id} className={selectedLotteryId === item.id ? "selected" : ""} role="button" tabIndex={0} onClick={() => { setSelectedLotteryId(item.id); sessionStorage.setItem("agent_selected_lottery_id", String(item.id)); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { setSelectedLotteryId(item.id); sessionStorage.setItem("agent_selected_lottery_id", String(item.id)); } }}><div className="lottery-row"><div className="lottery-name"><span>{item.name}</span><b>{timing.status}</b></div><div className="lottery-meta"><label>{item.next_code || item.latest_code || "--"}</label><strong>{timing.countdown}</strong></div></div></li>;
+          })}
+        </ul>
+        <nav className="site-navigation">
+          {visibleMenus.map(({ path, title, icon: Icon }) => <NavLink key={path} to={`/${path}`} title={title} className={({ isActive }) => isActive ? "selected" : ""}><span className="nav-icon-shell"><Icon className="nav-icon" /></span>{path === "ledger" ? "贡献度" : title}</NavLink>)}
+          <button className="line" type="button" onClick={() => void checkLines()}><span className="nav-icon-shell"><SwapOutlined className="nav-icon" /></span><em>更换线路</em></button>
+          <button className="exit" type="button" onClick={onLogout}><span className="nav-icon-shell"><LogoutOutlined className="nav-icon" /></span><em>退出</em></button>
         </nav>
-        <div className="management-sidebar-foot">{!collapsed && <><span>当前身份</span><b>{organizationProfile?.organization?.level_label || localStorage.getItem("agent_level_label") || "代理"}</b></>}</div>
-      </aside>
-      <section className="management-main">
-        <header className="management-topbar">
-          <button className="management-collapse" type="button" title={collapsed ? "展开菜单" : "收起菜单"} onClick={() => setCollapsed((value) => !value)}>{collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}</button>
-          <div className="management-crumb">控制台 / <strong>{organizationProfile?.organization?.name || "业务管理"}</strong></div>
-          <div className="management-actions"><button type="button" title="公告" onClick={() => modal.info({ title: announcement.title, content: <div className="announcement-modal-content">{announcement.content}</div>, okText: "关闭" })}><BellOutlined /></button><button type="button" onClick={() => void checkLines()}><SwapOutlined /><span>更换线路</span></button><span className="management-user"><b>{name}</b><small>{organizationProfile?.organization?.level_label || localStorage.getItem("agent_level_label") || "代理"}</small></span><button type="button" className="management-logout" onClick={onLogout}><LogoutOutlined /><span>退出</span></button></div>
-        </header>
-        <div className="management-tabbar"><span>{workspaceName}</span></div>
+      </header>
       <Modal title="切换线路" open={lineOpen} onCancel={closeLineModal} footer={null} width={460} destroyOnHidden>
         <div className="agent-line-tip">测速完成后将 <b>自动跳转</b> 至 <b>速度最快</b> 的线路</div>
         <div className="agent-line-tip">数字越 <b>小</b>，速度越 <b>快</b></div>
@@ -313,16 +315,9 @@ function AgentMain({ name, onLogout, announcement, siteName }: { name: string; o
         {lineResults.length > 0 && <div className="agent-line-table"><div className="agent-line-table-row agent-line-table-head"><span>线路</span><span>延时</span></div>{lineResults.map((item) => <div className="agent-line-table-row" key={item.line}><span className="agent-line-name">线路{item.line}</span><strong className={delayClass(item.delay)}>{item.delay === null ? "检测失败" : <>{item.delay}ms{item.fastest && <em className="agent-line-fastest">最快</em>}</>}</strong></div>)}</div>}
         {lineCountdown !== null && <div className="agent-line-countdown"><b>{lineCountdown}</b> 秒后自动跳转至最快线路</div>}
       </Modal>
-      <div className="agent-lottery-strip">
-        {lotteriesLoading ? <div className="agent-lottery-empty">正在加载彩票...</div> : lotteries.length === 0 ? <div className="agent-lottery-empty">当前站点暂未分配彩票</div> : lotteries.map((item) => {
-          const timing = lotteryTiming(item.next_open_time, now);
-          return <button key={item.id} type="button" className={`agent-lottery-item${selectedLotteryId === item.id ? " selected" : ""}`} onClick={() => { setSelectedLotteryId(item.id); sessionStorage.setItem("agent_selected_lottery_id", String(item.id)); }}><b>{item.name}</b><strong>{item.next_code || item.latest_code || "--"}</strong><span>{timing.status}</span><em>{timing.countdown}</em></button>;
-        })}
-      </div>
       <div className="body agent-body management-workspace">
         <main>{!permissionsReady ? <section className="agent-workspace"><div className="agent-empty">正在加载实时权限...</div></section> : permissionsFailed ? <PermissionState failed /> : firstRoute === null ? <PermissionState /> : <Routes><Route path="/" element={<Navigate to={`/${firstRoute}`} replace />} />{routeAllowed("overview") && <Route path="/overview" element={<OverviewPage />} />}{routeAllowed("organizations") && <Route path="/organizations" element={<HierarchyPage />} />}{routeAllowed("rules") && <Route path="/rules" element={<RulesPage lottery={lotteries.find((item) => item.id === selectedLotteryId)?.name || ""} />} />}{routeAllowed("settings") && <Route path="/settings" element={<SettingsPage lottery={lotteries.find((item) => item.id === selectedLotteryId)?.name || ""} />} />}{routeAllowed("reports") && <Route path="/reports" element={<ReportsPage lottery={lotteries.find((item) => item.id === selectedLotteryId)?.name || ""} />} />}{routeAllowed("subordinates") && <Route path="/subordinates" element={<SubordinatesPage agentName={name} />} />}{routeAllowed("subordinates") && <Route path="/subordinates/new" element={<SubordinateFormPage />} />}{routeAllowed("subordinates") && <Route path="/subordinates/:id/edit" element={<SubordinateEditPage agentName={name} />} />}{routeAllowed("logs") && <Route path="/logs" element={<LogsPage />} />}{routeAllowed("ledger") && <Route path="/ledger" element={<LedgerPage lottery={lotteries.find((item) => item.id === selectedLotteryId)?.name || ""} />} />}{routeAllowed("results") && <Route path="/results" element={<ResultsPage lottery={lotteries.find((item) => item.id === selectedLotteryId)?.name || ""} />} />}{routeAllowed("intercept") && <Route path="/intercept" element={<InterceptionsPage lottery={lotteries.find((item) => item.id === selectedLotteryId)?.name || ""} />} />}{routeAllowed("subaccounts") && <Route path="/subaccounts" element={<SubaccountsPage/>}/>}<Route path="*" element={<Navigate to={`/${firstRoute}`} replace />} /></Routes>}</main>
       </div>
-      </section>
     </div>
   );
 }

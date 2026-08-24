@@ -139,8 +139,39 @@ final class Organization
             $account=$primaryAccounts[(int)$node['id']]??[];$share=$shares[(int)$node['id']]??[];
             foreach(['id'=>'account_id','username'=>'username','display_name'=>'display_name','phone'=>'phone','online'=>'online','last_login_at'=>'last_login_at','last_login_ip'=>'last_login_ip','last_login_location'=>'last_login_location','last_login_device'=>'last_login_device']as$source=>$target)$node[$target]=$account[$source]??null;
             $node['share_rate']=number_format((float)($share['share_rate']??0),4,'.','');$node['max_share_rate']=number_format((float)($share['max_share_rate']??$siteCap),4,'.','');
+            $node['child_count']=(string)$node['level']==='agent'
+                ? (int)Db::name('site_users')->where('organization_id',(int)$node['id'])->whereNull('deleted_at')->count()
+                : (int)Db::name('organization_nodes')->where('parent_id',(int)$node['id'])->whereNull('deleted_at')->count();
         }unset($node);
-        return ['nodes'=>$nodes,'accounts'=>$accounts,'catalog'=>$this->catalog(),'site_max_share_rate'=>number_format($siteCap,4,'.','')];
+        $members=[];
+        if ($parentId!==null) {
+            $parent=Db::name('organization_nodes')->where('id',$parentId)->where('site_id',$siteId)->whereNull('deleted_at')->find();
+            if ($parent && (string)$parent['level']==='agent') {
+                $members=Db::name('site_users')->where('site_id',$siteId)->where('organization_id',$parentId)->whereNull('deleted_at')
+                    ->field('id,organization_id,username,display_name,phone,balance,credit_balance,used_balance,status,last_login_at,last_login_ip,last_login_location,created_at')
+                    ->order('id asc')->select()->toArray();
+                AccountPresence::append($members,'site_user');
+                foreach($members as &$member){
+                    $member['balance']=number_format((float)($member['balance']??0),2,'.','');
+                    $member['credit_balance']=number_format((float)($member['credit_balance']??0),2,'.','');
+                    $member['used_balance']=number_format((float)($member['used_balance']??0),2,'.','');
+                    $member['available_balance']=number_format(max(0,(float)$member['balance']+(float)$member['credit_balance']-(float)$member['used_balance']),2,'.','');
+                } unset($member);
+            }
+        }
+        return ['nodes'=>$nodes,'members'=>$members,'accounts'=>$accounts,'catalog'=>$this->catalog(),'site_max_share_rate'=>number_format($siteCap,4,'.','')];
+    }
+
+    private function breadcrumbs(int $siteId, int $organizationId, int $rootId): array
+    {
+        $chain=[]; $cursor=Db::name('organization_nodes')->where('id',$organizationId)->where('site_id',$siteId)->whereNull('deleted_at')->find();
+        while($cursor){
+            $chain[]=['id'=>(int)$cursor['id'],'name'=>(string)$cursor['name'],'level'=>(string)$cursor['level'],'level_label'=>OrganizationHierarchy::LABELS[(string)$cursor['level']]??(string)$cursor['level']];
+            if ((int)$cursor['id']===$rootId) break;
+            $parentId=(int)$cursor['parent_id'];
+            $cursor=$parentId>0?Db::name('organization_nodes')->where('id',$parentId)->where('site_id',$siteId)->whereNull('deleted_at')->find():null;
+        }
+        return array_reverse($chain);
     }
 
     public function adminIndex(Request $request,int $siteId): \think\response\Json { $site=$this->site($siteId);return $this->reply(array_merge(['site'=>['id'=>(int)$site['id'],'name'=>$site['name']]],$this->responseForSite($siteId))); }
@@ -168,7 +199,15 @@ final class Organization
 
     public function agentIndex(Request $request): \think\response\Json
     {
-        $session=$this->agentSession($request);$organizationId=(int)($session['organization_id']??0);if($organizationId<1)throw new \RuntimeException('当前账号尚未绑定层级数据');$current=Db::name('organization_nodes')->where('id',$organizationId)->whereNull('deleted_at')->find();if(!$current)throw new \RuntimeException('当前下级数据不存在');return $this->reply(array_merge(['current'=>['id'=>(int)$current['id'],'name'=>(string)($session['username']??$current['name']),'level'=>$current['level'],'level_label'=>OrganizationHierarchy::LABELS[(string)$current['level']]??$current['level'],'next_level'=>OrganizationHierarchy::nextLevel((string)$current['level']),'credit'=>OrganizationHierarchy::nodeCreditSummary((int)$current['id'])]],$this->responseForSite((int)$session['site_id'],$organizationId)));
+        $session=$this->agentSession($request);$rootId=(int)($session['organization_id']??0);if($rootId<1)throw new \RuntimeException('当前账号尚未绑定层级数据');
+        $requestedId=(int)$request->param('organization_id',0);$organizationId=$requestedId>0?$requestedId:$rootId;
+        $current=Db::name('organization_nodes')->where('id',$organizationId)->where('site_id',(int)$session['site_id'])->whereNull('deleted_at')->find();
+        $root=Db::name('organization_nodes')->where('id',$rootId)->where('site_id',(int)$session['site_id'])->whereNull('deleted_at')->find();
+        if(!$current||!$root)throw new \RuntimeException('当前组织数据不存在');
+        $visibleIds=OrganizationHierarchy::descendantIds($rootId);
+        if(!in_array($organizationId,$visibleIds,true))throw new \InvalidArgumentException('无权查看该组织及其下级');
+        $currentPayload=['id'=>(int)$current['id'],'parent_id'=>(int)$current['parent_id'],'name'=>$organizationId===$rootId?(string)($session['username']??$current['name']):(string)$current['name'],'node_name'=>(string)$current['name'],'level'=>$current['level'],'level_label'=>OrganizationHierarchy::LABELS[(string)$current['level']]??$current['level'],'next_level'=>OrganizationHierarchy::nextLevel((string)$current['level']),'credit'=>OrganizationHierarchy::nodeCreditSummary((int)$current['id']),'can_manage'=>$organizationId===$rootId];
+        return $this->reply(array_merge(['current'=>$currentPayload,'root_organization_id'=>$rootId,'breadcrumbs'=>$this->breadcrumbs((int)$session['site_id'],$organizationId,$rootId)],$this->responseForSite((int)$session['site_id'],$organizationId)));
     }
     public function agentProfitShare(Request $request): \think\response\Json
     {

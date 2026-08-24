@@ -506,7 +506,7 @@ final class Resource
             $data['tenant_id']=(int)$site['tenant_id'];
             $data['username']=trim((string)($data['username']??''));
             if ($data['username']==='') throw new \InvalidArgumentException('请输入管理员账号');
-            if (Db::name('admins')->where('username',$data['username'])->whereNull('deleted_at')->find() || Db::name('site_admins')->where('username',$data['username'])->whereNull('deleted_at')->find()) throw new \InvalidArgumentException('管理员账号已存在');
+            if (Db::name('admins')->where('username',$data['username'])->whereNull('deleted_at')->find() || Db::name('site_admins')->where('username',$data['username'])->whereNull('deleted_at')->find() || Db::name('organization_accounts')->where('site_id',(int)$data['site_id'])->where('username',$data['username'])->whereNull('deleted_at')->find()) throw new \InvalidArgumentException('管理员账号已存在');
             $password=(string)($data['password']??''); PasswordPolicy::assertValid($password,$data['username']);
             $data['display_name']=trim((string)($data['display_name']??''))?:$data['username'];
             $data['password']=password_hash($password,PASSWORD_DEFAULT);
@@ -557,7 +557,8 @@ final class Resource
             if ($username==='') throw new \InvalidArgumentException('请输入管理员账号');
             $duplicatePlatform=Db::name('admins')->where('username',$username)->whereNull('deleted_at')->find();
             $duplicateSite=Db::name('site_admins')->where('username',$username)->where('id','<>',$id)->whereNull('deleted_at')->find();
-            if ($duplicatePlatform || $duplicateSite) throw new \InvalidArgumentException('管理员账号已存在');
+            $duplicateOrganization=Db::name('organization_accounts')->where('site_id',(int)$current['site_id'])->where('username',$username)->whereNull('deleted_at')->find();
+            if ($duplicatePlatform || $duplicateSite || ($username!==(string)$current['username'] && $duplicateOrganization)) throw new \InvalidArgumentException('管理员账号已存在');
             $data['username']=$username; $data['display_name']=trim((string)($data['display_name']??''))?:$username;
         }
         if ($resource === 'site-users' && $scopedSiteId !== null) { unset($data['site_id']); $update->where('site_id',$scopedSiteId); }

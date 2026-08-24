@@ -44,13 +44,14 @@ onBeforeUnmount(()=>{if(timer)clearInterval(timer)})
 <template>
   <div class="site-admin-page">
     <header class="site-admin-toolbar">
-      <div><b>{{ siteName }}</b><span>站点管理员</span></div>
+      <div><b>{{ siteName }}</b><span>站点后台管理员（不参与组织架构）</span></div>
       <el-input v-model="query.keyword" clearable placeholder="搜索账号、姓名或手机号" @keyup.enter="query.page=1;load()" />
       <el-button :icon="Refresh" @click="load()">刷新</el-button>
-      <el-button type="primary" :icon="Plus" @click="openCreate">新增管理员</el-button>
+      <el-button type="primary" :icon="Plus" @click="openCreate">新增后台管理员</el-button>
       <el-button :icon="ArrowLeft" @click="router.push('/agent-center')">返回代理中心</el-button>
     </header>
-    <el-table v-loading="loading" :data="rows" border stripe height="calc(100vh - 260px)">
+    <div class="site-admin-scope-note">此处账号只登录总平台的站点后台；代理中心请在“组织架构”中创建总监管理员。</div>
+    <el-table v-loading="loading" :data="rows" border stripe height="calc(100vh - 300px)">
       <el-table-column prop="id" label="ID" width="72" />
       <el-table-column prop="username" label="管理员账号" min-width="140" />
       <el-table-column prop="display_name" label="姓名" min-width="120" />
@@ -79,5 +80,5 @@ onBeforeUnmount(()=>{if(timer)clearInterval(timer)})
 </template>
 
 <style scoped>
-.site-admin-page{min-height:100%;padding:22px;background:#fff;border-radius:8px;box-sizing:border-box}.site-admin-toolbar{display:flex;align-items:center;gap:12px;margin-bottom:18px}.site-admin-toolbar>div{display:flex;min-width:230px;flex-direction:column;gap:3px}.site-admin-toolbar b{color:#27334a;font-size:18px}.site-admin-toolbar span{color:#8993a5;font-size:13px}.site-admin-toolbar .el-input{width:280px;margin-left:auto}.el-pagination{justify-content:flex-end;margin-top:18px}.ip-value{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap}
+.site-admin-page{min-height:100%;padding:22px;background:#fff;border-radius:8px;box-sizing:border-box}.site-admin-toolbar{display:flex;align-items:center;gap:12px;margin-bottom:14px}.site-admin-toolbar>div{display:flex;min-width:280px;flex-direction:column;gap:3px}.site-admin-toolbar b{color:#27334a;font-size:18px}.site-admin-toolbar span{color:#8993a5;font-size:13px}.site-admin-toolbar .el-input{width:280px;margin-left:auto}.site-admin-scope-note{margin-bottom:14px;padding:10px 12px;border-left:3px solid #409eff;background:#f3f8ff;color:#526071;font-size:13px}.el-pagination{justify-content:flex-end;margin-top:18px}.ip-value{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap}
 </style>

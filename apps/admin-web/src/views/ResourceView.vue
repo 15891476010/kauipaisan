@@ -534,7 +534,7 @@ async function openSite(row: Record<string, unknown>) {
     if (res.data.name) target.searchParams.set("agent_name", res.data.name);
     window.open(target.toString(), "_blank");
   } catch {
-    ElMessage.error("进入站点失败，请检查反代域名和站点管理员配置");
+    ElMessage.error("进入站点失败，请检查反代域名和根总监管理员配置");
   }
 }
 const auditActionNames: Record<string, string> = { login_success: "登录成功", login_failed: "登录失败", logout: "退出登录", create: "新增", update: "修改", delete: "删除", clear: "清除" };
@@ -710,7 +710,7 @@ onBeforeUnmount(() => {
               link
               type="primary"
               @click="openSiteAdmins(scope.row)"
-              >管理员</el-button
+              >后台管理员</el-button
             ><el-button
               v-if="resource === 'agent-center'"
               link

@@ -41,6 +41,10 @@ final class ApiContext
         if (str_starts_with($path, 'api/v1/agent/') && !str_contains($path, '/auth/') && !str_ends_with($path, '/agreement') && !str_ends_with($path, '/announcement') && !str_ends_with($path, '/lotteries')) {
             $authorization = (string)$request->header('authorization'); $token = trim(str_ireplace('Bearer ', '', $authorization)); $agentSession = $token !== '' ? Cache::get('token:'.$token) : null;
             if (!is_array($agentSession) || ($agentSession['scope']??'')!=='agent') return $this->cors(json(['code'=>401,'message'=>'未登录或登录已过期','data'=>null,'request_id'=>bin2hex(random_bytes(8))],401));
+            if (in_array((string)($agentSession['account_table']??''),['site_admins','sites'],true)) {
+                if($token!=='')Cache::delete('token:'.$token);
+                return $this->cors(json(['code'=>401,'message'=>'站点管理员不能进入代理中心，请使用组织架构中的总监账号','data'=>null,'request_id'=>bin2hex(random_bytes(8))],401));
+            }
             if (is_array($agentSession) && !empty($agentSession['is_subaccount'])) {
                 $activeSubaccount=Db::name('agent_subaccounts')->where('id',(int)($agentSession['user_id']??0))->where('site_id',(int)($agentSession['site_id']??0))->where('status',1)->whereNull('deleted_at')->find();
                 if(!$activeSubaccount) { if($token!=='')Cache::delete('token:'.$token); return $this->cors(json(['code'=>401,'message'=>'子账号已停用或删除','data'=>null,'request_id'=>bin2hex(random_bytes(8))],401)); }

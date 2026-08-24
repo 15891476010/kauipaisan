@@ -932,7 +932,7 @@ body { background: #e8e8e8; }
 .ledger-reference-table tbody tr:nth-child(odd) { background:#d4fff1; }
 .ledger-reference-table tbody tr:nth-child(even) { background:#fff; }
 .ledger-reference-table td:first-child { font-weight:700; }
-.contribution-table th { width:12.5%; }
+.contribution-table th { width:11.111%; }
 @media (max-width:900px) { .ledger-reference-location{padding:0 10px}.ledger-reference-tabs{overflow-x:auto}.ledger-reference-band{overflow-x:auto;padding:0 10px}.ledger-issue-range{margin-left:10px}.ledger-reference-card{overflow-x:auto;padding:8px}.ledger-reference-table{min-width:850px} }
 
 /* 拦货：明细、中奖与当前期拦货盘。 */
@@ -1104,6 +1104,92 @@ body { background: #e8e8e8; }
 .management-workspace.agent-body>main { min-height:100%; border-radius:8px; background:#fff!important; box-shadow:0 2px 12px #20304a0a; }
 .management-workspace .overview-page,.management-workspace .subordinate-page { min-height:100%; }
 
+/* Reference platform theme: white header, dark-green navigation bands and
+   compact Arial tables. This intentionally overrides the previous blue
+   management shell without changing any page data or routes. */
+.reference-agent-shell {
+  min-width: 0;
+  min-height: 100vh;
+  overflow: auto;
+  background: #e8e8e8;
+  color: #000;
+  font-family: Arial, Helvetica, sans-serif;
+}
+.reference-agent-shell .reference-header {
+  display: flex;
+  width: 100%;
+  height: 100px;
+  min-height: 100px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 20px 0 26px;
+  background: #fff;
+}
+.reference-fish-logo { width: 116px; height: 82px; flex: 0 0 116px; filter: brightness(0) saturate(100%) invert(23%) sepia(86%) saturate(1514%) hue-rotate(91deg) brightness(75%) contrast(108%); }
+.reference-account-card {
+  position: relative;
+  display: flex;
+  width: 176px;
+  height: 42px;
+  flex: 0 0 176px;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border: 1px solid #888;
+  border-radius: 3px;
+  color: #111;
+  font-size: 14px;
+}
+.reference-account-card span { position: absolute; top: -9px; left: 10px; padding: 0 4px; background: #fff; font-size: 13px; }
+.reference-account-card b { font-weight: 400; }
+.reference-account-card em { color: #ed8b00; font-style: normal; font-weight: 700; }
+.reference-main-nav { display: flex; height: 100%; flex: 1; align-items: center; justify-content: flex-start; gap: 5px; overflow-x: auto; }
+.reference-agent-shell .reference-main-nav a,
+.reference-agent-shell .reference-line-button,
+.reference-agent-shell .reference-exit-button {
+  display: flex;
+  width: 74px;
+  height: 75px;
+  flex: 0 0 74px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 6px 4px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #006400;
+  font: 14px/20px Arial, Helvetica, sans-serif;
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.reference-main-nav a i,
+.reference-line-button svg,
+.reference-exit-button svg { display: grid; width: 38px; height: 38px; place-items: center; border: 2px solid currentColor; border-radius: 50%; font-size: 24px; font-style: normal; }
+.reference-main-nav a i .anticon { font-size: 22px; }
+.reference-main-nav a.selected { background: #006400; color: #fff; font-weight: 700; }
+.reference-main-nav a.selected i { border-color: #fff; }
+.reference-line-button { color: #ed8b00!important; }
+.reference-exit-button { color: #8f0000!important; }
+.reference-line-button svg, .reference-exit-button svg { padding: 7px; }
+.reference-agent-shell .agent-lottery-strip { height: 48px; min-height: 48px; border: 0; background: #fff; color: #006400; }
+.reference-agent-shell .agent-lottery-strip>.agent-lottery-item { width: 200px; height: 48px; flex-basis: 200px; grid-template-rows: 22px 22px; padding: 1px 16px; border-right: 1px solid #006400; color: #006400; }
+.reference-agent-shell .agent-lottery-strip>.agent-lottery-item.selected { background: #006400; color: #fff; }
+.reference-agent-shell .management-workspace.agent-body { display: block; min-height: calc(100vh - 148px)!important; padding: 0!important; overflow: visible; background: #e8e8e8!important; }
+.reference-agent-shell .management-workspace.agent-body>main { min-height: calc(100vh - 148px); border-radius: 0; background: transparent!important; box-shadow: none; }
+.reference-notice-button { position: fixed; right: 0; bottom: 0; z-index: 20; width: 300px; height: 36px; border: 0; background: #006400; color: #fff; font-size: 14px; font-weight: 700; cursor: pointer; }
+.reference-agent-shell .ant-modal-content { border-radius: 3px; }
+.reference-agent-shell .ant-modal-header { border-bottom: 1px solid #d7d7d7; }
+.reference-agent-shell input, .reference-agent-shell select, .reference-agent-shell button { font-family: Arial, Helvetica, sans-serif; }
+@media (max-width: 900px) {
+  .reference-agent-shell .reference-header { min-width: 960px; padding-left: 10px; }
+  .reference-fish-logo { width: 88px; flex-basis: 88px; }
+  .reference-account-card { width: 150px; flex-basis: 150px; }
+  .reference-notice-button { width: 180px; }
+}
+
 .hierarchy-page { min-height:100%; padding:22px; background:#fff; color:#172033; }
 .hierarchy-heading { display:flex; align-items:center; gap:10px; margin-bottom:18px; }
 .hierarchy-heading>div { margin-right:auto; }.hierarchy-heading h2 { margin:0; color:#27334a; font-size:20px; }.hierarchy-heading p { margin:6px 0 0; color:#8993a5; font-size:13px; }
@@ -1126,7 +1212,46 @@ body { background: #e8e8e8; }
 .hierarchy-credit-notice b { color:#15803d; font-size:18px; }
 .hierarchy-credit-notice em { margin-left:auto; color:#64748b; font-size:12px; font-style:normal; }
 .hierarchy-accounting-note { margin:-2px 0 14px; padding:10px 12px; border:1px solid #d9e2ef; background:#f8fafc; color:#526071; font-size:12px; line-height:1.7; }
+.hierarchy-breadcrumb { display:flex; min-height:42px; align-items:center; flex-wrap:wrap; gap:4px; margin:-5px 0 16px; padding:8px 12px; border:1px solid #e5eaf1; border-radius:6px; background:#f8fafc; color:#778397; font-size:13px; }
+.hierarchy-breadcrumb button { padding:3px 6px; border:0; border-radius:4px; background:transparent; color:#2563eb; cursor:pointer; }
+.hierarchy-breadcrumb button:hover { background:#e8f0ff; }.hierarchy-breadcrumb button.current { color:#27334a; font-weight:700; cursor:default; }
+.hierarchy-breadcrumb-separator { margin:0 3px; color:#a6afbd; }
+.hierarchy-drill-link { display:flex; align-items:center; gap:8px; padding:0; border:0; background:transparent; color:#2563eb; font-weight:600; cursor:pointer; }
+.hierarchy-drill-link:hover { color:#174fc0; text-decoration:underline; }
+.hierarchy-child-count { padding:2px 6px; border-radius:10px; background:#edf4ff; color:#6c7d96; font-size:11px; font-weight:400; text-decoration:none; }
+.hierarchy-readonly { color:#98a2b3; font-size:12px; }.hierarchy-member-panel { margin-top:18px; overflow:hidden; border:1px solid #e5e9f0; border-radius:6px; }
+.hierarchy-member-panel h3 { margin:0; padding:14px 16px; border-bottom:1px solid #edf0f5; background:#f8fafc; color:#27334a; font-size:15px; }
 @media (max-width: 1100px) { .hierarchy-stats { grid-template-columns:repeat(3,minmax(130px,1fr)); } }
+
+/* Organization management follows the same reference-platform language. */
+.reference-agent-shell .hierarchy-page { min-height:calc(100vh - 148px); padding:0 0 24px; background:#e8e8e8; color:#000; font:14px/21px Arial,Helvetica,sans-serif; }
+.reference-agent-shell .hierarchy-heading { min-height:36px; margin:0 0 10px; padding:0 25px; background:#006400; color:#fff; }
+.reference-agent-shell .hierarchy-heading h2 { color:#fff; font-size:14px; text-decoration:underline; }
+.reference-agent-shell .hierarchy-heading p { display:none; }
+.reference-agent-shell .hierarchy-heading .ant-btn { height:27px; border-color:#d7ead7; border-radius:3px; background:#fff; color:#277327; box-shadow:none; }
+.reference-agent-shell .hierarchy-stats { margin:0 10px 10px; gap:1px; background:#8e8e8e; border:1px solid #8e8e8e; }
+.reference-agent-shell .hierarchy-stats>div { min-height:66px; padding:9px 14px; border:0; border-radius:0; background:#fff; }
+.reference-agent-shell .hierarchy-stats span,.reference-agent-shell .hierarchy-stats small { color:#555; }
+.reference-agent-shell .hierarchy-stats b { color:#006400; font-size:19px; }
+.reference-agent-shell .hierarchy-panel,.reference-agent-shell .hierarchy-member-panel { margin:0 10px!important; border:0; border-radius:0; background:#fff; }
+.reference-agent-shell .hierarchy-panel+.hierarchy-panel,.reference-agent-shell .hierarchy-member-panel { margin-top:10px!important; }
+.reference-agent-shell .hierarchy-panel .ant-table-thead>tr>th,.reference-agent-shell .hierarchy-member-panel .ant-table-thead>tr>th { border-color:#aaa; background:#ffffc8; color:#111; font-weight:700; text-align:center; }
+.reference-agent-shell .hierarchy-panel .ant-table-tbody>tr:nth-child(odd)>td,.reference-agent-shell .hierarchy-member-panel .ant-table-tbody>tr:nth-child(odd)>td { background:#d4fff1; }
+.reference-agent-shell .hierarchy-panel .ant-table-cell,.reference-agent-shell .hierarchy-member-panel .ant-table-cell { border-color:#aaa; }
+.reference-agent-shell .hierarchy-name b { color:#111; }.reference-agent-shell .hierarchy-name span { color:#666; }
+.reference-agent-shell .hierarchy-accounts>header,.reference-agent-shell .hierarchy-member-panel h3 { min-height:36px; padding:7px 14px; border:0; background:#006400; color:#fff; }
+.reference-agent-shell .hierarchy-accounts h3,.reference-agent-shell .hierarchy-member-panel h3 { color:#fff; font-size:14px; }
+.reference-agent-shell .hierarchy-accounts header span { color:#fff; }
+.reference-agent-shell .hierarchy-breadcrumb { min-height:36px; margin:0 10px 10px; padding:5px 12px; border:0; border-radius:0; background:#006400; color:#fff; }
+.reference-agent-shell .hierarchy-breadcrumb button,.reference-agent-shell .hierarchy-breadcrumb button.current { color:#fff; }
+.reference-agent-shell .hierarchy-breadcrumb button:hover { background:#ffffff22; }
+.reference-agent-shell .hierarchy-breadcrumb-separator { color:#fff; }
+.reference-agent-shell .hierarchy-drill-link { color:#0070c0; }
+.reference-agent-shell .hierarchy-child-count { border-radius:2px; background:#e8f4e8; color:#006400; }
+.reference-agent-shell .hierarchy-credit-notice,.reference-agent-shell .hierarchy-accounting-note { margin:0 10px 10px; border-color:#8e8e8e; border-radius:0; background:#fff; color:#333; }
+.reference-agent-shell .ant-btn-primary { border-color:#006400!important; border-radius:2px!important; background:#006400!important; box-shadow:none!important; }
+.reference-agent-shell .ant-btn-primary:hover,.reference-agent-shell .ant-btn-primary:focus { border-color:#004d00!important; background:#004d00!important; }
+.reference-agent-shell .ant-input,.reference-agent-shell .ant-input-affix-wrapper,.reference-agent-shell .ant-select-selector,.reference-agent-shell .ant-picker { border-radius:2px!important; }
 
 .initial-credentials>p { margin:0 0 16px; color:#667085; line-height:1.7; }
 .initial-credentials dl { margin:0 0 16px; overflow:hidden; border:1px solid #e4e7ec; border-radius:6px; }
@@ -1145,3 +1270,205 @@ body { background: #e8e8e8; }
 .forced-password-fields label { display:grid; gap:7px; color:#344054; }
 .forced-password-page ul { margin:18px 0; padding-left:20px; color:#667085; line-height:1.8; }
 .forced-password-page>section>.ant-btn { width:100%; height:40px; }
+
+/* Login, security prompts and portal modals use the same compact green
+   reference-platform language as the authenticated workspace. */
+/* 暂停这组临时覆盖：登录页保持项目原有样式。 */
+/*
+.login {
+  min-width: 360px;
+  background: #006400;
+  color: #000;
+  font-family: Arial, Helvetica, sans-serif;
+}
+.login-panel {
+  width: 310px;
+  padding: 28px 30px 24px;
+  border: 1px solid rgba(255,255,255,.62);
+  border-radius: 3px;
+  background: rgba(0,72,0,.28);
+}
+.login-logo {
+  width: 112px;
+  height: 86px;
+  margin-bottom: 8px;
+  filter: brightness(0) invert(1);
+}
+.login-site-name { margin-bottom: 20px; color: #fff; font: 700 20px/28px Arial,Helvetica,sans-serif; }
+.login-fields,.login-fields .ant-space-item { width: 250px; }
+.login-fields .ant-input-affix-wrapper {
+  height: 38px;
+  padding: 0 11px;
+  border: 1px solid #d4d4d4;
+  border-radius: 2px;
+  background: #fff;
+}
+.login-fields .ant-input-affix-wrapper:hover,
+.login-fields .ant-input-affix-wrapper:focus,
+.login-fields .ant-input-affix-wrapper-focused { border-color: #004d00; box-shadow: none; }
+.login-fields .ant-input-prefix { color: #006400; font-size: 18px; }
+.login-fields .ant-input,.login-fields .ant-input-password { color: #111; }
+.login-submit {
+  width: 92px;
+  height: 34px;
+  margin-top: 18px;
+  border: 1px solid #fff;
+  border-radius: 2px;
+  background: #fff;
+  color: #006400;
+}
+.login-submit:hover,.login-submit:focus,.login-submit:active { border-color:#fff; background:#004d00; color:#fff; }
+.login-submit .anticon { font-size: 19px; }
+
+.captcha-equation .ant-btn-link,
+.captcha-equation .ant-btn-link:hover,
+.captcha-equation .ant-btn-link:focus,
+.captcha-equation .ant-btn-link:active { color:#006400!important; }
+.digit-grid .captcha-digit { border-color:#006400!important; color:#006400!important; }
+.digit-grid .captcha-digit:hover,
+.digit-grid .captcha-digit:focus,
+.digit-grid .captcha-digit:active,
+.digit-grid .captcha-digit:focus-visible { border-color:#006400!important; background:#006400!important; color:#fff!important; }
+.captcha-footer .ant-btn,
+.captcha-footer .ant-btn:hover,
+.captcha-footer .ant-btn:focus,
+.captcha-footer .ant-btn:active { border-color:#006400!important; background:#006400!important; color:#fff!important; }
+
+.forced-password-page { background:#006400; color:#111; font-family:Arial,Helvetica,sans-serif; }
+.forced-password-page>section {
+  padding:24px 28px;
+  border:1px solid #bcbcbc;
+  border-radius:3px;
+  box-shadow:none;
+}
+.forced-password-page header { border-bottom:1px solid #d7d7d7; }
+.forced-password-page header>.anticon { border-radius:50%; background:#e8f4e8; color:#006400; }
+.forced-password-page h2 { color:#006400; font-size:18px; }
+.forced-password-page header p,.forced-password-page ul { color:#555; }
+.forced-password-fields label { color:#222; }
+.forced-password-page .ant-input-affix-wrapper { border-radius:2px; }
+.forced-password-page .ant-input-affix-wrapper:hover,
+.forced-password-page .ant-input-affix-wrapper-focused { border-color:#006400; box-shadow:none; }
+.forced-password-page>section>.ant-btn-primary { border-color:#006400; border-radius:2px; background:#006400; box-shadow:none; }
+.forced-password-page>section>.ant-btn-primary:hover,
+.forced-password-page>section>.ant-btn-primary:focus { border-color:#004d00; background:#004d00; }
+
+body .ant-modal,
+body .ant-message,
+body .ant-notification { font-family:Arial,Helvetica,sans-serif; }
+body .ant-modal-content { padding:18px 20px; border:1px solid #bcbcbc; border-radius:3px; box-shadow:0 5px 18px rgba(0,0,0,.2); }
+body .ant-modal-header { margin-bottom:12px; padding-bottom:10px; border-bottom:1px solid #d7d7d7; }
+body .ant-modal-title { color:#006400; font-size:15px; font-weight:700; }
+body .ant-modal-close { border-radius:2px; color:#555; }
+body .ant-modal-footer { margin-top:14px; padding-top:12px; border-top:1px solid #d7d7d7; }
+body .ant-modal .ant-btn { border-radius:2px; box-shadow:none; }
+body .ant-modal .ant-btn-primary { border-color:#006400; background:#006400; }
+body .ant-modal .ant-btn-primary:hover,
+body .ant-modal .ant-btn-primary:focus { border-color:#004d00; background:#004d00; }
+body .ant-modal-confirm-success .ant-modal-confirm-icon,
+body .ant-modal-confirm-info .ant-modal-confirm-icon { color:#006400; }
+.initial-credentials>p { color:#333; }
+.initial-credentials dl { border-color:#aaa; border-radius:0; }
+.initial-credentials dl>div+div { border-color:#aaa; }
+.initial-credentials dt { background:#d4fff1; color:#222; }
+.initial-credentials dd { color:#006400; font-family:Arial,Helvetica,sans-serif; font-size:15px; }
+.initial-credentials small { color:#a64b00; }
+.agent-line-table { border-color:#888; }
+.agent-line-table-head { background:#d4fff1; color:#111; }
+.agent-line-name { color:#006400; }
+*/
+
+/* 代理端外壳沿用用户端的头部结构；业务页继续使用代理端既有配色。 */
+.agent-app {
+  min-width: 1180px;
+  overflow-y: auto;
+  overflow-x: auto;
+  background: #e8e8e8;
+}
+.agent-app .notice { height:32px; background:#006b00; }
+.agent-app .site-header {
+  height:110px;
+  display:flex;
+  align-items:center;
+  gap:20px;
+  padding:3px 30px;
+  border-bottom:2px solid #008000;
+  background:#fff;
+  overflow:hidden;
+}
+.agent-app .fish-logo {
+  width:86px;
+  height:86px;
+  flex:0 0 86px;
+  object-fit:contain;
+  filter:brightness(0) saturate(100%) invert(31%) sepia(99%) saturate(1088%) hue-rotate(88deg) brightness(82%) contrast(105%);
+}
+.agent-app .account { width:235px; flex:0 0 235px; }
+.agent-app .account-field { height:34px; }
+.agent-app .lottery {
+  width:300px;
+  height:102px;
+  min-width:300px;
+  flex:none;
+  display:flex;
+  flex-direction:column;
+  margin:0;
+  padding:0;
+  border:1px solid #3f3f3f;
+  background:#fff;
+  color:#000;
+  list-style:none;
+}
+.agent-app .lottery > li {
+  display:flex;
+  width:298px;
+  height:50px;
+  flex:none;
+  align-items:center;
+  justify-content:center;
+  color:#000;
+}
+.agent-app .lottery > li + li { border-top:1px dashed #afafaf; }
+.agent-app .lottery > li[role="button"] { cursor:pointer; }
+.agent-app .lottery > li[role="button"]:not(.selected):hover { background:#f2fff2; }
+.agent-app .lottery > li.selected { position:relative; z-index:1; box-shadow:inset 0 0 0 2px #008000; background:#008000; color:#fff; }
+.agent-app .lottery > li.selected .lottery-name span,
+.agent-app .lottery > li.selected .lottery-name b,
+.agent-app .lottery > li.selected .lottery-meta label,
+.agent-app .lottery > li.selected .lottery-meta strong { color:#fff; }
+.agent-app .lottery-row { display:flex; width:100%; height:50px; align-items:center; justify-content:center; }
+.agent-app .lottery-name,.agent-app .lottery-meta { display:flex; height:50px; flex-direction:column; align-items:center; justify-content:center; margin:0 20px; }
+.agent-app .lottery-name { width:64px; }.agent-app .lottery-meta { width:91.5px; }
+.agent-app .lottery-name span { font-size:16px; line-height:22px; }.agent-app .lottery-name b { font-size:16px; line-height:20px; }
+.agent-app .lottery-meta label { color:#b76400; font-size:14px; line-height:17px; }.agent-app .lottery-meta strong { font-size:16px; line-height:19px; white-space:nowrap; }
+.agent-app .site-navigation { height:100%; display:flex; align-items:center; gap:9px; flex:1; justify-content:flex-start; overflow:hidden; }
+.agent-app .site-navigation a,.agent-app .site-navigation button {
+  display:flex;
+  width:72px;
+  height:86px;
+  flex:0 0 72px;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:2px;
+  padding:6px 4px;
+  border:0;
+  background:none;
+  color:#006b00;
+  text-decoration:none;
+  font-size:15px;
+  cursor:pointer;
+  white-space:nowrap;
+}
+.agent-app .site-navigation .nav-icon-shell { display:grid; width:38px; height:38px; place-items:center; border:2px solid #008000; border-radius:50%; flex:none; }
+.agent-app .site-navigation .nav-icon { width:25px; height:25px; color:#008000; font-size:23px; }
+.agent-app .site-navigation a.selected { background:#008000; color:#fff; font-weight:bold; }
+.agent-app .site-navigation a.selected .nav-icon-shell { border-color:#fff; }.agent-app .site-navigation a.selected .nav-icon { color:#fff; }
+.agent-app .site-navigation .line { color:green; }.agent-app .site-navigation .line .nav-icon-shell { border-color:green; }.agent-app .site-navigation .line .nav-icon { color:green; }
+.agent-app .site-navigation .exit { color:#a00; }.agent-app .site-navigation .exit .nav-icon-shell { border-color:#a00; }.agent-app .site-navigation .exit .nav-icon { color:#a00; }
+.agent-app .body.agent-body { min-height:calc(100vh - 142px)!important; background:#e8e8e8!important; }
+.agent-app .agent-body main { min-height:calc(100vh - 142px); background:#e8e8e8!important; }
+@media (max-width:1200px) {
+  .agent-app .site-header { min-width:1180px; padding-left:20px; padding-right:20px; }
+  .agent-app .lottery { width:260px; min-width:260px; }.agent-app .lottery > li { width:258px; }
+}

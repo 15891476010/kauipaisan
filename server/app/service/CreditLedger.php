@@ -19,10 +19,10 @@ final class CreditLedger
         self::write($session, (int)($record['organization_id'] ?? 0) ?: null, 'user', (int)$record['user_id'], (int)$record['user_id'], (int)$record['id'], null, (string)$record['issue_no'], $payout, $before, $after, '中奖增加分数', 'settlement');
     }
 
-    public static function organizationSettlement(array $record, int $organizationId, float $change, float $before, float $after, string $reason): void
+    public static function organizationSettlement(array $record, int $organizationId, float $change, float $before, float $after, string $reason, array $metadata=[]): void
     {
         $session=['tenant_id'=>(int)$record['tenant_id'], 'site_id'=>(int)$record['site_id']];
-        self::write($session, $organizationId, 'organization', $organizationId, (int)$record['user_id'], (int)$record['id'], null, (string)$record['issue_no'], $change, $before, $after, $reason, 'settlement_share');
+        self::writeExtended($session,ScoreTransfer::transactionNo('LG'),$organizationId,'organization',$organizationId,(int)$record['user_id'],(int)$record['id'],null,(string)$record['issue_no'],$change,$before,$after,$reason,'settlement_share','settlement',[],null,null,null,$metadata);
     }
 
     public static function platformSettlement(array $record, int $accountId, float $change, float $before, float $after): void

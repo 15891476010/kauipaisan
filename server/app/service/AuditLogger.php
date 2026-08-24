@@ -10,6 +10,13 @@ final class AuditLogger
     {
         try {
             $safe = self::sanitize($payload);
+            if (!empty($context['impersonation'])) {
+                $safe['_impersonation'] = [
+                    'platform_user_id'=>(int)($context['impersonated_by']??0),
+                    'platform_username'=>mb_substr((string)($context['impersonated_by_username']??'平台管理员'),0,80),
+                    'organization_account_id'=>(int)($context['user_id']??0),
+                ];
+            }
             Db::name('audit_logs')->insert([
                 'tenant_id' => isset($context['tenant_id']) ? (int)$context['tenant_id'] : null,
                 'agent_id' => isset($context['agent_id']) ? (int)$context['agent_id'] : null,

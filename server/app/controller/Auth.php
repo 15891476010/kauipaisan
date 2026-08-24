@@ -126,27 +126,11 @@ final class Auth
             }
         }
         if (!$account || !password_verify($password,(string)$account['password'])) {
-            $siteQuery=Db::name('site_admins')->where('username',$username)->where('status',1)->whereNull('deleted_at');
-            if ($siteId > 0) $siteQuery->where('site_id',$siteId);
-            $siteAdmin=$siteQuery->find();
-            if ($siteAdmin && password_verify($password,(string)$siteAdmin['password'])) {
-                $account=$siteAdmin;
-                $accountTable='site_admins';
-                $agentId=(int)Db::name('sites')->where('id',(int)$siteAdmin['site_id'])->value('agent_id');
-                $siteId=(int)$siteAdmin['site_id'];
-                $root=OrganizationHierarchy::rootForSite($siteId);
-                $organizationId=(int)($root['id']??0);
-                $organizationLevel=(string)($root['level']??'director');
-            } else {
-                $legacySiteQuery=Db::name('sites')->where('manager_username',$username)->where('status',1)->whereNull('deleted_at');
-                if ($siteId > 0) $legacySiteQuery->where('id',$siteId);
-                $legacySite=$legacySiteQuery->find();
-                if (!$legacySite || !password_verify($password,(string)($legacySite['manager_password']??''))) { $this->log($request,['username'=>$username], 'login_failed', 'agent'); return $this->reply(null,'账号或密码错误',401); }
-                $account=['id'=>$legacySite['id'],'username'=>$legacySite['manager_username'],'display_name'=>$legacySite['manager_username'],'tenant_id'=>$legacySite['tenant_id']];
-                $accountTable='sites';
-                $agentId=(int)$legacySite['agent_id'];
-                $siteId=(int)$legacySite['id'];
-            }
+            // Site administrators and legacy site manager credentials belong to
+            // the platform/site backend only. They must not silently become a
+            // root director session in the agent center.
+            $this->log($request,['username'=>$username], 'login_failed', 'agent');
+            return $this->reply(null,'站点管理员请从总平台站点后台登录；代理端请使用组织架构中的总监账号',401);
         }
         $platformSite=$siteId>0 && (int)Db::name('sites')->where('id',$siteId)->value('is_platform_site')===1;
         if (!$platformSite && ($agentId < 1 || !Db::name('agents')->where('id',$agentId)->where('status',1)->find())) { $this->log($request,['username'=>$username], 'login_failed', 'agent'); return $this->reply(null,'当前代理已停用',403); }
@@ -282,17 +266,20 @@ final class Auth
     public function adminEnter(Request $request): \think\response\Json {
         $siteId=(int)$request->param('id',0);
         $site=Db::name('sites')->where('id',$siteId)->where('status',1)->whereNull('deleted_at')->find();
-        $admin=Db::name('site_admins')->where('site_id',$siteId)->where('status',1)->whereNull('deleted_at')->find();
-        $domain=Db::name('domains')->where('site_id',$siteId)->where('domain_type','agent')->where('status',1)->order('is_primary desc,id asc')->value('domain');
-        if (!$site || (!$admin && empty($site['manager_username'])) || !$domain) return $this->reply(null,'站点未配置可用管理员或反代域名',422);
-        $accountId=$admin?(int)$admin['id']:$siteId;
         $root=OrganizationHierarchy::rootForSite($siteId);
-        $context=['tenant_id'=>(int)$site['tenant_id'],'agent_id'=>(int)$site['agent_id'],'site_id'=>$siteId,'organization_id'=>(int)($root['id']??0),'organization_level'=>(string)($root['level']??'director'),'account_table'=>$admin?'site_admins':'sites','username'=>(string)($admin['username']??$site['manager_username']??''),'permissions'=>['*']];
-        $token=$this->sessionToken($request,$accountId,'agent',$context,$admin?'site_admin':'legacy_site_admin');
+        $rootAccount=$root?Db::name('organization_accounts')->where('organization_id',(int)$root['id'])->where('status',1)->whereNull('deleted_at')->order('id asc')->find():null;
+        $domain=Db::name('domains')->where('site_id',$siteId)->where('domain_type','agent')->where('status',1)->order('is_primary desc,id asc')->value('domain');
+        if (!$site || !$root || !$rootAccount || !$domain) return $this->reply(null,'站点未配置可用的总监管理员或反代域名',422);
+        $platformToken=trim(str_ireplace('Bearer ','',(string)$request->header('authorization')));
+        $platformSession=$platformToken!==''?Cache::get('token:'.$platformToken):[];
+        $context=['tenant_id'=>(int)$site['tenant_id'],'agent_id'=>(int)$site['agent_id'],'site_id'=>$siteId,'organization_id'=>(int)$root['id'],'organization_level'=>'director','account_table'=>'organization_accounts','username'=>(string)$rootAccount['username'],'permissions'=>['*'],'impersonation'=>1,'impersonated_by'=>(int)($platformSession['user_id']??0),'impersonated_by_username'=>(string)($platformSession['username']??'平台管理员')];
+        // The platform enters the site using the root organization context,
+        // never by reusing a site_admins credential.
+        $token=$this->sessionToken($request,(int)$rootAccount['id'],'agent',$context,'organization_impersonation');
         $domain=(string)$domain;
         $isLocal=preg_match('/^(localhost|127\\.0\\.0\\.1|\\[::1\\])(?::\\d+)?$/i',$domain) === 1;
         $url=preg_match('/^https?:\\/\\//i',$domain) ? $domain : (($isLocal?'http://':'https://').$domain);
-        return $this->reply(['url'=>$url,'token'=>$token,'name'=>(string)($admin['username']??$site['manager_username']??'站点管理员')]);
+        return $this->reply(['url'=>$url,'token'=>$token,'name'=>(string)$rootAccount['username']]);
     }
     private function menuTree(bool $platform=true): array { $rows=Db::name('menus')->where('status',1)->order('sort asc,id asc')->select()->toArray(); if (!$platform) $rows=array_values(array_filter($rows,static fn(array $row): bool => in_array($row['name'],['dashboard','site-users','bet-records'],true))); $by=[]; foreach($rows as $row){$row['children']=[];$by[$row['id']]=$row;} $tree=[]; foreach($by as $id=>&$row){if((int)$row['parent_id']===0)$tree[]=&$row;elseif(isset($by[$row['parent_id']]))$by[$row['parent_id']]['children'][]=&$row;} return $tree; }
 }

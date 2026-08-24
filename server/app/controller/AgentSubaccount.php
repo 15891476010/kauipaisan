@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace app\controller;
 
+use app\service\AccountPresence;
 use app\service\OrganizationHierarchy;
 use app\service\PasswordPolicy;
 use think\Request;
@@ -60,7 +61,8 @@ final class AgentSubaccount
         $displayName = trim((string)$request->param('display_name', '')); if ($displayName !== '') $query->whereLike('display_name', '%'.$displayName.'%');
         $status = $request->param('status'); if ($status !== null && $status !== '') $query->where('status', (int)$status === 1 ? 1 : 0);
         $page = max(1, (int)$request->param('page', 1)); $size = min(100, max(1, (int)$request->param('page_size', 10))); $total = (clone $query)->count();
-        $rows = $query->field('id,username,display_name,status,last_login_at,created_at')->order('id desc')->page($page, $size)->select()->toArray();
+        $rows = $query->field('id,username,display_name,status,last_login_at,last_login_ip,last_login_location,created_at')->order('id desc')->page($page, $size)->select()->toArray();
+        AccountPresence::append($rows,'agent_subaccount');
         return $this->reply(['list' => $rows, 'total' => $total, 'page' => $page, 'page_size' => $size]);
     }
 
