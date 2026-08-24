@@ -38,14 +38,13 @@ const cards = computed(() => dashboard.value ? [
 ] : [])
 const distribution = computed(() => dashboard.value ? [
   { label: '平台可分配', value: dashboard.value.overview.available_score, color: '#2f6fed' },
-  { label: '站点池可用', value: dashboard.value.overview.site_available, color: '#8b5cf6' },
   { label: '组织可用', value: dashboard.value.overview.organization_available, color: '#159b6c' },
   { label: '用户可用', value: dashboard.value.overview.user_available, color: '#d68718' },
   { label: '下注占用', value: dashboard.value.overview.user_locked, color: '#d84b55' },
 ] : [])
 
 const categoryLabels: Record<string, string> = { allocation: '分数分配', bet: '用户下注', settlement: '开奖结算', adjustment: '人工调整', other: '其他变动' }
-const accountLabels: Record<string, string> = { platform: '总平台', site: '站点账户', organization: '组织账号', user: '用户' }
+const accountLabels: Record<string, string> = { platform: '总平台', organization: '组织账号', user: '用户' }
 const categoryLabel = (value: string) => categoryLabels[value] || value || '其他变动'
 const accountLabel = (row: ScoreLedgerRow) => row.account_name || accountLabels[row.account_type] || row.account_type || '-'
 const shortDate = (value: string) => value ? value.slice(5) : '-'
@@ -169,8 +168,8 @@ onBeforeUnmount(() => { if (refreshTimer) clearInterval(refreshTimer); trendResi
 
       <section class="dashboard-section site-section">
         <div class="section-heading"><div><h2>站点分数分布</h2><span>站点下属组织与用户汇总</span></div><b>{{ dashboard.counts.sites }} 个站点</b></div>
-        <div class="table-scroll"><table><thead><tr><th>站点</th><th>站点总额</th><th>站点池可用</th><th>总监已分配</th><th>组织可用</th><th>用户可用</th><th>下注占用</th><th>状态</th></tr></thead><tbody>
-          <tr v-for="site in dashboard.sites" :key="site.site_id"><td><strong>{{ site.site_name }}</strong></td><td>{{ money(site.allocated_score) }}</td><td>{{ money(site.site_available) }}</td><td>{{ money(site.director_allocated_score) }}</td><td>{{ money(site.organization_available) }}</td><td>{{ money(site.user_available) }}</td><td class="negative">{{ money(site.user_locked) }}</td><td><span :class="['status', site.status === 1 ? 'enabled' : 'disabled']">{{ site.status === 1 ? '启用' : '停用' }}</span></td></tr>
+        <div class="table-scroll"><table><thead><tr><th>站点</th><th>平台下发</th><th>组织可用</th><th>用户可用</th><th>下注占用</th><th>站点流转总额</th><th>组织 / 用户</th><th>状态</th></tr></thead><tbody>
+          <tr v-for="site in dashboard.sites" :key="site.site_id"><td><strong>{{ site.site_name }}</strong></td><td>{{ money(site.allocated_score) }}</td><td>{{ money(site.organization_available) }}</td><td>{{ money(site.user_available) }}</td><td class="negative">{{ money(site.user_locked) }}</td><td><b>{{ money(site.circulating_score) }}</b></td><td>{{ site.organization_count }} / {{ site.user_count }}</td><td><span :class="['status', site.status === 1 ? 'enabled' : 'disabled']">{{ site.status === 1 ? '启用' : '停用' }}</span></td></tr>
           <tr v-if="dashboard.sites.length === 0"><td colspan="8" class="empty-row">暂无站点数据</td></tr>
         </tbody></table></div>
       </section>

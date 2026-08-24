@@ -538,13 +538,13 @@ body { background: #e8e8e8; }
 .member-search { width: 80px; margin: 0 10px; padding: 0 8px; }
 .member-create { width: 86px; margin-right: 10px; padding: 0 8px; background: #c7c7ff; }
 .member-table-wrap { min-height: 210px; margin-top: 12px; padding: 0 14px 14px; background: #fff; overflow-x: auto; }
-.member-table { width: 100%; min-width: 1040px; border-collapse: collapse; color: #111; font-size: 14px; table-layout: fixed; }
-.member-table th, .member-table td { height: 34px; padding: 4px 7px; border: 1px solid #aeb4ba; text-align: center; overflow-wrap: anywhere; }
+.member-table { width: 100%; min-width: 1280px; border-collapse: collapse; color: #111; font-size: 14px; table-layout: fixed; }
+.member-table th, .member-table td { height: 34px; padding: 4px 7px; border: 1px solid #aeb4ba; text-align: center; vertical-align: middle; }
 .member-table th { background: #f6f8fa; font-weight: 700; }
 .member-table tbody tr:nth-child(odd) { background: #d7fff5; }
-.member-table th:nth-child(1) { width: 6%; }.member-table th:nth-child(2) { width: 12%; }.member-table th:nth-child(3) { width: 8%; }.member-table th:nth-child(4) { width: 8%; }.member-table th:nth-child(5) { width: 13%; }.member-table th:nth-child(6) { width: 9%; }.member-table th:nth-child(7) { width: 14%; }.member-table th:nth-child(8) { width: 8%; }.member-table th:nth-child(9) { width: 22%; }
-.member-link { margin: 0; padding: 0; border: 0; background: transparent; color: #3157ec; cursor: pointer; white-space: nowrap; }
-.member-actions { display: flex; align-items: center; justify-content: center; gap: 14px; white-space: nowrap; }
+.member-col-index { width: 4%; }.member-col-account { width: 13%; }.member-col-parent { width: 8%; }.member-col-type { width: 8%; }.member-col-share { width: 12%; }.member-col-credit { width: 9%; }.member-col-login { width: 14%; }.member-col-location { width: 11%; }.member-col-status { width: 7%; }.member-col-actions { width: 14%; }
+.member-link { max-width: 100%; margin: 0; padding: 0; overflow: hidden; border: 0; background: transparent; color: #3157ec; cursor: pointer; text-overflow: ellipsis; white-space: nowrap; }
+.member-actions { display: flex; min-width: 0; align-items: center; justify-content: center; gap: 12px; white-space: nowrap; }
 .member-link:hover { text-decoration: underline; }
 .member-empty { display: grid; min-height: 170px; place-items: center; }
 .member-pagination { display: flex; align-items: center; justify-content: flex-end; gap: 16px; padding: 14px 22px; color: #555; }

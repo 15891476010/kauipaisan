@@ -15,9 +15,9 @@ test("revoked routes redirect to the first fully authorized route", () => {
   assert.equal(firstAllowedRoute(["overview", "logs"], refreshed), "overview");
 });
 
-test("nested routes inherit their top-level permission and level limits still apply", () => {
+test("nested routes inherit their top-level permission without hard-coded level blocks", () => {
   assert.equal(isRouteAllowed("/subordinates/12/edit", { permissions: ["route.subordinates", "subordinates"], level: "agent", isSubaccount: false }), true);
-  assert.equal(isRouteAllowed("/organizations", { permissions: ["*"], level: "agent", isSubaccount: false }), false);
+  assert.equal(isRouteAllowed("/organizations", { permissions: ["*"], level: "agent", isSubaccount: false }), true);
   assert.equal(isRouteAllowed("/organizations", { permissions: ["route.organizations", "organization.manage"], level: "director", isSubaccount: false }), true);
   assert.equal(isRouteAllowed("/unknown", { permissions: ["*"], level: "director", isSubaccount: false }), false);
 });

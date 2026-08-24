@@ -84,14 +84,9 @@ final class AgentAuthorization
     public static function codesForLevel(string $level): array
     {
         if(!isset(self::LEVELS[$level]))return [];
-        $blockedRoute=$level==='agent'?'route.organizations':'route.subordinates';
-        $codes=[];
-        foreach(self::TREE as $route){
-            if((string)$route['code']===$blockedRoute)continue;
-            $codes[]=(string)$route['code'];
-            foreach($route['children']??[] as $child)$codes[]=(string)$child['code'];
-        }
-        return $codes;
+        // SaaS platform selects permissions centrally; every level can receive
+        // the same route tree and the backend decides what to enable.
+        return self::codes();
     }
 
     public static function normalize(mixed $value): array

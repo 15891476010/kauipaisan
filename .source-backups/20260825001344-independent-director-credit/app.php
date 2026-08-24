@@ -105,8 +105,6 @@ Route::group('api/v1', static function () {
     Route::get('admin/agent-center/:id/enter', 'Auth/adminEnter');
     Route::get('admin/sites/:siteId/organizations', 'Organization/adminIndex');
     Route::post('admin/sites/:siteId/organizations', 'Organization/adminCreateNode');
-    Route::put('admin/organizations/:id/credit-share', 'Organization/adminSetDirectorCreditShare');
-    Route::put('admin/organizations/:id/credit', 'Organization/adminSetDirectorCredit');
     Route::put('admin/organizations/:id', 'Organization/adminUpdateNode');
     Route::delete('admin/organizations/:id', 'Organization/adminDeleteNode');
     Route::post('admin/organizations/:organizationId/accounts', 'Organization/adminCreateAccount');

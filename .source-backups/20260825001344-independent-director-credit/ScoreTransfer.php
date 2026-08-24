@@ -23,11 +23,10 @@ final class ScoreTransfer
             if($delta>0&&(float)$parent['balance']+0.000001<$delta)throw new \InvalidArgumentException('上级可用分数不足，无法继续分配');
             self::changeOrganization($parent,-$delta,$tx,'层级分数分配',$childId,'organization',$operator);
         }else{
-            $site=self::siteAccount($tenantId,$siteId,true);
-            if($delta>0&&(float)$site['balance']+0.000001<$delta)throw new \InvalidArgumentException('站点可用分数不足，无法分配给该总监');
-            self::changeSite($site,-$delta,$tx,$delta>0?'站点向总监分配分数':'站点收回总监分数',$childId,'organization',$operator);
+            $platform=self::platformAccount($tenantId,true);if($delta>0&&(float)$platform['balance']+0.000001<$delta)throw new \InvalidArgumentException('总平台可用分数不足，无法分配给总监');
+            self::changePlatform($platform,-$delta,$siteId,$tx,'平台向总监分配分数',$childId,'organization',$operator);
         }
-        self::changeOrganization($lockedChild,$delta,$tx,'收到上级分配分数',$parentId>0?$parentId:(int)$site['site_id'],$parentId>0?'organization':'site',$operator);
+        self::changeOrganization($lockedChild,$delta,$tx,'收到上级分配分数',$parentId,$parentId>0?'organization':'platform',$operator);
     }
 
     public static function userAllocation(array $user,float $delta,array $operator=[]): void
@@ -42,41 +41,16 @@ final class ScoreTransfer
 
     public static function adjustPlatformTotal(int $tenantId,float $newTotal,array $operator=[],?string $note=null): array
     {
-        if($newTotal<0)throw new \InvalidArgumentException('总平台总分不能小于0');$allocated=(float)Db::name('site_credit_accounts')->where('tenant_id',$tenantId)->sum('total_score');if($newTotal+0.000001<$allocated)throw new \InvalidArgumentException('新的总分不能低于已经分配给站点的分数');$account=self::platformAccount($tenantId,true);$delta=round($newTotal-(float)$account['total_score'],2);
+        if($newTotal<0)throw new \InvalidArgumentException('总平台总分不能小于0');$allocated=(float)Db::name('organization_nodes')->where('tenant_id',$tenantId)->where('parent_id',0)->whereNull('deleted_at')->sum('credit_limit');if($newTotal+0.000001<$allocated)throw new \InvalidArgumentException('新的总分不能低于已经分配给总监的分数');$account=self::platformAccount($tenantId,true);$delta=round($newTotal-(float)$account['total_score'],2);
         if($delta<0&&(float)$account['balance']+0.000001<abs($delta))throw new \InvalidArgumentException('总平台可用分数不足，已有分数已向下分配，不能降低到该数值');
         $before=(float)$account['balance'];$after=$before+$delta;$now=date('Y-m-d H:i:s');Db::name('platform_credit_accounts')->where('id',(int)$account['id'])->update(['total_score'=>number_format($newTotal,2,'.',''),'balance'=>number_format($after,2,'.',''),'updated_at'=>$now]);
         if(abs($delta)>=0.005)CreditLedger::writeExtended(['tenant_id'=>$tenantId,'site_id'=>0],self::transactionNo('PT'),null,'platform',(int)$account['id'],null,null,null,null,$delta,$before,$after,$delta>0?'设置总平台分数':'减少总平台总分','platform_total_adjustment','adjustment',$operator,null,null,$note);
         return ['total_score'=>number_format($newTotal,2,'.',''),'available_score'=>number_format($after,2,'.',''),'allocated_score'=>number_format($allocated,2,'.','')];
     }
 
-    public static function adjustSiteTotal(array $site,float $newTotal,array $operator=[],?string $note=null): array
-    {
-        $siteId=(int)$site['id'];$tenantId=(int)$site['tenant_id'];
-        if($newTotal<0)throw new \InvalidArgumentException('站点总分不能小于 0');
-        $allocated=(float)Db::name('organization_nodes')->where('site_id',$siteId)->where('parent_id',0)->where('level','director')->whereNull('deleted_at')->sum('credit_limit');
-        if($newTotal+0.000001<$allocated)throw new \InvalidArgumentException('站点总分不能低于已经分配给总监的分数');
-        $platform=self::platformAccount($tenantId,true);$account=self::siteAccount($tenantId,$siteId,true);$delta=round($newTotal-(float)$account['total_score'],2);
-        if($delta>0&&(float)$platform['balance']+0.000001<$delta)throw new \InvalidArgumentException('总平台可用分数不足，无法分配给站点');
-        if($delta<0&&(float)$account['balance']+0.000001<abs($delta))throw new \InvalidArgumentException('站点可用分数不足，已有分数已分配给总监，不能收回这么多');
-        if(abs($delta)>=0.005){
-            $tx=self::transactionNo('ST');
-            self::changePlatform($platform,-$delta,$siteId,$tx,$delta>0?'平台向站点分配分数':'平台收回站点分数',$siteId,'site',$operator);
-            self::changeSite($account,$delta,$tx,$delta>0?'收到平台分配分数':'向平台归还分数',(int)$platform['id'],'platform',$operator);
-        }
-        Db::name('site_credit_accounts')->where('id',(int)$account['id'])->update(['total_score'=>number_format($newTotal,2,'.',''),'updated_at'=>date('Y-m-d H:i:s')]);
-        return ['site_id'=>$siteId,'total_score'=>number_format($newTotal,2,'.',''),'available_score'=>number_format((float)$account['balance']+$delta,2,'.',''),'allocated_score'=>number_format($allocated,2,'.','')];
-    }
-
     public static function platformAccount(int $tenantId,bool $lock=false): array
     {
         $query=Db::name('platform_credit_accounts')->where('tenant_id',$tenantId);if($lock)$query->lock(true);$row=$query->find();if($row)return$row;$now=date('Y-m-d H:i:s');$id=(int)Db::name('platform_credit_accounts')->insertGetId(['tenant_id'=>$tenantId,'total_score'=>'0.00','balance'=>'0.00','created_at'=>$now,'updated_at'=>$now]);return['id'=>$id,'tenant_id'=>$tenantId,'total_score'=>0,'balance'=>0];
-    }
-
-    public static function siteAccount(int $tenantId,int $siteId,bool $lock=false): array
-    {
-        $query=Db::name('site_credit_accounts')->where('site_id',$siteId);if($lock)$query->lock(true);$row=$query->find();if($row)return$row;
-        $now=date('Y-m-d H:i:s');$id=(int)Db::name('site_credit_accounts')->insertGetId(['tenant_id'=>$tenantId,'site_id'=>$siteId,'total_score'=>'0.00','balance'=>'0.00','created_at'=>$now,'updated_at'=>$now]);
-        return['id'=>$id,'tenant_id'=>$tenantId,'site_id'=>$siteId,'total_score'=>0,'balance'=>0];
     }
 
     private static function changeOrganization(array $node,float $delta,string $tx,string $reason,int $counterpartyId,string $counterpartyType,array $operator): void
@@ -88,10 +62,5 @@ final class ScoreTransfer
     {
         $before=(float)$account['balance'];$after=$before+$delta;Db::name('platform_credit_accounts')->where('id',(int)$account['id'])->update(['balance'=>number_format($after,2,'.',''),'updated_at'=>date('Y-m-d H:i:s')]);
         CreditLedger::writeExtended(['tenant_id'=>(int)$account['tenant_id'],'site_id'=>$siteId],$tx,null,'platform',(int)$account['id'],null,null,null,null,$delta,$before,$after,$reason,'score_allocation','allocation',$operator,$counterpartyType,$counterpartyId,null);
-    }
-    private static function changeSite(array $account,float $delta,string $tx,string $reason,int $counterpartyId,string $counterpartyType,array $operator): void
-    {
-        $before=(float)$account['balance'];$after=$before+$delta;Db::name('site_credit_accounts')->where('id',(int)$account['id'])->update(['balance'=>number_format($after,2,'.',''),'updated_at'=>date('Y-m-d H:i:s')]);
-        CreditLedger::writeExtended(['tenant_id'=>(int)$account['tenant_id'],'site_id'=>(int)$account['site_id']],$tx,null,'site',(int)$account['id'],null,null,null,null,$delta,$before,$after,$reason,'score_allocation','allocation',$operator,$counterpartyType,$counterpartyId,null);
     }
 }

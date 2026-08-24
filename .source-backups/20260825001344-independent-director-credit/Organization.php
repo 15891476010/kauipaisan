@@ -190,62 +190,9 @@ final class Organization
         return array_reverse($chain);
     }
 
-    public function adminIndex(Request $request,int $siteId): \think\response\Json
-    {
-        $site=$this->site($siteId);
-        $roots=Db::name('organization_nodes')->where('site_id',$siteId)->where('parent_id',0)->where('level','director')->whereNull('deleted_at')->select()->toArray();
-        $siteAccount=ScoreTransfer::siteAccount((int)$site['tenant_id'],$siteId);
-        $sitePayload=['id'=>(int)$site['id'],'name'=>(string)$site['name'],
-            'credit_limit'=>number_format((float)$siteAccount['total_score'],2,'.',''),
-            'available_balance'=>number_format((float)$siteAccount['balance'],2,'.',''),
-            'director_allocated_score'=>number_format(array_sum(array_map(static fn(array $row): float=>(float)$row['credit_limit'],$roots)),2,'.',''),
-            'director_count'=>count($roots)];
-        return $this->reply(array_merge(['site'=>$sitePayload],$this->responseForSite($siteId)));
-    }
+    public function adminIndex(Request $request,int $siteId): \think\response\Json { $site=$this->site($siteId);return $this->reply(array_merge(['site'=>['id'=>(int)$site['id'],'name'=>$site['name']]],$this->responseForSite($siteId))); }
     public function adminCreateNode(Request $request,int $siteId): \think\response\Json { $site=$this->site($siteId);$data=$this->nodePayload($request,$site);$data['created_at']=$data['updated_at'];$operator=$this->requestOperator($request);$id=(int)Db::transaction(function()use($data,$operator):int{$id=(int)Db::name('organization_nodes')->insertGetId($data);$node=array_merge($data,['id'=>$id,'balance'=>0]);ScoreTransfer::organizationAllocation($node,(float)$data['credit_limit'],$operator);return$id;});OrganizationHierarchy::rebuildPath($id);return $this->reply(['id'=>$id],'组织创建成功'); }
     public function adminUpdateNode(Request $request,int $id): \think\response\Json { $current=Db::name('organization_nodes')->where('id',$id)->whereNull('deleted_at')->find();if(!$current)throw new \InvalidArgumentException('组织不存在');$site=$this->site((int)$current['site_id']);$data=$this->nodePayload($request,$site,$current);$operator=$this->requestOperator($request);Db::transaction(function()use($id,$current,$data,$operator):void{$delta=(float)$data['credit_limit']-(float)$current['credit_limit'];ScoreTransfer::organizationAllocation($current,$delta,$operator);Db::name('organization_nodes')->where('id',$id)->update($data);});OrganizationHierarchy::rebuildBranch($id);return $this->reply(null,'组织已更新'); }
-    public function adminSetDirectorCredit(Request $request,int $id): \think\response\Json
-    {
-        $node=Db::name('organization_nodes')->where('id',$id)->where('parent_id',0)->where('level','director')->whereNull('deleted_at')->find();
-        if(!$node) throw new \InvalidArgumentException('目标不是当前站点的根总监');
-        $credit=$request->put('credit_limit',$request->post('credit_limit'));
-        if(!is_numeric($credit)||(float)$credit<0) throw new \InvalidArgumentException('分数额度必须是非负数字');
-        $credit=round((float)$credit,2);
-        $allocated=(float)Db::name('organization_nodes')->where('parent_id',$id)->whereNull('deleted_at')->sum('credit_limit');
-        if($credit+0.000001<$allocated) throw new \InvalidArgumentException('总监额度不能低于已分配给直属下级的额度');
-        $operator=$this->requestOperator($request);
-        $result=Db::transaction(function()use($node,$id,$credit,$allocated,$operator):array{
-            $locked=Db::name('organization_nodes')->where('id',$id)->lock(true)->find();
-            if(!$locked) throw new \InvalidArgumentException('总监不存在');
-            $delta=round($credit-(float)$locked['credit_limit'],2);
-            ScoreTransfer::organizationAllocation($locked,$delta,$operator);
-            Db::name('organization_nodes')->where('id',$id)->update(['credit_limit'=>number_format($credit,2,'.',''),'updated_at'=>date('Y-m-d H:i:s')]);
-            return ['id'=>$id,'credit_limit'=>number_format($credit,2,'.',''),'available_balance'=>number_format((float)$locked['balance']+$delta,2,'.',''),'direct_child_credit'=>number_format($allocated,2,'.','')];
-        });
-        return $this->reply($result,'总监分数已更新');
-    }
-    public function adminSetDirectorCreditShare(Request $request,int $id): \think\response\Json
-    {
-        $node=Db::name('organization_nodes')->where('id',$id)->where('parent_id',0)->where('level','director')->whereNull('deleted_at')->find();
-        if(!$node)throw new \InvalidArgumentException('目标不是当前站点的根总监');
-        $credit=$request->post('credit_limit');if($credit===null)$credit=$request->put('credit_limit');$max=$request->post('max_share_rate');if($max===null)$max=$request->put('max_share_rate');
-        if(!is_numeric($credit)||(float)$credit<0)throw new \InvalidArgumentException('分数额度必须是非负数字');
-        if(!is_numeric($max)||(float)$max<0||(float)$max>100)throw new \InvalidArgumentException('下级最高占成必须在 0 到 100 之间');
-        $credit=round((float)$credit,2);$max=(float)$max;$site=$this->site((int)$node['site_id']);$siteCap=$this->siteMaxShareRate($site);
-        if($max>$siteCap+0.000001)throw new \InvalidArgumentException('下级最高占成不能超过本站点上限 '.number_format($siteCap,4,'.','').'%');
-        $children=Db::name('organization_nodes')->where('parent_id',$id)->whereNull('deleted_at')->select()->toArray();
-        foreach($children as $child){$rate=(float)Db::name('organization_profit_shares')->where('child_organization_id',(int)$child['id'])->where('status',1)->value('share_rate');if($rate>$max+0.000001)throw new \InvalidArgumentException('下级“'.(string)$child['name'].'”当前占成高于新的最高占成，请先单独下调实际占成');}
-        $allocated=(float)Db::name('organization_nodes')->where('parent_id',$id)->whereNull('deleted_at')->sum('credit_limit');if($credit+0.000001<$allocated)throw new \InvalidArgumentException('总监额度不能低于已分配给直属下级的额度');
-        $operator=$this->requestOperator($request);
-        $result=Db::transaction(function()use($id,$credit,$max,$children,$operator,$node):array{
-            $locked=Db::name('organization_nodes')->where('id',$id)->lock(true)->find();if(!$locked)throw new \InvalidArgumentException('总监不存在');
-            ScoreTransfer::organizationAllocation($locked,round($credit-(float)$locked['credit_limit'],2),$operator);
-            Db::name('organization_nodes')->where('id',$id)->update(['credit_limit'=>number_format($credit,2,'.',''),'updated_at'=>date('Y-m-d H:i:s')]);$now=date('Y-m-d H:i:s');
-            foreach($children as $child){$existing=Db::name('organization_profit_shares')->where('child_organization_id',(int)$child['id'])->find();$data=['tenant_id'=>(int)$node['tenant_id'],'site_id'=>(int)$node['site_id'],'parent_organization_id'=>$id,'child_organization_id'=>(int)$child['id'],'max_share_rate'=>number_format($max,4,'.',''),'share_rate'=>number_format((float)($existing['share_rate']??0),4,'.',''),'status'=>1,'updated_at'=>$now];if($existing)Db::name('organization_profit_shares')->where('id',(int)$existing['id'])->update($data);else{$data['created_at']=$now;Db::name('organization_profit_shares')->insert($data);}}
-            return ['id'=>$id,'credit_limit'=>number_format($credit,2,'.',''),'max_share_rate'=>number_format($max,4,'.',''),'child_count'=>count($children)];
-        });
-        return $this->reply($result,'总监分数和下级最高占成已更新');
-    }
     public function adminDeleteNode(Request $request,int $id): \think\response\Json { $node=Db::name('organization_nodes')->where('id',$id)->whereNull('deleted_at')->find();if(!$node)throw new \InvalidArgumentException('组织不存在');if((int)$node['parent_id']===0)throw new \InvalidArgumentException('站点根总监不能删除');if(Db::name('organization_nodes')->where('parent_id',$id)->whereNull('deleted_at')->count()>0)throw new \InvalidArgumentException('请先处理该组织的下级');if(Db::name('site_users')->where('organization_id',$id)->whereNull('deleted_at')->count()>0)throw new \InvalidArgumentException('请先转移或删除该组织的会员');if(Db::name('agent_subaccounts')->where('organization_id',$id)->whereNull('deleted_at')->count()>0)throw new \InvalidArgumentException('请先处理该组织的子账号');$now=date('Y-m-d H:i:s');$operator=$this->requestOperator($request);Db::transaction(function()use($id,$node,$now,$operator):void{ScoreTransfer::organizationAllocation($node,-(float)$node['credit_limit'],$operator);Db::name('organization_nodes')->where('id',$id)->update(['deleted_at'=>$now,'status'=>0,'credit_limit'=>'0.00']);Db::name('organization_accounts')->where('organization_id',$id)->update(['deleted_at'=>$now,'status'=>0]);});return $this->reply(null,'组织已删除，分数已退回上级'); }
     public function adminCreateAccount(Request $request,int $organizationId): \think\response\Json { $node=Db::name('organization_nodes')->where('id',$organizationId)->whereNull('deleted_at')->find();if(!$node)throw new \InvalidArgumentException('组织不存在');$data=$this->accountPayload($request,$node);$password=(string)$data['_initial_password'];unset($data['_initial_password']);$data['created_at']=$data['updated_at'];$id=$this->createOrRestoreAccount($data);return $this->reply(['id'=>$id,'username'=>$data['username'],'initial_password'=>$password,'must_change_password'=>1],'管理员创建成功'); }
     public function adminUpdateAccount(Request $request,int $id): \think\response\Json { $current=Db::name('organization_accounts')->where('id',$id)->whereNull('deleted_at')->find();if(!$current)throw new \InvalidArgumentException('管理员不存在');$node=Db::name('organization_nodes')->where('id',(int)$current['organization_id'])->whereNull('deleted_at')->find();if(!$node)throw new \InvalidArgumentException('组织不存在');Db::name('organization_accounts')->where('id',$id)->update($this->accountPayload($request,$node,$current));return $this->reply(null,'管理员已更新'); }

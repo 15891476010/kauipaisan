@@ -28,32 +28,29 @@ export const getBatchBetOptions = (lotteryId?: number) => http.get<never, Envelo
 export const replaceBatchBetNumbers = (payload: { lottery_id: number; issue_no: string; selections: Array<{ detail_id: number; number_index: number }>; replacements: { hundreds: string; tens: string; units: string } }) => http.put<never, Envelope<{ changed: number }>>('/admin/bet-details/batch-replace', payload)
 export const enterSite = (id: number) => http.get<never, Envelope<{ url: string; token: string; name?: string }>>(`/admin/agent-center/${id}/enter`)
 export type OrganizationLevel = 'director' | 'shareholder' | 'small_shareholder' | 'general_agent' | 'agent'
-export type OrganizationNode = { id: number; site_id: number; parent_id: number; level: OrganizationLevel; level_label: string; next_level: OrganizationLevel | null; depth: number; path: string; name: string; code: string; credit_limit: string; balance?: string; share_rate?: string; max_share_rate?: string; child_count?: number; children?: OrganizationNode[]; permissions: string[]; settings: Record<string, unknown>; status: number }
+export type OrganizationNode = { id: number; site_id: number; parent_id: number; level: OrganizationLevel; level_label: string; next_level: OrganizationLevel | null; depth: number; path: string; name: string; code: string; credit_limit: string; permissions: string[]; settings: Record<string, unknown>; status: number }
 export type OrganizationAccount = { id: number; organization_id: number; username: string; display_name: string; phone?: string; permissions: string[]; status: number; online?: number; last_seen_at?: string; last_login_at?: string; last_login_ip?: string; last_login_location?: string; last_login_device?: string }
 export type OrganizationCatalog = { levels: Array<{ value: OrganizationLevel; label: string }>; permissions: Array<{ code: string; label: string }> }
-export type OrganizationResponse = { site: { id: number; name: string; credit_limit?: string; available_balance?: string; director_allocated_score?: string; director_count?: number }; nodes: OrganizationNode[]; accounts: OrganizationAccount[]; catalog: OrganizationCatalog; site_max_share_rate?: string }
+export type OrganizationResponse = { site: { id: number; name: string }; nodes: OrganizationNode[]; accounts: OrganizationAccount[]; catalog: OrganizationCatalog }
 export type InitialCredential = { id: number; username: string; initial_password: string; must_change_password: number }
 export const getSiteOrganizations = (siteId: number) => http.get<never, Envelope<OrganizationResponse>>(`/admin/sites/${siteId}/organizations`)
 export const createOrganization = (siteId: number, payload: Record<string, unknown>) => http.post<never, Envelope<{ id: number }>>(`/admin/sites/${siteId}/organizations`, payload)
 export const updateOrganization = (id: number, payload: Record<string, unknown>) => http.put<never, Envelope<null>>(`/admin/organizations/${id}`, payload)
-export const setDirectorCredit = (id: number, credit_limit: number) => http.put<never, Envelope<Record<string, unknown>>>(`/admin/organizations/${id}/credit`, { credit_limit })
-export const setDirectorCreditShare = (id: number, payload: { credit_limit: number; max_share_rate: number }) => http.put<never, Envelope<Record<string, unknown>>>(`/admin/organizations/${id}/credit-share`, payload)
 export const deleteOrganization = (id: number) => http.delete<never, Envelope<null>>(`/admin/organizations/${id}`)
 export const createOrganizationAccount = (organizationId: number, payload: Record<string, unknown>) => http.post<never, Envelope<InitialCredential>>(`/admin/organizations/${organizationId}/accounts`, payload)
 export const updateOrganizationAccount = (id: number, payload: Record<string, unknown>) => http.put<never, Envelope<null>>(`/admin/organization-accounts/${id}`, payload)
 export const deleteOrganizationAccount = (id: number) => http.delete<never, Envelope<null>>(`/admin/organization-accounts/${id}`)
-export const saveOrganizationProfitShare = (siteId: number, childId: number, payload: { share_rate: number; max_share_rate: number }) => http.put<never, Envelope<Record<string, unknown>>>(`/admin/sites/${siteId}/profit-shares/${childId}`, payload)
 export type AgentPermissionNode = { code: string; label: string; type: 'route' | 'page' | 'button'; children?: AgentPermissionNode[] }
 export type AgentPermissionLevel = { value: OrganizationLevel; label: string }
 export type SiteAgentPermissions = { site: { id: number; name: string }; levels: AgentPermissionLevel[]; tree: AgentPermissionNode[]; allowed_codes_by_level: Record<OrganizationLevel, string[]>; permissions_by_level: Record<OrganizationLevel, string[]> }
 export const getSiteAgentPermissions = (siteId: number) => http.get<never, Envelope<SiteAgentPermissions>>(`/admin/sites/${siteId}/agent-permissions`)
 export const saveSiteAgentPermissions = (siteId: number, permissionsByLevel: Record<OrganizationLevel, string[]>) => http.put<never, Envelope<{ permissions_by_level: Record<OrganizationLevel, string[]> }>>(`/admin/sites/${siteId}/agent-permissions`, { permissions_by_level: permissionsByLevel })
-export type ScoreOverview = { total_score: string; available_score: string; allocated_score: string; site_available?: string; organization_available: string; user_available: string; user_locked: string }
+export type ScoreOverview = { total_score: string; available_score: string; allocated_score: string; organization_available: string; user_available: string; user_locked: string }
 export type DashboardScoreData = {
   overview: ScoreOverview & { accounted_score: string; difference_score: string }
   today: { total: number; total_in: string; total_out: string; net: string }
   trend: Array<{ day: string; total: number; total_in: string; total_out: string; net: string }>
-  sites: Array<{ site_id: number; site_name: string; status: number; allocated_score: string; site_available?: string; director_allocated_score?: string; organization_available: string; user_available: string; user_locked: string; circulating_score: string; organization_count: number; user_count: number }>
+  sites: Array<{ site_id: number; site_name: string; status: number; allocated_score: string; organization_available: string; user_available: string; user_locked: string; circulating_score: string; organization_count: number; user_count: number }>
   levels: Array<{ level: OrganizationLevel; label: string; account_count: number; credit_limit: string; available_score: string }>
   categories: Array<{ category: string; total: number; total_in: string; total_out: string }>
   recent: ScoreLedgerRow[]

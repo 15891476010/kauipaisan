@@ -834,8 +834,8 @@ onBeforeUnmount(() => {
           </el-checkbox-group>
           <div class="lottery-tip">只显示勾选的彩票；不勾选则该站点的用户端和代理端都不显示彩票。</div>
         </el-form-item
-        ><el-form-item v-if="resource === 'agent-center'" label="站点总额度"
-          ><el-input-number v-model="form.credit_limit" :min="0" :precision="2" controls-position="right" style="width: 100%" /><div class="lottery-tip">平台预留给本站点的独立资金池。保存后进入组织架构，点击具体总监单独分配分数；不同总监之间不共享。</div></el-form-item
+        ><el-form-item v-if="resource === 'agent-center'" label="站点分数"
+          ><el-input-number v-model="form.credit_limit" :min="0" :precision="2" controls-position="right" style="width: 100%" /><div class="lottery-tip">平台分配给本站点的信用分数总额，站点用户分配总和不能超过此额度。</div></el-form-item
         ><el-form-item v-if="resource === 'agent-center'" label="每级最高占成"
           ><el-input-number v-model="form.max_profit_share_rate" :min="0" :max="100" :precision="4" controls-position="right" style="width: 100%" /><div class="lottery-tip">动态限制本站点每一级向直属下级分配的占成比例；逐级按上一级实际占成继续计算。</div></el-form-item
         ><el-form-item

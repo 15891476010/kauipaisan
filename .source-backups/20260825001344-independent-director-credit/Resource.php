@@ -75,17 +75,9 @@ final class Resource
 
     private function siteCreditLimit(int $siteId): float
     {
-        $site=Db::name('sites')->where('id',$siteId)->field('id,tenant_id')->find();
-        if($site){$account=ScoreTransfer::siteAccount((int)$site['tenant_id'],$siteId);if((float)$account['total_score']>0.000001)return max(0,(float)$account['total_score']);}
         $settings=Db::name('sites')->where('id',$siteId)->value('settings');
         $decoded=is_string($settings)?json_decode($settings,true):(is_array($settings)?$settings:[]);
         return max(0,(float)($decoded['credit_limit']??0));
-    }
-
-    /** The site's effective quota is the sum of its independent root director pools. */
-    private function directorCreditTotal(int $siteId): float
-    {
-        return (float)Db::name('organization_nodes')->where('site_id',$siteId)->where('parent_id',0)->where('level','director')->whereNull('deleted_at')->sum('credit_limit');
     }
 
     private function siteMaxShareRate(mixed $value): float
@@ -134,8 +126,15 @@ final class Resource
 
     private function allocateSiteCredit(array $site, float $creditLimit, array $operator): void
     {
-        $this->ensureSiteRootOrganization($site);
-        ScoreTransfer::adjustSiteTotal($site,$creditLimit,$operator,'SaaS 设置站点总分');
+        $root=$this->ensureSiteRootOrganization($site);
+        $delta=round($creditLimit-(float)$root['credit_limit'],2);
+        ScoreTransfer::organizationAllocation($root,$delta,$operator);
+        Db::name('organization_nodes')->where('id',(int)$root['id'])->update([
+            'credit_limit'=>number_format($creditLimit,2,'.',''),
+            'name'=>(string)$site['name'].' · 根总监',
+            'status'=>(int)($site['status']??1),
+            'updated_at'=>date('Y-m-d H:i:s'),
+        ]);
     }
 
     private function normalizeDomainGroup(mixed $items, string $legacyDomain=''): array
@@ -277,7 +276,7 @@ final class Resource
                 $site['domain'] = $site['agent_domain'];
                 $site['lottery_ids']=array_map('intval',Db::name('site_lotteries')->where('site_id',(int)$site['id'])->column('lottery_id'));
                 $site['admin_count']=$adminCounts[(int)$site['id']]??0;
-                $settings=$site['settings']??[]; $settings=is_string($settings)?json_decode($settings,true):(is_array($settings)?$settings:[]); $account=ScoreTransfer::siteAccount((int)$site['tenant_id'],(int)$site['id']); $site['credit_limit']=number_format((float)$account['total_score'],2,'.',''); $site['site_available_score']=number_format((float)$account['balance'],2,'.',''); $site['director_allocated_score']=number_format($this->directorCreditTotal((int)$site['id']),2,'.',''); $site['max_profit_share_rate']=number_format((float)($settings['max_profit_share_rate']??100),4,'.','');
+                $settings=$site['settings']??[]; $settings=is_string($settings)?json_decode($settings,true):(is_array($settings)?$settings:[]); $site['credit_limit']=number_format((float)($settings['credit_limit']??0),2,'.',''); $site['max_profit_share_rate']=number_format((float)($settings['max_profit_share_rate']??100),4,'.','');
             }
         }
         if ($resource === 'site-users') {
@@ -531,9 +530,6 @@ final class Resource
             $domainGroups=$this->domainGroups($data); $lotteryIds=$data['lottery_ids']??[];
             $siteBefore=Db::name('sites')->where('id',$id)->value('settings'); $siteSettings=is_string($siteBefore)?json_decode($siteBefore,true):(is_array($siteBefore)?$siteBefore:[]);
             $creditLimit=max(0,(float)($data['credit_limit']??($siteSettings['credit_limit']??0))); $maxProfitShareRate=$this->siteMaxShareRate($data['max_profit_share_rate']??($siteSettings['max_profit_share_rate']??100)); unset($data['credit_limit'],$data['max_profit_share_rate']);
-            // Score is managed on each root director. Keep this legacy field as
-            // a read-only aggregate so editing site metadata can never move
-            // the first director's balance or mix director pools together.
             $siteSettings['credit_limit']=$creditLimit; $siteSettings['max_profit_share_rate']=$maxProfitShareRate; $data['settings']=json_encode($siteSettings,JSON_UNESCAPED_UNICODE);
             unset($data['domain'], $data['agent_domain'], $data['user_domain'], $data['agent_domains'], $data['user_domains'], $data['lottery_ids'], $data['code'], $data['parent_id'], $data['level'], $data['site_id'], $data['username'], $data['display_name'], $data['phone'], $data['password']);
             unset($data['manager_username'],$data['manager_password'],$data['manager_phone']);

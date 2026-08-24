@@ -56,8 +56,6 @@ export function routeKey(pathname: string): string {
 export function isRouteAllowed(pathname: string, context: RouteAccessContext): boolean {
   const key = routeKey(pathname);
   if (!(key in routePermissions)) return false;
-  if (key === "organizations" && (context.level === "agent" || context.isSubaccount)) return false;
-  if (key === "subordinates" && context.level !== "agent") return false;
   if (context.permissions.includes("*")) return true;
   const routePermission = routePermissionCodes[key];
   return Boolean(routePermission && context.permissions.includes(routePermission))
