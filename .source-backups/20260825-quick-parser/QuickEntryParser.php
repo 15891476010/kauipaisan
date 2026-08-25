@@ -585,7 +585,6 @@ final class QuickEntryParser
             $categoryCount = $category === '福体' ? 2 : 1;
             $unitAmount = $this->rules->amountWithUnit($rawAmount, $unit, $unitStake);
             $rawSelection=(string)$head[1];
-            $displayNumberText = '';
             if(strlen($rawSelection)===3&&in_array($play,['组三','组六'],true)){
                 $uniqueCount=count($digits);
                 if(($play==='组三'&&$uniqueCount===2)||($play==='组六'&&$uniqueCount===3)){$playType=$play;$numberText=$rawSelection;}
@@ -600,7 +599,6 @@ final class QuickEntryParser
                     '组六'=>implode(' ',$this->groupSixCombinations($digits)),
                     default=>'000',
                 };
-                if ($play === '复式') $displayNumberText = '复'.$rawSelection;
             }
             $amount = $perUnit ? $unitAmount * $categoryCount : $unitAmount;
             $rows[] = [
@@ -615,7 +613,6 @@ final class QuickEntryParser
                 'play_type' => $playType,
                 'settlement_text' => implode('',$digits).' '.$playType.($perUnit ? '各'.number_format($unitAmount, 2, '.', '').'元' : '').' '.$category,
             ];
-            if ($displayNumberText !== '') $rows[array_key_last($rows)]['display_number_text'] = $displayNumberText;
         }
         if ($rows === []) return null;
         $calculated = array_sum(array_map(static fn(array $row):float => (float)$row['amount'], $rows));
@@ -716,9 +713,7 @@ final class QuickEntryParser
                 '组六'=>implode(' ',$this->groupSixCombinations(str_split($uniqueSelection))),
                 default=>'000',
             };
-            $row=['id'=>$lineId,'raw_text'=>$rawOriginal,'status'=>'success','reason'=>null,'number_text'=>$numberText,'category'=>$category,'amount'=>number_format($spec['amount']*$categoryCount,2,'.',''),'count'=>$categoryCount,'play_type'=>$identity['name'],'settlement_text'=>$uniqueSelection.' '.$identity['name'].' '.$category];
-            if($spec['play']==='复式')$row['display_number_text']='复'.$uniqueSelection;
-            $rows[]=$row;
+            $rows[]=['id'=>$lineId,'raw_text'=>$rawOriginal,'status'=>'success','reason'=>null,'number_text'=>$numberText,'category'=>$category,'amount'=>number_format($spec['amount']*$categoryCount,2,'.',''),'count'=>$categoryCount,'play_type'=>$identity['name'],'settlement_text'=>$uniqueSelection.' '.$identity['name'].' '.$category];
         }
         $merged=[];
         foreach($rows as $row){
@@ -762,7 +757,6 @@ final class QuickEntryParser
     {
         $selection = '';
         $numberText = '000';
-        $displayNumberText = '';
         $playType = null;
         $amount = 0.0;
         if (preg_match($this->rules->pattern('catalog_digit_set_bet'), $raw, $match)) {
@@ -774,8 +768,7 @@ final class QuickEntryParser
             $playType = $identity['name'];
             if ($match[2] === '组三') $numberText = implode(' ', $this->groupThreeCombinations(str_split($selection)));
             if ($match[2] === '组六') $numberText = implode(' ', $this->groupSixCombinations(str_split($selection)));
-            if ($match[2] === '复式') $displayNumberText = '复'.$selection;
-            $amount = $this->rules->amountWithUnit((float)$match[5], (string)($match[6] ?? ''), $unitStake);
+            $amount = $this->rules->amountWithUnit((float)$match[4], (string)($match[5] ?? ''), $unitStake);
         } elseif (preg_match($this->rules->pattern('group_package_bet'), $raw, $match)) {
             $playType = $match[1];
             $amount = $this->rules->amountWithUnit((float)$match[2], (string)($match[3] ?? ''), $unitStake);
@@ -783,13 +776,11 @@ final class QuickEntryParser
         if ($playType === null) return null;
         $categoryCount = $category === '福体' ? 2 : 1;
         $settlementText = trim(($selection === '' ? '' : $selection.' ').$playType.' '.$category);
-        $row = [
+        return [
             'id'=>$lineId, 'raw_text'=>$rawOriginal, 'status'=>'success', 'reason'=>null,
             'number_text'=>$numberText, 'category'=>$category, 'amount'=>number_format($amount*$categoryCount,2,'.',''),
             'count'=>$categoryCount, 'play_type'=>$playType, 'settlement_text'=>$settlementText,
         ];
-        if($displayNumberText!=='')$row['display_number_text']=$displayNumberText;
-        return $row;
     }
 
     /** @param array<int, string> $digits @return array<int, string> */

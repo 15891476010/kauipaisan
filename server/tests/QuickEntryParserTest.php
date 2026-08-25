@@ -351,6 +351,8 @@ $multiCode=$parser->parse('123456 7890 1789组三各10米组六各20米复式各
 if(count($multiCode)!==9||array_sum(array_map(static fn(array $row):float=>(float)$row['amount'],$multiCode))!==180.0||array_filter($multiCode,static fn(array $row):bool=>($row['status']??'')!=='success')){fwrite(STDERR,"Failed: multi-code play sets\n".json_encode($multiCode,JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT)."\n");exit(1);}
 $multiShared=$parser->parse('组三组六复式各20米123456 7890 1789','福彩3D',2.0);
 if(count($multiShared)!==9||array_sum(array_map(static fn(array $row):float=>(float)$row['amount'],$multiShared))!==180.0){fwrite(STDERR,"Failed: shared multi-code amount\n".json_encode($multiShared,JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT)."\n");exit(1);}
+$trialAlias=$parser->parse('福 024567 复试各 1 米','福彩3D',2.0)[0]??null;
+if(!is_array($trialAlias)||($trialAlias['status']??'')!=='success'||($trialAlias['number_text']??'')!=='000'||($trialAlias['display_number_text']??'')!=='复024567'||($trialAlias['count']??0)!==1||($trialAlias['amount']??'')!=='1.00'){fwrite(STDERR,"Failed: 复试 alias and single 复式 package\n".json_encode($trialAlias,JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT)."\n");exit(1);}
 
 $partialPosition=$parser->parse('十3456个12345各3米','福彩3D',2.0)[0]??null;
 if(!is_array($partialPosition)||($partialPosition['status']??'')!=='success'||($partialPosition['count']??0)!==20||($partialPosition['amount']??'')!=='60.00'){fwrite(STDERR,"Failed: partial position selections\n".json_encode($partialPosition,JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT)."\n");exit(1);}

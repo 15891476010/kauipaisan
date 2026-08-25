@@ -57,7 +57,7 @@ export function QuickResultTable({ lines, onChange }: QuickResultTableProps) {
     const next = lines.map((item) => item === line ? { ...item, raw_text: rawText } : item).map(clearBatchMetadata);
     onChange?.(next, "text");
   };
-  const detailOccurrences = detailLine ? (detailLine.batch_occurrence_text || detailLine.number_text || "").split(/\s+/).filter(Boolean) : [];
+  const detailOccurrences = detailLine ? (detailLine.batch_occurrence_text || detailLine.display_number_text || detailLine.number_text || "").split(/\s+/).filter(Boolean) : [];
   const detailFrequency = detailOccurrences.reduce<Record<string, number>>((frequencies, number) => {
     frequencies[number] = (frequencies[number] || 0) + 1;
     return frequencies;
@@ -71,7 +71,7 @@ export function QuickResultTable({ lines, onChange }: QuickResultTableProps) {
   const detailAmount = detailLine ? (detailLine.batch_amount ?? detailLine.amount) : "0";
   const unitAmount = detailStakeCount > 0 ? Number(detailAmount || 0) / detailStakeCount : 0;
   const detailPlayMatch = detailLine?.raw_text.match(/直选|组选|组六|组三|定位|复式|和值|跨度|胆拖|全包|飞|胆|直|组/)?.[0];
-  const detailPlay = detailPlayMatch === "直" ? "直选" : detailPlayMatch || "直选";
+  const detailPlay = detailLine?.play_type || (detailPlayMatch === "直" ? "直选" : detailPlayMatch || "直选");
   const detailRows = Array.from({ length: Math.ceil(detailNumbers.length / 8) }, (_, rowIndex) => {
     const row = detailNumbers.slice(rowIndex * 8, rowIndex * 8 + 8);
     return Array.from({ length: 8 }, (_, columnIndex) => row[columnIndex] || null);

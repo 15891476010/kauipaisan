@@ -169,7 +169,7 @@ export function QuickEntryPage({
     const body = lines
       .filter((line) => line.status === "success")
       .map(
-        (line) => `${line.number_text} ${line.category || ""}各${line.amount}`,
+        (line) => `${line.display_number_text || line.number_text} ${line.category || ""}各${line.amount}`,
       )
       .join("\n");
     const ticket = options[4] ? sourceText : body || sourceText;
