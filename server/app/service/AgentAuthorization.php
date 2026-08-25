@@ -37,16 +37,14 @@ final class AgentAuthorization
         ['code'=>'route.results','label'=>'开奖号码','type'=>'route','children'=>[
             ['code'=>'results','label'=>'查看开奖号码','type'=>'page'],
         ]],
-        ['code'=>'route.organizations','label'=>'组织架构','type'=>'route','children'=>[
-            ['code'=>'organization.manage','label'=>'查看组织及下级','type'=>'page'],
+        ['code'=>'route.subordinates','label'=>'下级管理','type'=>'route','children'=>[
+            ['code'=>'subordinates','label'=>'查看下级列表','type'=>'page'],
+            ['code'=>'organization.manage','label'=>'查看下级组织','type'=>'page'],
             ['code'=>'organization.create','label'=>'新增下级','type'=>'button'],
             ['code'=>'organization.update','label'=>'修改下级','type'=>'button'],
             ['code'=>'organization.delete','label'=>'删除下级','type'=>'button'],
-        ]],
-        ['code'=>'route.subordinates','label'=>'会员 / 下级管理','type'=>'route','children'=>[
-            ['code'=>'subordinates','label'=>'查看会员列表','type'=>'page'],
-            ['code'=>'member.create','label'=>'新增会员','type'=>'button'],
-            ['code'=>'member.update','label'=>'修改会员','type'=>'button'],
+            ['code'=>'member.create','label'=>'新增下级','type'=>'button'],
+            ['code'=>'member.update','label'=>'修改下级','type'=>'button'],
         ]],
         ['code'=>'route.intercept','label'=>'拦货','type'=>'route','children'=>[
             ['code'=>'interception_details','label'=>'拦货明细','type'=>'page'],

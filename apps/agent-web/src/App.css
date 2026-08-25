@@ -509,14 +509,15 @@ body { background: #e8e8e8; }
 
 /* 下级管理：账户汇总、筛选、会员表格和分页。 */
 .subordinate-page { min-height: calc(100vh - 168px); background: #e8e8e8; color: #111; }
-.subordinate-location { display: flex; height: 36px; align-items: center; justify-content: space-between; margin-bottom: 10px; padding: 0 25px; background: #006400; font-size: 14px; line-height: 21px; }
-.subordinate-path { display: flex; width: 260px; height: 36px; align-items: center; color: #fff; }
-.subordinate-path strong, .subordinate-path span { display: block; height: 26px; padding: 0 3px; line-height: 26px; }
+.subordinate-location { display: flex; min-width: 0; height: 36px; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; padding: 0 25px; background: #006400; font-size: 14px; line-height: 21px; }
+.subordinate-path { display: flex; min-width: 0; height: 36px; flex: 1 1 auto; align-items: center; overflow: hidden; color: #fff; }
+.subordinate-path strong, .subordinate-path span { display: block; height: 26px; flex: 0 0 auto; padding: 0 3px; line-height: 26px; white-space: nowrap; }
 .subordinate-path strong { font-weight: 700; }
-.subordinate-path span { font-weight: 400; text-decoration: underline; }
+.subordinate-path span { max-width: 45%; overflow: hidden; font-weight: 400; text-decoration: underline; text-overflow: ellipsis; }
 .subordinate-path .anticon { display: block; width: 14px; height: 14px; margin: 0 6px; padding: 0; color: #fff; font-size: 14px; line-height: 0; }
-.subordinate-actions { display: flex; width: calc(100% - 300px); height: 26px; flex: none; align-items: center; justify-content: flex-end; }
-.subordinate-actions button { width: 72px; height: 26px; padding: 0 8px; border: 0; background: transparent; color: #fff; font-size: 14px; font-weight: 400; line-height: 26px; cursor: pointer; }
+.subordinate-actions { display: flex; width: auto; min-width: max-content; height: 26px; flex: 0 0 auto; align-items: center; justify-content: flex-end; }
+.subordinate-actions button { display: inline-flex; width: 72px; height: 26px; align-items: center; justify-content: center; gap: 6px; padding: 0 8px; border: 0; background: transparent; color: #fff; font-size: 14px; font-weight: 400; line-height: 26px; white-space: nowrap; cursor: pointer; }
+.subordinate-actions button.subordinate-create { width: 92px; }
 .subordinate-actions button.active { background: #fff; color: #006400; }
 .subordinate-actions i { width: 1px; height: 26px; margin: 0 8px; border-right: 1px dashed #fff; }
 .subordinate-content { padding: 10px 10px 24px; }
@@ -558,24 +559,23 @@ body { background: #e8e8e8; }
 
 /* 新增/修改下级：账号信息与逐彩种权限。 */
 .subordinate-form-page { min-height: calc(100vh - 168px); }
-.subordinate-form-loading { display: grid; width: 1000px; height: 338px; margin: 20px auto 0; place-items: center; background: #fff; }
+.subordinate-form-loading { display: grid; width: min(1000px, calc(100% - 40px)); height: 338px; margin: 20px auto 0; place-items: center; background: #fff; }
 .subordinate-load-error { display: grid; justify-items: center; gap: 14px; color: #c00; }
 .subordinate-load-error button { width: 80px; height: 28px; border: 1px solid #afafaf; background: #ebe5b7; cursor: pointer; }
-.subordinate-form-shell { width: 1000px; margin: 20px auto 0; color: #000; font-size: 14px; }
-.subordinate-account-form { display: flex; width: 960px; height: 200px; align-items: center; justify-content: center; margin: 10px 20px 0; padding: 15px; background: #fff; }
-.subordinate-account-form > div { display: flex; height: 170px; flex: 1 0 auto; flex-direction: column; align-items: center; justify-content: center; padding: 0 10px; }
+.subordinate-form-shell { width: min(1200px, calc(100% - 40px)); margin: 20px auto 0; color: #000; font-size: 14px; }
+.subordinate-account-form { display: grid; width: 100%; min-height: 200px; grid-template-columns: repeat(8, minmax(0, 1fr)); align-items: stretch; margin: 10px 0 0; padding: 15px; box-sizing: border-box; background: #fff; }
+.subordinate-account-form > div { display: flex; width: auto !important; min-width: 0; height: 170px; flex: none; flex-direction: column; align-items: center; justify-content: center; padding: 0 10px; box-sizing: border-box; }
 .subordinate-account-form > div + div { border-left: 1px dashed darkblue; }
-.subordinate-account-form .account-level { width: 216.66px; }
-.subordinate-account-form .account-name { width: 291.67px; }
-.subordinate-account-form .account-password { width: 421.67px; }
+.subordinate-account-form .account-password { grid-column: span 2; }
 .subordinate-account-form label { height: 26px; color: #000; font-size: 16px; font-weight: 400; line-height: 24px; }
 .subordinate-account-form .account-level strong { height: 24px; color: darkblue; font-size: 16px; font-weight: 400; line-height: 24px; }
-.subordinate-account-form .account-name .ant-input { width: 170px; height: 32px; padding: 4px 11px; font-size: 14px; }
-.subordinate-account-form .account-password > div { width: 300px; height: 91px; }
-.subordinate-account-form .account-password .ant-input { width: 300px; height: 32px; padding: 4px 11px; border-radius: 4px; font-size: 14px; }
-.subordinate-account-form .account-password .password-warning { display: inline-block; width: 300px; margin-top: 8px; color: red; font-size: 14px; line-height: 16px; }
+.subordinate-account-form .account-name .ant-input { width: 100%; max-width: 170px; height: 32px; padding: 4px 11px; box-sizing: border-box; font-size: 14px; }
+.subordinate-account-form .account-name .subordinate-select { width: 100%; max-width: 170px; height: 32px; padding: 0 8px; border: 1px solid #8f8f8f; border-radius: 4px; background: #fff; color: #000; font-size: 14px; }
+.subordinate-account-form .account-password > div { width: 100%; max-width: 300px; height: 91px; }
+.subordinate-account-form .account-password .ant-input { width: 100%; height: 32px; padding: 4px 11px; box-sizing: border-box; border-radius: 4px; font-size: 14px; }
+.subordinate-account-form .account-password .password-warning { display: inline-block; width: 100%; margin-top: 8px; color: red; font-size: 14px; line-height: 16px; }
 .subordinate-account-form .account-password .password-warning.invalid { font-weight: 700; }
-.subordinate-permissions { display: grid; width: 800px; min-height: 80px; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; justify-content: center; margin: 10px 100px; padding: 15px; background: #fff; }
+.subordinate-permissions { display: grid; width: min(800px, calc(100% - 40px)); min-height: 80px; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; justify-content: center; margin: 10px auto; padding: 15px; box-sizing: border-box; background: #fff; }
 .permission-lottery { display: flex; min-height: 48px; flex-direction: column; align-items: center; justify-content: center; padding: 0 10px; }
 .permission-lottery:nth-child(even) { border-left: 1px dashed darkblue; }
 .permission-lottery > label { height: 26px; font-size: 16px; line-height: 24px; }
@@ -585,7 +585,7 @@ body { background: #e8e8e8; }
 .permission-switches span { margin-right: 2px; }
 .permission-lottery .ant-switch { width: 44px; min-width: 44px; height: 22px; line-height: 20px; }
 .permission-empty { grid-column: 1 / -1; align-self: center; justify-self: center; color: #777; }
-.subordinate-form-actions { width: 1000px; height: 28px; margin: 20px 0; text-align: center; }
+.subordinate-form-actions { width: 100%; height: 28px; margin: 20px 0; text-align: center; }
 .subordinate-form-actions button { width: 80px; height: 28px; padding: 0 8px; border-radius: 0; color: #000; font-size: 14px; line-height: 26px; cursor: pointer; }
 .subordinate-form-actions .submit { border: 1px solid #fff; background: #fdd9d9; }
 .subordinate-form-actions .back { margin-left: 10px; border: 1px solid #afafaf; background: #ebe5b7; color: rgba(0, 0, 0, .65); }
@@ -630,6 +630,7 @@ body { background: #e8e8e8; }
 .edit-permission + .edit-permission { border-left: 1px dashed #0000c0; }
 .edit-permission b { min-width: 54px; overflow: hidden; color: #000; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
 .edit-permission label { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
+.organization-share-input { width: 110px !important; height: 30px; padding: 3px 8px; border: 1px solid #c8c8c8; border-radius: 4px; background: #fff; color: #111; }
 .edit-finance-row { display: grid; grid-template-columns: 1fr; gap: 7px; margin-top: 7px; }
 .finance-section { display: grid; width: 1200px; align-items: center; justify-items: start; padding: 10px; background: #fff; }
 .credit-section { height: 78px; }
@@ -691,6 +692,8 @@ body { background: #e8e8e8; }
 .subordinate-edit-actions .submit { border-color: #fff; background: #fdd9d9; }
 .subordinate-edit-actions button:disabled { cursor: wait; opacity: .65; }
 @media (max-width: 1050px) {
+  .subordinate-account-form { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .subordinate-account-form .account-password { grid-column: span 2; }
   .edit-credit-summary { overflow-x: auto; }
   .edit-account-panel { grid-template-columns: 1fr 1fr; }
   .edit-account-panel .wide { grid-column: 1 / -1; }
@@ -700,6 +703,11 @@ body { background: #e8e8e8; }
   .edit-finance-row fieldset:last-child { grid-column: auto; }
 }
 @media (max-width: 700px) {
+  .subordinate-form-shell { width: calc(100% - 20px); }
+  .subordinate-account-form { grid-template-columns: 1fr; }
+  .subordinate-account-form > div { height: auto; min-height: 110px; }
+  .subordinate-account-form .account-password { grid-column: auto; }
+  .subordinate-account-form > div + div { border-top: 1px dashed #00008b; border-left: 0; }
   .subordinate-edit-shell { width: calc(100% - 20px); }
   .edit-account-panel, .edit-settings-panel, .edit-finance-row { grid-template-columns: 1fr; }
   .edit-account-panel .wide, .edit-permission-list, .edit-finance-row fieldset:last-child { grid-column: auto; }
@@ -1472,3 +1480,10 @@ body .ant-modal-confirm-info .ant-modal-confirm-icon { color:#006400; }
   .agent-app .site-header { min-width:1180px; padding-left:20px; padding-right:20px; }
   .agent-app .lottery { width:260px; min-width:260px; }.agent-app .lottery > li { width:258px; }
 }
+
+/* 组织层级与会员统一复用下级管理页面的视觉，仅补充层级列表需要的轻量元素。 */
+.subordinate-breadcrumbs { display:flex; align-items:center; gap:8px; margin:0 0 14px; padding:9px 12px; border:1px solid #e6e6e6; background:#fafafa; color:#666; font-size:13px; }
+.subordinate-breadcrumbs button { border:0; padding:0; background:none; color:#1769aa; cursor:pointer; }
+.subordinate-breadcrumbs button.current { color:#333; font-weight:700; cursor:default; }
+.subordinate-breadcrumbs em { color:#aaa; font-style:normal; }
+.subordinate-child-count { display:block; margin-top:3px; color:#999; font-size:12px; }

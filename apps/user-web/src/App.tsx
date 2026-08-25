@@ -15,9 +15,10 @@ function clearUserAuthQuery() {
 export default function App() {
   const siteName = localStorage.getItem("site_name") || "站点会员中心";
   const [name, setName] = useState(() => localStorage.getItem("user_token") ? localStorage.getItem("user_name") || "" : "");
+  const [mustChangePassword, setMustChangePassword] = useState(() => localStorage.getItem("user_must_change_password") === "1");
   const [agreementVisible, setAgreementVisible] = useState(() => {
     const token = localStorage.getItem("user_token");
-    return Boolean(token && localStorage.getItem("user_name") && sessionStorage.getItem("agreement_accepted_token") !== token);
+    return Boolean(token && localStorage.getItem("user_name") && localStorage.getItem("user_must_change_password") !== "1" && sessionStorage.getItem("agreement_accepted_token") !== token);
   });
   const [agreement, setAgreement] = useState<AgreementData>(defaultAgreement);
 
@@ -56,13 +57,14 @@ export default function App() {
     if (lineSwitch) sessionStorage.setItem("agreement_accepted_token", token);
     else sessionStorage.removeItem("agreement_accepted_token");
     setName(userName);
-    setAgreementVisible(!lineSwitch);
+    setAgreementVisible(!lineSwitch && localStorage.getItem("user_must_change_password") !== "1");
   }, []);
 
   const clearSession = () => {
     clearUserAuthQuery();
     localStorage.removeItem("user_name");
     localStorage.removeItem("user_token");
+    localStorage.removeItem("user_must_change_password");
     sessionStorage.removeItem("agreement_accepted_token");
     setAgreementVisible(false);
     setName("");
@@ -82,7 +84,7 @@ export default function App() {
               setAgreementVisible(false);
             }}
           />
-        ) : <Main name={name} logout={logout} />
+        ) : <Main name={name} logout={logout} forcePasswordChange={mustChangePassword} onPasswordChanged={() => { localStorage.setItem("user_must_change_password", "0"); setMustChangePassword(false); }} />
       ) : (
         <Routes>
           <Route
@@ -92,10 +94,12 @@ export default function App() {
                 siteName={siteName}
                 onLogin={(n) => {
                   localStorage.setItem("user_name", n);
+                  const required = localStorage.getItem("user_must_change_password") === "1";
                   sessionStorage.removeItem("agreement_accepted_token");
                   setAgreement(defaultAgreement);
                   setName(n);
-                  setAgreementVisible(true);
+                  setMustChangePassword(required);
+                  setAgreementVisible(!required);
                 }}
               />
             }

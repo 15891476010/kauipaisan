@@ -79,9 +79,9 @@ final class Organization
         if (!in_array($level,OrganizationHierarchy::LEVELS,true)) throw new \InvalidArgumentException('组织层级无效');
         if ($level==='director'&&$parentId!==0) throw new \InvalidArgumentException('总监必须是站点根节点');
         if ($level!=='director'&&(!$parent||!OrganizationHierarchy::canParentLevelAccept((string)$parent['level'],$level))) throw new \InvalidArgumentException('上下级关系不符合总监、大股东、小股东、总代理、代理的顺序');
-        $parentPermissions=$parent?OrganizationHierarchy::decodePermissions($parent['permissions']??null):['*'];
-        $parentPermissions=AgentAuthorization::intersect($parentPermissions,AgentAuthorization::sitePermissions((int)$site['id'],$level));
-        $permissions=OrganizationHierarchy::normalizePermissions($request->post('permissions',$current?OrganizationHierarchy::decodePermissions($current['permissions']??null):$parentPermissions),$parentPermissions);
+        // 路由/按钮权限只由 SaaS 的“站点 → 路由权限 → 层级”配置决定，
+        // 组织节点和管理员账号不再允许单独覆盖。
+        $permissions=AgentAuthorization::sitePermissions((int)$site['id'],$level);
         $name=trim((string)$request->post('name',$current['name']??''));
         $code=$current?(string)$current['code']:$this->generateNodeCode((int)$site['id'],$level);
         if ($name==='') throw new \InvalidArgumentException('请输入下级名称');
@@ -104,9 +104,13 @@ final class Organization
             $duplicate=Db::name('organization_accounts')->where('site_id',(int)$node['site_id'])->where('username',$username)->find();
             if ($duplicate && empty($duplicate['deleted_at'])) throw new \InvalidArgumentException('当前站点已存在账号 '.$username.'，请更换账号名');
         }
-        $nodePermissions=OrganizationHierarchy::decodePermissions($node['permissions']??null);
-        $nodePermissions=AgentAuthorization::intersect($nodePermissions,AgentAuthorization::sitePermissions((int)$node['site_id'],(string)$node['level']));
-        $permissions=OrganizationHierarchy::normalizePermissions($request->post('permissions',$current?OrganizationHierarchy::decodePermissions($current['permissions']??null):$nodePermissions),$nodePermissions);
+        // 管理员账号不再拥有独立的路由/按钮权限。权限唯一来源是所属组织节点，
+        // 再与 SaaS 为该站点、该层级配置的权限取交集。保留数据库字段仅为兼容旧表，
+        // 写入时同步组织权限，读取时由 OrganizationHierarchy 忽略账号字段。
+        $permissions=AgentAuthorization::intersect(
+            OrganizationHierarchy::decodePermissions($node['permissions']??null),
+            AgentAuthorization::sitePermissions((int)$node['site_id'],(string)$node['level'])
+        );
         $data=['tenant_id'=>(int)$node['tenant_id'],'site_id'=>(int)$node['site_id'],'organization_id'=>(int)$node['id'],'username'=>$username,'display_name'=>$displayName?:$username,'phone'=>trim((string)$request->post('phone',$current['phone']??'')),'permissions'=>json_encode($permissions,JSON_UNESCAPED_UNICODE),'status'=>(int)$request->post('status',$current['status']??1)===0?0:1,'updated_at'=>date('Y-m-d H:i:s')];
         $password=(string)$request->post('password','');
         if (!$current) {
@@ -146,12 +150,14 @@ final class Organization
         $nodeIds=array_map('intval',array_column($nodes,'id'));
         $accounts=$nodeIds?Db::name('organization_accounts')->whereIn('organization_id',$nodeIds)->whereNull('deleted_at')->order('id asc')->select()->toArray():[];
         AccountPresence::append($accounts,'organization_account');
-        foreach($accounts as &$account){unset($account['password']);$account['permissions']=OrganizationHierarchy::decodePermissions($account['permissions']??null);}unset($account);
+        $nodePermissionsById=[];
+        foreach($nodes as $nodeRow)$nodePermissionsById[(int)$nodeRow['id']]=AgentAuthorization::sitePermissions((int)$siteId,(string)$nodeRow['level']);
+        foreach($accounts as &$account){unset($account['password']);$account['permissions']=$nodePermissionsById[(int)$account['organization_id']]??[];}unset($account);
         $primaryAccounts=[];foreach($accounts as $account)if(!isset($primaryAccounts[(int)$account['organization_id']]))$primaryAccounts[(int)$account['organization_id']]=$account;
         $shareRows=$nodeIds?Db::name('organization_profit_shares')->whereIn('child_organization_id',$nodeIds)->where('status',1)->select()->toArray():[];
         $shares=[];foreach($shareRows as $share)$shares[(int)$share['child_organization_id']]=$share;
         foreach($nodes as &$node){
-            $node['permissions']=OrganizationHierarchy::decodePermissions($node['permissions']??null);$node['settings']=json_decode((string)($node['settings']??''),true)?:[];$node['level_label']=OrganizationHierarchy::LABELS[(string)$node['level']]??$node['level'];$node['next_level']=OrganizationHierarchy::nextLevel((string)$node['level']);$node['balance']=number_format((float)($node['balance']??0),2,'.','');
+            $node['permissions']=AgentAuthorization::sitePermissions((int)$siteId,(string)$node['level']);$node['settings']=json_decode((string)($node['settings']??''),true)?:[];$node['level_label']=OrganizationHierarchy::LABELS[(string)$node['level']]??$node['level'];$node['next_level']=OrganizationHierarchy::nextLevel((string)$node['level']);$node['balance']=number_format((float)($node['balance']??0),2,'.','');
             $account=$primaryAccounts[(int)$node['id']]??[];$share=$shares[(int)$node['id']]??[];
             foreach(['id'=>'account_id','username'=>'username','display_name'=>'display_name','phone'=>'phone','online'=>'online','last_login_at'=>'last_login_at','last_login_ip'=>'last_login_ip','last_login_location'=>'last_login_location','last_login_device'=>'last_login_device']as$source=>$target)$node[$target]=$account[$source]??null;
             $node['share_rate']=number_format((float)($share['share_rate']??0),4,'.','');$node['max_share_rate']=number_format((float)($share['max_share_rate']??$siteCap),4,'.','');
@@ -202,8 +208,30 @@ final class Organization
             'director_count'=>count($roots)];
         return $this->reply(array_merge(['site'=>$sitePayload],$this->responseForSite($siteId)));
     }
-    public function adminCreateNode(Request $request,int $siteId): \think\response\Json { $site=$this->site($siteId);$data=$this->nodePayload($request,$site);$data['created_at']=$data['updated_at'];$operator=$this->requestOperator($request);$id=(int)Db::transaction(function()use($data,$operator):int{$id=(int)Db::name('organization_nodes')->insertGetId($data);$node=array_merge($data,['id'=>$id,'balance'=>0]);ScoreTransfer::organizationAllocation($node,(float)$data['credit_limit'],$operator);return$id;});OrganizationHierarchy::rebuildPath($id);return $this->reply(['id'=>$id],'组织创建成功'); }
-    public function adminUpdateNode(Request $request,int $id): \think\response\Json { $current=Db::name('organization_nodes')->where('id',$id)->whereNull('deleted_at')->find();if(!$current)throw new \InvalidArgumentException('组织不存在');$site=$this->site((int)$current['site_id']);$data=$this->nodePayload($request,$site,$current);$operator=$this->requestOperator($request);Db::transaction(function()use($id,$current,$data,$operator):void{$delta=(float)$data['credit_limit']-(float)$current['credit_limit'];ScoreTransfer::organizationAllocation($current,$delta,$operator);Db::name('organization_nodes')->where('id',$id)->update($data);});OrganizationHierarchy::rebuildBranch($id);return $this->reply(null,'组织已更新'); }
+    public function adminCreateNode(Request $request,int $siteId): \think\response\Json
+    {
+        $site=$this->site($siteId);$data=$this->nodePayload($request,$site);$data['created_at']=$data['updated_at'];
+        if((string)$data['level']==='director'){
+            $username=trim((string)$request->post('username',''));$password=(string)$request->post('password','');
+            if($username==='')throw new \InvalidArgumentException('请输入总监登录账号');
+            if($password==='')throw new \InvalidArgumentException('请输入总监登录密码');
+        }
+        $operator=$this->requestOperator($request);
+        $result=Db::transaction(function()use($data,$request,$operator):array{
+            $id=(int)Db::name('organization_nodes')->insertGetId($data);$node=array_merge($data,['id'=>$id,'balance'=>0]);
+            ScoreTransfer::organizationAllocation($node,(float)$data['credit_limit'],$operator);
+            $account=null;
+            if((string)$data['level']==='director'){
+                $accountData=$this->accountPayload($request,$node);$initialPassword=(string)$accountData['_initial_password'];unset($accountData['_initial_password']);
+                $accountData['created_at']=$accountData['updated_at'];$accountId=$this->createOrRestoreAccount($accountData);
+                $account=['id'=>$accountId,'username'=>(string)$accountData['username'],'initial_password'=>$initialPassword,'must_change_password'=>1];
+            }
+            return ['id'=>$id,'account'=>$account];
+        });
+        OrganizationHierarchy::rebuildPath((int)$result['id']);
+        return $this->reply($result,'组织创建成功');
+    }
+    public function adminUpdateNode(Request $request,int $id): \think\response\Json { $current=Db::name('organization_nodes')->where('id',$id)->whereNull('deleted_at')->find();if(!$current)throw new \InvalidArgumentException('组织不存在');$site=$this->site((int)$current['site_id']);$data=$this->nodePayload($request,$site,$current);$operator=$this->requestOperator($request);Db::transaction(function()use($id,$current,$data,$request,$operator):void{$delta=(float)$data['credit_limit']-(float)$current['credit_limit'];ScoreTransfer::organizationAllocation($current,$delta,$operator);Db::name('organization_nodes')->where('id',$id)->update($data);$updatedNode=array_merge($current,$data,['id'=>$id]);$account=Db::name('organization_accounts')->where('organization_id',$id)->whereNull('deleted_at')->order('id asc')->find();if($account){$accountData=$this->accountPayload($request,$updatedNode,$account);Db::name('organization_accounts')->where('id',(int)$account['id'])->update($accountData);}elseif(trim((string)$request->post('username',''))!==''&&trim((string)$request->post('password',''))!==''){ $accountData=$this->accountPayload($request,$updatedNode);unset($accountData['_initial_password']);$accountData['created_at']=$accountData['updated_at'];$this->createOrRestoreAccount($accountData);}});OrganizationHierarchy::rebuildBranch($id);return $this->reply(null,'组织和账号已更新'); }
     public function adminSetDirectorCredit(Request $request,int $id): \think\response\Json
     {
         $node=Db::name('organization_nodes')->where('id',$id)->where('parent_id',0)->where('level','director')->whereNull('deleted_at')->find();
@@ -241,12 +269,13 @@ final class Organization
             $locked=Db::name('organization_nodes')->where('id',$id)->lock(true)->find();if(!$locked)throw new \InvalidArgumentException('总监不存在');
             ScoreTransfer::organizationAllocation($locked,round($credit-(float)$locked['credit_limit'],2),$operator);
             Db::name('organization_nodes')->where('id',$id)->update(['credit_limit'=>number_format($credit,2,'.',''),'updated_at'=>date('Y-m-d H:i:s')]);$now=date('Y-m-d H:i:s');
+            $rootShare=Db::name('organization_profit_shares')->where('child_organization_id',$id)->where('parent_organization_id',0)->find();$rootData=['tenant_id'=>(int)$node['tenant_id'],'site_id'=>(int)$node['site_id'],'parent_organization_id'=>0,'child_organization_id'=>$id,'max_share_rate'=>number_format($max,4,'.',''),'share_rate'=>number_format($max,4,'.',''),'status'=>1,'updated_at'=>$now];if($rootShare)Db::name('organization_profit_shares')->where('id',(int)$rootShare['id'])->update($rootData);else{$rootData['created_at']=$now;Db::name('organization_profit_shares')->insert($rootData);}
             foreach($children as $child){$existing=Db::name('organization_profit_shares')->where('child_organization_id',(int)$child['id'])->find();$data=['tenant_id'=>(int)$node['tenant_id'],'site_id'=>(int)$node['site_id'],'parent_organization_id'=>$id,'child_organization_id'=>(int)$child['id'],'max_share_rate'=>number_format($max,4,'.',''),'share_rate'=>number_format((float)($existing['share_rate']??0),4,'.',''),'status'=>1,'updated_at'=>$now];if($existing)Db::name('organization_profit_shares')->where('id',(int)$existing['id'])->update($data);else{$data['created_at']=$now;Db::name('organization_profit_shares')->insert($data);}}
             return ['id'=>$id,'credit_limit'=>number_format($credit,2,'.',''),'max_share_rate'=>number_format($max,4,'.',''),'child_count'=>count($children)];
         });
         return $this->reply($result,'总监分数和下级最高占成已更新');
     }
-    public function adminDeleteNode(Request $request,int $id): \think\response\Json { $node=Db::name('organization_nodes')->where('id',$id)->whereNull('deleted_at')->find();if(!$node)throw new \InvalidArgumentException('组织不存在');if((int)$node['parent_id']===0)throw new \InvalidArgumentException('站点根总监不能删除');if(Db::name('organization_nodes')->where('parent_id',$id)->whereNull('deleted_at')->count()>0)throw new \InvalidArgumentException('请先处理该组织的下级');if(Db::name('site_users')->where('organization_id',$id)->whereNull('deleted_at')->count()>0)throw new \InvalidArgumentException('请先转移或删除该组织的会员');if(Db::name('agent_subaccounts')->where('organization_id',$id)->whereNull('deleted_at')->count()>0)throw new \InvalidArgumentException('请先处理该组织的子账号');$now=date('Y-m-d H:i:s');$operator=$this->requestOperator($request);Db::transaction(function()use($id,$node,$now,$operator):void{ScoreTransfer::organizationAllocation($node,-(float)$node['credit_limit'],$operator);Db::name('organization_nodes')->where('id',$id)->update(['deleted_at'=>$now,'status'=>0,'credit_limit'=>'0.00']);Db::name('organization_accounts')->where('organization_id',$id)->update(['deleted_at'=>$now,'status'=>0]);});return $this->reply(null,'组织已删除，分数已退回上级'); }
+    public function adminDeleteNode(Request $request,int $id): \think\response\Json { $node=Db::name('organization_nodes')->where('id',$id)->whereNull('deleted_at')->find();if(!$node)throw new \InvalidArgumentException('组织不存在');if(Db::name('organization_nodes')->where('parent_id',$id)->whereNull('deleted_at')->count()>0)throw new \InvalidArgumentException('请先处理该组织的下级');if(Db::name('site_users')->where('organization_id',$id)->whereNull('deleted_at')->count()>0)throw new \InvalidArgumentException('请先转移或删除该组织的会员');if(Db::name('agent_subaccounts')->where('organization_id',$id)->whereNull('deleted_at')->count()>0)throw new \InvalidArgumentException('请先处理该组织的子账号');$operator=$this->requestOperator($request);Db::transaction(function()use($id,$node,$operator):void{ScoreTransfer::organizationAllocation($node,-(float)$node['credit_limit'],$operator);Db::name('organization_profit_shares')->where('parent_organization_id',$id)->delete();Db::name('organization_profit_shares')->where('child_organization_id',$id)->delete();Db::name('organization_accounts')->where('organization_id',$id)->delete();Db::name('organization_nodes')->where('id',$id)->delete();});return $this->reply(null,'组织已删除，分数已退回上级'); }
     public function adminCreateAccount(Request $request,int $organizationId): \think\response\Json { $node=Db::name('organization_nodes')->where('id',$organizationId)->whereNull('deleted_at')->find();if(!$node)throw new \InvalidArgumentException('组织不存在');$data=$this->accountPayload($request,$node);$password=(string)$data['_initial_password'];unset($data['_initial_password']);$data['created_at']=$data['updated_at'];$id=$this->createOrRestoreAccount($data);return $this->reply(['id'=>$id,'username'=>$data['username'],'initial_password'=>$password,'must_change_password'=>1],'管理员创建成功'); }
     public function adminUpdateAccount(Request $request,int $id): \think\response\Json { $current=Db::name('organization_accounts')->where('id',$id)->whereNull('deleted_at')->find();if(!$current)throw new \InvalidArgumentException('管理员不存在');$node=Db::name('organization_nodes')->where('id',(int)$current['organization_id'])->whereNull('deleted_at')->find();if(!$node)throw new \InvalidArgumentException('组织不存在');Db::name('organization_accounts')->where('id',$id)->update($this->accountPayload($request,$node,$current));return $this->reply(null,'管理员已更新'); }
     public function adminDeleteAccount(Request $request,int $id): \think\response\Json { Db::name('organization_accounts')->where('id',$id)->whereNull('deleted_at')->update(['deleted_at'=>date('Y-m-d H:i:s'),'status'=>0]);return $this->reply(null,'管理员已删除'); }
@@ -263,7 +292,7 @@ final class Organization
     public function profile(Request $request): \think\response\Json
     {
         $session=$this->agentSession($request);$site=$this->site((int)$session['site_id']);$organizationId=(int)($session['organization_id']??0);$node=$organizationId>0?Db::name('organization_nodes')->where('id',$organizationId)->whereNull('deleted_at')->find():OrganizationHierarchy::rootForSite((int)$site['id']);
-        $level=(string)($node['level']??'director');return $this->reply(['site'=>['id'=>(int)$site['id'],'name'=>$site['name']],'organization'=>$node?['id'=>(int)$node['id'],'name'=>(string)($session['username']??$node['name']),'level'=>$level,'level_label'=>OrganizationHierarchy::LABELS[$level]??$level,'next_level'=>OrganizationHierarchy::nextLevel($level),'credit'=>OrganizationHierarchy::nodeCreditSummary((int)$node['id'])]:null,'permissions'=>(array)($session['permissions']??['*']),'username'=>(string)($session['username']??'')]);
+        $level=(string)($node['level']??'director');$permissions=$node?AgentAuthorization::sitePermissions((int)$site['id'],$level):[];return $this->reply(['site'=>['id'=>(int)$site['id'],'name'=>$site['name']],'organization'=>$node?['id'=>(int)$node['id'],'name'=>(string)($session['username']??$node['name']),'level'=>$level,'level_label'=>OrganizationHierarchy::LABELS[$level]??$level,'next_level'=>OrganizationHierarchy::nextLevel($level),'credit'=>OrganizationHierarchy::nodeCreditSummary((int)$node['id'])]:null,'permissions'=>$permissions,'username'=>(string)($session['username']??'')]);
     }
 
     public function agentIndex(Request $request): \think\response\Json
@@ -275,7 +304,8 @@ final class Organization
         if(!$current||!$root)throw new \RuntimeException('当前组织数据不存在');
         $visibleIds=OrganizationHierarchy::descendantIds($rootId);
         if(!in_array($organizationId,$visibleIds,true))throw new \InvalidArgumentException('无权查看该组织及其下级');
-        $currentPayload=['id'=>(int)$current['id'],'parent_id'=>(int)$current['parent_id'],'name'=>$organizationId===$rootId?(string)($session['username']??$current['name']):(string)$current['name'],'node_name'=>(string)$current['name'],'level'=>$current['level'],'level_label'=>OrganizationHierarchy::LABELS[(string)$current['level']]??$current['level'],'next_level'=>OrganizationHierarchy::nextLevel((string)$current['level']),'credit'=>OrganizationHierarchy::nodeCreditSummary((int)$current['id']),'can_manage'=>$organizationId===$rootId];
+        $currentPermissions=AgentAuthorization::sitePermissions((int)$session['site_id'],(string)$current['level']);
+        $currentPayload=['id'=>(int)$current['id'],'parent_id'=>(int)$current['parent_id'],'name'=>$organizationId===$rootId?(string)($session['username']??$current['name']):(string)$current['name'],'node_name'=>(string)$current['name'],'level'=>$current['level'],'level_label'=>OrganizationHierarchy::LABELS[(string)$current['level']]??$current['level'],'next_level'=>OrganizationHierarchy::nextLevel((string)$current['level']),'permissions'=>$currentPermissions,'credit'=>OrganizationHierarchy::nodeCreditSummary((int)$current['id']),'can_manage'=>$organizationId===$rootId];
         return $this->reply(array_merge(['current'=>$currentPayload,'root_organization_id'=>$rootId,'breadcrumbs'=>$this->breadcrumbs((int)$session['site_id'],$organizationId,$rootId)],$this->responseForSite((int)$session['site_id'],$organizationId)));
     }
     public function agentProfitShare(Request $request): \think\response\Json
@@ -308,6 +338,8 @@ final class Organization
         $session=$this->agentSession($request);
         $parent=Db::name('organization_nodes')->where('id',(int)($session['organization_id']??0))->whereNull('deleted_at')->find();
         if(!$parent||!OrganizationHierarchy::nextLevel((string)$parent['level']))throw new \InvalidArgumentException('当前层级不能继续创建下级');
+        $parentPermissions=AgentAuthorization::sitePermissions((int)$session['site_id'],(string)$parent['level']);
+        if(!in_array('*',$parentPermissions,true)&&!in_array('organization.create',$parentPermissions,true))throw new \InvalidArgumentException('当前未分配新增下级权限');
         $site=$this->site((int)$session['site_id']);
         $data=$this->nodePayload($request,$site,null,$parent);
         $data['created_at']=$data['updated_at'];

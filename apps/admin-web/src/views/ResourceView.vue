@@ -76,6 +76,7 @@ const form = reactive({
   used_balance: "0.00",
   credit_limit: 0,
   max_profit_share_rate: 100,
+  account_table: "admins",
 });
 const resource = computed(() => String(route.meta.resource || ""));
 const title = computed(() => String(route.meta.title || "资源管理"));
@@ -111,7 +112,7 @@ const fields: Record<string, string[]> = {
     "created_at",
   ],
   "bet-records": ["id", "site_name", "username", "lottery", "issue_no", "bet_count", "amount", "win_amount", "source_text", "formatted_text", "status", "sealed", "placed_at"],
-  admins: ["id", "username", "display_name", "online", "last_seen_at", "last_login_at", "last_login_device", "last_login_location", "last_login_ip", "status"],
+  admins: ["id", "site_name", "scope_label", "username", "display_name", "online", "last_seen_at", "last_login_at", "last_login_device", "last_login_location", "last_login_ip", "status"],
   roles: ["id", "name", "code", "status", "created_at"],
   menus: ["id", "title", "path", "component", "sort", "status"],
   "audit-logs": ["id", "username", "site_name", "agent_name", "action", "resource", "ip", "created_at"],
@@ -134,6 +135,7 @@ const labels: Record<string, string> = {
   agent_domain: "代理端域名",
   user_domain: "用户端域名",
   site_name: "所属站点",
+  scope_label: "账号类型",
   lottery: "彩种",
   is_primary: "主域名",
   username: "账号",
@@ -180,6 +182,8 @@ const pageSubtitle = computed(() =>
     ? "平台统一管理所有站点用户，按站点隔离账号和数据"
     : resource.value === "bet-records"
       ? "查看用户端提交的下单记录，数据按站点和用户隔离"
+    : resource.value === "admins"
+      ? "统一管理平台管理员和各站点后台管理员"
     : "每个站点拥有独立管理员与反代域名，站点之间账号和数据隔离",
 );
 async function load(silent = false) {
@@ -294,6 +298,7 @@ function resetForm() {
     manager_password: "",
     manager_phone: "",
     site_id: "",
+    account_table: "admins",
     username: "",
     display_name: "",
     phone: "",
@@ -326,6 +331,7 @@ function openEdit(row: Record<string, unknown>) {
     manager_password: "",
     manager_phone: String(row.manager_phone || ""),
     site_id: String(row.site_id || ""),
+    account_table: String(row.account_table || "admins"),
     username: String(row.username || ""),
     display_name: String(row.display_name || ""),
     phone: String(row.phone || ""),
@@ -361,6 +367,10 @@ function payload() {
       used_balance: form.used_balance,
       status: form.status,
     };
+  if (resource.value === "admins") {
+    const base = { account_table: form.account_table, username: form.username, display_name: form.display_name, phone: form.phone, password: form.password, status: form.status };
+    return form.account_table === "site_admins" ? { ...base, site_id: Number(form.site_id) } : base;
+  }
   if (resource.value === "agent-center")
     {
       const used = new Set<string>();
@@ -400,11 +410,11 @@ async function save() {
     ElMessage.error(e instanceof Error ? e.message : "保存失败");
   }
 }
-async function remove(id: number) {
+async function remove(id: number, accountTable?: unknown) {
   await ElMessageBox.confirm("确定删除这条数据吗？", "操作确认", {
     type: "warning",
   });
-  await deleteResource(resource.value, id);
+  await deleteResource(resource.value, id, resource.value === "admins" ? { account_table: String(accountTable || "admins") } : undefined);
   ElMessage.success("已删除");
   await load();
 }
@@ -502,9 +512,6 @@ async function refreshRealtime() {
     }
   }
 }
-function openSiteAdmins(row: Record<string, unknown>) {
-  void router.push({ name: 'site-admins', params: { siteId: Number(row.id) }, query: { name: String(row.name || '') } });
-}
 function openOrganizations(row: Record<string, unknown>) {
   void router.push({ name: 'site-organizations', params: { siteId: Number(row.id) }, query: { name: String(row.name || '') } });
 }
@@ -568,12 +575,12 @@ async function openAuditDetail(row: Record<string, unknown>) {
 }
 watch(resource, async () => {
   await load();
-  if (resource.value === "site-users" || resource.value === "bet-records") await loadSites();
+  if (resource.value === "site-users" || resource.value === "bet-records" || resource.value === "admins") await loadSites();
   if (resource.value === "agent-center" || resource.value === "bet-records") await loadLotteryOptions();
 });
 onMounted(async () => {
   await load();
-  if (resource.value === "site-users" || resource.value === "bet-records") await loadSites();
+  if (resource.value === "site-users" || resource.value === "bet-records" || resource.value === "admins") await loadSites();
   if (resource.value === "agent-center" || resource.value === "bet-records") await loadLotteryOptions();
   refreshTimer = setInterval(refreshRealtime, 15000);
 });
@@ -602,7 +609,7 @@ onBeforeUnmount(() => {
         style="width: 280px"
         @keyup.enter="load"
       /><el-select
-        v-if="(resource === 'site-users' || resource === 'bet-records') && isPlatform"
+        v-if="(resource === 'site-users' || resource === 'bet-records' || resource === 'admins') && isPlatform"
         v-model="query.site_id"
         clearable
         placeholder="全部站点"
@@ -712,12 +719,6 @@ onBeforeUnmount(() => {
               v-if="resource === 'agent-center'"
               link
               type="primary"
-              @click="openSiteAdmins(scope.row)"
-              >后台管理员</el-button
-            ><el-button
-              v-if="resource === 'agent-center'"
-              link
-              type="primary"
               @click="openOrganizations(scope.row)"
               >组织架构</el-button
             ><el-button
@@ -734,7 +735,7 @@ onBeforeUnmount(() => {
               >进入站点</el-button
             ><el-button v-else link type="primary" @click="openEdit(scope.row)"
               >编辑</el-button
-            ><el-button link type="danger" @click="remove(Number(scope.row.id))"
+            ><el-button link type="danger" @click="remove(Number(scope.row.id), scope.row.account_table)"
               >删除</el-button
             >
           </div></template
@@ -800,10 +801,10 @@ onBeforeUnmount(() => {
       direction="rtl"
       size="600px"
       ><el-form label-width="96"
-        ><el-form-item v-if="resource !== 'site-users'" label="名称"
+        ><el-form-item v-if="resource !== 'site-users' && resource !== 'admins'" label="名称"
           ><el-input v-model="form.name" /></el-form-item
         ><el-form-item
-          v-if="resource !== 'agent-center' && resource !== 'site-users'"
+          v-if="resource !== 'agent-center' && resource !== 'site-users' && resource !== 'admins'"
           label="编码"
           ><el-input v-model="form.code" /></el-form-item
         ><el-form-item v-if="resource === 'agent-center'" label="代理端域名" class="domain-form-item"
@@ -873,6 +874,16 @@ onBeforeUnmount(() => {
           ><el-input-number v-model="form.used_balance" :min="0" :precision="2" controls-position="right" style="width: 100%" /></el-form-item
         ><el-form-item v-if="resource === 'site-users'" label="登录密码"
           ><el-input v-model="form.password" type="password" /></el-form-item
+        ><el-form-item v-if="resource === 'admins'" label="所属站点"
+          ><el-select v-model="form.site_id" clearable filterable placeholder="留空表示平台管理员" style="width:100%"><el-option v-for="site in siteOptions" :key="site.id" :label="String(site.name)" :value="String(site.id)" /></el-select></el-form-item
+        ><el-form-item v-if="resource === 'admins'" label="管理员账号"
+          ><el-input v-model="form.username" maxlength="80" /></el-form-item
+        ><el-form-item v-if="resource === 'admins'" label="姓名"
+          ><el-input v-model="form.display_name" maxlength="120" /></el-form-item
+        ><el-form-item v-if="resource === 'admins'" label="手机号"
+          ><el-input v-model="form.phone" maxlength="30" /></el-form-item
+        ><el-form-item v-if="resource === 'admins'" :label="editingId ? '新密码' : '登录密码'"
+          ><el-input v-model="form.password" type="password" show-password placeholder="留空则自动生成/不修改" /></el-form-item
         ><el-form-item label="状态"
           ><el-switch
             v-model="form.status"

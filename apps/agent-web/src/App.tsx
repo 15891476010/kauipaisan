@@ -23,7 +23,6 @@ import { SettingsPage } from "./features/settings/SettingsPage";
 import { ReportsPage } from "./features/reports/ReportsPage";
 import { InterceptionsPage } from "./features/interceptions/InterceptionsPage";
 import { SubaccountsPage } from "./features/subaccounts/SubaccountsPage";
-import { HierarchyPage } from "./features/organizations/HierarchyPage";
 import { heartbeat, logout as logoutSession } from "./api/auth";
 import { ForcedPasswordPage } from "./features/auth/ForcedPasswordPage";
 import { firstAllowedRoute, hasAgentPermission, isRouteAllowed } from "./routePermissions";
@@ -34,7 +33,6 @@ const menus = [
   { path: "ledger", title: "分类账", icon: FileTextOutlined },
   { path: "reports", title: "报表", icon: AccountBookOutlined },
   { path: "results", title: "开奖号码", icon: TrophyOutlined },
-  { path: "organizations", title: "下级管理", icon: ShareAltOutlined },
   { path: "subordinates", title: "下级管理", icon: TeamOutlined },
   { path: "intercept", title: "拦货", icon: TransactionOutlined },
   { path: "logs", title: "日志", icon: FolderOutlined },
@@ -180,12 +178,19 @@ function AgentMain({ name, onLogout, announcement, siteName }: { name: string; o
     return () => window.clearInterval(timer);
   }, []);
   useEffect(() => {
-    void getAgentOrganizationProfile().then((response) => {
-      const profile=response.data.data; setOrganizationProfile(profile);
-      if(profile.organization){localStorage.setItem("agent_organization_level",profile.organization.level);localStorage.setItem("agent_level_label",profile.organization.level_label);}
-      const nextPermissions=Array.isArray(profile.permissions)?profile.permissions.map(String):[];
-      setPermissions(nextPermissions);localStorage.setItem("agent_permissions",JSON.stringify(nextPermissions));setPermissionsFailed(false);
-    }).catch(() => {setPermissions([]);setPermissionsFailed(true);}).finally(() => setPermissionsReady(true));
+    let firstLoad = true;
+    const refreshPermissions = () => {
+      void getAgentOrganizationProfile().then((response) => {
+        const profile=response.data.data; setOrganizationProfile(profile);
+        if(profile.organization){localStorage.setItem("agent_organization_level",profile.organization.level);localStorage.setItem("agent_level_label",profile.organization.level_label);}
+        const nextPermissions=Array.isArray(profile.permissions)?profile.permissions.map(String):[];
+        setPermissions(nextPermissions);localStorage.setItem("agent_permissions",JSON.stringify(nextPermissions));setPermissionsFailed(false);
+      }).catch(() => { if (firstLoad) { setPermissions([]); setPermissionsFailed(true); } }).finally(() => { if (firstLoad) { setPermissionsReady(true); firstLoad=false; } });
+    };
+    refreshPermissions();
+    const timer=window.setInterval(refreshPermissions,30_000);
+    window.addEventListener("focus",refreshPermissions);
+    return () => { window.clearInterval(timer); window.removeEventListener("focus",refreshPermissions); };
   }, []);
   useEffect(() => {
     let active = true;
@@ -323,7 +328,7 @@ function AgentMain({ name, onLogout, announcement, siteName }: { name: string; o
         {lineCountdown !== null && <div className="agent-line-countdown"><b>{lineCountdown}</b> 秒后自动跳转至最快线路</div>}
       </Modal>
       <div className="body agent-body management-workspace">
-        <main>{!permissionsReady ? <section className="agent-workspace"><div className="agent-empty">正在加载实时权限...</div></section> : permissionsFailed ? <PermissionState failed /> : firstRoute === null ? <PermissionState /> : <Routes><Route path="/" element={<Navigate to={`/${firstRoute}`} replace />} />{routeAllowed("overview") && <Route path="/overview" element={<OverviewPage />} />}{routeAllowed("organizations") && <Route path="/organizations" element={<HierarchyPage />} />}{routeAllowed("rules") && <Route path="/rules" element={<RulesPage lottery={lotteries.find((item) => item.id === selectedLotteryId)?.name || ""} />} />}{routeAllowed("settings") && <Route path="/settings" element={<SettingsPage lottery={lotteries.find((item) => item.id === selectedLotteryId)?.name || ""} />} />}{routeAllowed("reports") && <Route path="/reports" element={<ReportsPage lottery={lotteries.find((item) => item.id === selectedLotteryId)?.name || ""} />} />}{routeAllowed("subordinates") && <Route path="/subordinates" element={<SubordinatesPage agentName={name} />} />}{routeAllowed("subordinates") && hasAgentPermission("member.create", permissions) && <Route path="/subordinates/new" element={<SubordinateFormPage />} />}{routeAllowed("subordinates") && hasAgentPermission("member.update", permissions) && <Route path="/subordinates/:id/edit" element={<SubordinateEditPage agentName={name} />} />}{routeAllowed("logs") && <Route path="/logs" element={<LogsPage />} />}{routeAllowed("ledger") && <Route path="/ledger" element={<LedgerPage lottery={lotteries.find((item) => item.id === selectedLotteryId)?.name || ""} />} />}{routeAllowed("results") && <Route path="/results" element={<ResultsPage lottery={lotteries.find((item) => item.id === selectedLotteryId)?.name || ""} />} />}{routeAllowed("intercept") && <Route path="/intercept" element={<InterceptionsPage lottery={lotteries.find((item) => item.id === selectedLotteryId)?.name || ""} />} />}{routeAllowed("subaccounts") && <Route path="/subaccounts" element={<SubaccountsPage/>}/>}<Route path="*" element={<Navigate to={`/${firstRoute}`} replace />} /></Routes>}</main>
+        <main>{!permissionsReady ? <section className="agent-workspace"><div className="agent-empty">正在加载实时权限...</div></section> : permissionsFailed ? <PermissionState failed /> : firstRoute === null ? <PermissionState /> : <Routes><Route path="/" element={<Navigate to={`/${firstRoute}`} replace />} />{routeAllowed("overview") && <Route path="/overview" element={<OverviewPage />} />}{routeAllowed("rules") && <Route path="/rules" element={<RulesPage lottery={lotteries.find((item) => item.id === selectedLotteryId)?.name || ""} />} />}{routeAllowed("settings") && <Route path="/settings" element={<SettingsPage lottery={lotteries.find((item) => item.id === selectedLotteryId)?.name || ""} />} />}{routeAllowed("reports") && <Route path="/reports" element={<ReportsPage lottery={lotteries.find((item) => item.id === selectedLotteryId)?.name || ""} />} />}{routeAllowed("subordinates") && <Route path="/subordinates" element={<SubordinatesPage agentName={name} />} />}{routeAllowed("subordinates") && (currentLevel === "agent" ? hasAgentPermission("member.create", permissions) : hasAgentPermission("organization.create", permissions)) && <Route path="/subordinates/new" element={<SubordinateFormPage />} />}{routeAllowed("subordinates") && hasAgentPermission("member.update", permissions) && <Route path="/subordinates/:id/edit" element={<SubordinateEditPage agentName={name} />} />}{routeAllowed("logs") && <Route path="/logs" element={<LogsPage />} />}{routeAllowed("ledger") && <Route path="/ledger" element={<LedgerPage lottery={lotteries.find((item) => item.id === selectedLotteryId)?.name || ""} />} />}{routeAllowed("results") && <Route path="/results" element={<ResultsPage lottery={lotteries.find((item) => item.id === selectedLotteryId)?.name || ""} />} />}{routeAllowed("intercept") && <Route path="/intercept" element={<InterceptionsPage lottery={lotteries.find((item) => item.id === selectedLotteryId)?.name || ""} />} />}{routeAllowed("subaccounts") && <Route path="/subaccounts" element={<SubaccountsPage/>}/>}<Route path="*" element={<Navigate to={`/${firstRoute}`} replace />} /></Routes>}</main>
       </div>
     </div>
   );

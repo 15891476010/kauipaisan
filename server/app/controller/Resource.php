@@ -117,24 +117,9 @@ final class Resource
         if ($allocated+$credit>$limit+0.000001) throw new \InvalidArgumentException('站点分数不足，无法分配给用户');
     }
 
-    private function ensureSiteRootOrganization(array $site): array
-    {
-        $root=Db::name('organization_nodes')->where('site_id',(int)$site['id'])->where('parent_id',0)->where('level','director')->whereNull('deleted_at')->lock(true)->find();
-        if ($root) return $root;
-        $now=date('Y-m-d H:i:s');
-        $id=(int)Db::name('organization_nodes')->insertGetId([
-            'tenant_id'=>(int)$site['tenant_id'],'site_id'=>(int)$site['id'],'parent_id'=>0,'level'=>'director','depth'=>1,'path'=>'',
-            'name'=>(string)$site['name'].' · 根总监','code'=>'DIR-'.(int)$site['id'],'credit_limit'=>'0.00','balance'=>'0.00',
-            'permissions'=>json_encode(['*'],JSON_UNESCAPED_UNICODE),'settings'=>json_encode([],JSON_UNESCAPED_UNICODE),
-            'status'=>(int)($site['status']??1),'created_at'=>$now,'updated_at'=>$now,
-        ]);
-        Db::name('organization_nodes')->where('id',$id)->update(['path'=>'/'.$id.'/']);
-        return Db::name('organization_nodes')->where('id',$id)->lock(true)->find();
-    }
-
     private function allocateSiteCredit(array $site, float $creditLimit, array $operator): void
     {
-        $this->ensureSiteRootOrganization($site);
+        // 站点分数池不再自动创建“根总监”占位节点；总监由 SaaS 管理员明确新增。
         ScoreTransfer::adjustSiteTotal($site,$creditLimit,$operator,'SaaS 设置站点总分');
     }
 
@@ -219,6 +204,33 @@ final class Resource
     public function index(Request $request, string $resource): \think\response\Json
     {
         $resource = $this->normalize($resource);
+        // SaaS 的“管理员”页面统一展示平台管理员和各站点后台管理员；
+        // 站点后台账号不再从代理中心单独进入维护。
+        if ($resource === 'admins' && $this->scopedSiteId($request) === null) {
+            $keyword=trim((string)$request->param('keyword',''));
+            $platform=Db::name('admins')->whereNull('deleted_at');
+            $site=Db::name('site_admins')->whereNull('deleted_at');
+            $filterSiteId=(int)$request->param('site_id',0);
+            if($filterSiteId>0)$site->where('site_id',$filterSiteId);
+            if($keyword!==''){
+                foreach([$platform,$site] as $query)$query->where(function($q)use($keyword){$q->whereLike('username','%'.$keyword.'%')->whereOr('display_name','like','%'.$keyword.'%')->whereOr('phone','like','%'.$keyword.'%');});
+            }
+            // 平台 admins 表没有 phone，使用空值别名与 site_admins 的返回结构对齐。
+            $platformRows=$platform->field("id,username,display_name,'' AS phone,status,created_at,last_login_at,last_login_ip,last_login_location")->select()->toArray();
+            $siteRows=$site->field('id,site_id,username,display_name,phone,status,created_at,last_login_at')->select()->toArray();
+            $siteIds=array_values(array_unique(array_filter(array_map('intval',array_column($siteRows,'site_id')))));
+            $siteNames=$siteIds?Db::name('sites')->whereIn('id',$siteIds)->column('name','id'):[];
+            foreach($platformRows as &$row){$row['site_id']=null;$row['site_name']='平台';$row['account_table']='admins';$row['scope_label']='平台管理员';}unset($row);
+            foreach($siteRows as &$row){$row['site_name']=$siteNames[(int)$row['site_id']]??'站点已删除';$row['account_table']='site_admins';$row['scope_label']='站点后台管理员';}unset($row);
+            $list=array_merge($platformRows,$siteRows);
+            usort($list,static fn(array $a,array $b):int=>strcmp((string)($b['created_at']??''),(string)($a['created_at']??'')) ?: ((int)$b['id']-(int)$a['id']));
+            AccountPresence::append($platformRows,'platform_admin'); AccountPresence::append($siteRows,'site_admin');
+            $presence=[];foreach(array_merge($platformRows,$siteRows) as $row)$presence[(string)$row['account_table'].'#'.(int)$row['id']]=$row;
+            foreach($list as &$row){$key=(string)$row['account_table'].'#'.(int)$row['id'];if(isset($presence[$key]))$row=array_merge($row,$presence[$key]);}unset($row);
+            $total=count($list);$page=max(1,(int)$request->param('page',1));$size=min(100,max(1,(int)$request->param('page_size',20)));$list=array_slice($list,($page-1)*$size,$size);
+            foreach($list as &$row)unset($row['password']);unset($row);
+            return $this->reply(['list'=>$list,'total'=>$total]);
+        }
         if ($resource === 'bet-records') {
             // Keep the management list current even when no CLI sync worker is running.
             $activeLotteries = Db::name('lotteries')->where('status', 1)->whereNull('deleted_at')->select()->toArray();
@@ -490,7 +502,9 @@ final class Resource
             $operator=$this->scoreOperator($request);
             $siteId=Db::transaction(function () use ($data,$domainGroups,$lotteryIds,$creditLimit,$maxProfitShareRate,$operator): int {
                 $this->assertDomainsAvailable($domainGroups);
-                $siteId=Db::name('sites')->insertGetId($data); $site=array_merge($data,['id'=>$siteId]);
+                // ThinkPHP/MySQL may return AUTO_INCREMENT ids as numeric strings;
+                // normalize once because the downstream helpers use strict int types.
+                $siteId=(int)Db::name('sites')->insertGetId($data); $site=array_merge($data,['id'=>$siteId]);
                 $this->replaceSiteDomains($site,$domainGroups);
                 $this->replaceSiteLotteries($siteId,(int)$data['tenant_id'],$lotteryIds);
                 $this->allocateSiteCredit($site,$creditLimit,$operator);
@@ -499,7 +513,8 @@ final class Resource
             });
             return $this->reply(['id'=>$siteId], 'created');
         }
-        if ($resource === 'admins') { $data['user_type']='admin'; $data['display_name']=$data['display_name']??($data['name']??$data['username']??'管理员'); $password=PasswordPolicy::initial((string)($data['password']??''),(string)($data['username']??'')); $data['password']=password_hash($password,PASSWORD_DEFAULT); unset($data['name'],$data['code']); }
+        if ($resource === 'admins' && (int)($data['site_id']??0)>0) $resource='site-admins';
+        if ($resource === 'admins') { $data['user_type']='admin'; $data['display_name']=$data['display_name']??($data['name']??$data['username']??'管理员'); $password=PasswordPolicy::initial((string)($data['password']??''),(string)($data['username']??'')); $data['password']=password_hash($password,PASSWORD_DEFAULT); unset($data['name'],$data['code'],$data['site_id']); }
         if ($resource === 'site-admins') {
             unset($data['name'],$data['code'],$data['domain'],$data['parent_id']);
             $data['site_id']=(int)($data['site_id']??0); $site=Db::name('sites')->where('id',$data['site_id'])->whereNull('deleted_at')->find();
@@ -525,6 +540,8 @@ final class Resource
         $resource = $this->normalize($resource);
         if ($resource === 'bet-records') throw new \RuntimeException('下单记录为只读数据');
         $data=$request->put(); unset($data['id'],$data['created_at']); $data['updated_at']=date('Y-m-d H:i:s');
+        if($resource==='admins'&&((string)($data['account_table']??'')==='site_admins'))$resource='site-admins';
+        unset($data['account_table'],$data['scope_label'],$data['site_name']);
         $scopedSiteId=$this->scopedSiteId($request);
         $this->authorizeResource($resource,$scopedSiteId);
         if ($resource === 'agent-center') {
@@ -583,6 +600,7 @@ final class Resource
         $resource = $this->normalize($resource);
         if ($resource === 'bet-records') throw new \RuntimeException('下单记录为只读数据');
         $scopedSiteId=$this->scopedSiteId($request);
+        if($resource==='admins'&&((string)$request->param('account_table','')==='site_admins'))$resource='site-admins';
         $this->authorizeResource($resource,$scopedSiteId);
         if (in_array($resource,['admins','site-admins','site-users','agent-center'],true)) {
             $delete=Db::name($this->table($resource))->where('id',$id);

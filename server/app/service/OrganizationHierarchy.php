@@ -26,7 +26,7 @@ final class OrganizationHierarchy
         'interception_details'=>'拦货明细','interception_winning'=>'拦货中奖','interception_plate'=>'拦货盘面',
         'rules'=>'规则说明','settings'=>'业务设置','settings.update'=>'保存业务设置','logs'=>'日志','subaccounts'=>'子账号','organization.manage'=>'下级管理',
         'organization.create'=>'新增下级','organization.update'=>'修改下级','organization.delete'=>'删除下级',
-        'member.create'=>'新增会员','member.update'=>'修改会员','subaccount.create'=>'新建子账号','subaccount.update'=>'修改子账号','subaccount.delete'=>'删除子账号',
+        'member.create'=>'新增下级','member.update'=>'修改下级','subaccount.create'=>'新建子账号','subaccount.update'=>'修改子账号','subaccount.delete'=>'删除子账号',
     ];
 
     public static function nextLevel(string $level): ?string
@@ -71,7 +71,9 @@ final class OrganizationHierarchy
     {
         $node=Db::name('organization_nodes')->where('id',(int)$account['organization_id'])->where('site_id',(int)$account['site_id'])->where('status',1)->whereNull('deleted_at')->find();
         if (!$node) throw new \RuntimeException('当前组织已停用或删除');
-        $permissions=self::effectivePermissions((int)$node['id'],self::decodePermissions($account['permissions']??null));
+        // 账号权限字段仅作历史兼容，不参与授权。所有管理员统一继承组织节点
+        // 及 SaaS 当前站点/层级的权限配置。
+        $permissions=self::effectivePermissions((int)$node['id']);
         return ['node'=>$node,'permissions'=>$permissions ?: []];
     }
 
@@ -79,12 +81,9 @@ final class OrganizationHierarchy
     {
         $node=Db::name('organization_nodes')->where('id',$organizationId)->whereNull('deleted_at')->find();
         if (!$node) return [];
-        $chain=[]; $cursor=$node;
-        while($cursor){$chain[]=$cursor;$parentId=(int)$cursor['parent_id'];$cursor=$parentId>0?Db::name('organization_nodes')->where('id',$parentId)->whereNull('deleted_at')->find():null;}
-        $effective=['*'];
-        foreach(array_reverse($chain) as $item){$allowed=self::decodePermissions($item['permissions']??null);if(!$allowed)$allowed=[];if(!in_array('*',$effective,true))$effective=array_values(array_intersect($effective,$allowed));elseif(!in_array('*',$allowed,true))$effective=$allowed;}
-        if(!in_array('*',$accountPermissions,true))$effective=in_array('*',$effective,true)?$accountPermissions:array_values(array_intersect($effective,$accountPermissions));
-        return AgentAuthorization::intersect($effective,AgentAuthorization::sitePermissions((int)$node['site_id'],(string)$node['level']));
+        // 权限按“站点 + 当前层级”统一计算，不再沿组织链或账号字段做额外裁剪。
+        // 这样同一层级的所有管理员拥有完全一致的路由/按钮权限。
+        return AgentAuthorization::sitePermissions((int)$node['site_id'],(string)$node['level']);
     }
 
     public static function rebuildPath(int $id): void

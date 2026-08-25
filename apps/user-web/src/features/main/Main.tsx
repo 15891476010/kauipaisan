@@ -214,6 +214,10 @@ function MainShell({ name, logout }: { name: string; logout: () => void }) {
   );
 }
 
-export function Main({ name, logout }: { name: string; logout: () => void }) {
+export function Main({ name, logout, forcePasswordChange, onPasswordChanged }: { name: string; logout: () => void; forcePasswordChange?: boolean; onPasswordChanged?: () => void }) {
+  useEffect(() => {
+    if (forcePasswordChange && window.location.hash !== "#/xgmm") window.location.hash = "#/xgmm";
+  }, [forcePasswordChange]);
+  if (forcePasswordChange) return <div className="app"><ChangePasswordPage forced onPasswordChanged={onPasswordChanged} /></div>;
   return <MainShell name={name} logout={logout} />;
 }

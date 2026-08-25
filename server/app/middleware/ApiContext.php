@@ -171,7 +171,11 @@ final class ApiContext
             in_array($required,['contribution','daily_ledger','monthly_ledger','daily_path','monthly_path'],true)=>'route.ledger',
             in_array($required,['reports','monthly_reports'],true)=>'route.reports',
             $required==='results'=>'route.results',
-            str_starts_with($required,'organization.')||$required==='organization.manage'=>'route.organizations',
+            // Organization management and member management share the agent
+            // "下级管理" route. Keep route.organizations as a legacy alias,
+            // but do not require a route code that the current SaaS tree no
+            // longer exposes.
+            str_starts_with($required,'organization.')||$required==='organization.manage'=>'route.subordinates',
             $required==='subordinates'||str_starts_with($required,'member.')=>'route.subordinates',
             str_starts_with($required,'interception_')=>'route.intercept',
             $required==='logs'=>'route.logs',$required==='rules'=>'route.rules',
@@ -179,6 +183,6 @@ final class ApiContext
             $required==='subaccounts'||str_starts_with($required,'subaccount.')=>'route.subaccounts',
             default=>'',
         };
-        return $route===''||in_array($route,$permissions,true);
+        return $route===''||in_array($route,$permissions,true)||($route==='route.subordinates'&&in_array('route.organizations',$permissions,true));
     }
 }

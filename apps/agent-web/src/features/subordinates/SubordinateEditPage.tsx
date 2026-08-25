@@ -1,8 +1,8 @@
 import { App as AntdApp, Switch } from "antd";
 import { DoubleRightOutlined } from "@ant-design/icons";
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { getAgentMember, updateAgentMember, type AgentMember, type MemberLotteryOdds, type MemberLotteryPermission } from "../../api/user";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { getAgentMember, getAgentOrganizations, updateAgentMember, updateAgentOrganization, type AgentMember, type AgentOrganizationNode, type MemberLotteryOdds, type MemberLotteryPermission } from "../../api/user";
 import { apiErrorMessage } from "../../utils/request";
 
 type EditState = {
@@ -12,9 +12,10 @@ type EditState = {
   account_state: "enabled" | "disabled" | "bet_paused";
   credit_balance: string;
   interception_rate: string;
+  max_share_rate: string;
 };
 
-const emptyForm: EditState = { display_name: "", remark: "", password: "", account_state: "enabled", credit_balance: "0.00", interception_rate: "0.0000" };
+const emptyForm: EditState = { display_name: "", remark: "", password: "", account_state: "enabled", credit_balance: "0.00", interception_rate: "0.0000", max_share_rate: "0.0000" };
 const numericFields = ["min_bet", "odds_limit", "single_bet_limit", "single_item_limit", "odds", "offline_rebate"] as const;
 function displayNumber(value: string | number) {
   const number = Number(value);
@@ -34,8 +35,11 @@ const oddsNameLabels: Record<string, string> = {
 export function SubordinateEditPage({ agentName }: { agentName: string }) {
   const { message } = AntdApp.useApp();
   const navigate = useNavigate();
+  const location = useLocation();
   const memberId = Number(useParams().id || 0);
+  const organizationMode = new URLSearchParams(location.search).get("kind") === "organization";
   const [member, setMember] = useState<AgentMember | null>(null);
+  const [organization, setOrganization] = useState<AgentOrganizationNode | null>(null);
   const [form, setForm] = useState<EditState>(emptyForm);
   const [permissions, setPermissions] = useState<MemberLotteryPermission[]>([]);
   const [odds, setOdds] = useState<MemberLotteryOdds[]>([]);
@@ -48,8 +52,17 @@ export function SubordinateEditPage({ agentName }: { agentName: string }) {
   useEffect(() => {
     let active = true;
     if (!Number.isInteger(memberId) || memberId < 1) { setLoadError("会员编号无效"); setLoading(false); return; }
-    void getAgentMember(memberId).then((response) => {
-      const data = response.data.data;
+    const request = organizationMode ? getAgentOrganizations() : getAgentMember(memberId);
+    void request.then((response) => {
+      if (organizationMode) {
+        const data = (response as Awaited<ReturnType<typeof getAgentOrganizations>>).data.data;
+        const node = data?.nodes.find((row) => row.id === memberId) || null;
+        if (!active || !node) { setLoadError("下级不存在或不在当前组织"); return; }
+        setOrganization(node);
+        setForm((current) => ({ ...current, display_name: node.display_name || node.name, password: "", credit_balance: node.credit_limit, interception_rate: node.share_rate || "0", max_share_rate: node.max_share_rate || node.share_rate || "0" }));
+        return;
+      }
+      const data = (response as Awaited<ReturnType<typeof getAgentMember>>).data.data;
       if (!active || !data) return;
       setMember(data);
       setForm({
@@ -59,6 +72,7 @@ export function SubordinateEditPage({ agentName }: { agentName: string }) {
         account_state: data.account_state || (data.status === 1 ? "enabled" : "disabled"),
         credit_balance: data.credit_balance || "0.00",
         interception_rate: data.interception_rate || "0.0000",
+        max_share_rate: "0.0000",
       });
       setPermissions(data.permissions || []);
       setOdds(data.odds || []);
@@ -67,7 +81,7 @@ export function SubordinateEditPage({ agentName }: { agentName: string }) {
       setLoadError(apiErrorMessage(reason, "账号资料加载失败"));
     }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [memberId]);
+  }, [memberId, organizationMode]);
 
   const groupedOdds = useMemo(() => {
     const firstLotteryId = odds[0]?.lottery_id;
@@ -104,6 +118,17 @@ export function SubordinateEditPage({ agentName }: { agentName: string }) {
   }
 
   async function submit() {
+    if (organizationMode) {
+      if (!form.display_name.trim()) return message.warning("请输入下级名称");
+      if (form.password && form.password.length < 6) return message.warning("新密码不能少于6位");
+      setSaving(true);
+      try {
+        await updateAgentOrganization(memberId, { display_name: form.display_name.trim(), name: form.display_name.trim(), password: form.password, credit_limit: Number(form.credit_balance), share_rate: Number(form.interception_rate), max_share_rate: Number(form.max_share_rate), status: form.account_state === "enabled" ? 1 : 0 });
+        message.success("下级资料已保存"); navigate("/subordinates");
+      } catch (reason) { message.error(apiErrorMessage(reason, "下级资料保存失败")); }
+      finally { setSaving(false); }
+      return;
+    }
     if (!form.display_name.trim()) return message.warning("请输入代号");
     if (form.password && form.password.length < 6) return message.warning("新密码不能少于6位");
     if (form.password && form.password === member?.username) return message.warning("密码不能跟账号相同");
@@ -127,6 +152,10 @@ export function SubordinateEditPage({ agentName }: { agentName: string }) {
   const summary = member?.summary;
   const used = Number(member?.used_balance || 0);
   const available = Math.max(0, Number(form.credit_balance || 0) - used).toFixed(2);
+
+  if (organizationMode) {
+    return <section className="subordinate-page subordinate-edit-page"><div className="subordinate-location"><div className="subordinate-path"><strong>位置</strong><DoubleRightOutlined /><span>下级管理</span><DoubleRightOutlined /><span>修改下级</span></div><div className="subordinate-actions"><button type="button" onClick={() => navigate("/subordinates")}>账户列表</button><i /><button className="active" type="button">修改下级</button></div></div>{loading ? <div className="subordinate-edit-state">正在加载下级资料...</div> : loadError || !organization ? <div className="subordinate-edit-state error"><span>{loadError || "下级不存在"}</span><button type="button" onClick={() => navigate("/subordinates")}>返 回</button></div> : <div className="subordinate-edit-shell"><div className="edit-credit-summary"><strong>{agentName}</strong><span>下级层级：</span><b>{organization.level_label}</b><span>当前额度：</span><b>{organization.credit_limit}</b><span>剩余分数：</span><b>{organization.balance || "0.00"}</b></div><section className="edit-account-panel"><div className="edit-field readonly"><label>账号名</label><strong>{organization.username || "-"}</strong></div><div className="edit-field"><label htmlFor="edit-org-name">名称</label><input id="edit-org-name" maxLength={120} value={form.display_name} onChange={(event) => setForm({ ...form, display_name: event.target.value })} /></div><div className="edit-field"><label>下级层级</label><strong>{organization.level_label}</strong></div><div className="edit-state-group"><b>账号状态</b>{[["enabled", "启用"], ["disabled", "停用"]].map(([value, label]) => <label key={value}><input type="radio" name="organization-state" value={value} checked={form.account_state === value} onChange={() => setForm({ ...form, account_state: value as EditState["account_state"] })} />{label}</label>)}</div></section><section className="edit-settings-panel"><div className="edit-password"><label htmlFor="edit-org-password">密码</label><input id="edit-org-password" type="password" autoComplete="new-password" placeholder="留空不修改" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /><small>留空表示不修改；新密码必须符合系统密码规则。</small></div><div className="edit-permission-list"><div className="edit-permission"><b>实际占成</b><input className="organization-share-input" id="edit-org-share" type="number" min="0" step="0.0001" value={form.interception_rate} onChange={(event) => setForm({ ...form, interception_rate: event.target.value })} /></div><div className="edit-permission"><b>下级最高占成</b><span>{organization.max_share_rate || "0"}</span></div></div></section><div className="edit-finance-row"><div className="finance-section credit-section"><fieldset><legend>分数额度</legend><div className="credit-line"><div className="finance-input"><input aria-label="分数额度" id="edit-org-credit" type="number" min="0" step="0.01" value={form.credit_balance} onChange={(event) => setForm({ ...form, credit_balance: event.target.value })} /></div><p>当前额度：<b>{displayNumber(form.credit_balance || 0)}</b></p><p>剩余分数：<b>{displayNumber(organization.balance || 0)}</b></p></div></fieldset></div><div className="edit-average-rebate"><button className="inline-submit submit" type="button" disabled={saving} onClick={() => void submit()}>{saving ? "提交中" : "提 交"}</button><button className="inline-submit" type="button" onClick={() => navigate("/subordinates")}>返 回</button></div></div></div>}</section>;
+  }
 
   return <section className="subordinate-page subordinate-edit-page">
     <div className="subordinate-location">

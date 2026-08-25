@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { changePassword } from "../../../api/user";
 
-export function ChangePasswordPage() {
+export function ChangePasswordPage({ forced = false, onPasswordChanged }: { forced?: boolean; onPasswordChanged?: () => void }) {
   const [oldPassword, setOldPassword] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -15,6 +15,8 @@ export function ChangePasswordPage() {
     })
       .then(() => {
         setMessage("密码修改成功");
+        localStorage.setItem("user_must_change_password", "0");
+        onPasswordChanged?.();
         setOldPassword("");
         setPassword("");
         setConfirm("");
@@ -70,6 +72,7 @@ export function ChangePasswordPage() {
         保 存
       </button>
       {message && <p className="password-message">{message}</p>}
+      {forced && <p className="password-message">首次登录必须先修改密码，修改完成后才能进入系统。</p>}
     </div>
   );
 }
