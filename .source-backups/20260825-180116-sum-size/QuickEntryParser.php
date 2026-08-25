@@ -628,46 +628,23 @@ final class QuickEntryParser
     {
         $playType = null;
         $amount = 0.0;
-        $playTypes = [];
-        if (preg_match($this->rules->pattern('size_parity_stake_bet'), $raw, $match)) {
-            $playType = in_array($match[1], ['大', '小', '单', '双'], true) ? '和'.$match[1] : $match[1];
-            $amount = $this->rules->playAmount((float)$match[2], '', $unitStake);
-            $playTypes = [$playType];
-        } elseif (preg_match($this->rules->pattern('size_parity_both_bet'), $raw, $match)) {
-            $unit = (string)($match[2] ?? '');
-            $amount = $unit === '注'
-                ? $this->rules->playAmount((float)$match[1], '', $unitStake)
-                : ($unit === '' ? $this->rules->playAmount((float)$match[1], '', $unitStake) : $this->rules->amountWithUnit((float)$match[1], $unit, $unitStake));
-            $playTypes = ['和大', '和小'];
-        }
         if (preg_match($this->rules->pattern('size_parity_bet'), $raw, $match)) {
             $playType = in_array($match[1], ['大', '小', '单', '双'], true) ? '和'.$match[1] : $match[1];
-            $unit = (string)($match[3] ?? '');
-            $amount = $unit === '' ? $this->rules->playAmount((float)$match[2], '', $unitStake) : $this->rules->amountWithUnit((float)$match[2], $unit, $unitStake);
-            $playTypes = [$playType];
+            $amount = $this->rules->amountWithUnit((float)$match[2], (string)($match[3] ?? ''), $unitStake);
         } elseif (preg_match($this->rules->pattern('span_bet'), $raw, $match)) {
             $playType = '跨度'.$match[1];
             $amount = $this->rules->amountWithUnit((float)$match[2], (string)($match[3] ?? ''), $unitStake);
-            $playTypes = [$playType];
-        } elseif (preg_match($this->rules->pattern('span_prefix_bet'), $raw, $match)) {
-            $playType = '跨度'.$match[1];
-            $unit = (string)($match[3] ?? '');
-            $amount = $unit === '注'
-                ? $this->rules->playAmount((float)$match[2], '', $unitStake)
-                : $this->rules->amountWithUnit((float)$match[2], $unit, $unitStake);
-            $playTypes = [$playType];
         } elseif (preg_match($this->rules->pattern('sum_bet'), $raw, $match)) {
             $playType = '和值'.$match[1];
             $amount = $this->rules->amountWithUnit((float)$match[2], (string)($match[3] ?? ''), $unitStake);
-            $playTypes = [$playType];
         } elseif (preg_match($this->rules->pattern('package_bet'), $raw, $match)) {
             $playType = $match[1];
             $amount = $this->rules->amountWithUnit((float)$match[2], (string)($match[3] ?? ''), $unitStake);
-            $playTypes = [$playType];
         }
-        if ($playTypes === []) return null;
+        if ($playType === null) return null;
         $categoryCount = $category === '福体' ? 2 : 1;
-        return array_map(fn(string $type): array => [
+
+        return [
             'id' => $lineId,
             'raw_text' => $rawOriginal,
             'status' => 'success',
@@ -676,9 +653,9 @@ final class QuickEntryParser
             'category' => $category,
             'amount' => number_format($amount * $categoryCount, 2, '.', ''),
             'count' => $categoryCount,
-            'play_type' => $type,
-            'settlement_text' => $type.' '.$category,
-        ], $playTypes);
+            'play_type' => $playType,
+            'settlement_text' => $playType.' '.$category,
+        ];
     }
 
     /** @return ?array<int, array<string, mixed>> */

@@ -73,31 +73,16 @@ export function QuickResultTable({ lines, onChange }: QuickResultTableProps) {
     }
   });
 
-  const numberTokens = (line: QuickEntryLine) => {
-    // Multi-code plays such as “组六六码/组三六码” are represented internally
-    // by their expanded settlement combinations, while the detail dialog
-    // should show the original six-digit selection as one item.
-    if (line.play_type?.endsWith("六码")) {
-      const selection = (line.settlement_text || "").match(/([0-9]{4,10})\s+(?:组六|组三)六码/)?.[1];
-      if (selection) return [`${line.play_type.startsWith("组三") ? "三" : "六"}${selection}`];
-    }
-    const tokens = (line.batch_occurrence_text || line.display_number_text || line.number_text || "")
+  const numberTokens = (line: QuickEntryLine) =>
+    (line.batch_occurrence_text || line.display_number_text || line.number_text || "")
       .split(/\s+/)
       .map((token) => token.trim())
       .filter(Boolean);
-    if (tokens.length === 1 && tokens[0] === "000" && line.play_type) {
-      if (line.play_type.startsWith("跨度")) return [`跨${line.play_type.slice(2)}`];
-      return [line.play_type];
-    }
-    return tokens;
-  };
   const normalizeGroupNumber = (value: string) =>
     value.length === 3 && /^\d{3}$/.test(value) ? value.split("").sort().join("") : value;
   const playLabel = (line: QuickEntryLine) => {
     if (line.play_type === "直") return "直选";
     if (line.play_type === "组" || line.play_type === "组三" || line.play_type === "组六") return "组选";
-    if (line.play_type?.startsWith("和")) return "和值";
-    if (line.play_type?.startsWith("跨")) return "跨度";
     return line.play_type || "直选";
   };
   const detailSections = detailLines.flatMap((line) => {
@@ -113,10 +98,6 @@ export function QuickResultTable({ lines, onChange }: QuickResultTableProps) {
     const unitAmount = stakeCount > 0 ? Number(line.amount || 0) / stakeCount : 0;
     const categorySections = line.category === "福体" ? ["体", "福"] : [line.category || "福"];
     return categorySections.map((category) => ({ line, category, title: playLabel(line), numbers, frequency, unitAmount }));
-  }).sort((left, right) => {
-    const categoryRank = (category: string) => category === "体" ? 0 : category === "福" ? 1 : 2;
-    const playRank = (title: string) => title.includes("组三") ? 0 : title.includes("组六") ? 1 : title === "直选" ? 0 : 2;
-    return categoryRank(left.category) - categoryRank(right.category) || playRank(left.title) - playRank(right.title);
   });
   const detailCount = detailLines.reduce((sum, line) => sum + Number(line.batch_count ?? line.code_count ?? line.count ?? 0), 0);
   const detailAmount = detailLines.reduce((sum, line) => sum + Number(line.batch_amount ?? line.amount ?? 0), 0);

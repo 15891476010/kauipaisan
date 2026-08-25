@@ -85,11 +85,7 @@ export function QuickResultTable({ lines, onChange }: QuickResultTableProps) {
       .split(/\s+/)
       .map((token) => token.trim())
       .filter(Boolean);
-    if (tokens.length === 1 && tokens[0] === "000" && line.play_type) {
-      if (line.play_type.startsWith("跨度")) return [`跨${line.play_type.slice(2)}`];
-      return [line.play_type];
-    }
-    return tokens;
+    return tokens.length === 1 && tokens[0] === "000" && line.play_type ? [line.play_type] : tokens;
   };
   const normalizeGroupNumber = (value: string) =>
     value.length === 3 && /^\d{3}$/.test(value) ? value.split("").sort().join("") : value;

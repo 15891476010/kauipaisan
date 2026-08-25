@@ -649,13 +649,6 @@ final class QuickEntryParser
             $playType = '跨度'.$match[1];
             $amount = $this->rules->amountWithUnit((float)$match[2], (string)($match[3] ?? ''), $unitStake);
             $playTypes = [$playType];
-        } elseif (preg_match($this->rules->pattern('span_prefix_bet'), $raw, $match)) {
-            $playType = '跨度'.$match[1];
-            $unit = (string)($match[3] ?? '');
-            $amount = $unit === '注'
-                ? $this->rules->playAmount((float)$match[2], '', $unitStake)
-                : $this->rules->amountWithUnit((float)$match[2], $unit, $unitStake);
-            $playTypes = [$playType];
         } elseif (preg_match($this->rules->pattern('sum_bet'), $raw, $match)) {
             $playType = '和值'.$match[1];
             $amount = $this->rules->amountWithUnit((float)$match[2], (string)($match[3] ?? ''), $unitStake);
