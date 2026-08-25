@@ -39,6 +39,7 @@ final class AgentBusiness
     {
         $from=$this->normalizeIssue((string)$request->param('from_issue',''));
         $to=$this->normalizeIssue((string)$request->param('to_issue',''));
+        if ($from !== '' && $to !== '' && $from > $to) [$from,$to]=[$to,$from];
         if ($from !== '') $query->where($field,'>=',$from);
         if ($to !== '') $query->where($field,'<=',$to);
     }
@@ -128,6 +129,7 @@ final class AgentBusiness
             ->where('d.site_id',$siteId)
             ->where('r.site_id',$siteId)
             ->whereNull('u.deleted_at');
+        if ((int)$request->param('include_refunded',0)!==1) $query->where('d.status','<>','refunded');
         OrganizationHierarchy::applyUserScope($query,$session,'d.user_id');
 
         $lotteryId=(int)$request->param('lottery_id',0);
@@ -173,7 +175,8 @@ final class AgentBusiness
             $row['odds']=$row['odds'] === null ? '-' : rtrim(rtrim(number_format((float)$row['odds'],4,'.',''),'0'),'.');
             $row['win_amount']=number_format($win,2,'.','');
             $row['downline_rebate']=number_format($rebate,2,'.','');
-            $row['received_amount']=number_format(max(0,$amount-$rebate),2,'.','');
+            // 实收下线按“下注金额 - 中奖金额 - 下线回水”计算，中奖时允许显示负数。
+            $row['received_amount']=number_format($amount-$win-$rebate,2,'.','');
             $row['own_rebate']='0.00';
             $row['paid_upstream']=number_format(max(0,$amount-$rebate),2,'.','');
             $row['rebate_profit']='0.00';
@@ -233,6 +236,7 @@ final class AgentBusiness
         $status=(string)$request->param('status','all');
         if ($status === 'won') $query->where('r.status','won');
         elseif ($status === 'unwon') $query->where('r.status','unwon');
+        $this->issueRange($query,$request,'r.issue_no');
         $this->timeRange($query,$request,'r.placed_at');
         $total=(clone $query)->count();
         [$page,$size]=$this->page($request);
@@ -243,6 +247,7 @@ final class AgentBusiness
             foreach (Db::name('bet_details')->whereIn('bet_record_id',$ids)->where('status','won')->field('bet_record_id,COUNT(*) win_count')->group('bet_record_id')->select()->toArray() as $row) $wins[(int)$row['bet_record_id']]=(int)$row['win_count'];
         }
         foreach ($rows as &$row) {
+            $row['order_no']=str_pad((string)$row['id'],10,'0',STR_PAD_LEFT);
             $row['amount']=number_format((float)$row['amount'],2,'.','');
             $row['win_amount']=number_format((float)$row['win_amount'],2,'.','');
             $row['win_count']=$wins[(int)$row['id']]??0;

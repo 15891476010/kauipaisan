@@ -6,6 +6,7 @@ use app\service\InterceptionAllocator;
 use app\service\CreditLedger;
 use app\service\BetSettlement;
 use app\service\LotteryHistorySync;
+use app\service\SystemLotteryService;
 use app\service\QuickEntryParser;
 use think\Request;
 use think\facade\Cache;
@@ -63,7 +64,7 @@ final class UserBusiness
         if (!is_array($row)) return [];
         $siteControls=json_decode((string)Db::name('settings')->where('site_id',$session['site_id'])->where('key','lottery_betting_controls')->value('value'),true);
         $siteControl=is_array($siteControls)?($siteControls[(string)$row['id']]??[]):[];
-        if (is_array($siteControl)) foreach (['cutoff_enabled','cutoff_time','mask_enabled','refund_enabled'] as $field) if (array_key_exists($field,$siteControl)) $row[$field]=$siteControl[$field];
+        if (is_array($siteControl)) foreach (['cutoff_enabled','cutoff_time','mask_enabled','refund_enabled','timing_rules'] as $field) if (array_key_exists($field,$siteControl)) $row[$field]=$siteControl[$field];
         return $row;
     }
     private function cutoffReached(array $control, ?int $now=null): bool
@@ -81,6 +82,14 @@ final class UserBusiness
         return (int)($control['cutoff_enabled']??0)===1
             && preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/',trim((string)($control['cutoff_time']??'')))===1;
     }
+    private function timingState(array $control, ?int $now=null): array
+    {
+        $now ??= time(); $minutes=(int)date('H',$now)*60+(int)date('i',$now); $matched=null;
+        foreach((array)($control['timing_rules']??[]) as $rule){ if(!is_array($rule)) continue; [$sh,$sm]=array_map('intval',explode(':',(string)($rule['start_time']??'00:00'))); [$eh,$em]=array_map('intval',explode(':',(string)($rule['end_time']??'23:59'))); $start=$sh*60+$sm; $end=$eh*60+$em; $in=$start===$end?true:($start<$end?($minutes>=$start&&$minutes<$end):($minutes>=$start||$minutes<$end)); if($in){$matched=$rule;break;} }
+        if($matched!==null)return ['allow_bet'=>(int)($matched['allow_bet']??1)===1,'mask_enabled'=>(int)($matched['mask_enabled']??0)===1,'show_next_issue'=>(int)($matched['show_next_issue']??1)===1,'display_text'=>(string)($matched['display_text']??'')];
+        return ['allow_bet'=>true,'mask_enabled'=>(int)($control['mask_enabled']??1)!==0,'show_next_issue'=>true,'display_text'=>''];
+    }
+    private function timingAllowsBet(array $control): bool { return $this->timingState($control)['allow_bet']; }
     private function lineOdds(array $session, string $lottery, array $line): array
     {
         $lotteryRow=Db::name('lotteries')->where('tenant_id',$session['tenant_id'])->where('name',$lottery)->whereNull('deleted_at')->field('id')->find();
@@ -360,11 +369,16 @@ final class UserBusiness
         $metric=(string)$request->param('metric','odds');$metric=in_array($metric,['odds','amount'],true)?$metric:'odds';$min=$request->param('min');$max=$request->param('max');
         if($min!==null&&$min!==''&&is_numeric($min))$query->where('d.'.$metric,'>=',(float)$min);if($max!==null&&$max!==''&&is_numeric($max))$query->where('d.'.$metric,'<=',(float)$max);if((string)$request->param('winning','')==='1')$query->where('d.status','won');
         $sort=(string)$request->param('sort','desc')==='asc'?'asc':'desc';
-        $fields='d.id,d.bet_record_id,d.issue_no,d.number_text,d.category,d.amount,d.odds,d.win_amount,d.rebate,d.status,d.placed_at,d.source_text AS detail_source,s.play_type,s.lottery,s.drop_odds,r.submission_id,r.source_text AS record_source,r.status AS record_status';
-        if($hasSubmissions)$fields.=',b.id AS submission_row_id';
+        $fields='d.id,d.bet_record_id,d.issue_no,d.number_text,d.category,d.amount,d.odds,d.win_amount,d.rebate,d.status,d.placed_at,d.source_text AS detail_source,s.play_type,s.lottery,s.drop_odds,r.submission_id,r.source_text AS record_source,r.formatted_text AS record_formatted_text,r.status AS record_status';
+        if($hasSubmissions)$fields.=',b.id AS submission_row_id,b.source_text AS submission_source,b.formatted_text AS submission_formatted_text';
         $detailRows=$query->field($fields)->order('d.placed_at',$sort)->order('d.id',$sort)->select()->toArray(); $expanded=[];$draws=$this->detailDrawMap($detailRows,(int)$s['tenant_id']);$matcher=new BetSettlement();
         foreach($detailRows as $row){
-            $source=(string)($row['detail_source']??'');if($source==='')$source=(string)($row['record_source']??'');$storedNumberText=trim((string)($row['number_text']??''));$tokens=$this->detailNumberTokens($storedNumberText);$matchTokens=$tokens;
+            $source=(string)($row['detail_source']??'');if($source==='')$source=(string)($row['record_source']??'');
+            $originalSource=trim((string)($row['submission_source']??''))!==''?(string)$row['submission_source']:(string)($row['record_source']??'');
+            if(trim($originalSource)==='')$originalSource=$source;
+            $parsedText=trim((string)($row['submission_formatted_text']??''))!==''?(string)$row['submission_formatted_text']:(string)($row['record_formatted_text']??'');
+            if(trim($parsedText)==='')$parsedText=$source;
+            $storedNumberText=trim((string)($row['number_text']??''));$tokens=$this->detailNumberTokens($storedNumberText);$matchTokens=$tokens;
             // 复式包在数据库中继续使用 000 作为结算占位，但明细页面应显示
             // 一条真实的复式选号（例如“复024567”），不能显示 000。
             if(count($tokens)===1&&$tokens[0]==='000'&&preg_match('/(?<!\d)(\d{1,10})\s+复式[一二两三四五六七八九1-9]码/u',$source,$package))$tokens=['复'.$package[1]];
@@ -373,7 +387,7 @@ final class UserBusiness
             $draw=$draws[(string)($row['lottery']??'').'|'.(string)($row['issue_no']??'')]??'';
             if((float)$row['win_amount']>0&&$draw!==''){$winningIndexes=array_keys(array_filter($matchTokens,static fn(string $token):bool=>$matcher->numberMatches($token,$draw,$source)));if($winningIndexes!==[]){$wins=array_fill(0,$count,'0');$winningParts=$this->splitDetailMoney((float)$row['win_amount'],count($winningIndexes));foreach($winningIndexes as $winningIndex=>$tokenIndex)$wins[$tokenIndex]=$winningParts[$winningIndex];$resolved=true;}}
             $groupPackage=$this->isExpandedGroupPackage($matchTokens,$source);$displayOdds=$row['odds']===null?null:(float)$row['odds']*($groupPackage?$count:1);$oddsText=$displayOdds===null?'-':rtrim(rtrim(number_format($displayOdds,3,'.',''),'0'),'.');
-            foreach($tokens as $index=>$token){$amount=(float)$amounts[$index];$win=(float)$wins[$index];$rebate=(float)$rebates[$index];$offlineRebate=(float)$offlineRebates[$index];$tokenStatus=(string)($row['status']??$row['record_status']??'pending');if($resolved&&$tokenStatus==='won')$tokenStatus=$win>0?'won':'unwon';$groupFirst=$index===0;$expanded[]=['id'=>(int)$row['id'],'row_key'=>(int)$row['id'].'-'.$index,'detail_group_id'=>(int)$row['id'],'detail_group_index'=>$index,'detail_group_size'=>$count,'group_first'=>$groupFirst,'is_group_first'=>$groupFirst,'show_text_button'=>$groupFirst,'bet_record_id'=>(int)($row['bet_record_id']??0),'submission_id'=>(int)($row['submission_id']??0)?:null,'order_no'=>$orderNo,'issue_no'=>(string)$row['issue_no'],'number_text'=>$token,'stored_number_text'=>$storedNumberText,'category'=>(string)($row['category']??''),'play_type'=>(string)($row['play_type']??''),'play_label'=>$this->detailPlayLabel($row['play_type']??'',$row['category']??''),'lottery'=>(string)($row['lottery']??''),'amount'=>$amounts[$index],'odds'=>$oddsText,'win_amount'=>$wins[$index],'is_winning_number'=>in_array($index,$winningIndexes,true),'win_projection_resolved'=>$resolved,'rebate'=>$rebates[$index],'offline_rebate'=>$this->detailMoney($offlineRebate),'profit'=>$this->detailMoney($win-$amount+$rebate+$offlineRebate),'status'=>$tokenStatus,'placed_at'=>(string)$row['placed_at'],'source_text'=>$source];}
+            foreach($tokens as $index=>$token){$amount=(float)$amounts[$index];$win=(float)$wins[$index];$rebate=(float)$rebates[$index];$offlineRebate=(float)$offlineRebates[$index];$tokenStatus=(string)($row['status']??$row['record_status']??'pending');if($resolved&&$tokenStatus==='won')$tokenStatus=$win>0?'won':'unwon';$groupFirst=$index===0;$profit=$tokenStatus==='pending'?0.0:($win-$amount+$rebate+$offlineRebate);$expanded[]=['id'=>(int)$row['id'],'row_key'=>(int)$row['id'].'-'.$index,'detail_group_id'=>(int)$row['id'],'detail_group_index'=>$index,'detail_group_size'=>$count,'group_first'=>$groupFirst,'is_group_first'=>$groupFirst,'show_text_button'=>$groupFirst,'bet_record_id'=>(int)($row['bet_record_id']??0),'submission_id'=>(int)($row['submission_id']??0)?:null,'order_no'=>$orderNo,'issue_no'=>(string)$row['issue_no'],'number_text'=>$token,'stored_number_text'=>$storedNumberText,'category'=>(string)($row['category']??''),'play_type'=>(string)($row['play_type']??''),'play_label'=>$this->detailPlayLabel($row['play_type']??'',$row['category']??''),'lottery'=>(string)($row['lottery']??''),'amount'=>$amounts[$index],'odds'=>$oddsText,'win_amount'=>$wins[$index],'is_winning_number'=>in_array($index,$winningIndexes,true),'win_projection_resolved'=>$resolved,'rebate'=>$rebates[$index],'offline_rebate'=>$this->detailMoney($offlineRebate),'profit'=>$this->detailMoney($profit),'status'=>$tokenStatus,'placed_at'=>(string)$row['placed_at'],'source_text'=>$originalSource,'original_source_text'=>$originalSource,'parsed_source_text'=>$parsedText];}
         }
         $total=count($expanded);$page=max(1,(int)$request->param('page',1));$size=min(100,max(1,(int)$request->param('page_size',40)));$pageRows=array_slice($expanded,($page-1)*$size,$size);$allTotals=$this->detailTotals($expanded);$pageTotals=$this->detailTotals($pageRows);
         return $this->reply(['list'=>$pageRows,'total'=>$total,'page'=>$page,'page_size'=>$size,'total_amount'=>$allTotals['amount'],'win_amount'=>$allTotals['win_amount'],'rebate'=>$allTotals['rebate'],'offline_rebate'=>$allTotals['offline_rebate'],'profit'=>$allTotals['profit'],'page_total'=>$pageTotals]);
@@ -421,18 +435,25 @@ final class UserBusiness
         $defaultLimit=$configuredLimit>0?min(200,$configuredLimit):80;
         $size=min($defaultLimit,max(1,(int)$request->param('page_size',$defaultLimit)));
         $lotteryId=(int)$lotteryRow['id'];
+        $control=$this->lotteryControl($s,$lottery);
+        $showNext=$this->timingState($control)['show_next_issue'];
         $latestSource=Db::name('lottery_histories')->where('lottery_id',$lotteryId)->whereNotNull('next_code')->order('open_time','desc')->order('id','desc')->find();
-        if ($latestSource) (new LotteryHistorySync())->ensureNextHistory($latestSource,['id'=>$lotteryId,'tenant_id'=>(int)$s['tenant_id']]);
+        $lotteryMeta=Db::name('lotteries')->where('id',$lotteryId)->find();
+        if ((string)($lotteryMeta['source_type']??'official')==='system') (new SystemLotteryService())->runLottery($lotteryMeta?:[]);
+        elseif ($latestSource) (new LotteryHistorySync())->ensureNextHistory($latestSource,['id'=>$lotteryId,'tenant_id'=>(int)$s['tenant_id']]);
         $histories=Db::name('lottery_histories')->where('lottery_id',$lotteryId)
             ->order('open_time','desc')->order('id','desc')->limit($size)->select()->toArray();
         $list=[];
         foreach ($histories as $history) {
+            $hasNumbers=(int)($history['is_opened']??1)===1 && trim((string)($history['numbers']??''))!=='';
+            if (!$showNext && !$hasNumbers) continue;
             $numbers=[];
             foreach (['one','two','three'] as $field) if ($history[$field] !== null && $history[$field] !== '') $numbers[]=(int)$history[$field];
             if (count($numbers)<3) $numbers=array_map('intval',array_slice(preg_split('/[,，\s]+/u',trim((string)($history['numbers']??'')),-1,PREG_SPLIT_NO_EMPTY)?:[],0,3));
             $complete=count($numbers)===3;
             $sum=$complete?array_sum($numbers):null;
-            $list[]=['lottery'=>$lotteryRow['name'],'issue_no'=>(string)$history['code'],'draw_date'=>(string)($history['draw_day']??''),'draw_time'=>$history['open_time']??null,'numbers'=>$complete?implode(',',$numbers):'','sum_value'=>$sum,'size'=>$complete?($sum>=14?'大':'小'):null,'parity'=>$complete?($sum%2===0?'双':'单'):null,'span_value'=>$complete?max($numbers)-min($numbers):null,'pending'=>$complete?0:1];
+            $opened=(int)($history['is_opened']??1)===1;
+            $list[]=['lottery'=>$lotteryRow['name'],'issue_no'=>(string)$history['code'],'draw_date'=>(string)($history['draw_day']??''),'draw_time'=>$history['open_time']??null,'numbers'=>$opened&&$complete?implode(',',$numbers):'','sum_value'=>$opened?$sum:null,'size'=>$opened&&$complete?($sum>=14?'大':'小'):null,'parity'=>$opened&&$complete?($sum%2===0?'双':'单'):null,'span_value'=>$opened&&$complete?max($numbers)-min($numbers):null,'pending'=>$opened?0:1];
         }
         return $this->reply(['list'=>$list]);
     }
@@ -497,7 +518,12 @@ final class UserBusiness
             }
             $line['amount']=number_format((float)($line['amount']??0)/$parts,2,'.','');
         }
-        $category=$lottery==='福彩3D'?'福':'体';
+        // 福彩/体彩是兼容旧快录语法的“跨彩种”标记。普通系统彩保留
+        // 解析出的彩种标记，避免被误改成“体”后再次路由到排列三。
+        $category=(string)($line['category']??'');
+        if ($lottery==='福彩3D') $category='福';
+        elseif ($lottery==='排列三') $category='体';
+        elseif ($category==='' || $category==='福体') $category=$lottery;
         $line['category']=$category;
         if (isset($line['settlement_text'])) $line['settlement_text']=str_replace('福体',$category,(string)$line['settlement_text']);
         return $line;
@@ -529,7 +555,8 @@ final class UserBusiness
     }
     public function quickPreview(Request $request): \think\response\Json
     {
-        $s=$this->session($request); $text=trim((string)$request->post('text','')); if (mb_strlen($text)>10000) return $this->reply(null,'投注文本不能超过10000个字符',422); $lottery=trim((string)$request->post('lottery','福彩3D')); if (!in_array($lottery,['福彩3D','排列三'],true)) return $this->reply(null,'彩种无效',422);
+        $s=$this->session($request); $text=trim((string)$request->post('text','')); if (mb_strlen($text)>10000) return $this->reply(null,'投注文本不能超过10000个字符',422); $lottery=trim((string)$request->post('lottery','福彩3D')); if ($lottery==='') return $this->reply(null,'彩种无效',422);
+        try { $this->assertLotteryPermission($s,$lottery); } catch (\InvalidArgumentException $e) { return $this->reply(null,$e->getMessage(),422); }
         if ($text==='') return $this->reply(['lines'=>[],'count'=>0,'amount'=>'0.00'],'请输入投注文本',422);
         $lines=$this->quickLines($text,$lottery,(int)$s['tenant_id']); $count=0; $codeCount=0; $amount=0.0;
         foreach ($lines as &$line) if ($line['status']==='success') {
@@ -573,7 +600,8 @@ final class UserBusiness
     {
         $s=$this->session($request); if (!(bool)$request->post('confirmed',false)) return $this->reply(null,'请确认下注内容后再提交',422);
         if ((string)Db::name('site_users')->where('id',$s['user_id'])->where('site_id',$s['site_id'])->value('account_state')==='bet_paused') return $this->reply(null,'当前账号已暂停下注',403);
-        $text=trim((string)$request->post('text','')); if ($text==='' || mb_strlen($text)>10000) return $this->reply(null,'投注文本无效',422); $lottery=trim((string)$request->post('lottery','福彩3D')); if (!in_array($lottery,['福彩3D','排列三'],true)) return $this->reply(null,'彩种无效',422);
+        $text=trim((string)$request->post('text','')); if ($text==='' || mb_strlen($text)>10000) return $this->reply(null,'投注文本无效',422); $lottery=trim((string)$request->post('lottery','福彩3D')); if ($lottery==='') return $this->reply(null,'彩种无效',422);
+        try { $this->assertLotteryPermission($s,$lottery,true); } catch (\InvalidArgumentException $e) { return $this->reply(null,$e->getMessage(),422); }
         $parser=new QuickEntryParser(); $formattedText=$parser->formatText($text);
         $lines=$this->quickLines($text,$lottery,(int)$s['tenant_id']);
         if (!$lines) return $this->reply(null,'没有可下注的有效内容',422);
@@ -591,10 +619,11 @@ final class UserBusiness
             }
             foreach ($groups as $lineLottery=>&$group) {
                 $control=$this->lotteryControl($s,$lineLottery);
+                if (!$this->timingAllowsBet($control)) throw new \InvalidArgumentException($lineLottery.'当前时段禁止下注');
                 $lotteryId=(int)Db::name('lotteries')->where('tenant_id',$s['tenant_id'])->where('name',$lineLottery)->where('status',1)->whereNull('deleted_at')->value('id');
                 if ($lotteryId<1) throw new \InvalidArgumentException('当前彩种不存在或已停用');
                 $nextHistory=Db::name('lottery_histories')->where('lottery_id',$lotteryId)->whereNotNull('next_code')->where('next_code','<>','')->order('open_time desc')->order('id desc')->find();
-                $pendingHistory=Db::name('lottery_histories')->where('lottery_id',$lotteryId)->where(function($q): void { $q->whereNull('numbers')->whereOr('numbers',''); })->where('open_time','>=',$now)->order('open_time asc')->order('id asc')->find();
+                $pendingHistory=Db::name('lottery_histories')->where('lottery_id',$lotteryId)->where('is_opened',0)->where('open_time','>=',$now)->order('open_time asc')->order('id asc')->find();
                 $closingTime=$nextHistory['next_open_time']??($pendingHistory['open_time']??null);
                 if ($this->cutoffReached($control) || (!$this->cutoffConfigured($control) && $closingTime && strtotime((string)$closingTime)<=time())) throw new \InvalidArgumentException($lineLottery.'已封盘，整单未下注');
                 $issueNo=(string)($nextHistory['next_code']??($pendingHistory['code']??''));

@@ -743,6 +743,64 @@ body { background: #e8e8e8; }
 .overview-table-scroll th:nth-child(8) { width: 8%; }
 .overview-table-scroll th:nth-child(9) { width: 17%; }
 .overview-no-data { display: flex; min-height: 166px; flex-direction: column; align-items: center; justify-content: center; gap: 7px; border-bottom: 1px solid #e4e4e4; color: #c6c6c6; font-size: 14px; }
+.overview-data-table { width: 100%; min-width: 1280px; border-collapse: collapse; table-layout: fixed; }
+.overview-data-table th, .overview-data-table td { height: 34px; padding: 0 8px; border: 1px solid #d2d2d2; text-align: center; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.overview-data-table th { background: #f4f4f4; color: #222; font-weight: 700; }
+.overview-data-table tbody tr:nth-child(even) { background: #fafafa; }
+.overview-data-table tbody tr:hover { background: #eef8ee; }
+.overview-data-table .overview-ellipsis { max-width: 260px; text-align: left; }
+
+/* 总货五个页面：统一老系统的筛选、表格和分页排版。 */
+.overview-filters { min-height: 70px; height: auto; flex-wrap: wrap; margin: 16px 6px 6px; padding: 12px 0; }
+.overview-filters fieldset { flex: 0 0 auto; }
+.overview-filters fieldset.status-filter { width: 94px; min-width: 94px; }
+.overview-filters fieldset.check-filter { width: 96px; min-width: 96px; }
+.overview-filters fieldset.check-filter label { display: flex; height: 24px; align-items: center; justify-content: center; gap: 7px; }
+.overview-filters fieldset.check-filter input { width: 14px; height: 14px; }
+.overview-filters fieldset.range-filter { width: 325px; min-width: 325px; }
+.overview-filters .range-filter > div { display: flex; align-items: center; gap: 7px; }
+.overview-filters .range-filter select { width: 74px; }
+.overview-filters .range-filter input { width: 72px; }
+.overview-filters .range-filter span { color: #222; }
+.overview-filters fieldset.category-filter { width: 136px; min-width: 136px; }
+.overview-filters .category-filter select { width: 88px; }
+.overview-filters fieldset.text-filter { width: 420px; min-width: 420px; }
+.overview-filters .text-filter input { width: 395px; }
+.overview-filters fieldset.date-range { display: flex; width: 390px; min-width: 390px; align-items: center; gap: 8px; padding-top: 11px; }
+.overview-filters .date-range input { width: 160px; }
+.overview-filters .date-range span { color: #222; }
+.overview-filters-bets { row-gap: 12px; }
+.overview-filters-bets .overview-submit-wrap { margin-left: 4px; }
+.overview-table-panel { margin: 0 20px; padding-bottom: 0; }
+.overview-table-scroll { min-height: 198px; }
+.overview-data-table { min-width: 1120px; }
+.overview-data-table th, .overview-data-table td { height: 38px; }
+.overview-records-table th:nth-child(1) { width: 7%; }.overview-records-table th:nth-child(2) { width: 15%; }.overview-records-table th:nth-child(3) { width: 11%; }.overview-records-table th:nth-child(4) { width: 15%; }.overview-records-table th:nth-child(5) { width: 14%; }.overview-records-table th:nth-child(6) { width: 7%; }.overview-records-table th:nth-child(7) { width: 7%; }.overview-records-table th:nth-child(8) { width: 8%; }.overview-records-table th:nth-child(9) { width: 8%; }
+.overview-detail-table, .overview-winning-table { min-width: 1350px; }
+.overview-detail-table th:nth-child(1), .overview-winning-table th:nth-child(1) { width: 13%; }
+.overview-detail-table th:nth-child(2), .overview-winning-table th:nth-child(2) { width: 9%; }
+.overview-detail-table th:nth-child(3), .overview-winning-table th:nth-child(3) { width: 13%; }
+.overview-detail-table th:nth-child(4), .overview-winning-table th:nth-child(4) { width: 9%; }
+.overview-detail-table td:nth-child(4), .overview-winning-table td:nth-child(4) { font-weight: 700; }
+.overview-number { color: #111; font-weight: 700; }
+.overview-win, .overview-money { font-weight: 700; }
+.overview-path { color: #111; font-weight: 700; }
+.overview-ticket { max-width: 220px; overflow: hidden; text-overflow: ellipsis; text-align: left; white-space: nowrap; }
+.overview-action { min-width: 52px; height: 29px; padding: 0 10px; border: 1px solid #d00000; background: #fff; color: #111; cursor: pointer; }
+.overview-action:hover { background: #fff0f0; color: #d00000; }
+.overview-pagination { display: flex; min-height: 58px; align-items: center; justify-content: flex-end; gap: 10px; padding: 10px 24px; color: #555; }
+.overview-pagination b, .overview-pagination strong { color: #008000; }
+.overview-pagination button { width: 32px; height: 32px; border: 1px solid #d4d4d4; background: #fff; color: #555; cursor: pointer; }
+.overview-pagination button:disabled { cursor: default; opacity: .5; }
+.overview-pagination select { height: 32px; border: 1px solid #d4d4d4; background: #fff; color: #555; }
+
+.agent-app .warm { position: fixed; right: 0; bottom: 0; z-index: 20; width: 300px; padding: 0; border: 1px solid #006400; background: #fff; box-shadow: 6px 6px 0 rgba(0,0,0,.55); transition: transform .28s ease, opacity .28s ease; }
+.agent-app .warm-header { position: relative; display: flex; height: 36px; align-items: center; justify-content: center; padding: 0 70px 0 10px; background: #006400; color: #fff; font-size: 14px; }
+.agent-app .warm-actions { position: absolute; top: 4px; right: 7px; display: flex; gap: 6px; }
+.agent-app .warm-actions button { display: grid; width: 27px; height: 27px; padding: 0; place-items: center; border: 0; border-radius: 50%; background: #fff; color: #006400; cursor: pointer; font-size: 16px; }
+.agent-app .warm-actions button:first-child { color: #666; }
+.agent-app .warm-content { max-height: 180px; box-sizing: border-box; padding: 10px; overflow: hidden; background: #fff; color: #111; font-size: 13px; line-height: 20px; opacity: 1; transition: max-height .28s ease, opacity .2s ease, padding .28s ease; }
+.agent-app .warm.is-collapsed .warm-content { max-height: 0; padding-top: 0; padding-bottom: 0; opacity: 0; }
 
 /* 规则说明：按当前彩种读取管理系统配置的富文本并直接渲染。 */
 .agent-rule-page { min-height: calc(100vh - 168px); padding-bottom: 10px; background: #e8e8e8; color: #000; font: 14px/21px Arial, Helvetica, sans-serif; }

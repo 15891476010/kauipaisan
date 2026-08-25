@@ -33,12 +33,41 @@ export function displayAmount(value: unknown) {
 }
 
 export function lotteryTiming(lottery: Lottery | undefined, now: number) {
+  const permissionCanBet = lottery?.can_bet !== false;
+  const serverCanBet = lottery?.timing_can_bet;
+  const serverMask = lottery?.timing_mask;
+  const baseMask = serverMask === undefined ? lottery?.mask_enabled !== 0 : serverMask;
+  const rules = lottery?.timing_rules || [];
+  const clock = new Date(now);
+  const currentMinutes = clock.getHours() * 60 + clock.getMinutes();
+  const parseMinutes = (value: unknown, fallback: number) => {
+    const match = String(value ?? "").match(/^(\d{1,2}):(\d{2})$/);
+    if (!match) return fallback;
+    const hours = Number(match[1]);
+    const mins = Number(match[2]);
+    return hours >= 0 && hours <= 23 && mins >= 0 && mins <= 59 ? hours * 60 + mins : fallback;
+  };
+  const matchingRule = rules.find((rule) => {
+    const start = parseMinutes(rule.start_time, 0);
+    const end = parseMinutes(rule.end_time, 1439);
+    return start === end ? true : start < end ? currentMinutes >= start && currentMinutes < end : currentMinutes >= start || currentMinutes < end;
+  });
+  if (matchingRule) {
+    const canBet = permissionCanBet && matchingRule.allow_bet === 1;
+    const end = parseMinutes(matchingRule.end_time, 1439);
+    let seconds = (end - currentMinutes) * 60 - clock.getSeconds();
+    if (seconds < 0) seconds += 24 * 60 * 60;
+    const hh = String(Math.floor(seconds / 3600)).padStart(2, "0");
+    const mm = String(Math.floor((seconds % 3600) / 60)).padStart(2, "0");
+    const ss = String(seconds % 60).padStart(2, "0");
+    return { status: matchingRule.display_text?.trim() || (canBet ? "开盘中" : "即将开盘"), countdown: `${hh} : ${mm} : ${ss}`, locked: !canBet, canBet, mask: matchingRule.mask_enabled === 1, showNextIssue: matchingRule.show_next_issue === 1, headerShowNextIssue: (matchingRule.header_show_next_issue ?? matchingRule.show_next_issue) === 1 };
+  }
   const openTime = lottery?.next_open_time ?? null;
   const cutoffEnabled =
     lottery?.cutoff_enabled === 1 && Boolean(lottery.cutoff_time);
   if (cutoffEnabled) {
     const date = new Date(now);
-    const [hours, minutes] = String(lottery?.cutoff_time)
+    const [hours, cutoffMinute] = String(lottery?.cutoff_time)
       .split(":")
       .map(Number);
     const cutoff = new Date(
@@ -46,7 +75,7 @@ export function lotteryTiming(lottery: Lottery | undefined, now: number) {
       date.getMonth(),
       date.getDate(),
       hours,
-      minutes,
+      cutoffMinute,
       0,
       0,
     ).getTime();
@@ -62,27 +91,37 @@ export function lotteryTiming(lottery: Lottery | undefined, now: number) {
     const hh = String(Math.floor(seconds / 3600)).padStart(2, "0");
     const mm = String(Math.floor((seconds % 3600) / 60)).padStart(2, "0");
     const ss = String(seconds % 60).padStart(2, "0");
+    const canBet = permissionCanBet && (serverCanBet === undefined ? !locked : serverCanBet);
     return {
-      status: locked ? "即将开盘" : "开盘中",
+      status: lottery?.timing_text?.trim() || (locked ? "即将开盘" : "开盘中"),
       countdown: `${hh} : ${mm} : ${ss}`,
-      locked,
-      mask: lottery?.mask_enabled !== 0,
+      locked: !canBet,
+      canBet,
+      mask: baseMask && !canBet,
+      showNextIssue: lottery?.show_next_issue !== false,
+      headerShowNextIssue: lottery?.header_show_next_issue !== false,
     };
   }
   if (!openTime)
     return {
-      status: "时间待定",
+      status: lottery?.timing_text?.trim() || "时间待定",
       countdown: "-- : -- : --",
-      locked: false,
-      mask: lottery?.mask_enabled !== 0,
+      locked: !permissionCanBet || serverCanBet === false,
+      canBet: permissionCanBet && serverCanBet !== false,
+      mask: baseMask && (!permissionCanBet || serverCanBet === false),
+      showNextIssue: lottery?.show_next_issue !== false,
+      headerShowNextIssue: lottery?.header_show_next_issue !== false,
     };
   const target = new Date(openTime.replace(" ", "T")).getTime();
   if (!Number.isFinite(target))
     return {
-      status: "时间待定",
+      status: lottery?.timing_text?.trim() || "时间待定",
       countdown: "-- : -- : --",
-      locked: false,
-      mask: lottery?.mask_enabled !== 0,
+      locked: !permissionCanBet || serverCanBet === false,
+      canBet: permissionCanBet && serverCanBet !== false,
+      mask: baseMask && (!permissionCanBet || serverCanBet === false),
+      showNextIssue: lottery?.show_next_issue !== false,
+      headerShowNextIssue: lottery?.header_show_next_issue !== false,
     };
   const openingDay = new Date(target);
   openingDay.setHours(0, 0, 0, 0);
@@ -94,10 +133,14 @@ export function lotteryTiming(lottery: Lottery | undefined, now: number) {
   const hours = String(Math.floor(seconds / 3600)).padStart(2, "0");
   const minutes = String(Math.floor((seconds % 3600) / 60)).padStart(2, "0");
   const remaining = String(seconds % 60).padStart(2, "0");
+  const canBet = permissionCanBet && (serverCanBet === undefined ? now < target && !beforeOpeningDay : serverCanBet);
   return {
-    status,
+    status: lottery?.timing_text?.trim() || status,
     countdown: `${hours} : ${minutes} : ${remaining}`,
-    locked: beforeOpeningDay || now >= target,
-    mask: lottery?.mask_enabled !== 0,
+    locked: !canBet,
+    canBet,
+    mask: baseMask && !canBet,
+    showNextIssue: lottery?.show_next_issue !== false,
+    headerShowNextIssue: lottery?.header_show_next_issue !== false,
   };
 }

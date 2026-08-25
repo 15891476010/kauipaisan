@@ -66,6 +66,25 @@ $binaryCases=[
 foreach($binaryCases as [$number,$draw,$source,$expected])$check($matcher->numberMatches($number,$draw,$source)===$expected,"{$source} 的 {$number}/{$draw} 命中错误");
 $covered=array_merge($covered,['一码定位|口XX','一码定位|X口X','一码定位|XX口','二码定位|口口X','二码定位|口X口','二码定位|X口口','和值|豹子全包','组三多码|组三全包','组六多码|组六全包','组六赖|对子全包']);
 
+// Compact rows are now the settlement source of truth. These checks cover
+// the non-expanded forms that are persisted for package, position, pair,
+// singleton, drag and mixed group plays.
+$compactCases=[
+    ['豹子全包','111','豹子全包 福',true], ['豹子全包','112','豹子全包 福',false],
+    ['对子全包','112','对子全包 福',true], ['对子全包','123','对子全包 福',false],
+    ['组三全包','221','组三全包 福',true], ['组六全包','120','组六全包 福',true],
+    ['百12十3个456定位','134','福百12十3个456各10元',true], ['百12十3个456定位','245','福百12十3个456各10元',false],
+    ['001','123','福1独胆10元',true], ['001','234','福1独胆10元',false],
+    ['复123456','145','福123456复式六码10元',true], ['复123456','112','福123456复式六码10元',true],
+    ['复024567','522','福024567复式六码10元',true], ['复024567','789','福024567复式六码10元',false],
+    ['000','522','024567复式六码福',true], ['000','789','024567复式六码福',false],
+    ['胆1拖234','112','组三胆拖 胆1拖234 1码拖3 福',true], ['胆1拖234','123','组三胆拖 胆1拖234 1码拖3 福',false],
+    ['胆1拖234','123','组六胆拖 胆1拖234 1码拖3 福',true], ['胆1拖234','112','组六胆拖 胆1拖234 1码拖3 福',false],
+    ['胆12拖345','123','组六2胆拖 胆12拖345 2码拖3 福',true], ['胆12拖345','124','组六2胆拖 胆12拖345 2码拖3 福',true], ['胆12拖345','126','组六2胆拖 胆12拖345 2码拖3 福',false],
+    ['和值0-27','000','和值0-27 福',true], ['和值0-27','999','和值0-27 福',true], ['和值0-27','123','和值0-27 福',false],
+];
+foreach($compactCases as [$number,$draw,$source,$expected])$check($matcher->numberMatches($number,$draw,$source)===$expected,"通用表达式 {$source} 的 {$number}/{$draw} 命中错误");
+
 $words=[1=>'一',2=>'二',3=>'三',4=>'四',5=>'五',6=>'六',7=>'七',8=>'八',9=>'九'];
 foreach([['组三',2,9],['组六',4,9],['复式',3,9],['组三赖',1,7],['组六赖',1,7]] as [$family,$min,$max]){
     for($count=$min;$count<=$max;$count++){
@@ -104,6 +123,12 @@ for($count=2;$count<=8;$count++){
 $multiNumbers=['123','456','789'];
 $multiHits=count(array_filter($multiNumbers,static fn(string $number):bool=>$matcher->numberMatches($number,'456','123 456 789直 福')));
 $check($multiHits===1,'多号码直选行没有只计算实际命中的一个号码');
+
+$positionNumbers=['001','002','003','005','006','007','009','521','522','523','525','526','527','529','991','992','993','995','996','997','999'];
+$positionHits=count(array_filter($positionNumbers,static fn(string $number):bool=>$matcher->numberMatches($number,'522','福体百0234569十0234689个1235679各1米')));
+$check($positionHits===1,'百十个定位复式只应命中与开奖号完全相同的一注');
+$check($matcher->numberMatches('522','522','福体百0234569十0234689个1235679各1米'),'百十个定位复式的 522 应命中');
+$check(!$matcher->numberMatches('001','522','福体百0234569十0234689个1235679各1米'),'百十个定位复式的其他组合不得误命中');
 
 $detailPayout=new ReflectionMethod($matcher,'detailPayout');
 $detailPayout->setAccessible(true);

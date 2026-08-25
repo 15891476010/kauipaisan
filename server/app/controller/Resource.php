@@ -322,7 +322,15 @@ final class Resource
             $siteIds=array_values(array_unique(array_map('intval',array_column($list,'site_id'))));
             $userIds=array_values(array_unique(array_map('intval',array_column($list,'user_id'))));
             $recordIds=array_values(array_map('intval',array_column($list,'id')));
-            $detailIds=$recordIds ? Db::name('bet_details')->whereIn('bet_record_id',$recordIds)->column('id','bet_record_id') : [];
+            $detailRows=$recordIds ? Db::name('bet_details')->whereIn('bet_record_id',$recordIds)->field('id,bet_record_id,status,win_amount,matched_count,number_text,amount,odds,source_text')->select()->toArray() : [];
+            $detailIds=[]; $detailsByRecord=[];
+            foreach ($detailRows as $detailRow) {
+                $recordId=(int)$detailRow['bet_record_id'];
+                // Keep the first detail per record for the list's lottery label;
+                // detailsByRecord still retains every detail for win-status aggregation.
+                if (!isset($detailIds[$recordId])) $detailIds[$recordId]=(int)$detailRow['id'];
+                $detailsByRecord[$recordId][]=$detailRow;
+            }
             $lotteryByRecord=[];
             if ($detailIds) {
                 $stops=Db::name('user_stop_drops')->whereIn('bet_detail_id',array_values($detailIds))->column('lottery','bet_detail_id');
@@ -336,10 +344,58 @@ final class Resource
                 $betRecord['lottery']=$lotteryByRecord[(int)$betRecord['id']] ?? '';
                 $betRecord['amount']=number_format((float)($betRecord['amount']??0),2,'.','');
                 $betRecord['win_amount']=number_format((float)($betRecord['win_amount']??0),2,'.','');
+                $recordId=(int)$betRecord['id'];
+                $recordStatus=(string)($betRecord['status']??'pending');
+                if ($recordStatus==='refunded') {
+                    $betRecord['win_status']='refunded';
+                } elseif ($recordStatus==='pending' || (int)($betRecord['sealed']??0)===1) {
+                    $betRecord['win_status']='pending';
+                } else {
+                    $betRecord['win_status']=$this->classifyWinStatus($detailsByRecord[$recordId]??[],(float)($betRecord['win_amount']??0));
+                }
             }
         }
         foreach ($list as &$row) { unset($row['password'], $row['manager_password']); }
         return $this->reply(['list'=>$list,'total'=>$total]);
+    }
+
+    private function detailSelectionCount(array $detail): int
+    {
+        $tokens=preg_split('/\s+/',trim((string)($detail['number_text']??'')))?:[];
+        $tokens=array_values(array_filter($tokens,static fn(string $token): bool => trim($token)!==''));
+        return max(1,count($tokens));
+    }
+
+    private function detailMatchedCount(array $detail,int $selectionCount): ?int
+    {
+        $stored=$detail['matched_count']??null;
+        if ($stored!==null && is_numeric($stored)) return max(0,min($selectionCount,(int)$stored));
+        $win=(float)($detail['win_amount']??0);
+        if ($win<=0) return 0;
+        $amount=(float)($detail['amount']??0); $odds=(float)($detail['odds']??0);
+        if ($amount>0 && $odds>0) {
+            $source=(string)($detail['source_text']??'');
+            $isPackage=$selectionCount>1 && preg_match('/(?<!\d)[0-9]{1,10}\s*(组三|组六)[一二两三四五六七八九1-9]码/u',$source)===1;
+            $unit=$isPackage?$amount:($amount/$selectionCount);
+            $unit*=$odds;
+            if ($unit>0) return max(0,min($selectionCount,(int)round($win/$unit)));
+        }
+        return $selectionCount===1 && (string)($detail['status']??'')==='won' ? 1 : null;
+    }
+
+    private function classifyWinStatus(array $details,float $recordWin): string
+    {
+        if ($details===[]) return $recordWin>0?'full':'none';
+        $total=0; $matched=0; $unknown=false;
+        foreach ($details as $detail) {
+            if ((string)($detail['status']??'')==='pending') { $unknown=true; continue; }
+            $count=$this->detailSelectionCount($detail); $total+=$count;
+            $hits=$this->detailMatchedCount($detail,$count);
+            if ($hits===null) $unknown=true; else $matched+=$hits;
+        }
+        if ($matched===0) return 'none';
+        if (!$unknown && $total>0 && $matched>=$total) return 'full';
+        return 'partial';
     }
 
     public function auditDetail(Request $request, int $id): \think\response\Json
@@ -386,57 +442,78 @@ final class Resource
         if ($scopedSiteId !== null) $recordQuery->where('site_id',$scopedSiteId);
         $record=$recordQuery->find();
         if (!$record) throw new \InvalidArgumentException('下单记录不存在');
-        $details=Db::name('bet_details')->where('bet_record_id',$id)->order('id asc')->select()->toArray();
+        // A multi-lottery submission is stored as one bet_record per lottery.
+        // The detail drawer represents the order, so load all sibling records
+        // from the same submission instead of showing only the clicked lottery.
+        $recordIds=[$id];
+        $submissionId=(int)($record['submission_id']??0);
+        if ($submissionId>0) {
+            $siblingQuery=Db::name('bet_records')->where('submission_id',$submissionId)->where('site_id',(int)$record['site_id']);
+            $recordIds=array_values(array_map('intval',$siblingQuery->column('id')));
+            if ($recordIds===[]) $recordIds=[$id];
+        }
+        $details=Db::name('bet_details')->whereIn('bet_record_id',$recordIds)->order('id asc')->select()->toArray();
         $detailIds=array_values(array_map('intval',array_column($details,'id')));
         $stops=$detailIds ? Db::name('user_stop_drops')->whereIn('bet_detail_id',$detailIds)->column('lottery,number_text,play_type,original_amount,actual_amount,stop_amount,original_odds,actual_odds,drop_odds','bet_detail_id') : [];
         $lotteries = [];
         foreach ($stops as $stop) { $name = trim((string)($stop['lottery'] ?? '')); if ($name !== '') $lotteries[$name] = true; }
         // Refresh pending records before presenting them so the drawer reflects the latest draw.
-        if ((string)($record['status'] ?? '') === 'pending') {
+        if (in_array((string)($record['status'] ?? ''), ['pending','sealed'], true)) {
             foreach (array_keys($lotteries) as $name) {
                 $lottery = Db::name('lotteries')->where('name', $name)->where('status', 1)->whereNull('deleted_at')->find();
                 if ($lottery) { try { (new LotteryHistorySync())->syncLottery($lottery); } catch (\Throwable $e) { /* detail remains pending when provider is unavailable */ } }
             }
             $record = $recordQuery->find() ?: $record;
-            $details = Db::name('bet_details')->where('bet_record_id',$id)->order('id asc')->select()->toArray();
+            $details = Db::name('bet_details')->whereIn('bet_record_id',$recordIds)->order('id asc')->select()->toArray();
+        }
+        $recordRows=Db::name('bet_records')->whereIn('id',$recordIds)->select()->toArray();
+        if ($recordRows!==[]) {
+            $record['bet_count']=array_sum(array_map(static fn(array $row): int=>(int)($row['bet_count']??0),$recordRows));
+            $record['amount']=number_format(array_sum(array_map(static fn(array $row): float=>(float)($row['amount']??0),$recordRows)),2,'.','');
+            $record['win_amount']=number_format(array_sum(array_map(static fn(array $row): float=>(float)($row['win_amount']??0),$recordRows)),2,'.','');
+            $statuses=array_map(static fn(array $row): string=>(string)($row['status']??'pending'),$recordRows);
+            $record['status']=in_array('refunded',$statuses,true)?'refunded':(in_array('pending',$statuses,true)?'pending':((float)$record['win_amount']>0?'won':'unwon'));
         }
         $histories = [];
         foreach (array_keys($lotteries) as $name) {
             $lottery = Db::name('lotteries')->where('name', $name)->whereNull('deleted_at')->find();
             if (!$lottery) continue;
             $history = Db::name('lottery_histories')->where('lottery_id',(int)$lottery['id'])->where('code',(string)$record['issue_no'])->find();
-            $histories[$name] = ['name'=>$name, 'opened'=>is_array($history), 'numbers'=>$history['numbers'] ?? '', 'open_time'=>$history['open_time'] ?? null];
+            // A pending issue is intentionally inserted into lottery_histories before draw time.
+            // Presence of the row alone therefore does not mean that the draw has happened.
+            $histories[$name] = ['name'=>$name, 'opened'=>$this->historyHasDraw($history), 'numbers'=>$history['numbers'] ?? '', 'open_time'=>$history['open_time'] ?? null];
         }
         $record['lotteries'] = array_values($histories);
         $record['opened'] = (bool)array_reduce($histories, static fn(bool $carry, array $item): bool => $carry || $item['opened'], false);
         $record['draw_numbers'] = (string)(array_values(array_filter($histories, static fn(array $item): bool => $item['opened']))[0]['numbers'] ?? '');
+        $record['win_status']=$record['opened']?$this->classifyWinStatus($details,(float)($record['win_amount']??0)):'pending';
         $expanded = [];
         foreach ($details as $detail) {
             $stop=$stops[(int)$detail['id']] ?? [];
             $numbers=preg_split('/\s+/', trim((string)($detail['number_text'] ?? ''))) ?: [];
             $numbers=array_values(array_filter($numbers, static fn(string $number): bool => preg_match('/^\d{3}$/',$number)===1));
-            if ($numbers === []) continue;
             $detail['lottery']=(string)($stop['lottery'] ?? '');
-            $numberCount=count($numbers);
-            $unitAmount=(float)($detail['amount']??0)/$numberCount;
+            $numberCount=count($numbers) ?: 1;
             $lotteryId=(int)Db::name('lotteries')->where('name',$detail['lottery'])->whereNull('deleted_at')->value('id');
             $detailOdds=(float)($detail['odds'] ?? 0);
             if ($detailOdds <= 0 && $lotteryId > 0) $detailOdds=(new BetSettlement())->oddsFor($lotteryId,(string)($detail['source_text'] ?? ''),$numberCount);
-            $unitWin=(float)($detail['win_amount']??0)/max(1,count(array_filter($numbers, fn(string $number): bool => $this->numberWon($number,(string)($histories[$detail['lottery']]['numbers']??''),(string)($detail['source_text']??'')))));
             $detail['source_text']=$detail['source_text'] ?? '';
             $detail['play_type'] = (string)($stop['play_type'] ?? $detail['category'] ?? '未识别玩法');
             $detail['draw_numbers'] = (string)($histories[$detail['lottery']]['numbers'] ?? '');
-            foreach ($numbers as $index=>$number) {
-                $won=$record['opened'] && $this->numberWon($number,$detail['draw_numbers'],(string)$detail['source_text']);
-                $expanded[] = array_merge($detail,[
-                    'row_key'=>$detail['id'].'-'.$index, 'number_index'=>$index, 'number_text'=>$number, 'number_count'=>1,
-                    'hundreds'=>$number[0], 'tens'=>$number[1], 'units'=>$number[2],
-                    'amount'=>number_format($unitAmount,2,'.',''),
-                    'odds'=>number_format($detailOdds,4,'.',''),
-                    'win_amount'=>number_format($won?$unitWin:0,2,'.',''),
-                    'result_status'=>$record['opened']?($won?'won':'unwon'):'pending',
-                ]);
+            $detail['row_key']=(string)$detail['id'];
+            $detail['number_index']=0;
+            $detail['number_count']=$numberCount;
+            $detail['hundreds']=''; $detail['tens']=''; $detail['units']='';
+            $detail['amount']=number_format((float)($detail['amount']??0),2,'.','');
+            $detail['odds']=number_format($detailOdds,4,'.','');
+            $detail['win_amount']=number_format((float)($detail['win_amount']??0),2,'.','');
+            if (!$record['opened']) $detail['result_status']='pending';
+            else {
+                $selectionCount=$this->detailSelectionCount($detail);
+                $matchedCount=$this->detailMatchedCount($detail,$selectionCount);
+                $detail['result_status']=$matchedCount===null?'won':($matchedCount<=0?'unwon':($matchedCount>=$selectionCount?'won':'partial'));
             }
+            $expanded[]=$detail;
         }
         $total=count($expanded); $page=max(1,(int)$request->param('page',1)); $pageSize=min(100,max(10,(int)$request->param('page_size',30)));
         return $this->reply(['record'=>$record,'list'=>array_slice($expanded,($page-1)*$pageSize,$pageSize),'total'=>$total,'page'=>$page,'page_size'=>$pageSize]);
@@ -445,6 +522,20 @@ final class Resource
     private function numberWon(string $number, string $drawNumbers, string $source): bool
     {
         return (new BetSettlement())->numberMatches($number,$drawNumbers,$source);
+    }
+
+    private function historyHasDraw(?array $history): bool
+    {
+        if (!is_array($history)) return false;
+        if (array_key_exists('is_opened',$history)) return (int)$history['is_opened']===1;
+        $digits = array_filter([
+            trim((string)($history['one'] ?? '')),
+            trim((string)($history['two'] ?? '')),
+            trim((string)($history['three'] ?? '')),
+        ], static fn(string $value): bool => $value !== '');
+        if (count($digits) >= 3) return true;
+        $numbers = preg_replace('/[^0-9]/', '', (string)($history['numbers'] ?? ''));
+        return strlen((string)$numbers) >= 3;
     }
 
     public function updateBetDetail(Request $request, int $id): \think\response\Json
@@ -461,22 +552,30 @@ final class Resource
         if (!$record) throw new \InvalidArgumentException('所属下单记录不存在');
         if ((string)($record['status'] ?? 'pending') !== 'pending') throw new \RuntimeException('已开奖或已结算注单不能修改');
         $data=$request->put();
-        $numbers=preg_split('/\s+/',trim((string)$detail['number_text'])) ?: [];
-        $numbers=array_values(array_filter($numbers,static fn(string $number): bool => preg_match('/^\d{3}$/',$number)===1));
+        $storedText=trim((string)($detail['number_text']??''));
+        $numbers=preg_split('/\s+/', $storedText) ?: [];
+        $numbers=array_values(array_filter($numbers,static fn(string $number): bool => $number!==''));
         $numberIndex=(int)($data['number_index']??0);
-        if (!isset($numbers[$numberIndex])) throw new \InvalidArgumentException('要修改的号码不存在');
         $number=trim((string)($data['number_text']??''));
-        if (!preg_match('/^\d{3}$/',$number)) throw new \InvalidArgumentException('号码必须是三位数字');
-        $oldUnitAmount=(float)$detail['amount']/max(1,count($numbers));
-        $amount=array_key_exists('amount',$data) ? (float)$data['amount'] : $oldUnitAmount;
+        if ($number==='') throw new \InvalidArgumentException('号码/玩法内容不能为空');
+        $isLegacyNumber=preg_match('/^\d{3}$/',$number)===1 && preg_match('/^\d{3}(?:\s+\d{3})*$/',$storedText)===1;
+        if ($isLegacyNumber) {
+            if (!isset($numbers[$numberIndex])) throw new \InvalidArgumentException('要修改的号码不存在');
+            $numbers[$numberIndex]=$number; $numberText=implode(' ',$numbers);
+        } else {
+            $numberText=$number;
+        }
+        $amount=array_key_exists('amount',$data) ? (float)$data['amount'] : (float)$detail['amount'];
         if ($amount<0 || !is_finite($amount)) throw new \InvalidArgumentException('金额必须是非负数字');
-        $numbers[$numberIndex]=$number; $numberText=implode(' ',$numbers);
-        $detailAmount=(float)$detail['amount']-$oldUnitAmount+$amount;
-        Db::transaction(function () use ($detail,$record,$numberText,$detailAmount): void {
-            Db::name('bet_details')->where('id',$detail['id'])->update(['number_text'=>$numberText,'amount'=>number_format($detailAmount,2,'.','')]);
-            Db::name('user_stop_drops')->where('bet_detail_id',$detail['id'])->update(['number_text'=>$numberText,'original_amount'=>number_format($detailAmount,2,'.',''),'actual_amount'=>number_format($detailAmount,2,'.','')]);
+        $playType=array_key_exists('play_type',$data)?trim((string)$data['play_type']):null;
+        $sourceText=array_key_exists('source_text',$data)?trim((string)$data['source_text']):null;
+        Db::transaction(function () use ($detail,$record,$numberText,$amount,$playType,$sourceText): void {
+            $detailUpdate=['number_text'=>$numberText,'amount'=>number_format($amount,2,'.','')]; if($playType!==null&&$playType!=='')$detailUpdate['category']=$playType; if($sourceText!==null)$detailUpdate['source_text']=$sourceText;
+            Db::name('bet_details')->where('id',$detail['id'])->update($detailUpdate);
+            $stopUpdate=['number_text'=>$numberText,'original_amount'=>number_format($amount,2,'.',''),'actual_amount'=>number_format($amount,2,'.','')]; if($playType!==null&&$playType!=='')$stopUpdate['play_type']=$playType; Db::name('user_stop_drops')->where('bet_detail_id',$detail['id'])->update($stopUpdate);
             $total=(float)Db::name('bet_details')->where('bet_record_id',$record['id'])->sum('amount');
-            Db::name('bet_records')->where('id',$record['id'])->update(['amount'=>number_format($total,2,'.','')]);
+            $count=(int)Db::name('bet_details')->where('bet_record_id',$record['id'])->count();
+            Db::name('bet_records')->where('id',$record['id'])->update(['amount'=>number_format($total,2,'.',''),'bet_count'=>$count]);
         });
         return $this->reply(null,'updated');
     }

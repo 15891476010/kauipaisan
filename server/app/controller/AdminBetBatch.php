@@ -5,6 +5,7 @@ namespace app\controller;
 use think\Request;
 use think\facade\Cache;
 use think\facade\Db;
+use app\service\AuditLogger;
 
 final class AdminBetBatch
 {
@@ -22,6 +23,122 @@ final class AdminBetBatch
         $siteId=(int)($session['site_id']??0);
         if ($siteId<1) throw new \RuntimeException('当前管理员未绑定站点');
         return $siteId;
+    }
+
+    private function session(Request $request): array
+    {
+        $token=trim(str_ireplace('Bearer ','',(string)$request->header('authorization')));
+        $session=$token!==''?Cache::get('token:'.$token):null;
+        if (!is_array($session) || ($session['scope']??'')!=='admin') throw new \RuntimeException('未登录或登录已过期');
+        return $session;
+    }
+
+    /** Return the records selected by the operator plus their sibling lottery records. */
+    private function expandRecordIds(array $recordIds, ?int $siteId): array
+    {
+        $recordIds=array_values(array_unique(array_filter(array_map('intval',$recordIds),static fn(int $id): bool=>$id>0)));
+        if ($recordIds===[]) return [];
+        $query=Db::name('bet_records')->whereIn('id',$recordIds);
+        if ($siteId!==null) $query->where('site_id',$siteId);
+        $rows=$query->field('id,site_id,submission_id')->select()->toArray();
+        if ($rows===[]) return [];
+        $submissions=array_values(array_unique(array_filter(array_map('intval',array_column($rows,'submission_id')))));
+        if ($submissions===[]) return array_values(array_map('intval',array_column($rows,'id')));
+        $all=[];
+        foreach ($rows as $row) { $id=(int)$row['id']; $all[$id]=$id; }
+        $siblings=Db::name('bet_records')->whereIn('submission_id',$submissions);
+        if ($siteId!==null) $siblings->where('site_id',$siteId);
+        foreach ($siblings->column('id') as $id) $all[(int)$id]=(int)$id;
+        return array_values($all);
+    }
+
+    private function editableRecords(array $recordIds, ?int $siteId): array
+    {
+        $query=Db::name('bet_records')->whereIn('id',$recordIds)->where('status','pending')->where('sealed',0);
+        if ($siteId!==null) $query->where('site_id',$siteId);
+        return $query->field('id,site_id,user_id,issue_no,submission_id,status,sealed,amount,bet_count,source_text,formatted_text')->select()->toArray();
+    }
+
+    private function replacementPreview(array $records, string $operation, array $payload): array
+    {
+        $changes=[]; $skipped=[];
+        $from=trim((string)($payload['from']??'')); $to=trim((string)($payload['to']??''));
+        $amount=array_key_exists('amount',$payload)?(float)$payload['amount']:null;
+        if ($operation==='replace_number' && ($from==='' || $to==='')) throw new \InvalidArgumentException('请填写原号码和新号码');
+        if ($operation==='replace_play' && ($from==='' || $to==='')) throw new \InvalidArgumentException('请填写原玩法和新玩法');
+        if ($operation==='set_amount' && ($amount===null || !is_finite($amount) || $amount<0)) throw new \InvalidArgumentException('请输入有效金额');
+        foreach ($records as $record) {
+            $details=Db::name('bet_details')->where('bet_record_id',(int)$record['id'])->order('id asc')->select()->toArray();
+            foreach ($details as $detail) {
+                $stop=Db::name('user_stop_drops')->where('bet_detail_id',(int)$detail['id'])->order('id asc')->find() ?: [];
+                $oldNumber=(string)($detail['number_text']??''); $oldPlay=(string)($stop['play_type']??$detail['category']??''); $oldAmount=(float)($detail['amount']??0);
+                $newNumber=$oldNumber; $newPlay=$oldPlay; $newAmount=$oldAmount; $matched=false;
+                if ($operation==='replace_number' && str_contains($oldNumber,$from)) { $newNumber=str_replace($from,$to,$oldNumber); $matched=true; }
+                elseif ($operation==='replace_play' && ($oldPlay===$from || str_contains($oldPlay,$from))) { $newPlay=str_replace($from,$to,$oldPlay); $matched=true; }
+                elseif ($operation==='set_amount') { $newAmount=$amount; $matched=true; }
+                if (!$matched) { $skipped[]=['record_id'=>(int)$record['id'],'detail_id'=>(int)$detail['id'],'reason'=>'不匹配']; continue; }
+                $changes[]=['record_id'=>(int)$record['id'],'detail_id'=>(int)$detail['id'],'issue_no'=>(string)$record['issue_no'],'old_number'=>$oldNumber,'new_number'=>$newNumber,'old_play'=>$oldPlay,'new_play'=>$newPlay,'old_amount'=>number_format($oldAmount,2,'.',''),'new_amount'=>number_format($newAmount,2,'.','')];
+            }
+        }
+        return ['changes'=>$changes,'skipped'=>$skipped];
+    }
+
+    private function buildRecordOptions(?int $siteId): array
+    {
+        $query=Db::name('bet_records')->where('status','pending')->where('sealed',0)->order('id desc')->limit(500);
+        if ($siteId!==null) $query->where('site_id',$siteId);
+        $records=$query->select()->toArray();
+        $userIds=array_values(array_unique(array_filter(array_map('intval',array_column($records,'user_id')))));
+        $users=$userIds?Db::name('site_users')->whereIn('id',$userIds)->column('username','id'):[];
+        $siteIds=array_values(array_unique(array_filter(array_map('intval',array_column($records,'site_id')))));
+        $sites=$siteIds?Db::name('sites')->whereIn('id',$siteIds)->column('name','id'):[];
+        foreach ($records as &$record) {
+            $details=Db::name('bet_details')->where('bet_record_id',(int)$record['id'])->order('id asc')->select()->toArray();
+            $detailIds=array_values(array_map('intval',array_column($details,'id')));
+            $stops=$detailIds?Db::name('user_stop_drops')->whereIn('bet_detail_id',$detailIds)->order('id asc')->select()->toArray():[];
+            $stopByDetail=[]; foreach($stops as $stop)$stopByDetail[(int)$stop['bet_detail_id']]=$stop;
+            $record['record_id']=(int)$record['id']; $record['username']=(string)($users[(int)$record['user_id']]??'未知用户'); $record['site_name']=(string)($sites[(int)$record['site_id']]??'');
+            $record['details']=array_map(static function(array $detail)use($stopByDetail):array{ $stop=$stopByDetail[(int)$detail['id']]??[]; return ['detail_id'=>(int)$detail['id'],'lottery'=>(string)($stop['lottery']??''),'number_text'=>(string)($detail['number_text']??''),'play_type'=>(string)($stop['play_type']??$detail['category']??''),'amount'=>number_format((float)($detail['amount']??0),2,'.','')]; },$details);
+            $record['amount']=number_format((float)($record['amount']??0),2,'.','');
+        } unset($record);
+        return $records;
+    }
+
+    public function recordOptions(Request $request): \think\response\Json
+    {
+        return $this->reply(['records'=>$this->buildRecordOptions($this->scopedSiteId($request))]);
+    }
+
+    public function preview(Request $request): \think\response\Json
+    {
+        $siteId=$this->scopedSiteId($request); $data=$request->post();
+        $ids=$this->expandRecordIds(is_array($data['record_ids']??null)?$data['record_ids']:[],$siteId);
+        if ($ids===[]) throw new \InvalidArgumentException('请选择要修改的主单');
+        $records=$this->editableRecords($ids,$siteId); if(count($records)!==count($ids)) throw new \RuntimeException('只能修改未开奖且未封盘的主单，请刷新后重试');
+        $result=$this->replacementPreview($records,(string)($data['operation']??''),(array)($data['payload']??[]));
+        return $this->reply(['record_ids'=>$ids,'changed_count'=>count($result['changes']),'skipped_count'=>count($result['skipped']),'changes'=>array_slice($result['changes'],0,200),'skipped'=>array_slice($result['skipped'],0,200)]);
+    }
+
+    public function apply(Request $request): \think\response\Json
+    {
+        $siteId=$this->scopedSiteId($request); $session=$this->session($request); $data=$request->post();
+        $ids=$this->expandRecordIds(is_array($data['record_ids']??null)?$data['record_ids']:[],$siteId);
+        if ($ids===[]) throw new \InvalidArgumentException('请选择要修改的主单');
+        $operation=(string)($data['operation']??''); $payload=(array)($data['payload']??[]);
+        $changed=Db::transaction(function()use($ids,$siteId,$operation,$payload):int{
+            $records=$this->editableRecords($ids,$siteId); if(count($records)!==count($ids)) throw new \RuntimeException('主单状态已变化，请刷新后重试');
+            $preview=$this->replacementPreview($records,$operation,$payload); $count=0;
+            foreach($preview['changes'] as $change){
+                $detail=Db::name('bet_details')->where('id',(int)$change['detail_id'])->lock(true)->find(); if(!$detail)throw new \RuntimeException('明细已变化，请刷新后重试');
+                $update=['amount'=>$change['new_amount']]; if($operation==='replace_number')$update['number_text']=$change['new_number']; if($operation==='replace_play')$update['category']=$change['new_play'];
+                Db::name('bet_details')->where('id',(int)$change['detail_id'])->update($update);
+                $stopQuery=Db::name('user_stop_drops')->where('bet_detail_id',(int)$change['detail_id']); $stopUpdate=['original_amount'=>$change['new_amount'],'actual_amount'=>$change['new_amount']]; if($operation==='replace_number')$stopUpdate['number_text']=$change['new_number']; if($operation==='replace_play')$stopUpdate['play_type']=$change['new_play']; $stopQuery->update($stopUpdate); $count++;
+            }
+            foreach($ids as $id){$total=(float)Db::name('bet_details')->where('bet_record_id',(int)$id)->sum('amount');$countDetails=(int)Db::name('bet_details')->where('bet_record_id',(int)$id)->count();Db::name('bet_records')->where('id',(int)$id)->update(['amount'=>number_format($total,2,'.',''),'bet_count'=>$countDetails]);}
+            return $count;
+        });
+        AuditLogger::write($session,'update','bet_records',['record_ids'=>$ids,'operation'=>$operation,'payload'=>$payload,'changed'=>$changed],(string)$request->ip());
+        return $this->reply(['changed'=>$changed],'主单批量修改完成');
     }
 
     private function lotteries(?int $siteId): array

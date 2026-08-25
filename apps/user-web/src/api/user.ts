@@ -43,10 +43,13 @@ export type BetDetail = {
   status: string;
   placed_at: string;
   source_text?: string;
+  original_source_text?: string;
+  parsed_source_text?: string;
 };
 export type Bill = { bill_date: string; bet_count: number; amount: string; rebate: string; offline_rebate: string; win_amount: string; profit: string };
 export type Draw = { lottery: string; issue_no: string; draw_date: string; draw_time?: string | null; numbers: string; sum_value?: number | null; size?: string | null; parity?: string | null; span_value?: number | null; pending?: number };
-export type Lottery = { id: number; name: string; code: string; sort: number; latest_code: string; latest_numbers: string; next_code: string; next_open_time: string | null; cutoff_enabled?: number; cutoff_time?: string | null; mask_enabled?: number; refund_enabled?: number; recent_issues?: Array<{ code: string; draw_day: string | null }>; can_bet?: boolean };
+export type SiteTimingRule = { start_time: string; end_time: string; allow_bet: number; mask_enabled: number; show_next_issue: number; header_show_next_issue?: number; display_text: string };
+export type Lottery = { id: number; name: string; code: string; sort: number; latest_code: string; latest_numbers: string; next_code: string; next_open_time: string | null; header_next_code?: string; header_next_open_time?: string | null; cutoff_enabled?: number; cutoff_time?: string | null; mask_enabled?: number; refund_enabled?: number; timing_rules?: SiteTimingRule[]; timing_text?: string; timing_can_bet?: boolean; timing_mask?: boolean; show_next_issue?: boolean; header_show_next_issue?: boolean; recent_issues?: Array<{ code: string; draw_day: string | null }>; can_bet?: boolean };
 export const getLotteries = () => request.get<ApiEnvelope<{ list: Lottery[] }>>("/user/lotteries");
 export type LineOption = { line: number; url: string };
 export const getLineOptions = () => request.get<ApiEnvelope<{ list: LineOption[] }>>("/user/line-options", { headers: { "X-Skip-Global-Loading": "1" } });

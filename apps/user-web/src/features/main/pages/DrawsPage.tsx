@@ -1,12 +1,22 @@
 import { useEffect, useRef, useState } from "react";
 import { Empty } from "antd";
 import { getDraws, waitDraws, type Draw, type Lottery } from "../../../api/user";
+import { lotteryTiming } from "../shared";
 
 export function DrawsPage({ selectedLottery }: { selectedLottery?: Lottery }) {
   const [rows, setRows] = useState<Draw[]>([]);
   const [loading, setLoading] = useState(false);
+  const [now, setNow] = useState(Date.now());
   const drawRequestId = useRef(0);
   const drawSignature = useRef("");
+  const showNextIssue = lotteryTiming(selectedLottery, now).showNextIssue;
+  const visibleRows = showNextIssue
+    ? rows
+    : rows.filter((row) => row.pending !== 1 && row.numbers.trim() !== "");
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, []);
   useEffect(() => {
     if (!selectedLottery) return;
     const requestId = ++drawRequestId.current;
@@ -51,7 +61,7 @@ export function DrawsPage({ selectedLottery }: { selectedLottery?: Lottery }) {
     return () => {
       active = false;
     };
-  }, [selectedLottery?.id]);
+  }, [selectedLottery?.id, selectedLottery?.next_code, showNextIssue]);
   return (
     <div className="draw-page">
       {loading ? (
@@ -68,8 +78,8 @@ export function DrawsPage({ selectedLottery }: { selectedLottery?: Lottery }) {
             <span>跨度</span>
           </div>
           <div className="draw-body">
-            {rows.length ? (
-              rows.map((row) => {
+            {visibleRows.length ? (
+              visibleRows.map((row) => {
                 const numbers = row.numbers.split(/[,，\s]+/).filter(Boolean);
                 const pending = numbers.length < 3;
                 return (

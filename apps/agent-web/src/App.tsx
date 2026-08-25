@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { App as AntdApp, Empty, Modal } from "antd";
+import { App as AntdApp, Empty, Modal, Spin } from "antd";
 import { HashRouter, Navigate, NavLink, Route, Routes } from "react-router-dom";
 import {
   AccountBookOutlined, AlertOutlined, FileDoneOutlined, FileTextOutlined,
@@ -10,7 +10,7 @@ import {
 import "./App.css";
 import { Login } from "./features/auth/Login";
 import { Agreement, defaultAgentAgreement, type AgreementData } from "./features/agreement/Agreement";
-import { getAgentLineOptions, getAgentOrganizationProfile, getAgreement, getAnnouncement, getBranding, getLotteries, type AgentOrganizationProfile, type Announcement, type Lottery } from "./api/user";
+import { getAgentBetRecords, getAgentLineOptions, getAgentOrganizationProfile, getAgentOrderDetails, getAgentRefunds, getAgentWinningDetails, getAgreement, getAnnouncement, getBranding, getLedgerIssues, getLotteries, type AgentBetRecord, type AgentOrganizationProfile, type AgentOrderDetail, type AgentRefundRecord, type Announcement, type LedgerIssue, type Lottery } from "./api/user";
 import { apiErrorMessage } from "./utils/request";
 import { RulesPage } from "./features/rules/RulesPage";
 import { SubordinatesPage } from "./features/subordinates/SubordinatesPage";
@@ -60,18 +60,55 @@ function PermissionState({ failed = false }: { failed?: boolean }) {
   return <section className="agent-workspace"><h2>{failed ? "权限加载失败" : "暂无访问权限"}</h2><div className="agent-empty"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={failed ? "无法获取实时权限，请刷新页面重试" : "当前账号没有可访问的功能，请联系上级分配权限"} /></div></section>;
 }
 
-function lotteryTiming(openTime: string | null, now: number) {
-  if (!openTime) return { status: "时间待定", countdown: "-- : -- : --" };
+function lotteryTiming(lottery: Lottery, now: number) {
+  const permissionCanBet = lottery.can_bet !== false;
+  const rules = lottery.timing_rules || [];
+  const clock = new Date(now);
+  const currentMinutes = clock.getHours() * 60 + clock.getMinutes();
+  const parseMinutes = (value: unknown, fallback: number) => {
+    const match = String(value ?? "").match(/^(\d{1,2}):(\d{2})$/);
+    if (!match) return fallback;
+    const hours = Number(match[1]);
+    const minutes = Number(match[2]);
+    return hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59
+      ? hours * 60 + minutes
+      : fallback;
+  };
+  const rule = rules.find((item) => {
+    const start = parseMinutes(item.start_time, 0);
+    const end = parseMinutes(item.end_time, 1439);
+    return start === end
+      ? true
+      : start < end
+        ? currentMinutes >= start && currentMinutes < end
+        : currentMinutes >= start || currentMinutes < end;
+  });
+  if (rule) {
+    const canBet = permissionCanBet && rule.allow_bet === 1;
+    const end = parseMinutes(rule.end_time, 1439);
+    let seconds = (end - currentMinutes) * 60 - clock.getSeconds();
+    if (seconds < 0) seconds += 24 * 60 * 60;
+    const hours = String(Math.floor(seconds / 3600)).padStart(2, "0");
+    const minutes = String(Math.floor((seconds % 3600) / 60)).padStart(2, "0");
+    const remaining = String(seconds % 60).padStart(2, "0");
+    return {
+      status: rule.display_text?.trim() || (canBet ? "开盘中" : "即将开盘"),
+      countdown: `${hours} : ${minutes} : ${remaining}`,
+    };
+  }
+  const openTime = lottery.header_next_open_time || lottery.next_open_time;
+  if (!openTime)
+    return { status: lottery.timing_text?.trim() || "时间待定", countdown: "-- : -- : --" };
   const target = new Date(openTime.replace(" ", "T")).getTime();
   if (!Number.isFinite(target)) return { status: "时间待定", countdown: "-- : -- : --" };
-  const openingDay = new Date(target);
-  openingDay.setHours(0, 0, 0, 0);
-  const status = now >= target ? "已封盘" : now >= openingDay.getTime() ? "开盘中" : "未开盘";
   const seconds = Math.max(0, Math.floor((target - now) / 1000));
   const hours = String(Math.floor(seconds / 3600)).padStart(2, "0");
   const minutes = String(Math.floor((seconds % 3600) / 60)).padStart(2, "0");
   const remaining = String(seconds % 60).padStart(2, "0");
-  return { status, countdown: `${hours} : ${minutes} : ${remaining}` };
+  return {
+    status: lottery.timing_text?.trim() || (now >= target ? "已封盘" : "开盘中"),
+    countdown: `${hours} : ${minutes} : ${remaining}`,
+  };
 }
 
 const overviewTabs = [
@@ -81,15 +118,169 @@ const overviewTabs = [
   { label: "投注明细", permission: "bet_details" },
   { label: "查看退码", permission: "refunds" },
 ];
-const dateOptions = ["8-19(2026221)", "8-18(2026220)", "8-17(2026219)"];
+function formatIssueOption(issue: LedgerIssue) {
+  const date = String(issue.date || "");
+  const match = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(date);
+  return match ? `${Number(match[2])}-${Number(match[3])}(${issue.issue_no})` : issue.issue_no;
+}
 
-function OverviewPage() {
+function OverviewDetailsTable({ rows, winning = false }: { rows: AgentOrderDetail[]; winning?: boolean }) {
+  if (winning) return <table className="overview-data-table overview-winning-table"><thead><tr><th>注单编号</th><th>会员</th><th>下单时间</th><th>号码</th><th>下注金额</th><th>赔率</th><th>中奖</th><th>下线回水</th><th>实收下线</th><th>路径</th><th>小票或全截</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td>{row.order_no}</td><td>{row.username}</td><td>{row.placed_at}</td><td className="overview-number">{row.number_text || row.play_type}</td><td>{row.amount}</td><td>{row.odds || "-"}</td><td className="overview-win">{row.win_amount || "0"}</td><td>{row.downline_rebate || "0"}</td><td>{row.received_amount || row.amount}</td><td className="overview-path">{row.path || "会员"}</td><td className="overview-ticket" title={row.ticket || ""}>{row.ticket || ""}</td></tr>)}</tbody></table>;
+  return <table className="overview-data-table overview-detail-table"><thead><tr><th>注单编号</th><th>会员</th><th>下单时间</th><th>号码</th><th>下注金额</th><th>赔率</th><th>中奖</th><th>下线回水</th><th>实收下线</th><th>自己回水</th><th>实付上线</th><th>赚水</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td>{row.order_no}</td><td>{row.username}</td><td>{row.placed_at}</td><td className="overview-number">{row.number_text || row.play_type}</td><td>{row.amount}</td><td>{row.odds || "-"}</td><td className="overview-win">{row.win_amount || "0"}</td><td>{row.downline_rebate || "0"}</td><td>{row.received_amount || row.amount}</td><td>{row.own_rebate || "0"}</td><td>{row.paid_upstream || row.amount}</td><td>{row.rebate_profit || "0"}</td></tr>)}</tbody></table>;
+}
+
+function OverviewRecordsTable({ rows, onDetails }: { rows: AgentBetRecord[]; onDetails: (row: AgentBetRecord) => void }) {
+  return <table className="overview-data-table overview-records-table"><thead><tr><th>编号</th><th>注单编号</th><th>会员名</th><th>期号</th><th>下单时间</th><th>来源</th><th>注单数量</th><th>注单总额</th><th>操作</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td>{row.id}</td><td>{row.order_no || String(row.id).padStart(10, "0")}</td><td>{row.username}</td><td>{row.issue_no}</td><td>{row.placed_at}</td><td>快录</td><td>{row.bet_count}</td><td className="overview-money">{row.amount}</td><td><button type="button" className="overview-action" onClick={() => onDetails(row)}>明细</button></td></tr>)}</tbody></table>;
+}
+
+function OverviewRefundsTable({ rows, onDetails }: { rows: AgentRefundRecord[]; onDetails: (row: AgentRefundRecord) => void }) {
+  return <table className="overview-data-table overview-refund-table"><thead><tr><th>编号</th><th>会员名</th><th>期号</th><th>退码时间</th><th>注单数量</th><th>注单总额</th><th>操作</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td>{row.id}</td><td>{row.username}</td><td>{row.issue_no}</td><td>{row.refunded_at}</td><td>{row.bet_count}</td><td className="overview-money">{row.amount}</td><td><button type="button" className="overview-action" onClick={() => onDetails(row)}>明细</button></td></tr>)}</tbody></table>;
+}
+
+function OverviewPage({ lottery: suppliedLottery = "" }: { lottery?: string } = {}) {
   const visibleTabs = overviewTabs.filter((tab) => hasAgentPermission(tab.permission));
   const [activeTab, setActiveTab] = useState(() => visibleTabs[0]?.label || "总货概览");
   const [account, setAccount] = useState("");
   const [source, setSource] = useState("全部");
-  const [startDate, setStartDate] = useState(dateOptions[0]);
-  const [endDate, setEndDate] = useState(dateOptions[0]);
+  const [issues, setIssues] = useState<LedgerIssue[]>([]);
+  const [issuesLoading, setIssuesLoading] = useState(false);
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [lottery, setLottery] = useState(suppliedLottery);
+  const [lotteryId, setLotteryId] = useState<number | null>(() => {
+    const value = Number(sessionStorage.getItem("agent_selected_lottery_id"));
+    return Number.isInteger(value) && value > 0 ? value : null;
+  });
+  const [details, setDetails] = useState<AgentOrderDetail[]>([]);
+  const [records, setRecords] = useState<AgentBetRecord[]>([]);
+  const [refunds, setRefunds] = useState<AgentRefundRecord[]>([]);
+  const [dataLoading, setDataLoading] = useState(false);
+  const [dataError, setDataError] = useState("");
+  const [number, setNumber] = useState("");
+  const [metric, setMetric] = useState("odds");
+  const [min, setMin] = useState("");
+  const [max, setMax] = useState("");
+  const [category, setCategory] = useState("所有");
+  const [winningStatus, setWinningStatus] = useState("all");
+  const [sourceText, setSourceText] = useState("");
+  const [fromTime, setFromTime] = useState("");
+  const [toTime, setToTime] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(40);
+  const [queryVersion, setQueryVersion] = useState(0);
+  const [total, setTotal] = useState(0);
+  const [detailModalOpen, setDetailModalOpen] = useState(false);
+  const [detailModalRows, setDetailModalRows] = useState<AgentOrderDetail[]>([]);
+  const [detailModalLoading, setDetailModalLoading] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    if (suppliedLottery) {
+      setLottery(suppliedLottery);
+    } else {
+      const selectedId = Number(sessionStorage.getItem("agent_selected_lottery_id"));
+      void getLotteries().then((response) => {
+        if (!active) return;
+        const list = response.data.data?.list || [];
+        const selected = list.find((item) => item.id === selectedId) || list[0];
+        setLottery(selected?.name || "");
+        setLotteryId(selected?.id || null);
+      }).catch(() => active && setLottery(""));
+    }
+    const handleLotteryChange = (event: Event) => {
+      const detail = (event as CustomEvent<{ id?: number; name?: string } | string>).detail;
+      if (typeof detail === "string") setLottery(detail);
+      else { setLottery(detail?.name || ""); setLotteryId(detail?.id || null); }
+    };
+    window.addEventListener("agent:lottery-changed", handleLotteryChange);
+    return () => {
+      active = false;
+      window.removeEventListener("agent:lottery-changed", handleLotteryChange);
+    };
+  }, [suppliedLottery]);
+
+  useEffect(() => {
+    if (!lottery) {
+      setIssues([]);
+      setStartDate("");
+      setEndDate("");
+      return;
+    }
+    let active = true;
+    setIssuesLoading(true);
+    void getLedgerIssues({ lottery }).then((response) => {
+      if (!active) return;
+      const list = response.data.data?.list || [];
+      setIssues(list);
+      setStartDate(list[0]?.issue_no || "");
+      setEndDate(list[0]?.issue_no || "");
+    }).catch(() => {
+      if (!active) return;
+      setIssues([]);
+      setStartDate("");
+      setEndDate("");
+    }).finally(() => {
+      if (active) setIssuesLoading(false);
+    });
+    return () => { active = false; };
+  }, [lottery]);
+
+  useEffect(() => {
+    if (!lottery || !startDate || !endDate) {
+      setDetails([]); setRecords([]); setRefunds([]); return;
+    }
+    let active = true;
+    setDataLoading(true); setDataError("");
+    const params: Record<string, unknown> = {
+      lottery_id: lotteryId || undefined,
+      from_issue: startDate,
+      to_issue: endDate,
+      account: account.trim() || undefined,
+      source: source === "全部" ? "all" : source,
+      number: number.trim() || undefined,
+      metric,
+      min: min || undefined,
+      max: max || undefined,
+      category: category === "所有" ? undefined : category,
+      status: winningStatus,
+      source_text: sourceText.trim() || undefined,
+      from: fromTime || undefined,
+      to: toTime || undefined,
+      page,
+      page_size: pageSize,
+    };
+    const task = activeTab === "总货明细" ? getAgentOrderDetails(params)
+      : activeTab === "中奖明细" ? getAgentWinningDetails(params)
+      : activeTab === "查看退码" ? getAgentRefunds(params)
+      : getAgentBetRecords(params);
+    void task.then((response) => {
+      if (!active) return;
+      const data = response.data.data;
+      if (activeTab === "总货明细" || activeTab === "中奖明细") { setDetails((data as { list: AgentOrderDetail[] }).list || []); setRecords([]); setRefunds([]); }
+      else if (activeTab === "查看退码") { setRefunds((data as { list: AgentRefundRecord[] }).list || []); setDetails([]); setRecords([]); }
+      else { setRecords((data as { list: AgentBetRecord[] }).list || []); setDetails([]); setRefunds([]); }
+      setTotal(Number((data as { total?: number }).total || 0));
+    }).catch((reason: unknown) => {
+      if (!active) return;
+      setDetails([]); setRecords([]); setRefunds([]);
+      setDataError(apiErrorMessage(reason, "数据加载失败，请稍后重试"));
+    }).finally(() => { if (active) setDataLoading(false); });
+    return () => { active = false; };
+  }, [activeTab, account, category, endDate, fromTime, lottery, lotteryId, max, metric, min, number, page, pageSize, queryVersion, source, sourceText, startDate, toTime, winningStatus]);
+
+  const openRecordDetails = async (id: number) => {
+    setDetailModalOpen(true);
+    setDetailModalLoading(true);
+    try {
+      const response = await getAgentOrderDetails({ lottery_id: lotteryId || undefined, record_id: id, include_refunded: 1, page: 1, page_size: 100 });
+      setDetailModalRows(response.data.data?.list || []);
+    } catch (error) {
+      setDetailModalRows([]);
+      setDataError(apiErrorMessage(error, "注单明细加载失败"));
+    } finally {
+      setDetailModalLoading(false);
+    }
+  };
 
   return (
     <section className="overview-page">
@@ -97,45 +288,47 @@ function OverviewPage() {
         <div className="overview-breadcrumb"><b>位置</b><span>»</span><u>{activeTab}</u></div>
         <div className="overview-tabs" role="tablist" aria-label="总货查询分类">
           {visibleTabs.map((tab) => (
-            <button key={tab.permission} type="button" role="tab" aria-selected={activeTab === tab.label} className={activeTab === tab.label ? "active" : ""} onClick={() => setActiveTab(tab.label)}>{tab.label}</button>
+            <button key={tab.permission} type="button" role="tab" aria-selected={activeTab === tab.label} className={activeTab === tab.label ? "active" : ""} onClick={() => { setActiveTab(tab.label); setPage(1); }}>{tab.label}</button>
           ))}
         </div>
       </div>
 
-      <form className="overview-filters" onSubmit={(event) => event.preventDefault()}>
-        <fieldset>
-          <legend>查账号：</legend>
-          <input value={account} onChange={(event) => setAccount(event.target.value)} placeholder="查账号" aria-label="查账号" />
-        </fieldset>
-        <fieldset className="source-filter">
-          <legend>来源：</legend>
-          <select value={source} onChange={(event) => setSource(event.target.value)} aria-label="来源">
-            <option>全部</option>
-            <option>代理</option>
-            <option>会员</option>
-          </select>
-        </fieldset>
-        <div className="overview-submit-wrap"><button className="overview-submit" type="submit">提交</button></div>
+      <form className={`overview-filters overview-filters-${activeTab === "总货概览" ? "overview" : activeTab === "查看退码" ? "refund" : activeTab === "投注明细" ? "bets" : activeTab === "中奖明细" ? "winning" : "details"}`} onSubmit={(event) => { event.preventDefault(); setPage(1); setQueryVersion((value) => value + 1); }}>
+        {activeTab === "投注明细" ? <>
+          <fieldset className="status-filter"><legend>中奖</legend><select value={winningStatus} onChange={(event) => setWinningStatus(event.target.value)}><option value="all">全部</option><option value="won">中奖</option><option value="unwon">未中</option></select></fieldset>
+          <fieldset><legend>会员账号</legend><input value={account} onChange={(event) => setAccount(event.target.value)} placeholder="搜索会员名" /></fieldset>
+          <fieldset className="text-filter"><legend>原始文本搜索</legend><input value={sourceText} onChange={(event) => setSourceText(event.target.value)} placeholder="输入文本" /></fieldset>
+          <fieldset className="date-range"><legend>投注时间</legend><input type="date" value={fromTime} onChange={(event) => setFromTime(event.target.value)} /><span>至</span><input type="date" value={toTime} onChange={(event) => setToTime(event.target.value)} /></fieldset>
+        </> : <>
+          <fieldset><legend>查账号：</legend><input value={account} onChange={(event) => setAccount(event.target.value)} placeholder="查账号" /></fieldset>
+          {activeTab !== "总货概览" && activeTab !== "查看退码" ? <fieldset><legend>查号码：</legend><input value={number} onChange={(event) => setNumber(event.target.value)} placeholder="查号码" /></fieldset> : null}
+          {activeTab === "中奖明细" ? <fieldset className="check-filter"><legend>组</legend><label><input type="checkbox" /> 是?</label></fieldset> : null}
+          {activeTab !== "总货概览" && activeTab !== "查看退码" ? <fieldset className="range-filter"><legend>列出</legend><div><select value={metric} onChange={(event) => setMetric(event.target.value)}><option value="odds">赔率</option><option value="amount">金额</option></select><input value={min} onChange={(event) => setMin(event.target.value.replace(/[^\d.]/g, ""))} /><span>至</span><input value={max} onChange={(event) => setMax(event.target.value.replace(/[^\d.]/g, ""))} /></div></fieldset> : null}
+          {activeTab !== "总货概览" && activeTab !== "查看退码" ? <fieldset className="category-filter"><legend>分类</legend><select value={category} onChange={(event) => setCategory(event.target.value)}><option>所有</option><option>直选</option><option>组三</option><option>组六</option><option>定位</option><option>和值</option><option>跨度</option></select></fieldset> : null}
+          {activeTab === "中奖明细" ? <><fieldset className="source-filter"><legend>来源</legend><select value={source} onChange={(event) => setSource(event.target.value)}><option>全部</option><option value="quick">快录</option></select></fieldset><fieldset className="source-filter"><legend>设备</legend><select><option>全部</option><option>快录网</option></select></fieldset></> : activeTab === "总货概览" ? <fieldset className="source-filter"><legend>来源：</legend><select value={source} onChange={(event) => setSource(event.target.value)}><option>全部</option><option value="quick">快录</option></select></fieldset> : null}
+        </>}
+        <div className="overview-submit-wrap"><button className="overview-submit" type="submit">{activeTab === "投注明细" ? "搜索" : "提交"}</button></div>
       </form>
 
       <section className="overview-table-panel">
         <div className="overview-table-title">
           <strong>{activeTab}</strong>
-          <select value={startDate} onChange={(event) => setStartDate(event.target.value)} aria-label="开始日期">
-            {dateOptions.map((item) => <option key={item}>{item}</option>)}
+          <select value={startDate} onChange={(event) => setStartDate(event.target.value)} aria-label="开始日期" disabled={issuesLoading || issues.length === 0}>
+            {issues.length === 0 && <option value="">{issuesLoading ? "正在加载期号" : "暂无可用期号"}</option>}
+            {issues.map((item) => <option key={`start-${item.issue_no}`} value={item.issue_no}>{formatIssueOption(item)}</option>)}
           </select>
           <span>至</span>
-          <select value={endDate} onChange={(event) => setEndDate(event.target.value)} aria-label="结束日期">
-            {dateOptions.map((item) => <option key={item}>{item}</option>)}
+          <select value={endDate} onChange={(event) => setEndDate(event.target.value)} aria-label="结束日期" disabled={issuesLoading || issues.length === 0}>
+            {issues.length === 0 && <option value="">{issuesLoading ? "正在加载期号" : "暂无可用期号"}</option>}
+            {issues.map((item) => <option key={`end-${item.issue_no}`} value={item.issue_no}>{formatIssueOption(item)}</option>)}
           </select>
         </div>
         <div className="overview-table-scroll">
-          <table>
-            <thead><tr><th>编号</th><th>注单编号</th><th>会员名</th><th>期号</th><th>下单时间</th><th>来源</th><th>注单数量</th><th>注单总额</th><th>操作</th></tr></thead>
-          </table>
-          <div className="overview-no-data"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" /></div>
+          {dataLoading ? <div className="overview-no-data"><Spin /></div> : dataError ? <div className="overview-no-data">{dataError}</div> : activeTab === "总货明细" || activeTab === "中奖明细" ? (details.length ? <OverviewDetailsTable rows={details} winning={activeTab === "中奖明细"} /> : <div className="overview-no-data"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" /></div>) : activeTab === "查看退码" ? (refunds.length ? <OverviewRefundsTable rows={refunds} onDetails={(row) => void openRecordDetails(row.id)} /> : <div className="overview-no-data"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" /></div>) : records.length ? <OverviewRecordsTable rows={records} onDetails={(row) => void openRecordDetails(row.id)} /> : <div className="overview-no-data"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" /></div>}
         </div>
+        <div className="overview-pagination"><span>总计：<b>{total}</b> 条数据</span><button type="button" disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>‹</button><strong>{page}</strong><button type="button" disabled={page >= Math.max(1, Math.ceil(total / pageSize))} onClick={() => setPage((value) => value + 1)}>›</button><select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); }}><option value={10}>10 条/页</option><option value={40}>40 条/页</option><option value={100}>100 条/页</option></select></div>
       </section>
+      <Modal title="注单明细" open={detailModalOpen} footer={null} width={1080} onCancel={() => setDetailModalOpen(false)}>{detailModalLoading ? <div className="overview-no-data"><Spin /></div> : detailModalRows.length ? <OverviewDetailsTable rows={detailModalRows} /> : <Empty description="暂无明细" />}</Modal>
     </section>
   );
 }
@@ -153,6 +346,8 @@ function AgentMain({ name, onLogout, announcement, siteName }: { name: string; o
   const [lineLoading, setLineLoading] = useState(false);
   const [lineResults, setLineResults] = useState<Array<{ line: number; delay: number | null; fastest?: boolean }>>([]);
   const [lineCountdown, setLineCountdown] = useState<number | null>(null);
+  const [warmVisible, setWarmVisible] = useState(true);
+  const [warmOpen, setWarmOpen] = useState(false);
   const [organizationProfile, setOrganizationProfile] = useState<AgentOrganizationProfile | null>(null);
   const [permissions, setPermissions] = useState<string[]>(() => { try { const value=JSON.parse(localStorage.getItem("agent_permissions")||"[]");return Array.isArray(value)?value.map(String):[]; } catch { return []; } });
   const [permissionsReady, setPermissionsReady] = useState(false);
@@ -171,6 +366,10 @@ function AgentMain({ name, onLogout, announcement, siteName }: { name: string; o
   useEffect(() => {
     document.title = `${resolvedSiteName} - ${systemName}`;
   }, [resolvedSiteName, systemName]);
+  useEffect(() => {
+    const selected = lotteries.find((item) => item.id === selectedLotteryId);
+    window.dispatchEvent(new CustomEvent("agent:lottery-changed", { detail: { id: selected?.id || null, name: selected?.name || "" } }));
+  }, [lotteries, selectedLotteryId]);
   useEffect(() => {
     const send = () => { void heartbeat().catch(() => undefined); };
     send();
@@ -309,8 +508,10 @@ function AgentMain({ name, onLogout, announcement, siteName }: { name: string; o
         </div>
         <ul className="lottery">
           {lotteriesLoading ? <li>正在加载彩票...</li> : lotteries.length === 0 ? <li>当前站点暂未分配彩票</li> : lotteries.map((item) => {
-            const timing = lotteryTiming(item.next_open_time, now);
-            return <li key={item.id} className={selectedLotteryId === item.id ? "selected" : ""} role="button" tabIndex={0} onClick={() => { setSelectedLotteryId(item.id); sessionStorage.setItem("agent_selected_lottery_id", String(item.id)); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { setSelectedLotteryId(item.id); sessionStorage.setItem("agent_selected_lottery_id", String(item.id)); } }}><div className="lottery-row"><div className="lottery-name"><span>{item.name}</span><b>{timing.status}</b></div><div className="lottery-meta"><label>{item.next_code || item.latest_code || "--"}</label><strong>{timing.countdown}</strong></div></div></li>;
+            const timing = lotteryTiming(item, now);
+            const showHeaderNext = item.header_show_next_issue !== false;
+            const issue = showHeaderNext ? (item.header_next_code || item.next_code) : item.latest_code;
+            return <li key={item.id} className={selectedLotteryId === item.id ? "selected" : ""} role="button" tabIndex={0} onClick={() => { setSelectedLotteryId(item.id); sessionStorage.setItem("agent_selected_lottery_id", String(item.id)); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { setSelectedLotteryId(item.id); sessionStorage.setItem("agent_selected_lottery_id", String(item.id)); } }}><div className="lottery-row"><div className="lottery-name"><span>{item.name}</span><b>{timing.status}</b></div><div className="lottery-meta"><label>{issue || "--"}</label><strong>{timing.countdown}</strong></div></div></li>;
           })}
         </ul>
         <nav className="site-navigation">
@@ -330,11 +531,13 @@ function AgentMain({ name, onLogout, announcement, siteName }: { name: string; o
       <div className="body agent-body management-workspace">
         <main>{!permissionsReady ? <section className="agent-workspace"><div className="agent-empty">正在加载实时权限...</div></section> : permissionsFailed ? <PermissionState failed /> : firstRoute === null ? <PermissionState /> : <Routes><Route path="/" element={<Navigate to={`/${firstRoute}`} replace />} />{routeAllowed("overview") && <Route path="/overview" element={<OverviewPage />} />}{routeAllowed("rules") && <Route path="/rules" element={<RulesPage lottery={lotteries.find((item) => item.id === selectedLotteryId)?.name || ""} />} />}{routeAllowed("settings") && <Route path="/settings" element={<SettingsPage lottery={lotteries.find((item) => item.id === selectedLotteryId)?.name || ""} />} />}{routeAllowed("reports") && <Route path="/reports" element={<ReportsPage lottery={lotteries.find((item) => item.id === selectedLotteryId)?.name || ""} />} />}{routeAllowed("subordinates") && <Route path="/subordinates" element={<SubordinatesPage agentName={name} />} />}{routeAllowed("subordinates") && (currentLevel === "agent" ? hasAgentPermission("member.create", permissions) : hasAgentPermission("organization.create", permissions)) && <Route path="/subordinates/new" element={<SubordinateFormPage />} />}{routeAllowed("subordinates") && hasAgentPermission("member.update", permissions) && <Route path="/subordinates/:id/edit" element={<SubordinateEditPage agentName={name} />} />}{routeAllowed("logs") && <Route path="/logs" element={<LogsPage />} />}{routeAllowed("ledger") && <Route path="/ledger" element={<LedgerPage lottery={lotteries.find((item) => item.id === selectedLotteryId)?.name || ""} />} />}{routeAllowed("results") && <Route path="/results" element={<ResultsPage lottery={lotteries.find((item) => item.id === selectedLotteryId)?.name || ""} />} />}{routeAllowed("intercept") && <Route path="/intercept" element={<InterceptionsPage lottery={lotteries.find((item) => item.id === selectedLotteryId)?.name || ""} />} />}{routeAllowed("subaccounts") && <Route path="/subaccounts" element={<SubaccountsPage/>}/>}<Route path="*" element={<Navigate to={`/${firstRoute}`} replace />} /></Routes>}</main>
       </div>
+      {warmVisible ? <section className={`warm${warmOpen ? " is-open" : " is-collapsed"}`} aria-label="温馨提示"><header className="warm-header"><strong>温馨提示</strong><div className="warm-actions"><button type="button" title={warmOpen ? "收回温馨提示" : "弹出温馨提示"} aria-label={warmOpen ? "收回温馨提示" : "弹出温馨提示"} onClick={() => setWarmOpen((value) => !value)}><span aria-hidden="true">{warmOpen ? "−" : "↑"}</span></button><button type="button" title="关闭温馨提示" aria-label="关闭温馨提示" onClick={() => setWarmVisible(false)}><span aria-hidden="true">×</span></button></div></header><div className="warm-content">【温馨提示】各位会员在下注确定后请到“下注明细”里确认注单，一切注单结算以下注明细里资料为准！</div></section> : null}
     </div>
   );
 }
 
 export default function App() {
+  const { modal } = AntdApp.useApp();
   const [siteName, setSiteName] = useState("站点管理系统");
   const [name, setName] = useState(() => localStorage.getItem("agent_token") ? localStorage.getItem("agent_name") || "" : "");
   const [mustChangePassword, setMustChangePassword] = useState(() => localStorage.getItem("agent_must_change_password") === "1");
@@ -344,6 +547,7 @@ export default function App() {
   });
   const [agreement, setAgreement] = useState<AgreementData>(defaultAgentAgreement);
   const [announcement, setAnnouncement] = useState<Announcement>({ title: "代理端公告", content: "暂无公告" });
+  const clearSession = () => { clearAgentAuthQuery(); localStorage.removeItem("agent_token"); localStorage.removeItem("agent_name"); localStorage.removeItem("agent_permissions"); localStorage.removeItem("agent_is_subaccount"); localStorage.removeItem("agent_organization_level"); localStorage.removeItem("agent_level_label"); localStorage.removeItem("agent_must_change_password"); sessionStorage.removeItem("agent_agreement_accepted_token"); setAgreementVisible(false); setMustChangePassword(false); setName(""); };
   useEffect(() => {
     void getBranding().then((response) => {
       const value = String(response.data.data?.site_name || "").trim();
@@ -375,11 +579,20 @@ export default function App() {
     void getAnnouncement().then((response) => { if (response.data.data) setAnnouncement(response.data.data); }).catch(() => setAnnouncement({ title: "代理端公告", content: "暂无公告" }));
   }, [name, agreementVisible]);
   useEffect(() => {
-    const logout = () => { setMustChangePassword(false); setName(""); };
-    window.addEventListener("agent:unauthorized", logout);
-    return () => window.removeEventListener("agent:unauthorized", logout);
-  }, []);
-  const clearSession = () => { clearAgentAuthQuery(); localStorage.removeItem("agent_token"); localStorage.removeItem("agent_name"); localStorage.removeItem("agent_permissions"); localStorage.removeItem("agent_is_subaccount"); localStorage.removeItem("agent_organization_level"); localStorage.removeItem("agent_level_label"); localStorage.removeItem("agent_must_change_password"); sessionStorage.removeItem("agent_agreement_accepted_token"); setAgreementVisible(false); setMustChangePassword(false); setName(""); };
+    const handleUnauthorized = () => {
+      modal.confirm({
+        title: "登录已过期",
+        content: "请重新登录",
+        okText: "确认",
+        cancelButtonProps: { style: { display: "none" } },
+        maskClosable: false,
+        closable: false,
+        onOk: clearSession,
+      });
+    };
+    window.addEventListener("agent:unauthorized", handleUnauthorized);
+    return () => window.removeEventListener("agent:unauthorized", handleUnauthorized);
+  }, [modal]);
   const logout = () => { void logoutSession().catch(() => undefined).finally(clearSession); };
   return <HashRouter>{name ? agreementVisible ? <div className="agent-agreement-theme"><Agreement agreement={agreement} onReject={logout} onAccept={() => { const token=localStorage.getItem("agent_token"); if (token) sessionStorage.setItem("agent_agreement_accepted_token",token); setAgreementVisible(false); }} /></div> : mustChangePassword ? <ForcedPasswordPage username={name} onSuccess={() => setMustChangePassword(false)} /> : <AgentMain name={name} onLogout={logout} announcement={announcement} siteName={siteName} /> : <Login siteName={siteName} onLogin={(value) => { localStorage.setItem("agent_name", value); sessionStorage.removeItem("agent_agreement_accepted_token"); setMustChangePassword(localStorage.getItem("agent_must_change_password") === "1"); setName(value); setAgreementVisible(true); }} />}</HashRouter>;
 }

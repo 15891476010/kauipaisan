@@ -48,8 +48,7 @@ export function QuickEntryPage({
     return () => window.clearInterval(timer);
   }, []);
   const timing = lotteryTiming(selectedLottery, now);
-  const locked = tab === "快速录入" && timing.locked;
-  const showMask = locked && timing.mask;
+  const showMask = tab === "快速录入" && timing.mask;
   const [generatedLines, setGeneratedLines] = useState<QuickEntryLine[]>([]);
   const [generatedTotal, setGeneratedTotal] = useState({
     count: 0,
@@ -188,6 +187,10 @@ export function QuickEntryPage({
     preview: QuickPreview,
     showSuccess = true,
   ) => {
+    if (!timing.canBet) {
+      message.warning(timing.status || "当前时间段不可下注");
+      return false;
+    }
     const valid = preview.lines.filter((line) => line.status === "success");
     if (!valid.length) {
       if (showSuccess) message.warning("请先生成有效投注内容");
@@ -217,6 +220,10 @@ export function QuickEntryPage({
     }
   };
   const place = () => {
+    if (!timing.canBet) {
+      message.warning(timing.status || "当前时间段不可下注");
+      return;
+    }
     const preview: QuickPreview = {
       lines: generatedLines,
       count: generatedTotal.count,
@@ -322,7 +329,7 @@ export function QuickEntryPage({
                 if (options[0] && options[1])
                   suppressResultRecognition.current = true;
                 setText(pasted);
-                if (options[0])
+                if (options[0] && timing.canBet)
                   window.setTimeout(() => {
                     void generateText(pasted).then((preview) => {
                       if (preview) void submitBet(pasted, preview);
@@ -386,8 +393,8 @@ export function QuickEntryPage({
             </label>
           </div>
           <div className="actions">
-            <button type="button" onClick={place}>
-              下 注
+            <button type="button" onClick={place} disabled={!timing.canBet}>
+              {timing.canBet ? "下 注" : timing.status || "暂不可下注"}
             </button>
             <button
               type="button"
@@ -438,7 +445,17 @@ export function QuickEntryPage({
             onChange={(lines, reason) => {
               if (reason === "structure")
                 suppressResultRecognition.current = true;
-              setText(lines.map((line) => line.raw_text).join("\n"));
+              // One source sentence can produce several internal rows (for
+              // example 福体/组三/组六). Keep adjacent duplicate source text
+              // only once, otherwise editing a displayed row would append
+              // the same ticket and generate an extra result.
+              const sourceLines = lines.reduce<string[]>((result, line) => {
+                const raw = line.raw_text || "";
+                if (raw !== "" && result[result.length - 1] !== raw) result.push(raw);
+                return result;
+              }, []);
+              const nextText = sourceLines.join("\n");
+              setText(nextText);
               setGeneratedLines(lines);
               const successful = lines.filter(
                 (line) => line.status === "success",
@@ -456,6 +473,12 @@ export function QuickEntryPage({
                   .reduce((total, line) => total + Number(line.amount || 0), 0)
                   .toFixed(2),
               });
+              // Text edits are committed on blur by QuickResultTable. Parse
+              // that single source sentence immediately so the original row
+              // is replaced with the new result instead of adding another row.
+              if (reason === "text" && nextText.trim() && !options[1]) {
+                void generateText(nextText, false);
+              }
             }}
           />
           <RuleInstructionsModal

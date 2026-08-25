@@ -8,10 +8,13 @@ import {
   deleteLotteryOdds,
   deleteLotteryOddsCategory,
   listLotteryOdds,
+  listLotteries,
+  copyLotteryOdds,
   updateLotteryOdds,
   updateLotteryOddsCategory,
   type LotteryOdds,
   type LotteryOddsCategory,
+  type Lottery,
 } from "../api/admin";
 
 type TreeRow =
@@ -39,6 +42,8 @@ const categoryTotal = ref(0);
 const page = ref(1);
 const pageSize = ref(10);
 const loading = ref(false);
+const sourceLotteries = ref<Lottery[]>([]);
+const sourceLotteryId = ref<number | null>(null);
 const drawer = ref(false);
 const drawerMode = ref<"category" | "play">("category");
 const editingCategory = ref<LotteryOddsCategory | null>(null);
@@ -118,6 +123,13 @@ async function load() {
   } finally {
     loading.value = false;
   }
+}
+async function loadSources() {
+  try { sourceLotteries.value = (await listLotteries({ page: 1, page_size: 100 })).data.list.filter((item) => item.id !== id); } catch { sourceLotteries.value = []; }
+}
+async function copyFromSource() {
+  if (!sourceLotteryId.value) return ElMessage.warning("请选择赔率来源彩种");
+  try { await ElMessageBox.confirm("复制后会替换当前彩种现有赔率，确定继续吗？", "复制赔率", { type: "warning" }); await copyLotteryOdds(id, sourceLotteryId.value, true); ElMessage.success("赔率复制成功"); await load(); } catch (error) { if (error !== "cancel") ElMessage.error(error instanceof Error ? error.message : "复制失败"); }
 }
 function openCreateCategory() {
   drawerMode.value = "category";
@@ -236,7 +248,7 @@ async function removePlay(play: LotteryOdds) {
       ElMessage.error(error instanceof Error ? error.message : "删除失败");
   }
 }
-onMounted(load);
+onMounted(() => { void load(); void loadSources(); });
 </script>
 
 <template>
@@ -247,7 +259,7 @@ onMounted(load);
         <p>按类别管理玩法赔率，未填写的数值保持为“未设置”。</p>
       </div>
       <div class="heading-actions">
-        <el-button @click="router.back()">返回彩票列表</el-button
+        <el-select v-model="sourceLotteryId" clearable placeholder="从其他彩种复制赔率" style="width:210px"><el-option v-for="item in sourceLotteries" :key="item.id" :label="item.name" :value="item.id" /></el-select><el-button @click="copyFromSource">复制赔率</el-button><el-button @click="router.back()">返回彩票列表</el-button
         ><el-button type="primary" @click="openCreateCategory"
           >新增类别</el-button
         >

@@ -5,6 +5,7 @@ namespace app\controller;
 use think\Request;
 use think\facade\Cache;
 use think\facade\Db;
+use app\service\SystemLotteryService;
 
 final class Lottery
 {
@@ -36,18 +37,32 @@ final class Lottery
         $this->session($request,'admin'); $data=$request->post(); $name=trim((string)($data['name']??'')); $code=trim((string)($data['code']??''));
         if ($name==='' || $code==='') throw new \InvalidArgumentException('请输入彩票名称和编码');
         if (!preg_match('/^[A-Za-z0-9_-]+$/',$code)) throw new \InvalidArgumentException('编码只能包含字母、数字、下划线和短横线');
+        $sourceType=$this->sourceType($data['source_type']??'official'); $interval=$this->systemInterval($data['system_interval_seconds']??60); $issueMode=$this->systemIssueMode($data['system_issue_mode']??'auto'); $initialIssue=$this->initialIssue($data['system_initial_issue']??null,$sourceType,$issueMode);
+        $templateId=$this->oddsSourceId($data['odds_source_lottery_id']??null,0);
         $controls=$this->bettingControls($data);$unitStake=$this->unitStake($data['unit_stake']??2);
-        $now=date('Y-m-d H:i:s'); $id=Db::name('lotteries')->insertGetId(array_merge(['tenant_id'=>1,'name'=>$name,'code'=>$code,'unit_stake'=>number_format($unitStake,2,'.',''),'status'=>(int)($data['status']??1),'sort'=>(int)($data['sort']??0),'created_at'=>$now,'updated_at'=>$now],$controls));
+        $now=date('Y-m-d H:i:s'); $id=(int)Db::name('lotteries')->insertGetId(array_merge(['tenant_id'=>1,'name'=>$name,'code'=>$code,'source_type'=>$sourceType,'system_interval_seconds'=>$interval,'system_issue_mode'=>$issueMode,'system_initial_issue'=>$initialIssue,'odds_source_lottery_id'=>$templateId?:null,'unit_stake'=>number_format($unitStake,2,'.',''),'status'=>(int)($data['status']??1),'sort'=>(int)($data['sort']??0),'created_at'=>$now,'updated_at'=>$now],$controls));
+        if ($templateId>0) $this->copyOddsFromLottery($templateId,$id);
+        if ($sourceType==='system' && (int)($data['status']??1)===1) (new SystemLotteryService())->runLottery(Db::name('lotteries')->where('id',$id)->find()?:[]);
         return $this->reply(['id'=>$id],'彩票创建成功');
     }
     public function update(Request $request): \think\response\Json
     {
         $this->session($request,'admin'); $id=(int)$request->param('id'); $data=$request->put(); unset($data['id'],$data['tenant_id'],$data['site_ids'],$data['created_at'],$data['deleted_at']);
+        $current=$this->catalog()->where('id',$id)->find(); if (!$current) throw new \InvalidArgumentException('彩票不存在');
         if (isset($data['name'])) { $data['name']=trim((string)$data['name']); if ($data['name']==='') throw new \InvalidArgumentException('请输入彩票名称'); }
         if (isset($data['code']) && !preg_match('/^[A-Za-z0-9_-]+$/',(string)$data['code'])) throw new \InvalidArgumentException('编码只能包含字母、数字、下划线和短横线');
+        $sourceType=$this->sourceType($data['source_type']??$current['source_type']??'official'); $data['source_type']=$sourceType;
+        $templateChanged=false;
+        if (array_key_exists('system_interval_seconds',$data)) $data['system_interval_seconds']=$this->systemInterval($data['system_interval_seconds']);
+        $issueMode=$this->systemIssueMode($data['system_issue_mode']??$current['system_issue_mode']??'auto'); $data['system_issue_mode']=$issueMode;
+        if (array_key_exists('system_initial_issue',$data) || array_key_exists('system_issue_mode',$data)) $data['system_initial_issue']=$this->initialIssue($data['system_initial_issue']??$current['system_initial_issue']??null,$sourceType,$issueMode);
+        if (array_key_exists('odds_source_lottery_id',$data)) { $newTemplate=$this->oddsSourceId($data['odds_source_lottery_id'],$id); $templateChanged=$newTemplate!==(int)($current['odds_source_lottery_id']??0); $data['odds_source_lottery_id']=$newTemplate?:null; }
         if(array_key_exists('unit_stake',$data))$data['unit_stake']=number_format($this->unitStake($data['unit_stake']),2,'.','');
         $data=array_merge($data,$this->bettingControls($data,true));
-        $data['updated_at']=date('Y-m-d H:i:s'); Db::name('lotteries')->where('id',$id)->whereNull('deleted_at')->update($data); return $this->reply(null,'彩票已更新');
+        $data['updated_at']=date('Y-m-d H:i:s'); Db::name('lotteries')->where('id',$id)->whereNull('deleted_at')->update($data);
+        if ($templateChanged && (int)($data['odds_source_lottery_id']??0)>0) $this->copyOddsFromLottery((int)$data['odds_source_lottery_id'],$id,true);
+        if ($sourceType==='system' && (int)($data['status']??$current['status']??1)===1) (new SystemLotteryService())->runLottery(Db::name('lotteries')->where('id',$id)->find()?:[]);
+        return $this->reply(null,'彩票已更新');
     }
     public function delete(Request $request): \think\response\Json
     {
@@ -93,9 +108,18 @@ final class Lottery
         });
         return $this->reply(['site_ids'=>array_map('intval',$valid)],'彩票分配已保存');
     }
+    private function timingState(array $control, ?int $now=null): array
+    {
+        $now ??= time(); $rules=(array)($control['timing_rules']??[]); $minutes=(int)date('H',$now)*60+(int)date('i',$now); $matched=null;
+        foreach($rules as $rule){ if(!is_array($rule)) continue; [$sh,$sm]=array_map('intval',explode(':',(string)($rule['start_time']??'00:00'))); [$eh,$em]=array_map('intval',explode(':',(string)($rule['end_time']??'23:59'))); $start=$sh*60+$sm; $end=$eh*60+$em; $in=$start===$end?true:($start<$end?($minutes>=$start&&$minutes<$end):($minutes>=$start||$minutes<$end)); if($in){$matched=$rule;break;} }
+        if($matched!==null) return ['allow_bet'=>(int)($matched['allow_bet']??1)===1,'mask_enabled'=>(int)($matched['mask_enabled']??0)===1,'show_next_issue'=>(int)($matched['show_next_issue']??1)===1,'header_show_next_issue'=>(int)($matched['header_show_next_issue']??($matched['show_next_issue']??1))===1,'display_text'=>(string)($matched['display_text']??'')];
+        return ['allow_bet'=>true,'mask_enabled'=>(int)($control['mask_enabled']??1)!==0,'show_next_issue'=>true,'header_show_next_issue'=>true,'display_text'=>''];
+    }
     private function siteList(int $siteId, int $tenantId=1, int $userId=0): array
     {
         if ($siteId < 1 || !Db::name('sites')->where('id',$siteId)->where('tenant_id',$tenantId)->where('status',1)->whereNull('deleted_at')->find()) return [];
+        $configuredLimit=(int)Db::name('settings')->where('site_id',$siteId)->where('key','draw_history_limit')->value('value');
+        $drawHistoryLimit=$configuredLimit>0?min(200,$configuredLimit):80;
         $rows=Db::name('lotteries')->alias('l')
             ->join('site_lotteries sl','sl.lottery_id=l.id')
             ->where('sl.site_id',$siteId)
@@ -103,7 +127,7 @@ final class Lottery
             ->where('l.tenant_id',$tenantId)
             ->where('l.status',1)
             ->whereNull('l.deleted_at')
-            ->field('l.id,l.name,l.code,l.sort,l.unit_stake,l.cutoff_enabled,l.cutoff_time,l.mask_enabled,l.refund_enabled')
+            ->field('l.id,l.name,l.code,l.sort,l.unit_stake,l.source_type,l.system_interval_seconds,l.system_issue_mode,l.system_initial_issue,l.odds_source_lottery_id,l.cutoff_enabled,l.cutoff_time,l.mask_enabled,l.refund_enabled')
             ->order('l.sort asc')
             ->order('l.id asc')
             ->select()->toArray();
@@ -113,17 +137,26 @@ final class Lottery
         foreach ($rows as &$row) {
             $siteControls=json_decode((string)Db::name('settings')->where('site_id',$siteId)->where('key','lottery_betting_controls')->value('value'),true);
             $siteControl=is_array($siteControls)?($siteControls[(string)$row['id']]??[]):[];
-            if (is_array($siteControl)) foreach (['cutoff_enabled','cutoff_time','mask_enabled','refund_enabled'] as $field) if (array_key_exists($field,$siteControl)) $row[$field]=$siteControl[$field];
-            $latest=Db::name('lottery_histories')->where('lottery_id',(int)$row['id'])->where(function($q): void { $q->whereNotNull('numbers')->where('numbers','<>',''); })->order('open_time desc')->order('id desc')->field('code,open_time,next_code,next_open_time,numbers')->find();
-            $pending=Db::name('lottery_histories')->where('lottery_id',(int)$row['id'])->where(function($q): void { $q->whereNull('numbers')->whereOr('numbers',''); })->order('open_time asc')->order('id asc')->field('code,open_time')->find();
+            if (is_array($siteControl)) foreach (['cutoff_enabled','cutoff_time','mask_enabled','refund_enabled','timing_rules'] as $field) if (array_key_exists($field,$siteControl)) $row[$field]=$siteControl[$field];
+            $timing=$this->timingState(is_array($siteControl)?$siteControl:$row);
+            $row['timing_text']=$timing['display_text']; $row['timing_can_bet']=$timing['allow_bet']; $row['timing_mask']=$timing['mask_enabled']; $row['show_next_issue']=$timing['show_next_issue']; $row['header_show_next_issue']=$timing['header_show_next_issue'];
+            if ((string)($row['source_type']??'official')==='system') { try { (new SystemLotteryService())->runLottery($row); } catch (\Throwable) {} }
+            $latest=Db::name('lottery_histories')->where('lottery_id',(int)$row['id'])->where('is_opened',1)->order('open_time desc')->order('id desc')->field('code,open_time,next_code,next_open_time,numbers')->find();
+            $pending=Db::name('lottery_histories')->where('lottery_id',(int)$row['id'])->where('is_opened',0)->order('open_time asc')->order('id asc')->field('code,open_time')->find();
             $row['latest_code']=(string)($latest['code']??'');
             $row['latest_numbers']=(string)($latest['numbers']??'');
-            $row['next_code']=(string)($latest['next_code']??($pending['code']??''));
-            $row['next_open_time']=$latest['next_open_time']??($pending['open_time']??null);
-            // The detail page exposes the same recent issue window as the
-            // reference layout (enough entries for the 40-row pager). Keep
-            // the list bounded so the header payload remains small.
-            $row['recent_issues']=Db::name('lottery_histories')->where('lottery_id',(int)$row['id'])->order('open_time desc')->order('id desc')->limit(40)->field('code,draw_day')->select()->toArray();
+            $row['header_next_code']=(string)($latest['next_code']??($pending['code']??''));
+            $row['header_next_open_time']=$latest['next_open_time']??($pending['open_time']??null);
+            $showNext=(bool)$row['show_next_issue'];
+            $row['next_code']=$showNext?(string)($latest['next_code']??($pending['code']??'')):(string)($latest['code']??'');
+            $row['next_open_time']=$showNext?($latest['next_open_time']??($pending['open_time']??null)):($latest['open_time']??null);
+            // The issue dropdown and recent-draw panel use the same site-level
+            // limit configured in 下注控制. Never load the complete history.
+            $recentQuery=Db::name('lottery_histories')->where('lottery_id',(int)$row['id']);
+            if (!$showNext) $recentQuery->where('is_opened',1);
+            $recent=$recentQuery->order('open_time desc')->order('id desc')->limit($drawHistoryLimit)->field('code,draw_day,numbers,is_opened')->select()->toArray();
+            $row['recent_issues']=$recent;
+            $row['recent_issues']=array_map(static fn(array $issue): array => ['code'=>(string)$issue['code'],'draw_day'=>$issue['draw_day']??null],$row['recent_issues']);
             $row['can_bet']=$permissionMap ? (int)($permissionMap[(int)$row['id']]['can_bet']??0)===1 : true;
         }
         unset($row);
@@ -186,6 +219,29 @@ final class Lottery
     public function history(Request $request): \think\response\Json
     {
         $this->session($request,'admin'); $lotteryId=(int)$request->param('id'); $page=max(1,(int)$request->param('page',1)); $size=min(100,max(1,(int)$request->param('page_size',20))); $query=Db::name('lottery_histories')->where('lottery_id',$lotteryId); $total=(clone $query)->count(); return $this->reply(['list'=>$query->order('draw_day desc')->order('code desc')->page($page,$size)->select()->toArray(),'total'=>$total,'page'=>$page,'page_size'=>$size]);
+    }
+    public function updateHistory(Request $request, int $id): \think\response\Json
+    {
+        $this->session($request,'admin'); $history=Db::name('lottery_histories')->where('id',$id)->find();
+        if (!$history) throw new \InvalidArgumentException('开奖记录不存在');
+        $lottery=$this->catalog()->where('id',(int)$history['lottery_id'])->find();
+        if (!$lottery || (string)($lottery['source_type']??'official')!=='system') throw new \RuntimeException('只有系统彩可以修改预生成开奖号码');
+        if ((int)($history['is_opened']??1)===1) throw new \RuntimeException('该期已经开奖，不能修改历史号码');
+        $data=$request->put(); $digits='';
+        if (array_key_exists('numbers',$data)) $digits=preg_replace('/\D/','',(string)$data['numbers'])??'';
+        else $digits=implode('',array_map(static fn($value): string => (string)(int)$value,[(int)($data['one']??-1),(int)($data['two']??-1),(int)($data['three']??-1)]));
+        if (!preg_match('/^\d{3}$/',$digits)) throw new \InvalidArgumentException('开奖号码必须是三位数字');
+        $parts=str_split($digits); $update=['one'=>(int)$parts[0],'two'=>(int)$parts[1],'three'=>(int)$parts[2],'numbers'=>implode(' ',$parts),'updated_at'=>date('Y-m-d H:i:s')];
+        Db::name('lottery_histories')->where('id',$id)->update($update);
+        return $this->reply(['id'=>$id,'numbers'=>implode(' ',$parts)],'开奖号码已保存');
+    }
+    public function copyOdds(Request $request, int $id): \think\response\Json
+    {
+        $this->session($request,'admin'); $data=$request->post(); $sourceId=(int)($data['source_lottery_id']??0); $replace=(int)($data['replace']??0)===1;
+        if ($sourceId<1 || $sourceId===$id) throw new \InvalidArgumentException('请选择其他彩种作为赔率来源');
+        if (!$this->catalog()->where('id',$sourceId)->find() || !$this->catalog()->where('id',$id)->find()) throw new \InvalidArgumentException('彩票不存在');
+        $this->copyOddsFromLottery($sourceId,$id,$replace); Db::name('lotteries')->where('id',$id)->update(['odds_source_lottery_id'=>$sourceId,'updated_at'=>date('Y-m-d H:i:s')]);
+        return $this->reply(null,'赔率已复制');
     }
     public function odds(Request $request): \think\response\Json
     {
@@ -257,5 +313,50 @@ final class Lottery
             $result[$field]=number_format((float)$value,in_array($field,['single_bet_limit','single_item_limit'],true)?2:4,'.','');
         }
         return $result;
+    }
+    private function sourceType(mixed $value): string
+    {
+        $type=strtolower(trim((string)$value)); if (!in_array($type,['official','system'],true)) throw new \InvalidArgumentException('彩种来源只能选择官方彩或系统彩'); return $type;
+    }
+    private function systemInterval(mixed $value): int
+    {
+        if (!is_numeric($value) || (int)$value<5 || (int)$value>86400) throw new \InvalidArgumentException('系统彩开奖间隔必须在5到86400秒之间'); return (int)$value;
+    }
+    private function systemIssueMode(mixed $value): string
+    {
+        $mode=strtolower(trim((string)$value)); if (!in_array($mode,['auto','manual'],true)) throw new \InvalidArgumentException('系统彩起始期号方式只能选择自动生成或手动填写'); return $mode;
+    }
+    private function initialIssue(mixed $value,string $sourceType,string $issueMode='auto'): ?string
+    {
+        $issue=trim((string)$value); if ($sourceType==='system' && $issueMode==='manual' && $issue==='') throw new \InvalidArgumentException('手动模式必须填写系统彩起始期号'); if ($sourceType==='system' && $issue!=='' && !preg_match('/^[A-Za-z0-9_-]+$/',$issue)) throw new \InvalidArgumentException('系统彩起始期号格式不正确'); return $issue===''?null:$issue;
+    }
+    private function oddsSourceId(mixed $value,int $targetId): int
+    {
+        $id=(int)($value??0); if ($id<1) return 0; if ($id===$targetId || !$this->catalog()->where('id',$id)->find()) throw new \InvalidArgumentException('赔率来源彩种不存在或不能选择自身'); return $id;
+    }
+    private function copyOddsFromLottery(int $sourceId,int $targetId,bool $replace=false): void
+    {
+        $existing=(int)Db::name('lottery_odds_categories')->where('lottery_id',$targetId)->whereNull('deleted_at')->count();
+        if ($existing>0 && !$replace) throw new \InvalidArgumentException('当前彩种已有赔率，请先确认替换或清空后再复制');
+        $sourceCategories=Db::name('lottery_odds_categories')->where('lottery_id',$sourceId)->whereNull('deleted_at')->order('sort asc')->order('id asc')->select()->toArray();
+        if ($sourceCategories===[]) throw new \InvalidArgumentException('来源彩种暂无可复制的赔率');
+        Db::transaction(function() use($sourceId,$targetId,$sourceCategories,$replace): void {
+            if ($replace) {
+                // The category unique key includes soft-deleted rows, so a
+                // replacement must remove the old tree before inserting the
+                // same category names again. User-specific overrides belong to
+                // the old odds IDs and must be reset at the same time.
+                Db::name('user_lottery_odds')->where('lottery_id',$targetId)->delete();
+                Db::name('lottery_odds')->where('lottery_id',$targetId)->delete();
+                Db::name('lottery_odds_categories')->where('lottery_id',$targetId)->delete();
+            }
+            $now=date('Y-m-d H:i:s');
+            foreach ($sourceCategories as $sourceCategory) {
+                $categoryData=['tenant_id'=>(int)$sourceCategory['tenant_id'],'lottery_id'=>$targetId,'name'=>(string)$sourceCategory['name'],'is_playable'=>(int)$sourceCategory['is_playable'],'min_bet'=>$sourceCategory['min_bet'],'odds_limit'=>$sourceCategory['odds_limit'],'single_bet_limit'=>$sourceCategory['single_bet_limit'],'single_item_limit'=>$sourceCategory['single_item_limit'],'odds'=>$sourceCategory['odds'],'offline_rebate'=>$sourceCategory['offline_rebate'],'status'=>(int)$sourceCategory['status'],'sort'=>(int)$sourceCategory['sort'],'created_at'=>$now,'updated_at'=>$now];
+                $newCategoryId=(int)Db::name('lottery_odds_categories')->insertGetId($categoryData);
+                $plays=Db::name('lottery_odds')->where('lottery_id',$sourceId)->where('category_id',(int)$sourceCategory['id'])->whereNull('deleted_at')->select()->toArray();
+                foreach ($plays as $play) Db::name('lottery_odds')->insert(['tenant_id'=>(int)$play['tenant_id'],'lottery_id'=>$targetId,'category_id'=>$newCategoryId,'category'=>(string)$sourceCategory['name'],'name'=>(string)$play['name'],'min_bet'=>$play['min_bet'],'odds_limit'=>$play['odds_limit'],'single_bet_limit'=>$play['single_bet_limit'],'single_item_limit'=>$play['single_item_limit'],'odds'=>$play['odds'],'offline_rebate'=>$play['offline_rebate'],'status'=>(int)$play['status'],'sort'=>(int)$play['sort'],'created_at'=>$now,'updated_at'=>$now]);
+            }
+        });
     }
 }

@@ -15,6 +15,14 @@ final class QuickEntryRules
     public const MAX_TEXT_LENGTH = 10000;
     public const MAX_NUMBERS_PER_LINE = 1000;
 
+    /** One-bet principal for the sticky/赖 group plays. */
+    private const BASE_STAKE = [
+        'Z6_1'=>72, 'Z6_2'=>128, 'Z6_3'=>170, 'Z6_4'=>200,
+        'Z6_5'=>220, 'Z6_6'=>232, 'Z6_7'=>238,
+        'Z3_1'=>36, 'Z3_2'=>68, 'Z3_3'=>96, 'Z3_4'=>120,
+        'Z3_5'=>140, 'Z3_6'=>156, 'Z3_7'=>168,
+    ];
+
     /** @var array<string, string> */
     private const PATTERNS = [
         'standalone_number_line' => '/^(?:\d{3}(?:\s+|$))+$/u',
@@ -46,6 +54,7 @@ final class QuickEntryRules
         'size_parity_both_bet' => '/^\s*(?:福体|福|体)?\s*(?:和值\s*)?大小\s*(?:各|每)?\s*(\d+(?:\.\d+)?)\s*(注|元|米|块|角|毛)?\s*$/u',
         'span_bet' => '/^\s*(?:福体|福|体)?\s*跨度\s*([0-9])\s*(\d+(?:\.\d+)?)\s*(元|米|块|角|毛)?\s*$/u',
         'span_prefix_bet' => '/^\s*(?:福体|福|体)?\s*([0-9])\s*跨(?:度)?\s*(\d+(?:\.\d+)?)\s*(注|元|米|块|角|毛)?\s*$/u',
+        'span_suffix_bet' => '/^\s*(?:福体|福|体)?\s*跨\s*([0-9])\s+(\d+(?:\.\d+)?)\s*(倍|注|元|米|块|角|毛)?\s*$/u',
         'sum_bet' => '/^\s*(?:福体|福|体)?\s*和值\s*(2[0-7]|1\d|[0-9])\s*(\d+(?:\.\d+)?)\s*(元|米|块|角|毛)?\s*$/u',
         'package_bet' => '/^\s*(?:福体|福|体)?\s*(豹子全包|对子全包)\s*(\d+(?:\.\d+)?)\s*(元|米|块|角|毛)?\s*$/u',
         'group_package_bet' => '/^\s*(?:福体|福|体)?\s*(组三全包|组六全包)\s*(\d+(?:\.\d+)?)\s*(元|米|块|角|毛)?\s*$/u',
@@ -61,6 +70,14 @@ final class QuickEntryRules
         'double_drag_group' => '/(?<!\d)(\d{2})\s*(?:胆)?\s*拖\s*(\d{2,8})(?!\d)/u',
         'double_drag_marker' => '/双胆|双胆拖|组六2胆拖|(?<!\d)\d{2}\s*(?:胆)?\s*拖/u',
         'drag_play_amount' => '/(组三|组六)\s*(\d+(?:\.\d+)?)\s*(元|米|块|角|毛|倍)?(?=\s*(?:福体|福|体|$))/u',
+        'sticky_group6_bet' => '/^\s*(?:福体|福|体)?\s*([0-9]{4,10})\s*组六\s*(?:(\d+(?:\.\d+)?)(?:\s*(倍|注|元|米|块|角|毛))?)?\s*$/u',
+        'sticky_group3_bet' => '/^\s*(?:福体|福|体)?\s*([0-9]{4,10})\s*组三\s*(?:(\d+(?:\.\d+)?)(?:\s*(倍|注|元|米|块|角|毛))?)?\s*$/u',
+        'sticky_lian6_bet' => '/^\s*(?:福体|福|体)?\s*([0-9]{1,7})\s*([一二三四五六七])码组六\s*(?:(\d+(?:\.\d+)?)(?:\s*(倍|注|元|米|块|角|毛))?)?\s*$/u',
+        'sticky_lian3_bet' => '/^\s*(?:福体|福|体)?\s*([0-9]{1,7})\s*([一二三四五六七])码组三\s*(?:(\d+(?:\.\d+)?)(?:\s*(倍|注|元|米|块|角|毛))?)?\s*$/u',
+        'dantuo_bet' => '/^\s*(?:福体|福|体)?\s*([0-9]{1,2})胆([0-9]{1,9})拖\s*(?:(\d+(?:\.\d+)?)(?:\s*(倍|注|元|米|块|角|毛))?)?\s*$/u',
+        'double_fly_bet' => '/^\s*(?:福体|福|体)?\s*([0-9]{2})\s*(?:双飞|对子|对)\s*(?:(?:各|每|值|各值|注值)\s*)?(\d+(?:\.\d+)?)(?:\s*(倍|注|元|米|块|角|毛))?\s*$/u',
+        // Do not treat the “值” character inside “和值” as a cash marker.
+        'value_amount' => '/(?<!和)(?:值|各值|注值)\s*(\d+(?:\.\d+)?)/u',
         'unsupported_play' => '/包选[36]|通选|(?:三|3)同|拖拉机|奇偶|杀\s*[0-9]|组三\s*(?:跨|跨度|和|和值)|组六\s*(?:跨|跨度|和|和值)|(?:和|和值)\s*\d+\s*(?:组三|组六)/u',
         'standalone_number' => '/(?<!\d)(\d{1,3})(?!\d)/',
         'chinese_multiplier_boundary' => '/(?<=\d)(?=[零〇一二两三四五六七八九十壹贰叁肆伍陆柒捌玖]+\s*倍)/u',
@@ -71,7 +88,10 @@ final class QuickEntryRules
     /** @var array<string, string> */
     private const TEXT_ALIASES = [
         '褔' => '福', '陪' => '倍', '夸' => '跨', '垮' => '跨',
-        '胯' => '跨', '挎' => '跨', '托' => '拖', '粘' => '沾',
+        '胯' => '跨', '挎' => '跨', '跨渡' => '跨度', '跨都' => '跨度',
+        '托' => '拖', '拖拉' => '拖', '旦' => '胆', '担' => '胆', '粘' => '沾',
+        '对孑' => '对子', '对字' => '对子', '对仔' => '对子',
+        '双非' => '双飞', '双蜚' => '双飞',
         '黏' => '沾', '买' => ' ', '快' => '块', '🈴' => '合',
         // “复式”和“复试”是现场录入中常见的两种写法，统一到同一玩法。
         '复试' => '复式', '複式' => '复式', '複試' => '复式',
@@ -238,6 +258,7 @@ final class QuickEntryRules
     public function amountWithUnit(float $amount, string $unit, float $unitStake): float
     {
         if ($unit === '倍') return $amount * $unitStake;
+        if ($unit === '注') return $amount * $unitStake;
         return in_array($unit, ['角', '毛'], true) ? $amount / 10 : $amount;
     }
 
@@ -247,12 +268,21 @@ final class QuickEntryRules
         return $unit === '' ? $amount * $unitStake : $this->amountWithUnit($amount, $unit, $unitStake);
     }
 
+    public function baseStake(string $play, int $count): float
+    {
+        return (float)(self::BASE_STAKE[$play.'_'.$count] ?? 0);
+    }
+
     public function category(string $text, string $lottery): string
     {
         $hasFu = str_contains($text, '福');
         $hasTi = str_contains($text, '体');
         if ($hasFu && $hasTi) return '福体';
-        return $hasTi || $lottery === '排列三' ? '体' : '福';
+        if ($hasTi) return '体';
+        if ($hasFu) return '福';
+        if ($lottery === '排列三') return '体';
+        if ($lottery !== '福彩3D') return $lottery;
+        return '福';
     }
 
     /** @return ?array{category: string, name: string, direct: bool} */

@@ -887,6 +887,14 @@ body {
 .site-navigation a.selected .nav-icon {
   filter: brightness(0) invert(1);
 }
+.site-navigation a.locked {
+  cursor: not-allowed;
+  opacity: .55;
+}
+.site-navigation button:disabled {
+  cursor: not-allowed;
+  opacity: .55;
+}
 .site-navigation .line {
   color: green;
 }
@@ -1328,6 +1336,12 @@ body {
       font-weight: 500;
     }
 
+    .side-record-issue {
+      color: #333;
+      font-size: 13px;
+      line-height: 18px;
+    }
+
     p {
       margin: 2px 0 0;
       overflow: hidden;
@@ -1371,18 +1385,18 @@ body {
     cursor: pointer;
 
     &.detail {
-      background: #087e0b;
-      color: #fff;
+      background: #087e0b !important;
+      color: #fff !important;
     }
 
     &.numbers {
-      background: #ffe5cf;
-      color: #80502d;
+      background: #ffe5cf !important;
+      color: #80502d !important;
     }
 
     &.refund {
-      background: #c2212b;
-      color: #fff;
+      background: #c2212b !important;
+      color: #fff !important;
     }
 
     &:disabled {
@@ -1497,6 +1511,148 @@ body {
   color: #f00000;
   text-align: right;
 }
+.record-detail-content {
+  color: #111;
+}
+.record-detail-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.record-detail-tabs span {
+  min-width: 100px;
+  padding: 5px 18px;
+  background: #060a92;
+  color: #fff;
+  text-align: center;
+  font-weight: 700;
+}
+.record-detail-lottery {
+  margin-bottom: 18px;
+  border-bottom: 1px solid #777;
+  padding-bottom: 10px;
+}
+.record-detail-lottery h2 {
+  margin: 0 0 8px;
+  border-bottom: 1px solid #7a2bc3;
+  color: #00724d;
+  font-size: 21px;
+  line-height: 32px;
+}
+.record-detail-play {
+  margin: 0 0 14px;
+}
+.record-detail-play h3 {
+  margin: 0 0 7px;
+  color: #060a92;
+  font-size: 18px;
+  font-weight: 400;
+}
+.record-detail-card {
+  display: grid;
+  grid-template-columns: 142px 140px;
+  width: 282px;
+  border: 1px solid #777;
+  font-size: 14px;
+  text-align: center;
+}
+.record-detail-card > div {
+  min-height: 30px;
+  box-sizing: border-box;
+  border-bottom: 1px dashed #777;
+  padding: 5px 8px;
+  line-height: 20px;
+}
+.record-detail-card > div:nth-last-child(-n + 2) {
+  border-bottom: 0;
+}
+.record-detail-card-label {
+  background: #707070;
+  color: #fff;
+  font-weight: 700;
+}
+.record-detail-card .amount {
+  color: #060a92;
+  font-weight: 700;
+}
+.record-detail-card .odds {
+  color: #f07800;
+  font-weight: 700;
+}
+.record-number-modal .ant-modal-content {
+  padding: 0;
+  border-radius: 0;
+}
+.record-number-modal .ant-modal-body {
+  padding: 0;
+}
+.record-number-content {
+  background: #fff;
+}
+.record-number-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 40px;
+  background: #ccc;
+  color: #111;
+}
+.record-number-toolbar span {
+  flex: 1;
+  text-align: center;
+}
+.record-number-toolbar button {
+  height: 40px;
+  border: 0;
+  padding: 0 10px;
+  background: #060a92;
+  color: #fff;
+  cursor: pointer;
+}
+.record-number-toolbar button:first-child {
+  background: #777;
+  font-size: 24px;
+}
+.record-number-toolbar .download {
+  background: #bf7300;
+}
+.record-number-toolbar .copy {
+  background: #087e0b;
+}
+.record-number-toolbar button:disabled {
+  cursor: default;
+  opacity: .75;
+}
+.record-number-paper {
+  width: 350px;
+  margin: 10px auto 20px;
+  border: 1px solid #555;
+  padding: 8px;
+  color: #111;
+  font-size: 13px;
+}
+.record-number-paper p {
+  margin: 4px 0;
+  line-height: 20px;
+}
+.record-number-paper table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.record-number-paper th,
+.record-number-paper td {
+  border: 1px solid #777;
+  padding: 5px 7px;
+  text-align: center;
+}
+.record-number-paper thead th {
+  background: #eee;
+}
+.record-number-paper tr.group th {
+  background: #707070;
+  color: #fff;
+  text-align: left;
+}
 .record-number-chips {
   grid-column: 2 / -1;
   display: flex;
@@ -1526,7 +1682,6 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.bet-number-link:hover,
 .bet-text-link:hover {
   text-decoration: underline;
 }
@@ -1545,6 +1700,33 @@ body {
   font: 14px/1.7 inherit;
   white-space: pre-wrap;
   overflow: auto;
+}
+.bet-text-tabs {
+  display: flex;
+  height: 42px;
+  align-items: stretch;
+  border-bottom: 1px solid #d7d7d7;
+  background: #f8f8f8;
+}
+.bet-text-tabs button {
+  min-width: 110px;
+  padding: 0 22px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: #555;
+  cursor: pointer;
+  font: inherit;
+}
+.bet-text-tabs button.active {
+  border-bottom-color: #258c24;
+  background: #fff;
+  color: #176f18;
+  font-weight: 700;
+}
+.bet-text-tabs button:focus-visible {
+  outline: 2px solid #258c24;
+  outline-offset: -2px;
 }
 .bet-number-preview {
   display: flex;
@@ -2009,7 +2191,7 @@ body {
   background: transparent;
   color: #008000;
   font: inherit;
-  cursor: pointer;
+  cursor: default;
   white-space: nowrap;
 }
 .bet-number-link b {
@@ -3523,6 +3705,15 @@ body {
   text-align: center;
   white-space: nowrap;
 }
+.quick-current-mark {
+  display: inline-block;
+  margin-left: 2px;
+  color: #f00;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 21px;
+  vertical-align: baseline;
+}
 .row-label-container:not(.row-header-container) .label-wrapper {
   background: transparent;
 }
@@ -3683,6 +3874,7 @@ body {
   border: 1px solid #060a92;
   background: #fff;
   box-shadow: 6px 6px 0 rgba(0, 0, 0, 0.72);
+  transition: transform .28s ease, opacity .28s ease;
 }
 .warm-header {
   position: relative;
@@ -3723,6 +3915,7 @@ body {
   place-items: center;
 }
 .warm-content {
+  max-height: 180px;
   box-sizing: border-box;
   padding: 11px 10px;
   background: #fff;
@@ -3732,4 +3925,12 @@ body {
   line-height: 21px;
   text-align: left;
   overflow: hidden;
+  opacity: 1;
+  transition: max-height .28s ease, opacity .2s ease, padding .28s ease;
+}
+.warm.is-collapsed .warm-content {
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  opacity: 0;
 }

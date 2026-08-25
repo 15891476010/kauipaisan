@@ -78,8 +78,14 @@ final class ApiContext
         $authorization = (string)$request->header('authorization');
         $token = trim(str_ireplace('Bearer ', '', $authorization));
         $activeSession = $token !== '' ? Cache::get('token:'.$token) : null;
+        // Keep the token alive while it is actively used. TOKEN_TTL is the
+        // inactivity timeout (7200 seconds by default), so each authenticated
+        // request, including heartbeat, slides the expiry window forward.
+        if (is_array($activeSession) && $token !== '') {
+            Cache::set('token:' . $token, $activeSession, (int)env('TOKEN_TTL', 7200));
+        }
         if (is_array($activeSession) && !empty($activeSession['must_change_password'])) {
-            $allowed = str_ends_with($path, '/auth/password') || str_ends_with($path, '/auth/logout') || str_ends_with($path, '/auth/heartbeat') || str_ends_with($path, '/agreement');
+            $allowed = str_ends_with($path, '/auth/password') || str_ends_with($path, '/auth/logout') || str_ends_with($path, '/auth/heartbeat') || str_ends_with($path, '/agreement') || str_ends_with($path, '/profile') || str_ends_with($path, '/announcement') || str_ends_with($path, '/lotteries');
             if (!$allowed && (str_starts_with($path, 'api/v1/user/') || str_starts_with($path, 'api/v1/agent/'))) {
                 return $this->cors(json(['code'=>428,'message'=>'首次登录必须先修改密码','data'=>['must_change_password'=>true],'request_id'=>bin2hex(random_bytes(8))],428));
             }

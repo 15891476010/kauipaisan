@@ -22,6 +22,7 @@ export function Header({
   selectableLottery = false,
   selectedLotteryId,
   onSelectLottery,
+  locked = false,
 }: {
   name: string;
   logout: () => void;
@@ -31,6 +32,7 @@ export function Header({
   selectableLottery?: boolean;
   selectedLotteryId?: number | null;
   onSelectLottery?: (id: number) => void;
+  locked?: boolean;
 }) {
   const { modal } = AntdApp.useApp();
   const [now, setNow] = useState(Date.now());
@@ -212,7 +214,7 @@ export function Header({
                     <b>{timing.status}</b>
                   </div>
                   <div className="lottery-meta">
-                    <label>{item.next_code || item.latest_code || "--"}</label>
+                    <label>{(timing.headerShowNextIssue ? (item.header_next_code || item.next_code) : item.latest_code) || "--"}</label>
                     <strong>{timing.countdown}</strong>
                   </div>
                 </div>
@@ -225,7 +227,9 @@ export function Header({
             <NavLink
               key={path}
               to={"/" + path}
-              className={({ isActive }) => (isActive ? "selected" : "")}
+              className={({ isActive }) => `${isActive ? "selected" : ""}${locked ? " locked" : ""}`}
+              aria-disabled={locked}
+              onClick={(event) => { if (locked) event.preventDefault(); }}
             >
               <span className="nav-icon-shell">
                 <img
@@ -238,7 +242,7 @@ export function Header({
               {title}
             </NavLink>
           ))}
-          <button className="line" onClick={() => void checkLines()}>
+          <button className="line" disabled={locked} onClick={() => void checkLines()}>
             <span className="nav-icon-shell">
               <img
                 className="nav-icon"

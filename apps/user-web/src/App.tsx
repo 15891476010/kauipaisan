@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { App as AntdApp } from "antd";
 import { HashRouter, Route, Routes } from "react-router-dom";
 import { Agreement, defaultAgreement, type AgreementData } from "./features/agreement/Agreement";
 import { Login } from "./features/auth/Login";
@@ -13,6 +14,7 @@ function clearUserAuthQuery() {
 }
 
 export default function App() {
+  const { modal } = AntdApp.useApp();
   const siteName = localStorage.getItem("site_name") || "站点会员中心";
   const [name, setName] = useState(() => localStorage.getItem("user_token") ? localStorage.getItem("user_name") || "" : "");
   const [mustChangePassword, setMustChangePassword] = useState(() => localStorage.getItem("user_must_change_password") === "1");
@@ -22,14 +24,35 @@ export default function App() {
   });
   const [agreement, setAgreement] = useState<AgreementData>(defaultAgreement);
 
+  const clearSession = () => {
+    clearUserAuthQuery();
+    localStorage.removeItem("user_name");
+    localStorage.removeItem("user_token");
+    localStorage.removeItem("user_must_change_password");
+    sessionStorage.removeItem("agreement_accepted_token");
+    setAgreementVisible(false);
+    setMustChangePassword(false);
+    setName("");
+  };
+
   useEffect(() => {
     const handleUnauthorized = () => {
-      setAgreementVisible(false);
-      setName("");
+      modal.confirm({
+        title: "登录已过期",
+        content: "请重新登录",
+        okText: "确认",
+        cancelButtonProps: { style: { display: "none" } },
+        maskClosable: false,
+        closable: false,
+        onOk: () => {
+          clearSession();
+          window.location.hash = "#/kb";
+        },
+      });
     };
     window.addEventListener("user:unauthorized", handleUnauthorized);
     return () => window.removeEventListener("user:unauthorized", handleUnauthorized);
-  }, []);
+  }, [modal]);
 
   useEffect(() => {
     if (!name || !agreementVisible) return;
@@ -60,15 +83,6 @@ export default function App() {
     setAgreementVisible(!lineSwitch && localStorage.getItem("user_must_change_password") !== "1");
   }, []);
 
-  const clearSession = () => {
-    clearUserAuthQuery();
-    localStorage.removeItem("user_name");
-    localStorage.removeItem("user_token");
-    localStorage.removeItem("user_must_change_password");
-    sessionStorage.removeItem("agreement_accepted_token");
-    setAgreementVisible(false);
-    setName("");
-  };
   const logout = () => { void logoutSession().catch(() => undefined).finally(clearSession); };
 
   return (

@@ -36,7 +36,7 @@ final class LotteryHistorySync
                 'lottery_id'=>$lotteryId,
                 'code'=>$nextCode,
                 'draw_day'=>$nextOpen ? substr((string)$nextOpen,0,10) : null,
-                'one'=>null,'two'=>null,'three'=>null,'numbers'=>'',
+                'one'=>null,'two'=>null,'three'=>null,'numbers'=>'','is_opened'=>0,
                 'open_time'=>$nextOpen,'next_open_time'=>null,'next_code'=>null,
                 'created_at'=>$now,'updated_at'=>$now,
             ]);
@@ -48,6 +48,7 @@ final class LotteryHistorySync
 
     public function syncLottery(array $lottery): array
     {
+        if ((string)($lottery['source_type']??'official')==='system') return (new SystemLotteryService())->runLottery($lottery);
         $url=$this->baseUrl().'?'.http_build_query(['type'=>$this->apiType($lottery),'page'=>1,'limit'=>1]);
         $started=microtime(true);
         $context=stream_context_create(['http'=>['timeout'=>15,'ignore_errors'=>true,'header'=>"Accept: application/json\r\n"]]);
@@ -57,7 +58,7 @@ final class LotteryHistorySync
         $payload=json_decode($raw,true); $item=$payload['data']['data']['list'][0]??$payload['data']['last']??null;
         if (!is_array($item) || empty($item['code'])) return ['lottery_id'=>(int)$lottery['id'],'inserted'=>0,'updated'=>0,'response_time_ms'=>$elapsed,'ok'=>false];
         $lotteryId=(int)$lottery['id']; $code=(string)$item['code']; $now=date('Y-m-d H:i:s'); $one=$item['one']??null; $two=$item['two']??null; $three=$item['three']??null;
-        $row=['tenant_id'=>(int)($lottery['tenant_id']??1),'lottery_id'=>$lotteryId,'code'=>$code,'draw_day'=>($item['day']??null) ?: null,'one'=>$one,'two'=>$two,'three'=>$three,'numbers'=>implode(' ',array_filter([$one,$two,$three],static fn($value)=>$value!==null && $value!=='')),'open_time'=>($item['open_time']??null) ?: null,'next_open_time'=>($item['next_open_time']??null) ?: null,'next_code'=>($item['next_code']??null) ?: null,'updated_at'=>$now];
+        $row=['tenant_id'=>(int)($lottery['tenant_id']??1),'lottery_id'=>$lotteryId,'code'=>$code,'draw_day'=>($item['day']??null) ?: null,'one'=>$one,'two'=>$two,'three'=>$three,'numbers'=>implode(' ',array_filter([$one,$two,$three],static fn($value)=>$value!==null && $value!=='')),'is_opened'=>1,'open_time'=>($item['open_time']??null) ?: null,'next_open_time'=>($item['next_open_time']??null) ?: null,'next_code'=>($item['next_code']??null) ?: null,'updated_at'=>$now];
         $existing=Db::name('lottery_histories')->where('lottery_id',$lotteryId)->where('code',$code)->find();
         if ($existing) {
             // Keep the historical draw time unchanged once a row exists.
@@ -79,6 +80,7 @@ final class LotteryHistorySync
     {
         $lottery=Db::name('lotteries')->where('id',$lotteryId)->whereNull('deleted_at')->find();
         if (!$lottery) throw new \InvalidArgumentException('彩票不存在');
+        if ((string)($lottery['source_type']??'official')==='system') throw new \InvalidArgumentException('系统彩不支持官方开奖接口回补');
         $pages=max(1,min(100,$pages)); $limit=max(1,min(1000,$limit)); $inserted=0; $updated=0; $received=0; $failedPages=[];
         for ($page=1; $page<=$pages; $page++) {
             $url=$this->baseUrl().'?'.http_build_query(['type'=>$this->apiType($lottery),'page'=>$page,'limit'=>$limit]);
@@ -94,7 +96,7 @@ final class LotteryHistorySync
             $received+=count($list);
             foreach ($list as $item) {
                 $code=(string)($item['code']??''); if ($code==='') continue; $now=date('Y-m-d H:i:s'); $one=$item['one']??null; $two=$item['two']??null; $three=$item['three']??null;
-                $row=['tenant_id'=>(int)($lottery['tenant_id']??1),'lottery_id'=>$lotteryId,'code'=>$code,'draw_day'=>($item['day']??null) ?: null,'one'=>$one,'two'=>$two,'three'=>$three,'numbers'=>implode(' ',array_filter([$one,$two,$three],static fn($value)=>$value!==null && $value!=='')),'open_time'=>($item['open_time']??null) ?: null,'next_open_time'=>($item['next_open_time']??null) ?: null,'next_code'=>($item['next_code']??null) ?: null,'updated_at'=>$now];
+                $row=['tenant_id'=>(int)($lottery['tenant_id']??1),'lottery_id'=>$lotteryId,'code'=>$code,'draw_day'=>($item['day']??null) ?: null,'one'=>$one,'two'=>$two,'three'=>$three,'numbers'=>implode(' ',array_filter([$one,$two,$three],static fn($value)=>$value!==null && $value!=='')),'is_opened'=>1,'open_time'=>($item['open_time']??null) ?: null,'next_open_time'=>($item['next_open_time']??null) ?: null,'next_code'=>($item['next_code']??null) ?: null,'updated_at'=>$now];
                 $existing=Db::name('lottery_histories')->where('lottery_id',$lotteryId)->where('code',$code)->find();
                 if ($existing) { Db::name('lottery_histories')->where('id',$existing['id'])->update($row); $updated++; }
                 else { $row['created_at']=$now; Db::name('lottery_histories')->insert($row); $inserted++; }
@@ -108,6 +110,7 @@ final class LotteryHistorySync
     public function syncAll(): array
     {
         $lotteries=Db::name('lotteries')->where('status',1)->whereNull('deleted_at')->order('sort asc')->select()->toArray();
-        $results=[]; foreach ($lotteries as $lottery) $results[]=$this->syncLottery($lottery); return $results;
+        $results=[]; foreach ($lotteries as $lottery) if ((string)($lottery['source_type']??'official')!=='system') $results[]=$this->syncLottery($lottery);
+        $results=array_merge($results,(new SystemLotteryService())->runAll()); return $results;
     }
 }

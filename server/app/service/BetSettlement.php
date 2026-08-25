@@ -9,6 +9,7 @@ final class BetSettlement
 {
     public function settleForHistory(array $history, array $lottery): array
     {
+        if (array_key_exists('is_opened',$history) && (int)$history['is_opened']!==1) return ['records'=>0,'won'=>0];
         $lotteryId = (int)($lottery['id'] ?? 0);
         $issue = trim((string)($history['code'] ?? ''));
         if ($lotteryId < 1 || $issue === '') return ['records' => 0, 'won' => 0];
@@ -27,19 +28,32 @@ final class BetSettlement
                 $detailIds=array_map('intval',array_column($details,'id'));
                 $stopRows=Db::name('user_stop_drops')->whereIn('bet_detail_id',$detailIds)->lock(true)->select()->toArray();
                 $stops=[];foreach($stopRows as $stop)$stops[(int)$stop['bet_detail_id']]=$stop;
-                $totalWin=0.0;$totalRebate=0.0;$totalOffline=0.0;$matchedLottery=false;$waterItems=[];
+                $totalWin=0.0;$totalRebate=0.0;$totalOffline=0.0;$matchedLottery=false;$waterItems=[];$totalMatched=0;$totalSelections=0;
                 foreach($details as $detail){
                     $stop=$stops[(int)$detail['id']]??null;
                     if(!$stop||(string)$stop['lottery']!==$lotteryName)continue;
                     $matchedLottery=true;
+                    // New detail rows keep one compact expression (for example
+                    // “三123456”, “66飞”, “和小” or “874直”) instead of
+                    // expanding every possible three-digit combination. Keep
+                    // those expressions as match tokens; legacy expanded rows
+                    // containing whitespace-separated three-digit numbers keep
+                    // working unchanged.
                     $numbers=preg_split('/\s+/',trim((string)$detail['number_text']))?:[];
-                    $numbers=array_values(array_filter($numbers,static fn(string $number):bool=>preg_match('/^\d{3}$/',$number)===1));
-                    if($numbers===[])throw new \RuntimeException('注单明细 #'.(int)$detail['id'].' 没有有效号码，已停止整单结算');
+                    $numbers=array_values(array_filter($numbers,static fn(string $number):bool=>trim($number)!==''));
+                    if($numbers===[]) {
+                        $fallback=trim((string)($detail['source_text']??''));
+                        if($fallback!=='') $numbers=[$fallback];
+                    }
+                    if($numbers===[])throw new \RuntimeException('注单明细 #'.(int)$detail['id'].' 没有可结算的玩法表达式，已停止整单结算');
                     [$odds,$legacyFallback]=$this->lockedOdds($detail,$stop,$lotteryId,count($numbers));
                     $payout=$this->detailPayout($numbers,$draw,(string)($detail['source_text']??''),(float)$detail['amount'],$odds);
                     $win=$payout['win'];$totalWin+=$win;$totalRebate+=(float)($detail['rebate']??0);
+                    $totalMatched+=(int)$payout['matched'];$totalSelections+=count($numbers);
                     $totalOffline+=WaterLedger::calculate((float)$detail['amount'],(float)($stop['drop_odds']??0))['amount'];$waterItems[]=['detail'=>$detail,'stop'=>$stop];
-                    $detailUpdate=['win_amount'=>number_format($win,2,'.',''),'status'=>$win>0?'won':'unwon'];
+                    // Persist the actual winning-combination count so the SaaS
+                    // can distinguish a full multi-number hit from a partial hit.
+                    $detailUpdate=['win_amount'=>number_format($win,2,'.',''),'status'=>$win>0?'won':'unwon','matched_count'=>(int)$payout['matched']];
                     if($legacyFallback)$detailUpdate['odds']=number_format($odds,4,'.','');
                     Db::name('bet_details')->where('id',(int)$detail['id'])->update($detailUpdate);
                     if($legacyFallback){
@@ -243,6 +257,9 @@ final class BetSettlement
 
     private function matches(string $number, string $draw, string $source): bool
     {
+        $compactResult=$this->matchesCompactExpression($number,$draw,$source);
+        if($compactResult!==null)return $compactResult;
+        $sourceCompact=preg_replace('/\s+/u','',$source)??$source;
         $sum = array_sum(array_map('intval', str_split($draw)));
         if (str_contains($source, '和大')) return $sum >= 14;
         if (str_contains($source, '和小')) return $sum <= 13;
@@ -293,10 +310,15 @@ final class BetSettlement
         if (str_contains($source, '组三')) return count(array_unique(str_split($draw))) === 2 && count(array_unique(str_split($number))) === 2 && count_chars($number, 1) === count_chars($draw, 1);
         if (str_contains($source, '组六')) return count(array_unique(str_split($draw))) === 3 && count(array_unique(str_split($number))) === 3 && count_chars($number, 1) === count_chars($draw, 1);
         if (str_contains($source, '双飞')) {
-            $digits = array_values(array_unique(str_split(substr($number, -2))));
-            return count($digits) === 2 && str_contains($draw, $digits[0]) && str_contains($draw, $digits[1]);
+            $pair=preg_match('/(?<!\d)(\d{2})\s*(?:双飞|飞)/u',$sourceCompact,$pairMatch)?str_split($pairMatch[1]):str_split(substr($number,-2));
+            if(count($pair)!==2)return false;
+            if($pair[0]===$pair[1])return substr_count($draw,$pair[0])>=2;
+            return str_contains($draw,$pair[0])&&str_contains($draw,$pair[1]);
         }
-        if (str_contains($source, '对子')) return substr_count($draw, substr($number, -1)) >= 2;
+        if (str_contains($source, '对子')) {
+            $pair=preg_match('/(?<!\d)(\d{2})\s*(?:对子|对)/u',$sourceCompact,$pairMatch)?$pairMatch[1]:substr($number,-2);
+            return $pair!==''&&substr_count($draw,$pair[0])>=2;
+        }
         foreach(['口XX'=>[0],'X口X'=>[1],'XX口'=>[2],'口口X'=>[0,1],'口X口'=>[0,2],'X口口'=>[1,2]] as $pattern=>$indexes){
             if(!str_contains($source,$pattern))continue;
             foreach($indexes as $index)if(($number[$index]??'')!==($draw[$index]??''))return false;
@@ -307,10 +329,142 @@ final class BetSettlement
                 $index = ['百' => 0, '十' => 1, '个' => 2][$position];
                 if (($number[$index] ?? '') !== ($draw[$index] ?? '')) return false;
             }
-            return true;
+            return preg_match('/^\d{3}$/', $number) === 1 && $number !== '000' ? $number === $draw : true;
         }
         if (preg_match('/(\d)\s*(?:独胆|胆)/u', $source, $match)) return str_contains($draw, $match[1]);
         return $number === $draw;
+    }
+
+    /**
+     * Match the compact expression stored by the detail parser. These values
+     * deliberately describe one play instead of an expanded list of 3-digit
+     * combinations (for example 三123456, 66飞, 和小, 457组 and 874直).
+     */
+    private function matchesCompactExpression(string $number,string $draw,string $source): ?bool
+    {
+        $expression=trim($number);
+        if($expression==='')return null;
+        $compact=preg_replace('/\s+/u','',$expression)??$expression;
+        $drawDigits=str_split($draw);
+        $drawUnique=array_values(array_unique($drawDigits));
+        $sum=array_sum(array_map('intval',$drawDigits));
+        $sourceCompact=preg_replace('/\s+/u','',$source)??$source;
+
+        if(preg_match('/^三([0-9]{2,10})$/u',$compact,$match)){
+            $selected=array_values(array_unique(str_split($match[1])));
+            return count($drawUnique)===2&&array_diff($drawUnique,$selected)===[];
+        }
+        if(preg_match('/^六([0-9]{3,10})$/u',$compact,$match)){
+            $selected=array_values(array_unique(str_split($match[1])));
+            return count($drawUnique)===3&&array_diff($drawUnique,$selected)===[];
+        }
+        if(preg_match('/^三赖([0-9]{1,10})$/u',$compact,$match)){
+            $selected=array_values(array_unique(str_split($match[1])));
+            return count($drawUnique)===2&&array_intersect($drawUnique,$selected)!==[];
+        }
+        if(preg_match('/^六赖([0-9]{1,10})$/u',$compact,$match)){
+            $selected=array_values(array_unique(str_split($match[1])));
+            return count($drawUnique)===3&&array_intersect($drawUnique,$selected)!==[];
+        }
+        if(preg_match('/^([0-9]{2,10})组$/u',$compact,$match)){
+            if(strlen($match[1])===3){
+                $expected=count(array_unique(str_split($match[1])));
+                return count($drawUnique)===$expected && count_chars($draw,1)===count_chars($match[1],1);
+            }
+            $selected=array_values(array_unique(str_split($match[1])));
+            if(count($selected)===2)return count($drawUnique)===2&&array_diff($drawUnique,$selected)===[];
+            return count($selected)>=3&&count($drawUnique)===3&&array_diff($drawUnique,$selected)===[];
+        }
+        if(preg_match('/^([0-9]{3})直$/u',$compact,$match))return $draw===$match[1];
+        if(preg_match('/^([0-9]{2})(?:飞|双飞)$/u',$compact,$match)){
+            $digits=str_split($match[1]);
+            if($digits[0]===$digits[1])return substr_count($draw,$digits[0])>=2;
+            return in_array($digits[0],$drawDigits,true)&&in_array($digits[1],$drawDigits,true);
+        }
+        if(preg_match('/^([0-9]{2})(?:对|对子)$/u',$compact,$match))return substr_count($draw,$match[1][0])>=2;
+        if(preg_match('/^(?:和|和值)(大|小|单|双)$/u',$compact,$match))return match($match[1]){'大'=>$sum>=14,'小'=>$sum<=13,'单'=>$sum%2===1,'双'=>$sum%2===0};
+        if(preg_match('/^(?:和|和值)(\d{1,2})$/u',$compact,$match))return $sum===(int)$match[1];
+        if(preg_match('/^(?:和|和值)(\d{1,2})\s*-\s*(\d{1,2})$/u',$compact,$match))return $sum===(int)$match[1]||$sum===(int)$match[2];
+        if(preg_match('/^(?:跨|跨度)(\d)$/u',$compact,$match))return max($drawDigits)-min($drawDigits)===(int)$match[1];
+        if(preg_match('/^胆(\d+)拖(\d+)$/u',$compact,$match)){
+            $dan=array_values(array_unique(str_split($match[1])));$tuo=array_values(array_unique(str_split($match[2])));
+            $allowed=array_values(array_unique(array_merge($dan,$tuo)));
+            if(array_diff($dan,$drawDigits)!==[])return false;
+            $family=str_contains($sourceCompact,'组三胆拖')?'z3':(str_contains($sourceCompact,'组六2胆拖')?'z6_2':(str_contains($sourceCompact,'单选全胆拖')?'single':'z6'));
+            if($family==='single')return array_diff($drawDigits,$allowed)===[]&&array_intersect($drawDigits,$tuo)!==[];
+            if($family==='z6_2')return count($drawUnique)===3&&count($dan)===2&&array_diff($dan,$drawUnique)===[]&&count(array_intersect($drawUnique,$tuo))>=1;
+            $required=$family==='z3'?2:3;
+            $otherUnique=array_values(array_diff($drawUnique,$dan));
+            return count($drawUnique)===$required&&array_diff($drawUnique,$allowed)===[]&&array_intersect($otherUnique,$tuo)!==[];
+        }
+        if(in_array($compact,['豹子','豹子全包'],true))return count($drawUnique)===1;
+        if(in_array($compact,['对子','对子全包'],true))return count($drawUnique)===2;
+        if($compact==='组三全包')return count($drawUnique)===2;
+        if($compact==='组六全包')return count($drawUnique)===3;
+        if(preg_match('/^复([0-9]{3,10})$/u',$compact,$match)){
+            $selected=array_values(array_unique(str_split($match[1])));
+            // 复式覆盖选中号码集合内的所有三位结果，不能套用组六的“三个不同数字”限制。
+            return array_diff($drawUnique,$selected)===[];
+        }
+
+        // Legacy rows may only keep the selected digits in source_text while
+        // number_text is the 000 placeholder. Keep the same rules for both
+        // play-before-number and number-before-play wording.
+        if (preg_match('/(?<!\d)([0-9]{2,10})\s*(组三赖|组六赖|组三|组六|复式)/u', $sourceCompact, $catalog)
+            || preg_match('/(组三赖|组六赖|组三|组六|复式)\s*([0-9]{2,10})/u', $sourceCompact, $catalogBefore)) {
+            if (!empty($catalogBefore)) {
+                $selectedText=(string)$catalogBefore[2];
+                $family=(string)$catalogBefore[1];
+            } else {
+                $selectedText=(string)$catalog[1];
+                $family=(string)$catalog[2];
+            }
+            $selected=array_values(array_unique(str_split($selectedText)));
+            // Legacy rows use 000 as a placeholder and reach this branch.
+            // Keep their 复式 semantics identical to compact rows.
+            if ($family==='复式') return array_diff($drawUnique,$selected)===[];
+            $required=$family==='组三'||$family==='组三赖'?2:3;
+            if ($family==='组三赖'||$family==='组六赖') return count($drawUnique)===$required&&array_intersect($drawUnique,$selected)!==[];
+            if (in_array($family,['组三','组六'],true) && preg_match('/^\d{3}$/',$number)===1 && $number!=='000') {
+                return count($drawUnique)===$required&&array_diff($drawUnique,$selected)===[]&&count_chars($number,1)===count_chars($draw,1);
+            }
+            return count($drawUnique)===$required&&array_diff($drawUnique,$selected)===[];
+        }
+
+        // Position bets can be stored as 1D/2D/3D or as a digit followed by
+        // “定位”. When position labels are present, check each position's
+        // selected digits; otherwise a one-position bet means the digit is
+        // present somewhere in the draw.
+        if(str_contains($source,'定位')||preg_match('/[百十个]/u',$compact)||preg_match('/[百十个]/u',$source)||preg_match('/^[0-9]+D$/i',$compact)){
+            $positionRules=[];
+            foreach(['百'=>0,'十'=>1,'个'=>2] as $marker=>$index){
+                if(preg_match('/'.$marker.'(?:位)?\s*([0-9]+)/u',$source,$match))$positionRules[$index]=array_values(array_unique(str_split($match[1])));
+            }
+            if($positionRules!==[]){
+                foreach($positionRules as $index=>$allowed)if(!isset($draw[$index])||!in_array($draw[$index],$allowed,true))return false;
+                // Expanded position selections contain every permitted
+                // combination. Only the exact drawn combination wins.
+                return preg_match('/^\d{3}$/', $number) === 1 && $number !== '000' ? $number === $draw : true;
+            }
+            $dMatch=[];
+            $digits=preg_match('/^([0-9]+)D$/i',$compact,$dMatch)?(string)$dMatch[1]:'';
+            if($digits!==''){
+                $required=1;
+                if(str_contains($source,'二码定位'))$required=2;
+                if(str_contains($source,'三码定位'))$required=3;
+                return count(array_intersect(array_values(array_unique(str_split($digits))),$drawDigits)) >= $required;
+            }
+            if(preg_match('/^(一|二|三)码?定位$/u',$compact,$match)){
+                $required=['一'=>1,'二'=>2,'三'=>3][$match[1]];
+                $sourceDigits=preg_replace('/\D/','',$source)??'';
+                return $sourceDigits!=='' && count(array_intersect(array_values(array_unique(str_split($sourceDigits))),$drawDigits)) >= $required;
+            }
+        }
+        if(str_contains($sourceCompact,'独胆')||preg_match('/^\d胆$/u',$compact)){
+            $digits=preg_match('/(?<!\d)(\d)\s*(?:独胆|胆)/u',$sourceCompact,$sourceDan)?$sourceDan[1]:preg_replace('/\D/','',$compact);
+            if($digits!=='')return str_contains($draw,$digits[0]);
+        }
+        return null;
     }
 
     public function numberMatches(string $number, string $drawNumbers, string $source): bool

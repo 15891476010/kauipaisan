@@ -48,7 +48,9 @@ final class AgentSubaccount
     {
         $session = $this->session($request); $siteId = (int)$session['site_id'];
         $lotteries = Db::name('lotteries')->alias('l')->join('site_lotteries sl', 'sl.lottery_id=l.id')->where('sl.site_id', $siteId)->where('l.status', 1)->whereNull('l.deleted_at')->field('l.id,l.name,l.code')->order('l.sort asc')->order('l.id asc')->select()->toArray();
-        $issues = Db::name('lottery_histories')->alias('h')->join('site_lotteries sl', 'sl.lottery_id=h.lottery_id')->where('sl.site_id', $siteId)->where('h.draw_day', '>=', date('Y-m-01'))->where('h.draw_day', '<=', date('Y-m-t'))->field('h.code AS issue_no,h.draw_day AS date')->order('h.draw_day desc')->order('h.code desc')->select()->toArray();
+        $configuredLimit = (int)Db::name('settings')->where('site_id', $siteId)->where('key', 'draw_history_limit')->value('value');
+        $drawHistoryLimit = $configuredLimit > 0 ? min(200, $configuredLimit) : 80;
+        $issues = Db::name('lottery_histories')->alias('h')->join('site_lotteries sl', 'sl.lottery_id=h.lottery_id')->where('sl.site_id', $siteId)->where('h.draw_day', '>=', date('Y-m-01'))->where('h.draw_day', '<=', date('Y-m-t'))->field('h.code AS issue_no,h.draw_day AS date')->order('h.draw_day desc')->order('h.code desc')->limit($drawHistoryLimit)->select()->toArray();
         $seen = []; $issueList = []; foreach ($issues as $row) if (!isset($seen[(string)$row['issue_no']])) { $seen[(string)$row['issue_no']] = true; $issueList[] = $row; }
         $allowed=array_map('strval',(array)($session['permissions']??[]));
         $permissionList = []; foreach (self::PERMISSIONS as $key => $label) if(in_array('*',$allowed,true)||in_array($key,$allowed,true))$permissionList[] = ['key' => $key, 'label' => $label];

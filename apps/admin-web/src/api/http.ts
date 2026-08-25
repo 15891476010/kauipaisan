@@ -1,4 +1,27 @@
 import axios from 'axios'
+import { ElMessageBox } from 'element-plus'
+
+let expiredPrompt = false
+
+function handleExpiredSession() {
+  localStorage.removeItem('admin_token')
+  localStorage.removeItem('admin_user')
+  if (expiredPrompt) return
+  expiredPrompt = true
+  void ElMessageBox.alert(
+    '登录已过期，请重新登录',
+    '登录已过期',
+    {
+      confirmButtonText: '确认',
+      closeOnClickModal: false,
+      closeOnPressEscape: false,
+      showClose: false,
+    },
+  ).finally(() => {
+    expiredPrompt = false
+    redirectToLogin()
+  })
+}
 
 function redirectToLogin() {
   if (location.hash.startsWith('#/login')) return
@@ -14,12 +37,17 @@ http.interceptors.request.use((config) => {
   return config
 })
 http.interceptors.response.use(
-  (response) => response.data,
+  (response) => {
+    const payload = response.data as { code?: number }
+    const requestUrl = String(response.config.url || '')
+    if (payload?.code === 401 && localStorage.getItem('admin_token') && !requestUrl.includes('/auth/login')) {
+      handleExpiredSession()
+    }
+    return response.data
+  },
   (error) => {
     if (error.response?.status === 401) {
-      localStorage.removeItem('admin_token')
-      localStorage.removeItem('admin_user')
-      redirectToLogin()
+      handleExpiredSession()
     }
     return Promise.reject(new Error(error.response?.data?.message || error.message || '网络请求失败'))
   },

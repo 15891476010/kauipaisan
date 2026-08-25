@@ -2,98 +2,38 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Check, Refresh } from '@element-plus/icons-vue'
-import { getBatchBetOptions, replaceBatchBetNumbers, type BatchBetLottery, type BatchBetUser } from '../api/admin'
+import { ArrowLeft, Check, Refresh, View } from '@element-plus/icons-vue'
+import { applyMasterBetBatch, getMasterBetOptions, previewMasterBetBatch, type MasterBatchPreview, type MasterBetRecord } from '../api/admin'
 
 const router=useRouter()
-const loading=ref(false)
-const saving=ref(false)
-const lotteries=ref<BatchBetLottery[]>([])
-const lotteryId=ref<number>()
-const issueNo=ref('')
-const users=ref<BatchBetUser[]>([])
-const selectedUsers=ref<string[]>([])
-const selectedNumbers=ref<string[]>([])
-const replacements=ref({ hundreds:'', tens:'', units:'' })
-const visibleUsers=computed(()=>users.value.filter(user=>selectedUsers.value.includes(user.key)))
-const selectedSet=computed(()=>new Set(selectedNumbers.value))
-const selectedVisibleNumbers=computed(()=>visibleUsers.value.flatMap(user=>user.numbers).filter(number=>selectedSet.value.has(number.key)))
-
-async function load(preferredLotteryId?: number) {
-  loading.value=true
-  try {
-    const response=await getBatchBetOptions(preferredLotteryId ?? lotteryId.value)
-    const data=response.data
-    lotteries.value=data.lotteries || []
-    lotteryId.value=data.lottery?.id
-    issueNo.value=data.issue_no || ''
-    users.value=data.users || []
-    selectedUsers.value=users.value.map(user=>user.key)
-    selectedNumbers.value=users.value.flatMap(user=>user.numbers.map(number=>number.key))
-  } catch(error) {
-    ElMessage.error(error instanceof Error ? error.message : '批量替换数据加载失败')
-  } finally { loading.value=false }
+const loading=ref(false); const saving=ref(false); const records=ref<MasterBetRecord[]>([]); const selected=ref<number[]>([])
+const operation=ref<'replace_number'|'replace_play'|'set_amount'>('replace_number')
+const form=ref({from:'',to:'',amount:''}); const preview=ref<MasterBatchPreview|null>(null); const previewVisible=ref(false)
+const allSelected=computed(()=>records.value.length>0 && selected.value.length===records.value.length)
+async function load(){loading.value=true; try { const response=await getMasterBetOptions(); records.value=response.data.records||[]; selected.value=[]; preview.value=null } catch(error){ElMessage.error(error instanceof Error?error.message:'主单加载失败')} finally{loading.value=false} }
+function toggleAll(value:boolean){selected.value=value?records.value.map(record=>record.record_id):[]}
+function payload(){ if(operation.value==='set_amount') return {amount:form.value.amount}; return {from:form.value.from,to:form.value.to} }
+async function showPreview(){
+  if(!selected.value.length){ElMessage.warning('请先选择主单');return}
+  if(operation.value!=='set_amount' && (!form.value.from.trim()||!form.value.to.trim())){ElMessage.warning('请填写修改前后的内容');return}
+  if(operation.value==='set_amount' && (!form.value.amount.trim()||Number(form.value.amount)<0)){ElMessage.warning('请输入有效金额');return}
+  try { const response=await previewMasterBetBatch({record_ids:selected.value,operation:operation.value,payload:payload()}); preview.value=response.data; previewVisible.value=true } catch(error){ElMessage.error(error instanceof Error?error.message:'预览失败')}
 }
-function userAllSelected(user: BatchBetUser) { return user.numbers.length>0 && user.numbers.every(number=>selectedSet.value.has(number.key)) }
-function toggleUserAll(user: BatchBetUser, checked: boolean) {
-  const keys=new Set(selectedNumbers.value)
-  user.numbers.forEach(number=>checked ? keys.add(number.key) : keys.delete(number.key))
-  selectedNumbers.value=Array.from(keys)
-}
-function toggleNumber(key: string) {
-  const keys=new Set(selectedNumbers.value)
-  if (keys.has(key)) keys.delete(key); else keys.add(key)
-  selectedNumbers.value=Array.from(keys)
-}
-function sanitize(field: 'hundreds'|'tens'|'units') {
-  replacements.value[field]=replacements.value[field].replace(/\D/g,'').slice(-1)
-}
-function changeLottery(value: unknown) { void load(Number(value)) }
-function changeUserAll(user: BatchBetUser, checked: unknown) { toggleUserAll(user, Boolean(checked)) }
-async function save() {
-  if (!lotteryId.value || !issueNo.value) { ElMessage.warning('当前彩种暂无可批量修改的未开奖期'); return }
-  const selected=selectedVisibleNumbers.value
-  if (!selected.length) { ElMessage.warning('请选择需要替换的号码'); return }
-  if (!Object.values(replacements.value).some(Boolean)) { ElMessage.warning('请至少输入一个替换数字'); return }
-  await ElMessageBox.confirm(`确定修改 ${selected.length} 个选中号码吗？保存后将直接更新当前未开奖期注单。`,'确认批量替换',{type:'warning',confirmButtonText:'确认保存',cancelButtonText:'取消'})
-  saving.value=true
-  try {
-    const response=await replaceBatchBetNumbers({lottery_id:lotteryId.value,issue_no:issueNo.value,selections:selected.map(number=>({detail_id:number.detail_id,number_index:number.number_index})),replacements:{...replacements.value}})
-    ElMessage.success(`批量替换完成，共修改 ${response.data.changed} 个号码`)
-    replacements.value={hundreds:'',tens:'',units:''}
-    await load(lotteryId.value)
-  } catch(error) { ElMessage.error(error instanceof Error ? error.message : '批量替换失败') }
-  finally { saving.value=false }
-}
-onMounted(()=>load())
+async function apply(){ if(!preview.value||preview.value.changed_count===0){ElMessage.warning('没有可修改的明细');return}; await ElMessageBox.confirm(`预览显示将修改 ${preview.value.changed_count} 条玩法明细，跳过 ${preview.value.skipped_count} 条。确定执行吗？`,'确认主单批量修改',{type:'warning',confirmButtonText:'确认执行',cancelButtonText:'取消'}); saving.value=true; try { const response=await applyMasterBetBatch({record_ids:selected.value,operation:operation.value,payload:payload()}); ElMessage.success(`批量修改完成，共修改 ${response.data.changed} 条明细`); previewVisible.value=false; await load() } catch(error){ElMessage.error(error instanceof Error?error.message:'批量修改失败')} finally{saving.value=false} }
+function opLabel(){return operation.value==='replace_number'?'替换号码':operation.value==='replace_play'?'替换玩法':'设置金额'}
+onMounted(load)
 </script>
 
 <template>
-  <div class="batch-page" v-loading="loading">
-    <section class="batch-filter">
-      <label><span>彩种</span><el-select v-model="lotteryId" placeholder="请选择彩种" @change="changeLottery"><el-option v-for="lottery in lotteries" :key="lottery.id" :label="lottery.name" :value="lottery.id" /></el-select></label>
-      <label class="user-select"><span>参与用户</span><el-select v-model="selectedUsers" multiple collapse-tags collapse-tags-tooltip filterable placeholder="请选择用户"><el-option v-for="user in users" :key="user.key" :label="`${user.username}${user.site_name ? `（${user.site_name}）` : ''}`" :value="user.key" /></el-select></label>
-      <div class="issue-box"><span>当前未开奖期</span><strong>{{ issueNo || '暂无未开奖注单' }}</strong></div>
-      <el-button :icon="Refresh" @click="load(lotteryId)">刷新</el-button>
-      <el-button :icon="ArrowLeft" @click="router.push('/bet-records')">返回下单记录</el-button>
-    </section>
-
-    <section class="batch-users">
-      <div v-if="!visibleUsers.length && !loading" class="batch-empty">请选择参与用户，或当前彩种暂无未开奖注单</div>
-      <article v-for="user in visibleUsers" :key="user.key" class="user-card">
-        <header><div><b>{{ user.username }}</b><span v-if="user.display_name">{{ user.display_name }}</span><em v-if="user.site_name">{{ user.site_name }}</em></div><el-checkbox :model-value="userAllSelected(user)" @change="changeUserAll(user, $event)">全选</el-checkbox></header>
-        <div class="number-grid"><button v-for="number in user.numbers" :key="number.key" type="button" :class="['number-chip',{selected:selectedSet.has(number.key)}]" @click="toggleNumber(number.key)"><span>{{ number.value }}</span><small>¥{{ number.amount }}</small></button></div>
-      </article>
-    </section>
-
-    <footer class="replace-panel">
-      <div class="replace-fields"><label><span>百位</span><el-input v-model="replacements.hundreds" maxlength="1" inputmode="numeric" placeholder="不修改" @input="sanitize('hundreds')" /></label><label><span>十位</span><el-input v-model="replacements.tens" maxlength="1" inputmode="numeric" placeholder="不修改" @input="sanitize('tens')" /></label><label><span>个位</span><el-input v-model="replacements.units" maxlength="1" inputmode="numeric" placeholder="不修改" @input="sanitize('units')" /></label></div>
-      <div class="replace-summary">已选择 <b>{{ selectedVisibleNumbers.length }}</b> 个号码，空白位保持原数字</div>
-      <el-button type="primary" :icon="Check" :loading="saving" @click="save">保存替换</el-button>
-    </footer>
+  <div class="master-batch-page" v-loading="loading">
+    <section class="batch-head"><div><h1>主单批量修改</h1><p>以主单为选择单位，修改会同步到同一提交批次的彩种记录；仅允许未开奖且未封盘主单。</p></div><div class="head-actions"><el-button :icon="Refresh" @click="load">刷新</el-button><el-button :icon="ArrowLeft" @click="router.push('/bet-records')">返回下单记录</el-button></div></section>
+    <section class="batch-toolbar"><el-checkbox :model-value="allSelected" @change="toggleAll(Boolean($event))">全选当前主单</el-checkbox><span>已选择 <b>{{ selected.length }}</b> / {{ records.length }} 张主单</span><el-select v-model="operation" style="width:150px"><el-option label="替换号码" value="replace_number"/><el-option label="替换玩法" value="replace_play"/><el-option label="设置金额" value="set_amount"/></el-select><el-input v-if="operation!=='set_amount'" v-model="form.from" placeholder="原内容" style="width:180px"/><span v-if="operation!=='set_amount'">→</span><el-input v-if="operation!=='set_amount'" v-model="form.to" placeholder="新内容" style="width:180px"/><el-input-number v-else v-model="form.amount" :min="0" :precision="2" controls-position="right" placeholder="每条明细金额" style="width:180px"/><el-button type="primary" :icon="View" @click="showPreview">预览修改</el-button></section>
+    <section v-if="!records.length&&!loading" class="empty">当前没有可修改的未开奖主单</section>
+    <section v-else class="record-list"><article v-for="record in records" :key="record.record_id" :class="['record-card',{selected:selected.includes(record.record_id)}]"><header><el-checkbox :model-value="selected.includes(record.record_id)" @change="(value:boolean)=>{selected=value?[...selected,record.record_id]:selected.filter(id=>id!==record.record_id)}"/><div class="record-main"><b>主单 #{{ record.record_id }}</b><span>{{ record.username }}</span><span>{{ record.site_name||'本站点' }}</span><span>第 {{ record.issue_no }} 期</span><em>{{ record.bet_count }} 条玩法 / ¥{{ record.amount }}</em></div></header><div class="detail-list"><div v-for="detail in record.details" :key="detail.detail_id" class="detail-row"><span class="lottery">{{ detail.lottery||'-' }}</span><span class="number">{{ detail.number_text||'-' }}</span><span class="play">{{ detail.play_type||'未识别玩法' }}</span><span class="amount">¥{{ detail.amount }}</span></div></div></article></section>
+    <el-drawer v-model="previewVisible" title="主单批量修改预览" direction="rtl" size="min(900px,92vw)"><div v-if="preview" class="preview-panel"><div class="preview-summary"><b>{{ opLabel() }}</b><span>将修改 {{ preview.changed_count }} 条</span><span>跳过 {{ preview.skipped_count }} 条</span></div><el-table :data="preview.changes" border stripe><el-table-column prop="record_id" label="主单" width="80"/><el-table-column prop="issue_no" label="期号" width="100"/><el-table-column prop="old_number" label="原号码"/><el-table-column prop="new_number" label="修改后"/><el-table-column prop="old_play" label="原玩法"/><el-table-column prop="new_play" label="修改后玩法"/><el-table-column prop="old_amount" label="原金额" width="90"/><el-table-column prop="new_amount" label="修改后金额" width="100"/></el-table><div class="preview-footer"><el-button @click="previewVisible=false">取消</el-button><el-button type="primary" :loading="saving" :icon="Check" @click="apply">确认执行</el-button></div></div></el-drawer>
   </div>
 </template>
 
 <style scoped>
-.batch-page{min-height:100%;padding:22px;background:#f5f7fb}.batch-filter{display:flex;align-items:flex-end;gap:14px;padding:18px 20px;background:#fff;border-radius:8px}.batch-filter label{display:flex;width:190px;flex-direction:column;gap:7px;color:#5c667a;font-size:13px}.batch-filter .user-select{width:min(440px,36vw)}.batch-filter .el-select{width:100%}.issue-box{display:flex;min-width:180px;height:54px;flex-direction:column;justify-content:center;padding:0 14px;border:1px solid #dcdfe6;border-radius:4px}.issue-box span{color:#8a93a5;font-size:12px}.issue-box strong{margin-top:4px;color:#315fd3}.batch-users{display:flex;flex-direction:column;gap:14px;margin:16px 0 104px}.batch-empty{display:grid;min-height:240px;place-items:center;background:#fff;color:#9099aa;border-radius:8px}.user-card{width:100%;overflow:hidden;background:#fff;border:1px solid #e1e6ef;border-radius:8px;box-sizing:border-box;box-shadow:0 2px 8px #26344d0a}.user-card>header{display:flex;min-height:52px;align-items:center;justify-content:space-between;padding:9px 14px;border-bottom:1px solid #edf0f5;background:#f9fbff}.user-card>header div{display:flex;align-items:center;gap:8px}.user-card b{color:#26334b}.user-card header span{color:#6e788b;font-size:13px}.user-card header em{padding:2px 7px;border-radius:3px;background:#eef3ff;color:#4269c6;font-size:12px;font-style:normal}.number-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:8px;padding:14px}.number-chip{display:flex;height:48px;align-items:center;justify-content:center;gap:2px;flex-direction:column;border:1px solid #ccd4e2;border-radius:5px;background:#fff;color:#26334b;cursor:pointer}.number-chip span{font-size:16px;font-weight:700}.number-chip small{color:#8b95a7}.number-chip:hover{border-color:#6f91e8;background:#f6f9ff}.number-chip.selected{border-color:#356ee8;background:#356ee8;color:#fff;box-shadow:0 2px 6px #356ee833}.number-chip.selected small{color:#dce7ff}.replace-panel{position:sticky;bottom:0;z-index:5;display:flex;min-height:88px;align-items:center;gap:20px;padding:14px 20px;border:1px solid #dce2ec;border-radius:8px;background:#fff;box-shadow:0 -5px 18px #25345114}.replace-fields{display:flex;gap:12px}.replace-fields label{display:flex;align-items:center;gap:7px;color:#4b566a}.replace-fields .el-input{width:92px}.replace-summary{margin-left:auto;color:#758095}.replace-summary b{color:#356ee8;font-size:17px}@media(max-width:1200px){.batch-filter{flex-wrap:wrap}.batch-filter .user-select{width:360px}.replace-panel{flex-wrap:wrap}.replace-summary{margin-left:0}}
+.master-batch-page{min-height:100%;padding:22px;background:#f5f7fb;box-sizing:border-box}.batch-head{display:flex;align-items:center;justify-content:space-between;padding:18px 20px;background:#fff;border-radius:8px}.batch-head h1{margin:0;color:#26334b;font-size:22px}.batch-head p{margin:8px 0 0;color:#7d8799;font-size:13px}.head-actions{display:flex;gap:10px}.batch-toolbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:16px 0;padding:16px 20px;background:#fff;border:1px solid #e1e6ef;border-radius:8px;color:#68758b}.batch-toolbar b{color:#315fd3}.record-list{display:flex;flex-direction:column;gap:12px;padding-bottom:24px}.record-card{overflow:hidden;background:#fff;border:1px solid #e1e6ef;border-radius:8px;box-shadow:0 2px 8px #26344d0a}.record-card.selected{border-color:#356ee8;box-shadow:0 0 0 2px #356ee822}.record-card header{display:flex;align-items:center;gap:12px;padding:13px 16px;border-bottom:1px solid #edf0f5;background:#f9fbff}.record-main{display:flex;align-items:center;gap:16px;flex-wrap:wrap}.record-main b{color:#26334b}.record-main span{color:#68758b}.record-main em{padding:3px 8px;background:#eef3ff;color:#4269c6;font-style:normal;border-radius:3px;font-size:12px}.detail-list{display:flex;flex-direction:column}.detail-row{display:grid;grid-template-columns:110px minmax(200px,1fr) 180px 110px;gap:10px;padding:10px 16px;border-bottom:1px solid #f0f2f6;color:#344158;font-size:13px}.detail-row:last-child{border-bottom:0}.detail-row .lottery{color:#4269c6}.detail-row .number{font-weight:700}.detail-row .play{color:#65738a}.detail-row .amount{text-align:right;color:#283853}.empty{display:grid;min-height:240px;place-items:center;background:#fff;border-radius:8px;color:#9099aa}.preview-panel{padding:4px}.preview-summary{display:flex;gap:20px;padding:12px 0;color:#68758b}.preview-summary b{color:#315fd3}.preview-footer{display:flex;justify-content:flex-end;gap:10px;margin-top:16px}@media(max-width:900px){.detail-row{grid-template-columns:80px 1fr 120px 80px}.batch-head{align-items:flex-start;gap:16px;flex-direction:column}}
 </style>

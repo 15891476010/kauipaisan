@@ -128,9 +128,14 @@ Route::group('api/v1', static function () {
     Route::post('admin/site-users', 'Resource/create')->append(['resource' => 'site-users']);
     Route::put('admin/site-users/:id', 'Resource/update')->append(['resource' => 'site-users']);
     Route::delete('admin/site-users/:id', 'Resource/delete')->append(['resource' => 'site-users']);
-    Route::get('admin/bet-records', 'Resource/index')->append(['resource' => 'bet-records']);
+    // Keep the collection route exact so `/admin/bet-records/batch-options`
+    // reaches AdminBetBatch instead of being swallowed by Resource/index.
+    Route::get('admin/bet-records', 'Resource/index')->append(['resource' => 'bet-records'])->completeMatch();
     Route::get('admin/bet-details/batch-options', 'AdminBetBatch/options');
     Route::put('admin/bet-details/batch-replace', 'AdminBetBatch/replace');
+    Route::get('admin/bet-records/batch-options', 'AdminBetBatch/recordOptions');
+    Route::post('admin/bet-records/batch-preview', 'AdminBetBatch/preview');
+    Route::post('admin/bet-records/batch-apply', 'AdminBetBatch/apply');
     Route::get('admin/bet-record-details/:id', 'Resource/betDetails');
     Route::put('admin/bet-details/:id', 'Resource/updateBetDetail');
     Route::get('admin/site-settings/agreement', 'SiteSettings/adminAgreement');
@@ -156,6 +161,8 @@ Route::group('api/v1', static function () {
     Route::put('admin/lottery-config', 'Lottery/saveConfig');
     Route::post('admin/lottery-config/test', 'Lottery/testConfig');
     Route::get('admin/lottery-history/:id', 'Lottery/history');
+    Route::put('admin/lottery-history/:id', 'Lottery/updateHistory');
+    Route::post('admin/lotteries/:id/copy-odds', 'Lottery/copyOdds');
     Route::get('admin/lottery-odds/:id', 'Lottery/odds');
     Route::post('admin/lottery-odds/:id/categories', 'Lottery/createOddsCategory');
     Route::put('admin/lottery-odds/:id/categories/:category_id', 'Lottery/updateOddsCategory');

@@ -38,6 +38,10 @@ const detailTotal = ref(0);
 const detailSaveTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const detailSaving = new Set<string>();
 const detailRecord = ref<Record<string, unknown> | null>(null);
+const masterEdit = ref(false);
+const textDrawerVisible = ref(false);
+const textDrawerTitle = ref("");
+const textDrawerValue = ref("");
 const auditDetail = ref<Record<string, unknown> | null>(null);
 const auditDetailVisible = ref(false);
 const auditDetailLoading = ref(false);
@@ -111,7 +115,7 @@ const fields: Record<string, string[]> = {
     "status",
     "created_at",
   ],
-  "bet-records": ["id", "site_name", "username", "lottery", "issue_no", "bet_count", "amount", "win_amount", "source_text", "formatted_text", "status", "sealed", "placed_at"],
+  "bet-records": ["id", "site_name", "username", "lottery", "issue_no", "bet_count", "amount", "win_amount", "win_status", "source_text", "formatted_text", "status", "sealed", "placed_at"],
   admins: ["id", "site_name", "scope_label", "username", "display_name", "online", "last_seen_at", "last_login_at", "last_login_device", "last_login_location", "last_login_ip", "status"],
   roles: ["id", "name", "code", "status", "created_at"],
   menus: ["id", "title", "path", "component", "sort", "status"],
@@ -159,6 +163,7 @@ const labels: Record<string, string> = {
   bet_count: "笔数",
   amount: "下单金额",
   win_amount: "中奖金额",
+  win_status: "中奖状态",
   source_text: "原始文本",
   formatted_text: "规范文本",
   sealed: "封盘状态",
@@ -207,6 +212,60 @@ const betLotteryOptions = computed(() => lotteryOptions.value.length
 function detailLotteryNames() {
   const items = detailRecord.value?.lotteries;
   return Array.isArray(items) ? items.map((item) => String((item as Record<string, unknown>).name || '')).filter(Boolean).join('、') : '';
+}
+function openRecordText(label: string, value: unknown) {
+  textDrawerTitle.value = label;
+  textDrawerValue.value = String(value ?? "-");
+  textDrawerVisible.value = true;
+}
+function betStatusLabel(row: Record<string, unknown>): string {
+  const status = String(row.status ?? "").toLowerCase();
+  if (status === "refunded" || status === "refund") return "已退码";
+  if (status === "won" || status === "unwon" || status === "sealed" || status === "closed" || Number(row.sealed) === 1) return "已封盘";
+  return "未开奖";
+}
+function betStatusTagType(row: Record<string, unknown>): "success" | "warning" | "info" {
+  const status = String(row.status ?? "").toLowerCase();
+  if (status === "refunded" || status === "refund") return "info";
+  return betStatusLabel(row) === "未开奖" ? "warning" : "success";
+}
+function winStatusLabel(row: Record<string, unknown>): string {
+  const status = String(row.win_status || "");
+  if (status === "full") return "全额中奖";
+  if (status === "partial") return "部分中奖";
+  if (status === "none") return "未中奖";
+  if (status === "refunded") return "已退码";
+  return "未开奖";
+}
+function winStatusTagType(row: Record<string, unknown>): "success" | "warning" | "danger" | "info" {
+  const status = String(row.win_status || "");
+  if (status === "full") return "success";
+  if (status === "partial") return "warning";
+  if (status === "none") return "danger";
+  return "info";
+}
+function isDetailDrawn(record: Record<string, unknown> | null): boolean {
+  if (!record) return false;
+  const opened = record.opened;
+  if (opened === true || opened === 1 || opened === "1" || opened === "true") return true;
+  const status = String(record.status ?? "").toLowerCase();
+  if (status === "won" || status === "unwon") return true;
+  const numbers = String(record.draw_numbers ?? "").replace(/[^0-9]/g, "");
+  return numbers.length >= 3;
+}
+function detailStatusLabel(record: Record<string, unknown> | null): string {
+  if (!record) return "未开奖";
+  const status = String(record.status ?? "").toLowerCase();
+  if (status === "refunded" || status === "refund") return "已退码";
+  if (isDetailDrawn(record)) return "已开奖";
+  if (status === "sealed" || status === "closed" || Number(record.sealed) === 1) return "已封盘";
+  return "未开奖";
+}
+function detailWinLabel(row: Record<string, unknown>): string {
+  const status = String(row.result_status || "");
+  if (status === "won") return `全额中奖 ¥${row.win_amount || "0.00"}`;
+  if (status === "partial") return `部分中奖 ¥${row.win_amount || "0.00"}`;
+  return "未中奖";
 }
 async function loadSites() {
   try {
@@ -439,6 +498,7 @@ async function clearAllAuditLogs() {
 async function openBetDetails(row: Record<string, unknown>) {
   detailLoading.value = true;
   detailDrawer.value = true;
+  masterEdit.value = false;
   detailPage.value = 1;
   try {
     const response = await getBetDetails(Number(row.id), { page: detailPage.value, page_size: detailPageSize.value });
@@ -472,12 +532,12 @@ async function saveExpandedBet(row: BetDetail) {
     scheduleExpandedBetSave(row);
     return;
   }
-  const number = `${row.hundreds || ""}${row.tens || ""}${row.units || ""}`;
-  if (!/^\d{3}$/.test(number)) return ElMessage.warning("百位、十位、个位都必须填写一位数字");
+  const number = String(row.number_text || "").trim();
+  if (!number) return ElMessage.warning("号码/内容不能为空");
   if (!Number.isFinite(Number(row.amount)) || Number(row.amount) < 0) return ElMessage.warning("请输入有效的单注金额");
   detailSaving.add(key);
   try {
-    await updateBetDetail(row.id, { number_index: Number(row.number_index || 0), number_text: number, amount: String(row.amount) });
+    await updateBetDetail(row.id, { number_index: Number(row.number_index || 0), number_text: number, amount: String(row.amount), play_type: String(row.play_type || row.category || ""), source_text: String(row.source_text || "") });
     row.number_text = number;
     await load(true);
   } catch (e) {
@@ -669,8 +729,9 @@ onBeforeUnmount(() => {
         :min-width="['last_login_device','last_login_location'].includes(col) ? 180 : col === 'last_login_ip' ? 210 : col === 'online' ? 100 : 120"
         ><template #default="scope"
           ><el-tag v-if="col === 'status'"
-            :type="resource === 'bet-records' ? (scope.row.status === 'pending' ? 'warning' : 'success') : (Number(scope.row.status) === 1 ? 'success' : 'info')"
-            >{{ resource === 'bet-records' ? ({ pending: '待处理', won: '已中奖', unwon: '未中奖' }[String(scope.row.status)] || scope.row.status) : (Number(scope.row.status) === 1 ? "启用" : "停用") }}</el-tag
+            :type="resource === 'bet-records' ? betStatusTagType(scope.row) : (Number(scope.row.status) === 1 ? 'success' : 'info')"
+            >{{ resource === 'bet-records' ? betStatusLabel(scope.row) : (Number(scope.row.status) === 1 ? "启用" : "停用") }}</el-tag
+          ><el-tag v-else-if="col === 'win_status'" :type="winStatusTagType(scope.row)">{{ winStatusLabel(scope.row) }}</el-tag
           ><el-tag v-else-if="col === 'sealed'" :type="Number(scope.row.sealed) === 1 ? 'danger' : 'info'">{{ Number(scope.row.sealed) === 1 ? '已封盘' : '未封盘' }}</el-tag
           ><el-tag v-else-if="col === 'online'" :type="Number(scope.row.online) === 1 ? 'success' : 'info'" effect="dark">{{ Number(scope.row.online) === 1 ? '在线' : '离线' }}</el-tag
           ><el-tooltip
@@ -683,6 +744,7 @@ onBeforeUnmount(() => {
                 >+{{ domainCount(scope.row, col) - 1 }}</el-tag
               >
             </div></el-tooltip
+          ><span v-else-if="resource === 'bet-records' && (col === 'source_text' || col === 'formatted_text')" class="record-text-cell" @click="openRecordText(labels[col] || col, scope.row[col])">{{ scope.row[col] || "-" }}</span
           ><span v-else-if="resource === 'audit-logs' && col === 'action'">{{ auditAction(scope.row[col]) }}</span
           ><span v-else-if="resource === 'audit-logs' && col === 'resource'">{{ auditResource(scope.row[col]) }}</span
           ><span v-else>{{ scope.row[col] ?? "-" }}</span></template
@@ -777,24 +839,32 @@ onBeforeUnmount(() => {
         <div class="bet-detail-summary">
           <span>彩种：<b>{{ detailLotteryNames() || '未知' }}</b></span>
           <span>期号：<b>{{ detailRecord?.issue_no || '待分配' }}</b></span>
-          <span>状态：<el-tag :type="detailRecord?.opened ? 'success' : 'warning'">{{ detailRecord?.opened ? '已开奖' : '待开奖' }}</el-tag></span>
+          <span>状态：<el-tag :type="detailStatusLabel(detailRecord) === '未开奖' ? 'warning' : detailStatusLabel(detailRecord) === '已退码' ? 'info' : 'success'">{{ detailStatusLabel(detailRecord) }}</el-tag></span>
+          <span v-if="detailRecord?.win_status && detailRecord.win_status !== 'pending'">中奖状态：<el-tag :type="winStatusTagType(detailRecord)">{{ winStatusLabel(detailRecord) }}</el-tag></span>
           <span>中奖金额：<b class="win-total">{{ detailRecord?.win_amount || '0.00' }}</b></span>
           <span v-if="detailRecord?.draw_numbers">开奖号码：<b>{{ detailRecord.draw_numbers }}</b></span>
-          <span>共 {{ detailTotal }} 注</span>
+          <span>共 {{ detailTotal }} 条玩法</span>
+          <el-button v-if="detailStatusLabel(detailRecord) === '未开奖'" type="primary" size="small" @click="masterEdit = !masterEdit">{{ masterEdit ? '完成编辑' : '编辑主单' }}</el-button>
         </div>
         <el-table :data="detailRows" :row-key="(row: BetDetail) => row.row_key || row.id" border stripe table-layout="fixed">
           <el-table-column prop="lottery" label="彩种" width="90" />
-          <el-table-column label="百位" width="92"><template #default="scope"><el-input v-model="scope.row.hundreds" maxlength="1" :disabled="detailRecord?.status !== 'pending'" @blur="scheduleExpandedBetSave(scope.row)" /></template></el-table-column>
-          <el-table-column label="十位" width="92"><template #default="scope"><el-input v-model="scope.row.tens" maxlength="1" :disabled="detailRecord?.status !== 'pending'" @blur="scheduleExpandedBetSave(scope.row)" /></template></el-table-column>
-          <el-table-column label="个位" width="92"><template #default="scope"><el-input v-model="scope.row.units" maxlength="1" :disabled="detailRecord?.status !== 'pending'" @blur="scheduleExpandedBetSave(scope.row)" /></template></el-table-column>
-          <el-table-column label="单注金额" width="130"><template #default="scope"><el-input v-model="scope.row.amount" type="number" min="0" step="0.01" :disabled="detailRecord?.status !== 'pending'" @blur="scheduleExpandedBetSave(scope.row)" /></template></el-table-column>
-          <el-table-column label="专业玩法" min-width="150"><template #default="scope"><el-tag type="info">{{ scope.row.play_type || scope.row.category || '未识别玩法' }}</el-tag></template></el-table-column>
+          <el-table-column label="号码/内容" min-width="300"><template #default="scope"><el-input v-if="masterEdit" v-model="scope.row.number_text" size="small"/><span v-else class="detail-number-list">{{ scope.row.number_text || '-' }}</span></template></el-table-column>
+          <el-table-column prop="number_count" label="笔数" width="76" />
+          <el-table-column label="金额" width="130"><template #default="scope"><el-input v-if="masterEdit" v-model="scope.row.amount" size="small"/><span v-else>{{ scope.row.amount }}</span></template></el-table-column>
+          <el-table-column label="玩法" min-width="180"><template #default="scope"><el-input v-if="masterEdit" v-model="scope.row.play_type" size="small"/><el-tag v-else type="info">{{ scope.row.play_type || scope.row.category || '未识别玩法' }}</el-tag></template></el-table-column>
           <el-table-column prop="odds" label="赔率" width="90" />
-          <el-table-column label="中奖" width="180"><template #default="scope"><span v-if="!detailRecord?.opened" class="muted">待开奖</span><span v-else :class="scope.row.result_status === 'won' ? 'win-text' : 'muted'">{{ scope.row.result_status === 'won' ? `已中奖 ¥${scope.row.win_amount || '0.00'}` : '未中奖' }}</span></template></el-table-column>
-          <el-table-column prop="source_text" label="原始行" min-width="180" show-overflow-tooltip />
+          <el-table-column label="中奖" width="180"><template #default="scope"><span v-if="!isDetailDrawn(detailRecord)" class="muted">待开奖</span><span v-else :class="scope.row.result_status === 'unwon' ? 'muted' : 'win-text'">{{ detailWinLabel(scope.row) }}</span></template></el-table-column>
+          <el-table-column label="原始行" min-width="180"><template #default="scope"><el-input v-if="masterEdit" v-model="scope.row.source_text" size="small"/><span v-else>{{ scope.row.source_text || '-' }}</span></template></el-table-column>
+          <el-table-column v-if="masterEdit" label="操作" width="90"><template #default="scope"><el-button link type="primary" @click="saveExpandedBet(scope.row)">保存</el-button></template></el-table-column>
         </el-table>
         <el-pagination v-model:current-page="detailPage" v-model:page-size="detailPageSize" :total="detailTotal" :page-sizes="[20, 30, 50, 100]" layout="total, sizes, prev, pager, next, jumper" class="detail-pagination" @current-change="loadBetDetailPage()" @size-change="detailPage = 1; loadBetDetailPage()" />
       </div>
+    </el-drawer><el-drawer
+      v-model="textDrawerVisible"
+      :title="textDrawerTitle"
+      direction="rtl"
+      size="min(760px, 92vw)"
+      ><div class="record-text-drawer"><pre>{{ textDrawerValue }}</pre></div>
     </el-drawer><el-drawer
       v-model="drawer"
       :title="editingId ? `编辑${title}` : `新增${title}`"
@@ -970,8 +1040,13 @@ onBeforeUnmount(() => {
   line-height: 1.5;
 }
 .bet-detail-panel { width: 100%; overflow-x: hidden; }
+.record-text-cell { display: block; width: 100%; max-width: 280px; min-width: 0; overflow: hidden; color: #2563eb; cursor: pointer; text-overflow: ellipsis; white-space: nowrap; }
+.record-text-cell:hover { text-decoration: underline; }
+.record-text-drawer { min-height: 100%; color: #334155; }
+.record-text-drawer pre { margin: 0; padding: 14px; border: 1px solid #e5e7eb; border-radius: 6px; background: #f8fafc; font: 13px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-word; }
 .bet-detail-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 24px; padding: 0 0 16px; color: #64748b; font-size: 13px; }
 .bet-detail-summary b { color: #1f2937; }
+.detail-number-list { display: block; max-height: 58px; overflow: hidden; line-height: 1.55; color: #1f2937; word-break: break-all; }
 .win-total, .win-text { color: #e04b35 !important; }
 .bet-detail-panel :deep(.el-table) { width: 100%; }
 .bet-detail-panel :deep(.el-input__wrapper) { padding-left: 7px; padding-right: 7px; }

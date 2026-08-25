@@ -21,10 +21,13 @@ import { GenericPage } from "./pages/GenericPage";
 import { displayAmount, nav, type Announcement, type Balances } from "./shared";
 import "./Main.scss";
 
-function MainShell({ name, logout }: { name: string; logout: () => void }) {
+function MainShell({ name, logout, forcePasswordChange = false, onPasswordChanged }: { name: string; logout: () => void; forcePasswordChange?: boolean; onPasswordChanged?: () => void }) {
   const location = useLocation();
+  const locked = forcePasswordChange;
   const [panelRight, setPanelRight] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [warmVisible, setWarmVisible] = useState(true);
+  const [warmOpen, setWarmOpen] = useState(true);
   const [balances, setBalances] = useState<Balances>({
     balance: "0",
     total_balance: "0",
@@ -71,20 +74,31 @@ function MainShell({ name, logout }: { name: string; logout: () => void }) {
     };
   }, []);
   useEffect(() => {
-    getLotteries()
-      .then((response) => {
-        const list = response.data?.data?.list || [];
-        setLotteries(list);
-        setSelectedLotteryId((current) =>
-          current && list.some((item) => item.id === current)
-            ? current
-            : list[0]?.id || null,
-        );
-      })
-      .catch(() => {
-        setLotteries([]);
-        setSelectedLotteryId(null);
-      });
+    let active = true;
+    const loadLotteries = () => {
+      getLotteries()
+        .then((response) => {
+          if (!active) return;
+          const list = response.data?.data?.list || [];
+          setLotteries(list);
+          setSelectedLotteryId((current) =>
+            current && list.some((item) => item.id === current)
+              ? current
+              : list[0]?.id || null,
+          );
+        })
+        .catch(() => {
+          if (!active) return;
+          setLotteries([]);
+          setSelectedLotteryId(null);
+        });
+    };
+    loadLotteries();
+    const timer = window.setInterval(loadLotteries, 30_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
   }, []);
   useEffect(() => {
     const token = localStorage.getItem("user_token");
@@ -125,7 +139,7 @@ function MainShell({ name, logout }: { name: string; logout: () => void }) {
   const selectedLottery = lotteries.find(
     (item) => item.id === selectedLotteryId,
   );
-  const fullPage = location.pathname !== "/" && location.pathname !== "/kb";
+  const fullPage = !forcePasswordChange && location.pathname !== "/" && location.pathname !== "/kb";
   const lotterySwitchPages = new Set(["/zh", "/hyxx", "/jg", "/gz"]);
   const title = useMemo(
     () =>
@@ -144,6 +158,7 @@ function MainShell({ name, logout }: { name: string; logout: () => void }) {
         selectableLottery={lotterySwitchPages.has(location.pathname)}
         selectedLotteryId={selectedLotteryId}
         onSelectLottery={setSelectedLotteryId}
+        locked={locked}
       />
       {moreOpen ? (
         <MorePanel lotteries={lotteries} onBack={() => setMoreOpen(false)} />
@@ -157,11 +172,20 @@ function MainShell({ name, logout }: { name: string; logout: () => void }) {
                 onMore={() => setMoreOpen(true)}
                 panelRight={panelRight}
                 onToggleSide={() => setPanelRight((value) => !value)}
+                disabled={locked}
               />
             </aside>
           )}
           <main>
-            <Routes>
+            {forcePasswordChange ? (
+              <ChangePasswordPage
+                forced
+                onPasswordChanged={() => {
+                  onPasswordChanged?.();
+                  window.location.hash = "#/kb";
+                }}
+              />
+            ) : <Routes>
               <Route
                 path="/"
                 element={
@@ -198,18 +222,26 @@ function MainShell({ name, logout }: { name: string; logout: () => void }) {
               <Route path="/gz" element={<RulesPage selectedLottery={selectedLottery} />} />
               <Route path="/xgmm" element={<ChangePasswordPage />} />
               <Route path="*" element={<GenericPage title={title} />} />
-            </Routes>
+            </Routes>}
           </main>
         </div>
       )}
-      <section className="warm is-open" aria-label="温馨提示">
+      {warmVisible ? <section className={`warm${warmOpen ? " is-open" : " is-collapsed"}`} aria-label="温馨提示">
         <header className="warm-header">
           <strong>温馨提示</strong>
+          <div className="warm-actions">
+            <button type="button" title={warmOpen ? "收回温馨提示" : "弹出温馨提示"} aria-label={warmOpen ? "收回温馨提示" : "弹出温馨提示"} onClick={() => setWarmOpen((value) => !value)}>
+              <span aria-hidden="true">{warmOpen ? "−" : "+"}</span>
+            </button>
+            <button type="button" title="关闭温馨提示" aria-label="关闭温馨提示" onClick={() => setWarmVisible(false)}>
+              <span aria-hidden="true">×</span>
+            </button>
+          </div>
         </header>
         <div className="warm-content">
           【温馨提示】各位会员在下注确定后请到“下注明细”里确认注单，一切注单结算以下注明细里资料为准！
         </div>
-      </section>
+      </section> : null}
     </div>
   );
 }
@@ -218,6 +250,5 @@ export function Main({ name, logout, forcePasswordChange, onPasswordChanged }: {
   useEffect(() => {
     if (forcePasswordChange && window.location.hash !== "#/xgmm") window.location.hash = "#/xgmm";
   }, [forcePasswordChange]);
-  if (forcePasswordChange) return <div className="app"><ChangePasswordPage forced onPasswordChanged={onPasswordChanged} /></div>;
-  return <MainShell name={name} logout={logout} />;
+  return <MainShell name={name} logout={logout} forcePasswordChange={forcePasswordChange} onPasswordChanged={onPasswordChanged} />;
 }

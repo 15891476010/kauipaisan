@@ -29,7 +29,7 @@ final class AgentReport
         $session=$this->session($request); $siteId=(int)$session['site_id'];
         try { [$from,$to]=$this->dates($request,$session); } catch (\InvalidArgumentException $e) { return $this->reply(null,$e->getMessage(),422); } $lotteries=$this->lotteries($request);
         $rows=$this->rows($session,$from,$to,$lotteries);
-        return $this->reply(['summary'=>$this->aggregate($rows),'from'=>$from,'to'=>$to,'lotteries'=>$lotteries]);
+        return $this->reply(['summary'=>$this->aggregate($rows),'list'=>$this->memberRows($rows),'from'=>$from,'to'=>$to,'lotteries'=>$lotteries]);
     }
 
     public function monthly(Request $request): \think\response\Json
@@ -54,7 +54,9 @@ final class AgentReport
         $query=Db::name('lottery_histories')->alias('h')->join('lotteries l','l.id=h.lottery_id')->join('site_lotteries sl','sl.lottery_id=l.id')
             ->where('sl.site_id',$siteId)->where('h.draw_day','>=',date('Y-m-01'))->where('h.draw_day','<=',date('Y-m-t'));
         if($lottery!=='') $query->where('l.name',$lottery);
-        $items=$query->field('h.code AS issue_no,h.draw_day AS date')->order('h.draw_day desc')->order('h.code desc')->select()->toArray();
+        $configuredLimit=(int)Db::name('settings')->where('site_id',$siteId)->where('key','draw_history_limit')->value('value');
+        $drawHistoryLimit=$configuredLimit>0?min(200,$configuredLimit):80;
+        $items=$query->field('h.code AS issue_no,h.draw_day AS date')->order('h.draw_day desc')->order('h.code desc')->limit($drawHistoryLimit)->select()->toArray();
         $seen=[]; $list=[]; foreach($items as $row) { $issue=(string)$row['issue_no']; if(isset($seen[$issue])) continue; $seen[$issue]=true; $list[]=['issue_no'=>$issue,'date'=>(string)$row['date']]; }
         return $this->reply(['list'=>$list]);
     }
@@ -63,12 +65,13 @@ final class AgentReport
     {
         $query=Db::name('bet_details')->alias('d')
             ->join('bet_records r','r.id=d.bet_record_id')
+            ->join('site_users u','u.id=d.user_id')
             ->leftJoin('user_stop_drops s','s.bet_detail_id=d.id')
-            ->where('d.site_id',(int)$session['site_id'])->where('d.placed_at','>=',$from.' 00:00:00')->where('d.placed_at','<=',$to.' 23:59:59')
+            ->where('d.site_id',(int)$session['site_id'])->where('u.site_id',(int)$session['site_id'])->whereNull('u.deleted_at')->where('d.placed_at','>=',$from.' 00:00:00')->where('d.placed_at','<=',$to.' 23:59:59')
             ->where('r.status','<>','refunded');
         OrganizationHierarchy::applyUserScope($query,$session,'d.user_id');
         if($lotteries!==[]) $query->whereIn('s.lottery',$lotteries);
-        $rows=$query->field('d.id,d.issue_no,d.number_text,d.amount,d.odds,d.win_amount,d.rebate,d.placed_at,s.lottery,s.drop_odds')->select()->toArray();
+        $rows=$query->field('d.id,d.user_id,u.username,d.issue_no,d.number_text,d.amount,d.odds,d.win_amount,d.rebate,d.placed_at,s.lottery,s.drop_odds')->select()->toArray();
         if($rows===[]) return [];
         $detailIds=array_map(static fn(array $row): int=>(int)$row['id'],$rows);
         $interceptions=Db::name('agent_interceptions')->whereIn('bet_detail_id',$detailIds)->whereNull('released_at')->field('bet_detail_id,SUM(intercepted_amount) AS intercepted_amount,SUM(bet_amount) AS intercepted_base')->group('bet_detail_id')->select()->toArray();
@@ -82,6 +85,20 @@ final class AgentReport
             $row['metrics']=['bet_count'=>max(1,count($numbers)),'amount'=>$amount,'win_amount'=>$win,'water'=>$rebate,'member_profit'=>$memberProfit,'share_amount'=>$intercepted,'share_profit'=>$shareProfit,'offline_water'=>$offline*$ratio,'agent_water'=>$offline*$ratio,'agent_profit'=>$agentProfit,'platform_amount'=>max(0,$amount-$intercepted),'platform_profit'=>$houseProfit-$shareProfit];
         }
         unset($row); return $rows;
+    }
+
+    private function memberRows(array $rows): array
+    {
+        $groups=[];
+        foreach($rows as $row){
+            $key=(string)($row['user_id']??$row['username']??'');
+            if(!isset($groups[$key]))$groups[$key]=['member'=>(string)($row['username']??'会员'),'rows'=>[]];
+            $groups[$key]['rows'][]=$row;
+        }
+        $list=[];
+        foreach($groups as $group)$list[]=['member'=>$group['member'],'summary'=>$this->aggregate($group['rows'])];
+        usort($list,static fn(array $a,array $b):int=>strcmp((string)$a['member'],(string)$b['member']));
+        return $list;
     }
 
     private function aggregate(array $rows): array

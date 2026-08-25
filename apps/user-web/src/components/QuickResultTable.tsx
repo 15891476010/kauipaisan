@@ -44,6 +44,8 @@ const clearBatchMetadata = (line: QuickEntryLine): QuickEntryLine => {
 export function QuickResultTable({ lines, onChange }: QuickResultTableProps) {
   const [detailLines, setDetailLines] = useState<QuickEntryLine[]>([]);
   const [mergedLine, setMergedLine] = useState<QuickEntryLine | null>(null);
+  const [draftTexts, setDraftTexts] = useState<Record<string, string>>({});
+  const [editingGroupKey, setEditingGroupKey] = useState<string | null>(null);
   const renumber = (next: QuickEntryLine[]) => next.map((line, index) => ({ ...line, id: index + 1 }));
   const addLine = (line: QuickEntryLine) => {
     const index = lines.indexOf(line);
@@ -136,15 +138,20 @@ export function QuickResultTable({ lines, onChange }: QuickResultTableProps) {
       <div className="quick-result" aria-live="polite">
       {displayGroups.map((group) => {
         const line = group[0];
+        const groupKey = group.map((item) => item.id).join("-");
+        const isEditing = editingGroupKey === groupKey;
+        const draftText = draftTexts[groupKey] ?? line.raw_text;
         const isBatch = Boolean(line.batch_id);
         const isBatchEnd = isBatch && line.batch_end === true && line.batch_valid !== false;
         const groupCount = group.reduce((sum, item) => sum + Number(item.code_count ?? item.count ?? 0), 0);
         const groupAmount = group.reduce((sum, item) => sum + Number(item.amount || 0), 0);
         const showDetailButton = group.some((item) => item.status === "success") && (!isBatch || isBatchEnd);
         const categoryTone = line.category === "福" ? "fu" : line.category === "体" ? "ti" : line.category === "福体" ? "futi" : "";
+        const visualStatus = isEditing ? "new" : line.status;
+        const visualTone = isEditing ? "" : categoryTone;
         return (
           <Fragment key={group.map((item) => item.id).join("-")}>
-          <div className={`quick-result-row ${line.status}${isBatchEnd ? " batch-end" : ""}`}>
+          <div className={`quick-result-row ${visualStatus}${isBatchEnd ? " batch-end" : ""}`}>
             <div className="quick-result-main">
               <button type="button" className="quick-result-remove" aria-label={`删除第${line.id}条`} onClick={() => removeGroup(group)} />
               <span className="quick-result-index">{line.id}</span>
@@ -163,10 +170,27 @@ export function QuickResultTable({ lines, onChange }: QuickResultTableProps) {
                 {isBatchEnd && <button type="button" className="quick-result-combine" aria-label={`查看第${line.id}条合并文本`} onClick={() => setMergedLine(line)}>合</button>}
                 {showDetailButton && <button type="button" className="quick-result-more" aria-label={`查看第${line.id}条详情`} onClick={() => openDetails(group)} />}
               </span>
-              <strong className={`quick-result-status ${line.status}${categoryTone ? ` ${categoryTone}` : ""}`}>
-                {line.status === "success" ? line.category || "成功" : line.status === "new" ? "新" : "失败"}
+              <strong className={`quick-result-status ${visualStatus}${visualTone ? ` ${visualTone}` : ""}`}>
+                {isEditing ? "新" : line.status === "success" ? line.category || "成功" : line.status === "new" ? "新" : "失败"}
               </strong>
-              <textarea className="quick-result-text" maxLength={5000} rows={1} value={line.raw_text} onChange={(event) => updateGroupText(group, event.target.value)} />
+              <textarea
+                className="quick-result-text"
+                maxLength={5000}
+                rows={1}
+                value={draftText}
+                onFocus={() => setEditingGroupKey(groupKey)}
+                onChange={(event) => setDraftTexts((current) => ({ ...current, [groupKey]: event.target.value }))}
+                onBlur={() => {
+                  const nextText = draftTexts[groupKey] ?? line.raw_text;
+                  setEditingGroupKey((current) => current === groupKey ? null : current);
+                  setDraftTexts((current) => {
+                    const next = { ...current };
+                    delete next[groupKey];
+                    return next;
+                  });
+                  if (nextText !== line.raw_text) updateGroupText(group, nextText);
+                }}
+              />
             </div>
             {line.status === "success" ? (
               !isBatch ? (
@@ -214,10 +238,13 @@ export function QuickResultTable({ lines, onChange }: QuickResultTableProps) {
         <div className="quick-detail-summary"><InfoCircleOutlined className="quick-detail-info" />详情：总笔数 {detailCount}，总金额 {formatAmount(detailAmount.toFixed(2))}</div>
         <div className="quick-detail-scroll">
           <div className="result-table">
-            {detailSections.map((section, sectionIndex) => (
+            {detailSections.map((section, sectionIndex) => {
+              const previousSection = detailSections[sectionIndex - 1];
+              const isNewCategory = !previousSection || previousSection.category !== section.category;
+              return (
               <Fragment key={`${section.category}-${section.title}-${sectionIndex}`}>
-                {sectionIndex > 0 && <div className="sep" />}
-                <div className={`ltype-wrapper ${section.category === "体" ? "is-ti" : "is-fu"}`}>{section.category}</div>
+                {isNewCategory && sectionIndex > 0 && <div className="sep" />}
+                {isNewCategory && <div className={`ltype-wrapper ${section.category === "体" ? "is-ti" : "is-fu"}`}>{section.category}</div>}
                 <div className="ltype-body">
                   <div className="game-type-wrapper">
                     <div className="game-type-title">{section.title}</div>
@@ -244,7 +271,8 @@ export function QuickResultTable({ lines, onChange }: QuickResultTableProps) {
                   </div>
                 </div>
               </Fragment>
-            ))}
+              );
+            })}
           </div>
         </div>
       </Modal>

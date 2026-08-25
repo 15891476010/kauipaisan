@@ -8,6 +8,7 @@ import {
   type Lottery,
 } from "../../../api/user";
 import { apiErrorMessage } from "../../../utils/request";
+import { lotteryTiming } from "../shared";
 
 const DETAIL_PAGE_SIZE = 40;
 
@@ -41,6 +42,7 @@ function numberValue(value: unknown): number {
 }
 
 function rowProfit(row: BetDetail): string {
+  if (row.status === "pending") return "0.00";
   if (row.profit !== undefined) return row.profit;
   return (numberValue(row.win_amount) - numberValue(row.amount) + numberValue(row.rebate) + numberValue(row.offline_rebate)).toFixed(2);
 }
@@ -65,7 +67,7 @@ export function BetDetailsPage({ lotteries, selectedLotteryId }: { lotteries: Lo
   const { message } = AntdApp.useApp();
   const [rows, setRows] = useState<BetDetail[]>([]);
   const [previewRow, setPreviewRow] = useState<BetDetail>();
-  const [previewMode, setPreviewMode] = useState<"text" | "numbers">("text");
+  const [previewMode, setPreviewMode] = useState<"original" | "parsed">("original");
   const [number, setNumber] = useState("");
   const [metric, setMetric] = useState("odds");
   const [min, setMin] = useState("");
@@ -80,7 +82,14 @@ export function BetDetailsPage({ lotteries, selectedLotteryId }: { lotteries: Lo
   const [total, setTotal] = useState(0);
   const [pageTotals, setPageTotals] = useState<DetailTotals>(emptyTotals);
   const [jumpPage, setJumpPage] = useState("");
+  const [now, setNow] = useState(Date.now());
   const selectedLottery = lotteries.find((item) => item.id === selectedLotteryId) || lotteries[0];
+  const showNextIssue = lotteryTiming(selectedLottery, now).showNextIssue;
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const load = (overrides: Record<string, unknown> = {}, targetPage = page) => {
     setLoading(true);
@@ -101,13 +110,15 @@ export function BetDetailsPage({ lotteries, selectedLotteryId }: { lotteries: Lo
 
   useEffect(() => {
     if (!selectedLottery) return;
-    const recent = (selectedLottery.recent_issues || []).slice(0, 40);
+    const recent = (selectedLottery.recent_issues || [])
+      .filter((item) => showNextIssue || selectedLottery.next_code === selectedLottery.latest_code || item.code !== selectedLottery.next_code)
+      .slice(0, 40);
     setIssues(recent);
     const nextIssue = recent[0]?.code || "";
     setIssue(nextIssue); setPage(1);
     load({ lottery: selectedLottery.name, issue_no: nextIssue || undefined }, 1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedLottery?.id]);
+  }, [selectedLottery?.id, selectedLottery?.next_code, showNextIssue]);
 
   const pageCount = Math.max(1, Math.ceil(total / DETAIL_PAGE_SIZE));
   const pageList = useMemo(() => pageNumbers(page, pageCount), [page, pageCount]);
@@ -147,11 +158,11 @@ export function BetDetailsPage({ lotteries, selectedLotteryId }: { lotteries: Lo
             const sameOrder = index > 0 && detailOrderKey(rows[index - 1]) === detailOrderKey(row);
             const rowClass = ["bet-detail-row", index % 2 === 0 ? "stripe" : "plain", row.status === "refunded" ? "refunded" : ""].filter(Boolean).join(" ");
             return <div className={rowClass} key={row.row_key || `${row.id}-${index}`}>
-              <span className="bet-order-no">{sameOrder ? "" : row.order_no || row.bet_record_id || row.id}</span>
-              <span className="bet-placed-at">{sameOrder ? "" : row.placed_at}</span>
-              <button type="button" className="bet-number-link" onClick={() => { setPreviewRow(row); setPreviewMode("numbers"); }}><b>{row.number_text || "-"}</b>{row.play_label ? <em>{row.play_label}</em> : null}</button>
+              <span className="bet-order-no">{row.order_no || row.bet_record_id || row.id}</span>
+              <span className="bet-placed-at">{row.placed_at}</span>
+              <span className="bet-number-link"><b>{row.number_text || "-"}</b>{row.play_label ? <em>{row.play_label}</em> : null}</span>
               <span className="bet-money">{row.amount}</span><span className="bet-odds">{row.odds || "-"}</span><span>{row.win_amount}</span><span>{row.rebate}</span><span>{row.offline_rebate || "0"}</span><span>{rowProfit(row)}</span><span>{statusLabels[row.status] || "未知状态"}</span>
-              {sameOrder ? <span className="bet-same-order">同上</span> : <button type="button" className="bet-text-link" disabled={!row.source_text} title="查看原始投注文本" onClick={() => { setPreviewRow(row); setPreviewMode("text"); }}><FileTextOutlined /></button>}
+              {sameOrder ? <span className="bet-same-order">同上</span> : <button type="button" className="bet-text-link" disabled={!row.source_text && !row.parsed_source_text} title="查看投注文本" onClick={() => { setPreviewRow(row); setPreviewMode("original"); }}><FileTextOutlined /></button>}
             </div>;
           }) : !loading && <div className="bet-detail-empty"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" /></div>}
           {rows.length ? <div className="bet-detail-total"><span>合计</span><span /><span /><span>{pageTotals.amount}</span><span /><span>---</span><span>{pageTotals.rebate}</span><span>{pageTotals.offline_rebate}</span><span>{pageTotals.profit}</span><span /><span /></div> : null}
@@ -162,8 +173,14 @@ export function BetDetailsPage({ lotteries, selectedLotteryId }: { lotteries: Lo
           {pageList.map((item) => item === "ellipsis-left" || item === "ellipsis-right" ? <span className="bet-page-ellipsis" key={item}>•••</span> : <button type="button" className={item === page ? "active" : ""} key={item} onClick={() => goPage(item)}>{item}</button>)}
           <button type="button" onClick={() => goPage(page + 1)} disabled={page >= pageCount}>›</button><span className="bet-page-size">{DETAIL_PAGE_SIZE} 条/页</span><span>跳至</span><input aria-label="跳至页" value={jumpPage} onChange={(event) => setJumpPage(event.target.value.replace(/\D/g, ""))} onKeyDown={(event) => { if (event.key === "Enter") goJumpPage(); }} /><span>页</span><button type="button" className="bet-page-jump" onClick={goJumpPage}>跳 转</button>
         </div>
-        <Modal className="record-detail-modal" open={Boolean(previewRow)} title={previewRow ? `${previewMode === "text" ? "原始投注文本" : "投注号码"} · 注单 ${previewRow.order_no || previewRow.bet_record_id || previewRow.id}` : ""} footer={null} onCancel={() => setPreviewRow(undefined)} width={760}>
-          {previewRow && previewMode === "text" ? <pre className="bet-text-preview">{previewRow.source_text || "暂无原始文本"}</pre> : <div className="bet-number-preview">{(previewRow?.number_text || "").split(/[\s,，、]+/).filter(Boolean).map((value, index) => <i key={`${value}-${index}`}>{value}</i>)}</div>}
+        <Modal className="record-detail-modal" open={Boolean(previewRow)} title={previewRow ? `文本详情 · 注单 ${previewRow.order_no || previewRow.bet_record_id || previewRow.id}` : ""} footer={null} onCancel={() => setPreviewRow(undefined)} width={760}>
+          {previewRow ? <>
+            <div className="bet-text-tabs" role="tablist" aria-label="投注文本类型">
+              <button type="button" role="tab" aria-selected={previewMode === "original"} className={previewMode === "original" ? "active" : ""} onClick={() => setPreviewMode("original")}>原始文本</button>
+              <button type="button" role="tab" aria-selected={previewMode === "parsed"} className={previewMode === "parsed" ? "active" : ""} onClick={() => setPreviewMode("parsed")}>文本</button>
+            </div>
+            <pre className="bet-text-preview">{previewMode === "original" ? (previewRow.original_source_text || previewRow.source_text || "暂无原始投注文本") : (previewRow.parsed_source_text || "暂无解析文本")}</pre>
+          </> : null}
         </Modal>
       </div>
     </div>

@@ -16,7 +16,11 @@ final class AgentLedger
     public function issues(Request $request): \think\response\Json
     {
         $session=$this->session($request);$lottery=$this->lottery($session,trim((string)$request->param('lottery','')));
-        $rows=Db::name('lottery_histories')->where('lottery_id',(int)$lottery['id'])->where('draw_day','>=',date('Y-m-01'))->where('draw_day','<=',date('Y-m-t'))->field('code AS issue_no,draw_day AS date')->order('draw_day desc')->order('code desc')->select()->toArray();
+        $configuredLimit=(int)Db::name('settings')->where('site_id',(int)$session['site_id'])->where('key','draw_history_limit')->value('value');
+        $drawHistoryLimit=$configuredLimit>0?min(200,$configuredLimit):80;
+        $rows=Db::name('lottery_histories')->where('lottery_id',(int)$lottery['id'])->field('code AS issue_no,draw_day AS date')->order('draw_day desc')->order('code desc')->limit($drawHistoryLimit)->select()->toArray();
+        $allowed=$this->limitIssues(array_map(static fn(array $row): string=>(string)$row['issue_no'],$rows),$session,(int)$lottery['id']);
+        if(count($allowed)!==count($rows))$rows=array_values(array_filter($rows,static fn(array $row): bool=>in_array((string)$row['issue_no'],$allowed,true)));
         return $this->reply(['list'=>$rows]);
     }
 

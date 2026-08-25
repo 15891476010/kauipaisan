@@ -3,6 +3,7 @@ import { App as AntdApp } from "antd";
 import dayjs from "dayjs";
 import { getBetRecords, type BetRecord, type Lottery } from "../../../api/user";
 import { apiErrorMessage } from "../../../utils/request";
+import { lotteryTiming } from "../shared";
 
 export function MorePanel({
   onBack,
@@ -13,10 +14,17 @@ export function MorePanel({
 }) {
   const { message } = AntdApp.useApp();
   const today = dayjs().format("YYYY-MM-DD");
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, []);
   const dateOptions = Array.from(
     new Map(
       lotteries.flatMap((lottery) =>
-        (lottery.recent_issues || []).map((issue) => [
+        (lottery.recent_issues || [])
+          .filter((issue) => lotteryTiming(lottery, now).showNextIssue || lottery.next_code === lottery.latest_code || issue.code !== lottery.next_code)
+          .map((issue) => [
           issue.draw_day || issue.code,
           { day: issue.draw_day || today, code: issue.code },
         ]),
@@ -34,7 +42,7 @@ export function MorePanel({
       !dateOptions.some((item) => item.day === selectedDay)
     )
       setSelectedDay(dateOptions[0].day);
-  }, [lotteries]);
+  }, [lotteries, dateOptions.length, dateOptions[0]?.day]);
   const search = () => {
     setLoading(true);
     getBetRecords({

@@ -13,7 +13,10 @@ final class SyncLotteryHistory extends Command
     protected function execute(Input $input, Output $output): int
     {
         $results=(new LotteryHistorySync())->syncAll();
-        foreach ($results as $result) $output->writeln(sprintf('lottery=%d inserted=%d updated=%d time=%.2fms ok=%s',$result['lottery_id'],$result['inserted'],$result['updated'],$result['response_time_ms'],$result['ok']?'yes':'no'));
+        foreach ($results as $result) {
+            if (array_key_exists('opened',$result)) $output->writeln(sprintf('lottery=%d system_opened=%d generated=%d ok=%s',(int)$result['lottery_id'],(int)$result['opened'],(int)($result['generated']??0),!empty($result['ok'])?'yes':'no'));
+            else $output->writeln(sprintf('lottery=%d inserted=%d updated=%d time=%.2fms ok=%s',$result['lottery_id'],$result['inserted'],$result['updated'],$result['response_time_ms'],$result['ok']?'yes':'no'));
+        }
         return 0;
     }
 }
