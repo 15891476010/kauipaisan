@@ -1,5 +1,6 @@
 import { DoubleRightOutlined } from '@ant-design/icons';
-import { Empty, Pagination, Spin } from 'antd';
+import { Button, DatePicker, Empty, Input, Pagination, Select, Spin } from 'antd';
+import dayjs from 'dayjs';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getAuditLogs, type AuditLog, type AuditLogList } from '../../api/user';
 
@@ -48,15 +49,15 @@ export function LogsPage() {
     </div>
     <form className={`agent-log-filters ${type === 'login' ? 'login-filter' : ''}`} onSubmit={submit}>
       {type === 'login' ? <>
-        <fieldset><legend>账号：</legend><input value={username} onChange={(event) => setUsername(event.target.value)} placeholder="请输入账号名" /></fieldset>
-        <fieldset className="log-date-field"><legend>登录时间：</legend><input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /><span>至</span><input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} /></fieldset>
+        <fieldset><legend>账号：</legend><Input value={username} onChange={(event) => setUsername(event.target.value)} placeholder="请输入账号名" /></fieldset>
+        <fieldset className="log-date-field"><legend>登录时间：</legend><DatePicker value={startDate ? dayjs(startDate) : null} onChange={(date) => setStartDate(date ? date.format('YYYY-MM-DD') : '')} placeholder="开始日期" /><span>至</span><DatePicker value={endDate ? dayjs(endDate) : null} onChange={(date) => setEndDate(date ? date.format('YYYY-MM-DD') : '')} placeholder="结束日期" /></fieldset>
       </> : <>
-        <fieldset><legend>被修改账号：</legend><input value={username} onChange={(event) => setUsername(event.target.value)} /></fieldset>
-        <fieldset><legend>操作账号：</legend><input value={operator} onChange={(event) => setOperator(event.target.value)} /></fieldset>
-        <fieldset className="log-small-field"><legend>内容：</legend><select value={content} onChange={(event) => setContent(event.target.value)}><option value="">全部</option><option value="credit">分数额度</option><option value="status">账号状态</option><option value="password">密码</option><option value="interception">拦货赚水</option></select></fieldset>
+        <fieldset><legend>被修改账号：</legend><Input value={username} onChange={(event) => setUsername(event.target.value)} /></fieldset>
+        <fieldset><legend>操作账号：</legend><Input value={operator} onChange={(event) => setOperator(event.target.value)} /></fieldset>
+        <fieldset className="log-small-field"><legend>内容：</legend><Select value={content} onChange={setContent} options={[{ value: '', label: '全部' }, { value: 'credit', label: '分数额度' }, { value: 'status', label: '账号状态' }, { value: 'password', label: '密码' }, { value: 'interception', label: '拦货赚水' }]} /></fieldset>
       </>}
-      <fieldset className="log-small-field"><legend>查看对象：</legend><select value={viewScope} onChange={(event) => setViewScope(event.target.value)}><option value="all">所有</option><option value="self">仅查看自己</option><option value="subordinate">仅查看下线</option></select></fieldset>
-      <button className="agent-log-submit" type="submit">提 交</button>
+      <fieldset className="log-small-field"><legend>查看对象：</legend><Select value={viewScope} onChange={setViewScope} options={[{ value: 'all', label: '所有' }, { value: 'self', label: '仅查看自己' }, { value: 'subordinate', label: '仅查看下线' }]} /></fieldset>
+      <Button className="agent-log-submit" type="primary" htmlType="submit">提交</Button>
     </form>
     <div className="agent-log-table-card">
       {loading ? <div className="agent-log-loading"><Spin /></div> : <>

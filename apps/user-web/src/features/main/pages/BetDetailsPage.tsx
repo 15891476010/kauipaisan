@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { App as AntdApp, Empty, Modal } from "antd";
+import { App as AntdApp, Modal } from "antd";
 import dayjs from "dayjs";
-import { FileTextOutlined, SearchOutlined } from "@ant-design/icons";
+import { SearchOutlined } from "@ant-design/icons";
 import {
   getBetDetails,
   type BetDetail,
@@ -9,6 +9,7 @@ import {
 } from "../../../api/user";
 import { apiErrorMessage } from "../../../utils/request";
 import { lotteryTiming } from "../shared";
+import { BetDetailsTable } from "../components/BetDetailsTable";
 
 const DETAIL_PAGE_SIZE = 40;
 
@@ -31,25 +32,6 @@ type DetailTotals = {
 const emptyTotals: DetailTotals = {
   amount: "0.00", win_amount: "0.00", rebate: "0.00", offline_rebate: "0.00", profit: "0.00",
 };
-
-const statusLabels: Record<string, string> = {
-  pending: "未结算", won: "已结算", unwon: "已结算", refunded: "已退码", cancelled: "已取消", failed: "失败",
-};
-
-function numberValue(value: unknown): number {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function rowProfit(row: BetDetail): string {
-  if (row.status === "pending") return "0.00";
-  if (row.profit !== undefined) return row.profit;
-  return (numberValue(row.win_amount) - numberValue(row.amount) + numberValue(row.rebate) + numberValue(row.offline_rebate)).toFixed(2);
-}
-
-function detailOrderKey(row: BetDetail): string {
-  return String(row.order_no || row.submission_id || row.bet_record_id || row.id);
-}
 
 function pageNumbers(page: number, pageCount: number): Array<number | "ellipsis-left" | "ellipsis-right"> {
   if (pageCount <= 7) return Array.from({ length: pageCount }, (_, index) => index + 1);
@@ -152,22 +134,7 @@ export function BetDetailsPage({ lotteries, selectedLotteryId }: { lotteries: Lo
             {issues.length ? issues.map((item) => <option key={item.code} value={item.code}>{item.draw_day ? dayjs(item.draw_day).format("M-D") : "--"}({item.code})</option>) : <option value="">暂无期号</option>}
           </select>
         </div>
-        <div className="bet-detail-table">
-          <div className="bet-detail-head"><span>注单编号</span><span>下单时间</span><span>号码</span><span>金额</span><span>赔率</span><span>中奖</span><span>回水</span><span>离线回水</span><span>盈亏</span><span>状态</span><span>查看文本</span></div>
-          {rows.length ? rows.map((row, index) => {
-            const sameOrder = index > 0 && detailOrderKey(rows[index - 1]) === detailOrderKey(row);
-            const rowClass = ["bet-detail-row", index % 2 === 0 ? "stripe" : "plain", row.status === "refunded" ? "refunded" : ""].filter(Boolean).join(" ");
-            return <div className={rowClass} key={row.row_key || `${row.id}-${index}`}>
-              <span className="bet-order-no">{row.order_no || row.bet_record_id || row.id}</span>
-              <span className="bet-placed-at">{row.placed_at}</span>
-              <span className="bet-number-link"><b>{row.number_text || "-"}</b>{row.play_label ? <em>{row.play_label}</em> : null}</span>
-              <span className="bet-money">{row.amount}</span><span className="bet-odds">{row.odds || "-"}</span><span>{row.win_amount}</span><span>{row.rebate}</span><span>{row.offline_rebate || "0"}</span><span>{rowProfit(row)}</span><span>{statusLabels[row.status] || "未知状态"}</span>
-              {sameOrder ? <span className="bet-same-order">同上</span> : <button type="button" className="bet-text-link" disabled={!row.source_text && !row.parsed_source_text} title="查看投注文本" onClick={() => { setPreviewRow(row); setPreviewMode("original"); }}><FileTextOutlined /></button>}
-            </div>;
-          }) : !loading && <div className="bet-detail-empty"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" /></div>}
-          {rows.length ? <div className="bet-detail-total"><span>合计</span><span /><span /><span>{pageTotals.amount}</span><span /><span>---</span><span>{pageTotals.rebate}</span><span>{pageTotals.offline_rebate}</span><span>{pageTotals.profit}</span><span /><span /></div> : null}
-          {loading && <div className="page-local-loading" role="status" aria-label="加载中" />}
-        </div>
+        <BetDetailsTable rows={rows} totals={pageTotals} loading={loading} onPreview={(row) => { setPreviewRow(row); setPreviewMode("original"); }} />
         <div className="bet-detail-pagination" aria-label="下注明细分页">
           <span className="bet-detail-total-count">总计：<b>{total}</b> 条数据</span><button type="button" onClick={() => goPage(page - 1)} disabled={page <= 1}>‹</button>
           {pageList.map((item) => item === "ellipsis-left" || item === "ellipsis-right" ? <span className="bet-page-ellipsis" key={item}>•••</span> : <button type="button" className={item === page ? "active" : ""} key={item} onClick={() => goPage(item)}>{item}</button>)}

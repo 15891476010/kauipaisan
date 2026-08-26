@@ -57,6 +57,19 @@ final class AgentBusiness
         return number_format((float)$value,2,'.','');
     }
 
+    /** Main order number: YYMMDDHHMMSS plus the two-digit submission suffix. */
+    private function orderNumber(array $row): string
+    {
+        $explicit=trim((string)($row['submission_order_no']??$row['order_no']??''));
+        if ($explicit!=='') return $explicit;
+        $parent=(int)($row['submission_id']??0);
+        if ($parent<1) $parent=(int)($row['bet_record_id']??$row['id']??0);
+        $stamp=preg_replace('/\D+/','',(string)($row['placed_at']??''))??'';
+        $stamp=substr($stamp,2,12);
+        if (strlen($stamp)<12) $stamp=str_pad($stamp,12,'0');
+        return $stamp.str_pad((string)($parent%100),2,'0',STR_PAD_LEFT);
+    }
+
     private function accountingQuery(Request $request, array $session): mixed
     {
         $siteId=(int)$session['site_id'];
@@ -166,11 +179,15 @@ final class AgentBusiness
         $summary=(clone $query)->field('COALESCE(SUM(d.amount),0) total_amount,COALESCE(SUM(d.win_amount),0) win_amount,COUNT(d.id) total')->find() ?: [];
         [$page,$size]=$this->page($request);
         $sort=(string)$request->param('sort','desc')==='asc'?'asc':'desc';
-        $rows=$query->field('d.id,d.bet_record_id,d.issue_no,d.number_text,d.category,d.amount,d.odds,d.win_amount,d.rebate,d.status,d.placed_at,d.source_text,u.username,COALESCE(s.play_type,d.category) play_type,s.lottery,r.source_text record_source')
+        $rows=$query->field('d.id,d.bet_record_id,r.submission_id,d.issue_no,d.number_text,d.category,d.amount,d.odds,d.win_amount,d.rebate,d.status,d.placed_at,d.source_text,u.username,COALESCE(s.play_type,d.category) play_type,s.lottery,r.source_text record_source')
             ->order('d.placed_at',$sort)->order('d.id',$sort)->page($page,$size)->select()->toArray();
         foreach ($rows as &$row) {
             $amount=(float)$row['amount']; $rebate=(float)$row['rebate']; $win=(float)$row['win_amount'];
-            $row['order_no']=str_pad((string)$row['id'],10,'0',STR_PAD_LEFT);
+            $displayPlay=(string)($row['play_type']??''); $displaySource=(string)($row['source_text']??'');
+            if (str_contains($displayPlay,'双飞') || str_contains($displaySource,'对子')) {
+                $row['number_text']=preg_replace('/^0(?=\d{2}(?:飞)?$)/u','',(string)$row['number_text'])??(string)$row['number_text'];
+            }
+            $row['order_no']=$this->orderNumber($row);
             $row['amount']=number_format($amount,2,'.','');
             $row['odds']=$row['odds'] === null ? '-' : rtrim(rtrim(number_format((float)$row['odds'],4,'.',''),'0'),'.');
             $row['win_amount']=number_format($win,2,'.','');
@@ -240,14 +257,14 @@ final class AgentBusiness
         $this->timeRange($query,$request,'r.placed_at');
         $total=(clone $query)->count();
         [$page,$size]=$this->page($request);
-        $rows=$query->field('r.id,r.issue_no,r.source_text,r.formatted_text,r.bet_count,r.amount,r.win_amount,r.status,r.sealed,r.placed_at,u.username')
+        $rows=$query->field('r.id,r.submission_id,r.issue_no,r.source_text,r.formatted_text,r.bet_count,r.amount,r.win_amount,r.status,r.sealed,r.placed_at,u.username')
             ->order('r.placed_at','desc')->order('r.id','desc')->page($page,$size)->select()->toArray();
         $ids=array_map('intval',array_column($rows,'id')); $wins=[];
         if ($ids) {
             foreach (Db::name('bet_details')->whereIn('bet_record_id',$ids)->where('status','won')->field('bet_record_id,COUNT(*) win_count')->group('bet_record_id')->select()->toArray() as $row) $wins[(int)$row['bet_record_id']]=(int)$row['win_count'];
         }
         foreach ($rows as &$row) {
-            $row['order_no']=str_pad((string)$row['id'],10,'0',STR_PAD_LEFT);
+            $row['order_no']=$this->orderNumber($row);
             $row['amount']=number_format((float)$row['amount'],2,'.','');
             $row['win_amount']=number_format((float)$row['win_amount'],2,'.','');
             $row['win_count']=$wins[(int)$row['id']]??0;

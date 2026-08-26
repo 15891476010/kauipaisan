@@ -127,81 +127,22 @@ export function SideBetRecords({
     map.get(key)!.push(detail);
     return map;
   }, new Map<string, BetDetail[]>()));
-  const copyText = async (text: string) => {
-    const textarea = document.createElement("textarea");
-    textarea.value = text;
-    textarea.setAttribute("readonly", "");
-    textarea.style.position = "fixed";
-    textarea.style.left = "-9999px";
-    textarea.style.top = "0";
-    textarea.style.opacity = "0";
-    document.body.appendChild(textarea);
-    textarea.focus();
-    textarea.select();
-    textarea.setSelectionRange(0, textarea.value.length);
-    let copied = false;
-    try {
-      copied = document.execCommand("copy");
-    } finally {
-      textarea.remove();
-    }
-    if (copied) return;
-
-    // 旧方案不可用时，再尝试现代剪贴板 API（部分浏览器要求安全上下文）。
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-      return;
-    }
-    throw new Error("copy failed");
-  };
   const copyNumbers = async () => {
     try {
-      await copyText(details.map((detail) => displayDetailNumber(detail)).join("\n"));
+      await navigator.clipboard.writeText(details.map((detail) => displayDetailNumber(detail)).join("\n"));
       message.success("号码已复制");
     } catch {
-      message.error("复制号码失败，请长按号码手动复制");
+      message.error("复制号码失败，请检查浏览器权限");
     }
   };
-  const escapeHtml = (value: unknown) => String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
   const printNumbers = () => {
-    const rows = numberGroups.map(([key, group]) => `<tr><th colspan="2">${escapeHtml(key.replace("|", " 第 "))} 期，共 ${group.reduce((sum, item) => sum + Number(item.amount || 0), 0).toFixed(2)}</th></tr>${group.map((item) => `<tr><td>${escapeHtml(displayDetailNumber(item))}</td><td>${escapeHtml(item.amount)}</td></tr>`).join("")}`).join("");
-    const paper = `<div class="bet-number-print-paper"><p>时间：${escapeHtml(detailRecord?.placed_at || "")}</p><p>会员：-</p><table>${rows}</table><p>请核对一切以小票为准<br>总笔数：${details.length} 总金额：${details.reduce((sum, item) => sum + Number(item.amount || 0), 0).toFixed(2)}</p></div>`;
-    const printCss = "body{font:14px Arial,sans-serif;padding:20px;color:#111}.bet-number-print-paper{max-width:580px;margin:0 auto}table{border-collapse:collapse;width:100%}th,td{border:1px solid #777;padding:7px;text-align:center}th{background:#666!important;color:#fff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}";
-
-    // 必须在点击事件内同步打开窗口，否则容易被浏览器当作广告弹窗拦截。
-    const printWindow = window.open("", "_blank", "width=620,height=760");
-    if (printWindow) {
-      printWindow.document.open();
-      printWindow.document.write(`<html><head><meta charset="utf-8"><title>号码小票</title><style>${printCss}</style></head><body>${paper}</body></html>`);
-      printWindow.document.close();
-      printWindow.focus();
-      printWindow.print();
-      return;
-    }
-
-    // 新窗口被拦截时，使用当前页面的隐藏打印区域，不再直接报错。
-    const printRoot = document.createElement("div");
-    const printStyle = document.createElement("style");
-    printRoot.id = "bet-number-print-root";
-    printRoot.innerHTML = paper;
-    printStyle.textContent = `@media print{body>*:not(#bet-number-print-root){display:none!important}#bet-number-print-root{display:block!important;position:static!important}${printCss}}`;
-    document.body.append(printStyle, printRoot);
-    let cleaned = false;
-    const cleanup = () => {
-      if (cleaned) return;
-      cleaned = true;
-      printRoot.remove();
-      printStyle.remove();
-      window.removeEventListener("afterprint", cleanup);
-    };
-    window.addEventListener("afterprint", cleanup);
-    window.print();
-    window.setTimeout(cleanup, 1500);
+    const printWindow = window.open("", "_blank", "noopener,noreferrer,width=620,height=760");
+    if (!printWindow) return message.error("无法打开打印窗口");
+    const rows = numberGroups.map(([key, group]) => `<tr><th colspan="2">${key.replace("|", " 第 ")} 期，共 ${group.reduce((sum, item) => sum + Number(item.amount || 0), 0).toFixed(2)}</th></tr>${group.map((item) => `<tr><td>${displayDetailNumber(item)}</td><td>${item.amount}</td></tr>`).join("")}`).join("");
+    printWindow.document.write(`<html><head><title>号码小票</title><style>body{font:14px Arial;padding:20px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #777;padding:7px;text-align:center}th{background:#666;color:#fff}</style></head><body><p>时间：${detailRecord?.placed_at || ""}</p><p>会员：-</p><table>${rows}</table><p>总笔数：${details.length} 总金额：${details.reduce((sum, item) => sum + Number(item.amount || 0), 0).toFixed(2)}</p></body></html>`);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
   };
   return (
     <>

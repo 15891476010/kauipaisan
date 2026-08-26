@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { App as AntdApp, Empty, Modal, Spin } from "antd";
+import { App as AntdApp, Button, DatePicker, Empty, Input, Modal, Select, Spin } from "antd";
+import dayjs from "dayjs";
 import { HashRouter, Navigate, NavLink, Route, Routes } from "react-router-dom";
 import {
   AccountBookOutlined, AlertOutlined, FileDoneOutlined, FileTextOutlined,
@@ -27,6 +28,7 @@ import { heartbeat, logout as logoutSession } from "./api/auth";
 import { ForcedPasswordPage } from "./features/auth/ForcedPasswordPage";
 import { firstAllowedRoute, hasAgentPermission, isRouteAllowed } from "./routePermissions";
 import fishLogo from "./assets/login-logo.svg";
+import { OverviewDetailsTable, OverviewRecordsTable, OverviewRefundsTable } from "./components/OverviewTables";
 
 const menus = [
   { path: "overview", title: "总货概览", icon: FileDoneOutlined },
@@ -122,19 +124,6 @@ function formatIssueOption(issue: LedgerIssue) {
   const date = String(issue.date || "");
   const match = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(date);
   return match ? `${Number(match[2])}-${Number(match[3])}(${issue.issue_no})` : issue.issue_no;
-}
-
-function OverviewDetailsTable({ rows, winning = false }: { rows: AgentOrderDetail[]; winning?: boolean }) {
-  if (winning) return <table className="overview-data-table overview-winning-table"><thead><tr><th>注单编号</th><th>会员</th><th>下单时间</th><th>号码</th><th>下注金额</th><th>赔率</th><th>中奖</th><th>下线回水</th><th>实收下线</th><th>路径</th><th>小票或全截</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td>{row.order_no}</td><td>{row.username}</td><td>{row.placed_at}</td><td className="overview-number">{row.number_text || row.play_type}</td><td>{row.amount}</td><td>{row.odds || "-"}</td><td className="overview-win">{row.win_amount || "0"}</td><td>{row.downline_rebate || "0"}</td><td>{row.received_amount || row.amount}</td><td className="overview-path">{row.path || "会员"}</td><td className="overview-ticket" title={row.ticket || ""}>{row.ticket || ""}</td></tr>)}</tbody></table>;
-  return <table className="overview-data-table overview-detail-table"><thead><tr><th>注单编号</th><th>会员</th><th>下单时间</th><th>号码</th><th>下注金额</th><th>赔率</th><th>中奖</th><th>下线回水</th><th>实收下线</th><th>自己回水</th><th>实付上线</th><th>赚水</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td>{row.order_no}</td><td>{row.username}</td><td>{row.placed_at}</td><td className="overview-number">{row.number_text || row.play_type}</td><td>{row.amount}</td><td>{row.odds || "-"}</td><td className="overview-win">{row.win_amount || "0"}</td><td>{row.downline_rebate || "0"}</td><td>{row.received_amount || row.amount}</td><td>{row.own_rebate || "0"}</td><td>{row.paid_upstream || row.amount}</td><td>{row.rebate_profit || "0"}</td></tr>)}</tbody></table>;
-}
-
-function OverviewRecordsTable({ rows, onDetails }: { rows: AgentBetRecord[]; onDetails: (row: AgentBetRecord) => void }) {
-  return <table className="overview-data-table overview-records-table"><thead><tr><th>编号</th><th>注单编号</th><th>会员名</th><th>期号</th><th>下单时间</th><th>来源</th><th>注单数量</th><th>注单总额</th><th>操作</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td>{row.id}</td><td>{row.order_no || String(row.id).padStart(10, "0")}</td><td>{row.username}</td><td>{row.issue_no}</td><td>{row.placed_at}</td><td>快录</td><td>{row.bet_count}</td><td className="overview-money">{row.amount}</td><td><button type="button" className="overview-action" onClick={() => onDetails(row)}>明细</button></td></tr>)}</tbody></table>;
-}
-
-function OverviewRefundsTable({ rows, onDetails }: { rows: AgentRefundRecord[]; onDetails: (row: AgentRefundRecord) => void }) {
-  return <table className="overview-data-table overview-refund-table"><thead><tr><th>编号</th><th>会员名</th><th>期号</th><th>退码时间</th><th>注单数量</th><th>注单总额</th><th>操作</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td>{row.id}</td><td>{row.username}</td><td>{row.issue_no}</td><td>{row.refunded_at}</td><td>{row.bet_count}</td><td className="overview-money">{row.amount}</td><td><button type="button" className="overview-action" onClick={() => onDetails(row)}>明细</button></td></tr>)}</tbody></table>;
 }
 
 function OverviewPage({ lottery: suppliedLottery = "" }: { lottery?: string } = {}) {
@@ -295,40 +284,34 @@ function OverviewPage({ lottery: suppliedLottery = "" }: { lottery?: string } = 
 
       <form className={`overview-filters overview-filters-${activeTab === "总货概览" ? "overview" : activeTab === "查看退码" ? "refund" : activeTab === "投注明细" ? "bets" : activeTab === "中奖明细" ? "winning" : "details"}`} onSubmit={(event) => { event.preventDefault(); setPage(1); setQueryVersion((value) => value + 1); }}>
         {activeTab === "投注明细" ? <>
-          <fieldset className="status-filter"><legend>中奖</legend><select value={winningStatus} onChange={(event) => setWinningStatus(event.target.value)}><option value="all">全部</option><option value="won">中奖</option><option value="unwon">未中</option></select></fieldset>
-          <fieldset><legend>会员账号</legend><input value={account} onChange={(event) => setAccount(event.target.value)} placeholder="搜索会员名" /></fieldset>
-          <fieldset className="text-filter"><legend>原始文本搜索</legend><input value={sourceText} onChange={(event) => setSourceText(event.target.value)} placeholder="输入文本" /></fieldset>
-          <fieldset className="date-range"><legend>投注时间</legend><input type="date" value={fromTime} onChange={(event) => setFromTime(event.target.value)} /><span>至</span><input type="date" value={toTime} onChange={(event) => setToTime(event.target.value)} /></fieldset>
+          <fieldset className="status-filter"><legend>中奖</legend><Select className="overview-select" size="small" value={winningStatus} onChange={setWinningStatus} options={[{ value: "all", label: "全部" }, { value: "won", label: "中奖" }, { value: "unwon", label: "未中" }]} /></fieldset>
+          <fieldset><legend>会员账号</legend><Input className="overview-input" size="small" value={account} onChange={(event) => setAccount(event.target.value)} placeholder="搜索会员名" /></fieldset>
+          <fieldset className="text-filter"><legend>原始文本搜索</legend><Input className="overview-input" size="small" value={sourceText} onChange={(event) => setSourceText(event.target.value)} placeholder="输入文本" /></fieldset>
+          <fieldset className="date-range"><legend>投注时间</legend><DatePicker size="small" value={fromTime ? dayjs(fromTime) : null} onChange={(date) => setFromTime(date ? date.format("YYYY-MM-DD") : "")} placeholder="开始日期" /><span>至</span><DatePicker size="small" value={toTime ? dayjs(toTime) : null} onChange={(date) => setToTime(date ? date.format("YYYY-MM-DD") : "")} placeholder="结束日期" /></fieldset>
         </> : <>
-          <fieldset><legend>查账号：</legend><input value={account} onChange={(event) => setAccount(event.target.value)} placeholder="查账号" /></fieldset>
-          {activeTab !== "总货概览" && activeTab !== "查看退码" ? <fieldset><legend>查号码：</legend><input value={number} onChange={(event) => setNumber(event.target.value)} placeholder="查号码" /></fieldset> : null}
+          <fieldset><legend>查账号：</legend><Input className="overview-input" size="small" value={account} onChange={(event) => setAccount(event.target.value)} placeholder="查账号" /></fieldset>
+          {activeTab !== "总货概览" && activeTab !== "查看退码" ? <fieldset><legend>查号码：</legend><Input className="overview-input" size="small" value={number} onChange={(event) => setNumber(event.target.value)} placeholder="查号码" /></fieldset> : null}
           {activeTab === "中奖明细" ? <fieldset className="check-filter"><legend>组</legend><label><input type="checkbox" /> 是?</label></fieldset> : null}
-          {activeTab !== "总货概览" && activeTab !== "查看退码" ? <fieldset className="range-filter"><legend>列出</legend><div><select value={metric} onChange={(event) => setMetric(event.target.value)}><option value="odds">赔率</option><option value="amount">金额</option></select><input value={min} onChange={(event) => setMin(event.target.value.replace(/[^\d.]/g, ""))} /><span>至</span><input value={max} onChange={(event) => setMax(event.target.value.replace(/[^\d.]/g, ""))} /></div></fieldset> : null}
-          {activeTab !== "总货概览" && activeTab !== "查看退码" ? <fieldset className="category-filter"><legend>分类</legend><select value={category} onChange={(event) => setCategory(event.target.value)}><option>所有</option><option>直选</option><option>组三</option><option>组六</option><option>定位</option><option>和值</option><option>跨度</option></select></fieldset> : null}
-          {activeTab === "中奖明细" ? <><fieldset className="source-filter"><legend>来源</legend><select value={source} onChange={(event) => setSource(event.target.value)}><option>全部</option><option value="quick">快录</option></select></fieldset><fieldset className="source-filter"><legend>设备</legend><select><option>全部</option><option>快录网</option></select></fieldset></> : activeTab === "总货概览" ? <fieldset className="source-filter"><legend>来源：</legend><select value={source} onChange={(event) => setSource(event.target.value)}><option>全部</option><option value="quick">快录</option></select></fieldset> : null}
+          {activeTab !== "总货概览" && activeTab !== "查看退码" ? <fieldset className="range-filter"><legend>列出</legend><div><Select className="overview-select metric-select" size="small" value={metric} onChange={setMetric} options={[{ value: "odds", label: "赔率" }, { value: "amount", label: "金额" }]} /><Input className="overview-range-input" size="small" value={min} onChange={(event) => setMin(event.target.value.replace(/[^\d.]/g, ""))} /><span>至</span><Input className="overview-range-input" size="small" value={max} onChange={(event) => setMax(event.target.value.replace(/[^\d.]/g, ""))} /></div></fieldset> : null}
+          {activeTab !== "总货概览" && activeTab !== "查看退码" ? <fieldset className="category-filter"><legend>分类</legend><Select className="overview-select" size="small" value={category} onChange={setCategory} options={["所有", "直选", "组三", "组六", "定位", "和值", "跨度"].map((value) => ({ value, label: value }))} /></fieldset> : null}
+          {activeTab === "中奖明细" ? <><fieldset className="source-filter"><legend>来源</legend><Select className="overview-select" size="small" value={source} onChange={setSource} options={[{ value: "全部", label: "全部" }, { value: "quick", label: "快录" }]} /></fieldset><fieldset className="source-filter"><legend>设备</legend><Select className="overview-select" size="small" defaultValue="全部" options={[{ value: "全部", label: "全部" }, { value: "快录网", label: "快录网" }]} /></fieldset></> : activeTab === "总货概览" ? <fieldset className="source-filter"><legend>来源：</legend><Select className="overview-select" size="small" value={source} onChange={setSource} options={[{ value: "全部", label: "全部" }, { value: "quick", label: "快录" }]} /></fieldset> : null}
         </>}
-        <div className="overview-submit-wrap"><button className="overview-submit" type="submit">{activeTab === "投注明细" ? "搜索" : "提交"}</button></div>
+        <div className="overview-submit-wrap"><Button className="overview-submit" htmlType="submit" type="primary">{activeTab === "投注明细" ? "搜索" : "提交"}</Button></div>
       </form>
 
       <section className="overview-table-panel">
         <div className="overview-table-title">
           <strong>{activeTab}</strong>
-          <select value={startDate} onChange={(event) => setStartDate(event.target.value)} aria-label="开始日期" disabled={issuesLoading || issues.length === 0}>
-            {issues.length === 0 && <option value="">{issuesLoading ? "正在加载期号" : "暂无可用期号"}</option>}
-            {issues.map((item) => <option key={`start-${item.issue_no}`} value={item.issue_no}>{formatIssueOption(item)}</option>)}
-          </select>
+          <Select className="overview-issue-select" size="small" value={startDate} onChange={setStartDate} aria-label="开始日期" disabled={issuesLoading || issues.length === 0} options={issues.length === 0 ? [{ value: "", label: issuesLoading ? "正在加载期号" : "暂无可用期号" }] : issues.map((item) => ({ value: item.issue_no, label: formatIssueOption(item) }))} />
           <span>至</span>
-          <select value={endDate} onChange={(event) => setEndDate(event.target.value)} aria-label="结束日期" disabled={issuesLoading || issues.length === 0}>
-            {issues.length === 0 && <option value="">{issuesLoading ? "正在加载期号" : "暂无可用期号"}</option>}
-            {issues.map((item) => <option key={`end-${item.issue_no}`} value={item.issue_no}>{formatIssueOption(item)}</option>)}
-          </select>
+          <Select className="overview-issue-select" size="small" value={endDate} onChange={setEndDate} aria-label="结束日期" disabled={issuesLoading || issues.length === 0} options={issues.length === 0 ? [{ value: "", label: issuesLoading ? "正在加载期号" : "暂无可用期号" }] : issues.map((item) => ({ value: item.issue_no, label: formatIssueOption(item) }))} />
         </div>
         <div className="overview-table-scroll">
           {dataLoading ? <div className="overview-no-data"><Spin /></div> : dataError ? <div className="overview-no-data">{dataError}</div> : activeTab === "总货明细" || activeTab === "中奖明细" ? (details.length ? <OverviewDetailsTable rows={details} winning={activeTab === "中奖明细"} /> : <div className="overview-no-data"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" /></div>) : activeTab === "查看退码" ? (refunds.length ? <OverviewRefundsTable rows={refunds} onDetails={(row) => void openRecordDetails(row.id)} /> : <div className="overview-no-data"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" /></div>) : records.length ? <OverviewRecordsTable rows={records} onDetails={(row) => void openRecordDetails(row.id)} /> : <div className="overview-no-data"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" /></div>}
         </div>
-        <div className="overview-pagination"><span>总计：<b>{total}</b> 条数据</span><button type="button" disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>‹</button><strong>{page}</strong><button type="button" disabled={page >= Math.max(1, Math.ceil(total / pageSize))} onClick={() => setPage((value) => value + 1)}>›</button><select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); }}><option value={10}>10 条/页</option><option value={40}>40 条/页</option><option value={100}>100 条/页</option></select></div>
+        <div className="overview-pagination"><span>总计：<b>{total}</b> 条数据</span><button type="button" disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>‹</button><strong>{page}</strong><button type="button" disabled={page >= Math.max(1, Math.ceil(total / pageSize))} onClick={() => setPage((value) => value + 1)}>›</button><Select className="overview-page-size" size="small" value={pageSize} onChange={(value) => { setPageSize(Number(value)); setPage(1); }} options={[10, 40, 100].map((value) => ({ value, label: `${value} 条/页` }))} /></div>
       </section>
-      <Modal title="注单明细" open={detailModalOpen} footer={null} width={1080} onCancel={() => setDetailModalOpen(false)}>{detailModalLoading ? <div className="overview-no-data"><Spin /></div> : detailModalRows.length ? <OverviewDetailsTable rows={detailModalRows} /> : <Empty description="暂无明细" />}</Modal>
+      <Modal className="overview-detail-modal" title="注单明细" open={detailModalOpen} footer={null} width={1500} onCancel={() => setDetailModalOpen(false)}>{detailModalLoading ? <div className="overview-no-data"><Spin /></div> : detailModalRows.length ? <div className="overview-modal-table-scroll"><OverviewDetailsTable rows={detailModalRows} /></div> : <Empty description="暂无明细" />}</Modal>
     </section>
   );
 }
@@ -509,7 +492,9 @@ function AgentMain({ name, onLogout, announcement, siteName }: { name: string; o
         <ul className="lottery">
           {lotteriesLoading ? <li>正在加载彩票...</li> : lotteries.length === 0 ? <li>当前站点暂未分配彩票</li> : lotteries.map((item) => {
             const timing = lotteryTiming(item, now);
-            const showHeaderNext = item.header_show_next_issue !== false;
+            // The API returns 0/1 for this setting; treat both numeric and
+            // boolean false as "show the current opened issue".
+            const showHeaderNext = item.header_show_next_issue !== false && Number(item.header_show_next_issue ?? 1) !== 0;
             const issue = showHeaderNext ? (item.header_next_code || item.next_code) : item.latest_code;
             return <li key={item.id} className={selectedLotteryId === item.id ? "selected" : ""} role="button" tabIndex={0} onClick={() => { setSelectedLotteryId(item.id); sessionStorage.setItem("agent_selected_lottery_id", String(item.id)); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { setSelectedLotteryId(item.id); sessionStorage.setItem("agent_selected_lottery_id", String(item.id)); } }}><div className="lottery-row"><div className="lottery-name"><span>{item.name}</span><b>{timing.status}</b></div><div className="lottery-meta"><label>{issue || "--"}</label><strong>{timing.countdown}</strong></div></div></li>;
           })}

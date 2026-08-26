@@ -128,6 +128,10 @@ export function StopDropPage() {
     "单选全胆拖七码",
     "单选全胆拖八码",
   ];
+  const displayNumber = (row: StopDrop) => {
+    if (!row.play_type.includes("双飞") && !String(row.source_text || "").includes("对子")) return row.number_text;
+    return row.number_text.replace(/^0(?=\d{2}(?:飞)?$)/, "").replace(/飞$/, "");
+  };
   const [number, setNumber] = useState("");
   const [type, setType] = useState("all");
   const [lottery, setLottery] = useState("all");
@@ -262,7 +266,7 @@ export function StopDropPage() {
                 <span>{row.id}</span>
                 <span>{row.issue_no}</span>
                 <span>{row.placed_at}</span>
-                <span>{row.number_text}</span>
+                <span>{displayNumber(row)}</span>
                 <span>
                   {row.original_amount}/{row.actual_amount}/{row.stop_amount}
                 </span>

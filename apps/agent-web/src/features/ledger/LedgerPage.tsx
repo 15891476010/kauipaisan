@@ -1,5 +1,5 @@
 import { DoubleRightOutlined } from '@ant-design/icons';
-import { Empty, Spin } from 'antd';
+import { Empty, Select, Spin } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { getLedger, getLedgerIssues, type ContributionRow, type LedgerIssue, type LedgerRow } from '../../api/user';
 
@@ -24,7 +24,7 @@ export function LedgerPage({lottery}:{lottery:string}) {
   </section>;
 }
 
-function IssueSelect({label,value,issues,onChange}:{label:string;value:string;issues:LedgerIssue[];onChange:(value:string)=>void}) {return <select aria-label={label} value={value} onChange={event=>onChange(event.target.value)}>{issues.map(item=><option key={`${label}-${item.issue_no}`} value={item.issue_no}>{`${Number(item.date.slice(5,7))}-${Number(item.date.slice(8,10))}(${item.issue_no})`}</option>)}</select>}
+function IssueSelect({label,value,issues,onChange}:{label:string;value:string;issues:LedgerIssue[];onChange:(value:string)=>void}) {return <Select className="ledger-issue-select" size="small" aria-label={label} value={value} onChange={onChange} options={issues.map(item=>({value:item.issue_no,label:`${Number(item.date.slice(5,7))}-${Number(item.date.slice(8,10))}(${item.issue_no})` }))} />}
 function LedgerTable({view,rows}:{view:LedgerView;rows:Array<LedgerRow|ContributionRow>}) {
   if(view==='contribution')return <table className="ledger-reference-table contribution-table"><thead><tr><th>会员</th><th>占成金额</th><th>占成总金额</th><th>占成总盈亏</th><th>离线赚水</th><th>百分比占成盈亏</th><th>实际占成盈亏</th><th>占成百分比</th><th>贡献度</th></tr></thead><tbody>{(rows as ContributionRow[]).map(row=><tr key={row.member}><td>{row.member}</td><td>{row.share_amount}</td><td>{row.share_total_amount}</td><td>{row.share_total_profit}</td><td>{row.offline_water}</td><td>{row.percentage_share_profit}</td><td>{row.actual_share_profit}</td><td>{row.share_percentage}</td><td>{row.contribution}</td></tr>)}</tbody></table>;
   const monthly=view==='monthly'||view==='monthly_path';return <table className="ledger-reference-table"><thead><tr><th>{monthly?'期号':'代理'}</th><th>类别</th><th>笔数</th><th>总投</th><th>回水</th><th>离线赚水</th><th>中奖</th><th>盈亏</th></tr></thead><tbody>{(rows as LedgerRow[]).map((row,index)=><tr key={`${row.label}-${row.category}-${index}`}><td>{row.label}</td><td>{row.category}</td><td>{row.bet_count}</td><td>{row.amount}</td><td>{row.rebate}</td><td>{row.offline_water}</td><td>{row.win_amount}</td><td>{row.profit}</td></tr>)}</tbody></table>;

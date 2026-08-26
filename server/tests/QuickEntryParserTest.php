@@ -59,6 +59,18 @@ if (count($mixedDirectAndGroup) !== 2
     exit(1);
 }
 
+$compactDirectGroup = $parser->parse('体478 487 784 748 874 847 457 475 547 574 745 754 五单一组144元', '排列三', 2.0);
+if (count($compactDirectGroup) !== 2
+    || array_filter($compactDirectGroup, static fn(array $row): bool => ($row['status'] ?? '') !== 'success')
+    || array_column($compactDirectGroup, 'play_type') !== ['直', '组六']
+    || array_column($compactDirectGroup, 'count') !== [12, 2]
+    || array_column($compactDirectGroup, 'amount') !== ['120.00', '24.00']
+    || ($compactDirectGroup[1]['number_text'] ?? '') !== '478组 457组'
+    || array_sum(array_map(static fn(array $row): float => (float)$row['amount'], $compactDirectGroup)) !== 144.0) {
+    fwrite(STDERR, "Failed: compact direct/group total syntax\n" . json_encode($compactDirectGroup, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+
 $shortDirect = $parser->parse('629 269直10', '福彩3D');
 if (($shortDirect[0]['status'] ?? null) !== 'success' || ($shortDirect[0]['count'] ?? 0) !== 2 || ($shortDirect[0]['amount'] ?? null) !== '20.00') {
     fwrite(STDERR, "Failed: short direct amount\n" . json_encode($shortDirect, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
@@ -353,6 +365,12 @@ $multiShared=$parser->parse('组三组六复式各20米123456 7890 1789','福彩
 if(count($multiShared)!==9||array_sum(array_map(static fn(array $row):float=>(float)$row['amount'],$multiShared))!==180.0){fwrite(STDERR,"Failed: shared multi-code amount\n".json_encode($multiShared,JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT)."\n");exit(1);}
 $trialAlias=$parser->parse('福 024567 复试各 1 米','福彩3D',2.0)[0]??null;
 if(!is_array($trialAlias)||($trialAlias['status']??'')!=='success'||($trialAlias['number_text']??'')!=='000'||($trialAlias['display_number_text']??'')!=='复024567'||($trialAlias['count']??0)!==1||($trialAlias['amount']??'')!=='1.00'){fwrite(STDERR,"Failed: 复试 alias and single 复式 package\n".json_encode($trialAlias,JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT)."\n");exit(1);}
+$compactFushi=$parser->parse('福01234567复试10米','福彩3D',2.0)[0]??null;
+if(!is_array($compactFushi)||($compactFushi['status']??'')!=='success'||($compactFushi['play_type']??'')!=='复式八码'||($compactFushi['number_text']??'')!=='复01234567'||($compactFushi['amount']??'')!=='10.00'){fwrite(STDERR,"Failed: concise 复式 amount syntax\n".json_encode($compactFushi,JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT)."\n");exit(1);}
+$prefixGroup=$parser->parse('福组三023456各1','福彩3D',2.0)[0]??null;
+if(!is_array($prefixGroup)||($prefixGroup['status']??'')!=='success'||($prefixGroup['play_type']??'')!=='组三六码'||($prefixGroup['number_text']??'')!=='三023456'){fwrite(STDERR,"Failed: prefix single group syntax\n".json_encode($prefixGroup,JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT)."\n");exit(1);}
+$prefixCatalog=$parser->parse('福组三两码12各10米','福彩3D',2.0)[0]??null;
+if(!is_array($prefixCatalog)||($prefixCatalog['status']??'')!=='success'||($prefixCatalog['play_type']??'')!=='组三两码'||($prefixCatalog['number_text']??'')!=='三12'||($prefixCatalog['amount']??'')!=='10.00'){fwrite(STDERR,"Failed: prefix catalog group syntax\n".json_encode($prefixCatalog,JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT)."\n");exit(1);}
 $prefixPlay=$parser->parse('福体组六组三 123456 各 1 米','福彩3D',2.0);
 if(count($prefixPlay)!==2||array_filter($prefixPlay,static fn(array $row):bool=>($row['status']??'')!=='success')||array_column($prefixPlay,'play_type')!==['组六六码','组三六码']||array_sum(array_map(static fn(array $row):float=>(float)$row['amount'],$prefixPlay))!==4.0){fwrite(STDERR,"Failed: prefix group play order\n".json_encode($prefixPlay,JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT)."\n");exit(1);}
 

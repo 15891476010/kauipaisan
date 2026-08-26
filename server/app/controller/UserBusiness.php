@@ -286,6 +286,12 @@ final class UserBusiness
         return array_values(array_filter(array_map(static fn(string $token): string=>mb_substr(trim($token),0,64),$tokens),static fn(string $token): bool=>$token!==''));
     }
 
+    private function normalizeDoubleFlyNumber(string $value): string
+    {
+        $value=preg_replace('/^0(?=\d{2}(?:飞)?$)/u','',$value)??$value;
+        return preg_replace('/飞$/u','',$value)??$value;
+    }
+
     private function detailPlayLabel(mixed $playType,mixed $category): string
     {
         $value=trim((string)($playType?:$category));
@@ -378,7 +384,10 @@ final class UserBusiness
             if(trim($originalSource)==='')$originalSource=$source;
             $parsedText=trim((string)($row['submission_formatted_text']??''))!==''?(string)$row['submission_formatted_text']:(string)($row['record_formatted_text']??'');
             if(trim($parsedText)==='')$parsedText=$source;
-            $storedNumberText=trim((string)($row['number_text']??''));$tokens=$this->detailNumberTokens($storedNumberText);$matchTokens=$tokens;
+            $storedNumberText=trim((string)($row['number_text']??''));$tokens=$this->detailNumberTokens($storedNumberText);
+            $playSource=(string)($row['play_type']??'').' '.(string)($source);
+            if (str_contains($playSource,'双飞') || str_contains($playSource,'对子')) $tokens=array_map([$this,'normalizeDoubleFlyNumber'],$tokens);
+            $matchTokens=$tokens;
             // 复式包在数据库中继续使用 000 作为结算占位，但明细页面应显示
             // 一条真实的复式选号（例如“复024567”），不能显示 000。
             if(count($tokens)===1&&$tokens[0]==='000'&&preg_match('/(?<!\d)(\d{1,10})\s+复式[一二两三四五六七八九1-9]码/u',$source,$package))$tokens=['复'.$package[1]];
