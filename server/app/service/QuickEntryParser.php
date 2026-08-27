@@ -1134,6 +1134,15 @@ final class QuickEntryParser
             $play = str_contains($raw, '单选全胆拖') ? '单选' : (str_contains($raw, '组六2胆拖') || $double ? '组六' : (str_contains($raw, '组六') ? '组六' : '组三'));
             $specs[] = ['play'=>$play, 'amount'=>$this->rules->amountWithUnit((float)$amount[1], (string)($amount[2] ?? ''), $unitStake)];
         }
+        // Natural wording puts the group name before the banker/drag pair:
+        // “福体组六 9 拖 12718 各 1 倍”. For a bare “福体 9 拖 …” keep
+        // compatibility with the commonly used 组六 drag default.
+        if ($specs === [] && preg_match('/^\s*(?:福体|福|体)?\s*(组三|组六)?\s*\d{1,2}\s*拖\s*\d{2,9}\s*(?:各|每)\s*(\d+(?:\.\d+)?)\s*(倍|注|元|米|块|角|毛)?\s*$/u', $raw, $prefixAmount)) {
+            $specs[] = [
+                'play' => ($prefixAmount[1] ?? '') !== '' ? (string)$prefixAmount[1] : '组六',
+                'amount' => $this->rules->amountWithUnit((float)$prefixAmount[2], (string)($prefixAmount[3] ?? ''), $unitStake),
+            ];
+        }
         if($specs===[])return [$this->failure($lineId,$rawOriginal,'胆拖玩法或金额不明确')];
         $rows=[];$categoryCount=$category==='福体'?2:1;
         foreach($groups as $group){$bankers=implode('',$this->uniqueDigits($group[1]));$drags=implode('',$this->uniqueDigits($group[2]));if(strlen($bankers)!==($double?2:1)||strpbrk($drags,$bankers)!==false)return [$this->failure($lineId,$rawOriginal,'胆码与拖码必须互不重复')];foreach($specs as $spec){

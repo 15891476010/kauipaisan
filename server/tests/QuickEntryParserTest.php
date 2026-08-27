@@ -371,6 +371,10 @@ $prefixGroup=$parser->parse('福组三023456各1','福彩3D',2.0)[0]??null;
 if(!is_array($prefixGroup)||($prefixGroup['status']??'')!=='success'||($prefixGroup['play_type']??'')!=='组三六码'||($prefixGroup['number_text']??'')!=='三023456'){fwrite(STDERR,"Failed: prefix single group syntax\n".json_encode($prefixGroup,JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT)."\n");exit(1);}
 $prefixCatalog=$parser->parse('福组三两码12各10米','福彩3D',2.0)[0]??null;
 if(!is_array($prefixCatalog)||($prefixCatalog['status']??'')!=='success'||($prefixCatalog['play_type']??'')!=='组三两码'||($prefixCatalog['number_text']??'')!=='三12'||($prefixCatalog['amount']??'')!=='10.00'){fwrite(STDERR,"Failed: prefix catalog group syntax\n".json_encode($prefixCatalog,JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT)."\n");exit(1);}
+$prefixDrag=$parser->parse('福体组六 9 拖 12718 各 1 倍','福彩3D',2.0)[0]??null;
+if(!is_array($prefixDrag)||($prefixDrag['status']??'')!=='success'||($prefixDrag['category']??'')!=='福体'||($prefixDrag['play_type']??'')!=='1码拖4'||($prefixDrag['number_text']??'')!=='胆9拖1278'||($prefixDrag['amount']??'')!=='4.00'){fwrite(STDERR,"Failed: prefix group drag syntax\n".json_encode($prefixDrag,JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT)."\n");exit(1);}
+$defaultPrefixDrag=$parser->parse('福体 9 拖 12718 各 1 倍','福彩3D',2.0)[0]??null;
+if(!is_array($defaultPrefixDrag)||($defaultPrefixDrag['status']??'')!=='success'||($defaultPrefixDrag['play_type']??'')!=='1码拖4'||($defaultPrefixDrag['amount']??'')!=='4.00'){fwrite(STDERR,"Failed: default prefix group drag syntax\n".json_encode($defaultPrefixDrag,JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT)."\n");exit(1);}
 $prefixPlay=$parser->parse('福体组六组三 123456 各 1 米','福彩3D',2.0);
 if(count($prefixPlay)!==2||array_filter($prefixPlay,static fn(array $row):bool=>($row['status']??'')!=='success')||array_column($prefixPlay,'play_type')!==['组六六码','组三六码']||array_sum(array_map(static fn(array $row):float=>(float)$row['amount'],$prefixPlay))!==4.0){fwrite(STDERR,"Failed: prefix group play order\n".json_encode($prefixPlay,JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT)."\n");exit(1);}
 
