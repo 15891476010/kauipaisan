@@ -40,6 +40,115 @@ if (count($multilinePosition) !== 1 || ($multilinePosition[0]['status'] ?? null)
     exit(1);
 }
 
+$threePositionSets = $parser->parse('福体百1234567十7654321个567890各1米', '福彩3D');
+if (($threePositionSets[0]['status'] ?? null) !== 'success'
+    || ($threePositionSets[0]['count'] ?? 0) !== 588
+    || ($threePositionSets[0]['amount'] ?? null) !== '588.00') {
+    fwrite(STDERR, "Failed: three-position digit sets\n" . json_encode($threePositionSets, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+
+$threePositionMissingAmount = $parser->parse('福体百1234567十7654321个567890', '福彩3D');
+if (($threePositionMissingAmount[0]['status'] ?? null) !== 'failed'
+    || ($threePositionMissingAmount[0]['reason'] ?? null) !== '未识别到有效金额'
+    || str_contains((string)($threePositionMissingAmount[0]['number_text'] ?? ''), '55653220')) {
+    fwrite(STDERR, "Failed: position marker mistaken for amount\n" . json_encode($threePositionMissingAmount, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+
+$multiDan = $parser->parse('体16胆各500', '排列三', 2.0);
+if (($multiDan[0]['status'] ?? null) !== 'success'
+    || ($multiDan[0]['number_text'] ?? null) !== '1 6'
+    || ($multiDan[0]['count'] ?? 0) !== 2
+    || ($multiDan[0]['amount'] ?? null) !== '1000.00') {
+    fwrite(STDERR, "Failed: multiple standalone dan digits\n" . json_encode($multiDan, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+
+$countedDirectGroup = $parser->parse('体895一单五组12', '排列三', 2.0);
+if (count($countedDirectGroup) !== 2
+    || ($countedDirectGroup[0]['play_type'] ?? null) !== '直'
+    || ($countedDirectGroup[0]['amount'] ?? null) !== '2.00'
+    || ($countedDirectGroup[1]['play_type'] ?? null) !== '组六'
+    || ($countedDirectGroup[1]['stake_count'] ?? 0) !== 5
+    || ($countedDirectGroup[1]['amount'] ?? null) !== '10.00') {
+    fwrite(STDERR, "Failed: counted direct/group stakes\n" . json_encode($countedDirectGroup, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+
+$shortCountedDirectGroup = $parser->parse('体89一单五组60', '排列三', 2.0);
+if (count($shortCountedDirectGroup) !== 2
+    || ($shortCountedDirectGroup[0]['amount'] ?? null) !== '10.00'
+    || ($shortCountedDirectGroup[1]['amount'] ?? null) !== '50.00') {
+    fwrite(STDERR, "Failed: non-three-digit counted stakes\n" . json_encode($shortCountedDirectGroup, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+
+$listedCountedDirectGroup = $parser->parse('福418 403 901 406各四单一组计40', '福彩3D', 2.0);
+if (count($listedCountedDirectGroup) !== 2
+    || ($listedCountedDirectGroup[0]['amount'] ?? null) !== '32.00'
+    || ($listedCountedDirectGroup[0]['stake_count'] ?? 0) !== 16
+    || ($listedCountedDirectGroup[1]['play_type'] ?? null) !== '组六'
+    || ($listedCountedDirectGroup[1]['amount'] ?? null) !== '8.00'
+    || ($listedCountedDirectGroup[1]['stake_count'] ?? 0) !== 4) {
+    fwrite(STDERR, "Failed: listed counted direct/group stakes\n" . json_encode($listedCountedDirectGroup, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+
+$listedFortyDirectGroup = $parser->parse('福618 158各四十单一组', '福彩3D', 2.0);
+if (count($listedFortyDirectGroup) !== 2
+    || ($listedFortyDirectGroup[0]['amount'] ?? null) !== '160.00'
+    || ($listedFortyDirectGroup[0]['stake_count'] ?? 0) !== 80
+    || ($listedFortyDirectGroup[1]['amount'] ?? null) !== '4.00'
+    || ($listedFortyDirectGroup[1]['stake_count'] ?? 0) !== 2) {
+    fwrite(STDERR, "Failed: Chinese forty direct/group stakes\n" . json_encode($listedFortyDirectGroup, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+
+$invalidChineseHundred = $parser->parse('福618 158各四百单一组', '福彩3D', 2.0);
+if (($invalidChineseHundred[0]['status'] ?? null) !== 'failed'
+    || !str_contains((string)($invalidChineseHundred[0]['reason'] ?? ''), '中文百位数')) {
+    fwrite(STDERR, "Failed: invalid Chinese hundred stake message\n" . json_encode($invalidChineseHundred, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+
+$flyAlias = $parser->parse('福09飞各1元', '福彩3D', 2.0);
+if (($flyAlias[0]['status'] ?? null) !== 'success'
+    || ($flyAlias[0]['play_type'] ?? null) !== '双飞'
+    || ($flyAlias[0]['amount'] ?? null) !== '1.00') {
+    fwrite(STDERR, "Failed: 飞 alias for 双飞\n" . json_encode($flyAlias, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+
+$pairFlyClassification = $parser->parse('福77双飞各1元', '福彩3D', 2.0);
+if (($pairFlyClassification[0]['play_type'] ?? null) !== '双飞'
+    || ($pairFlyClassification[0]['settlement_text'] ?? '') !== '77 双飞 福') {
+    fwrite(STDERR, "Failed: repeated 双飞 digits classify as 对子\n" . json_encode($pairFlyClassification, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+$groupTenCode = $parser->parse('0123456789组三各1元', '福彩3D', 2.0);
+if (($groupTenCode[0]['play_type'] ?? null) !== '组三全包') {
+    fwrite(STDERR, "Failed: ten-digit 组三 full package mapping\n" . json_encode($groupTenCode, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+$compactTwoCode = $parser->parse('福34组三100米', '福彩3D', 2.0);
+if (($compactTwoCode[0]['play_type'] ?? null) !== '组三两码') {
+    fwrite(STDERR, "Failed: compact two-digit 组三 mapping\n" . json_encode($compactTwoCode, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+$spanAlias = $parser->parse('福跨2各10000米', '福彩3D', 2.0);
+$dantuoAliases = [$parser->parse('福1胆拖23各1000米', '福彩3D', 2.0)[0] ?? null, $parser->parse('福胆1拖23各1000米', '福彩3D', 2.0)[0] ?? null];
+if (($spanAlias[0]['play_type'] ?? null) !== '跨度2' || ($dantuoAliases[0]['status'] ?? null) !== 'failed' || ($dantuoAliases[1]['status'] ?? null) !== 'failed' || ($parser->parse('福组六1胆拖23各1000米', '福彩3D', 2.0)[0]['play_type'] ?? null) !== '1码拖2') {
+    fwrite(STDERR, "Failed: span/dantuo aliases\n" . json_encode([$spanAlias,$dantuoAliases], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+$ordinaryFlyClassification = $parser->parse('福37飞各1元', '福彩3D', 2.0);
+if (($ordinaryFlyClassification[0]['play_type'] ?? null) !== '双飞'
+    || ($ordinaryFlyClassification[0]['settlement_text'] ?? '') !== '37 双飞 福') {
+    fwrite(STDERR, "Failed: distinct 飞 digits classify as 双飞\n" . json_encode($ordinaryFlyClassification, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+
 $splitLotteryAndWholeAmount = $parser->parse("福\n百 01456789 十 01456789 个 01456789各 8 元\n\n豹子全包1500 元", '福彩3D');
 if (count($splitLotteryAndWholeAmount) !== 2 || ($splitLotteryAndWholeAmount[0]['status'] ?? null) !== 'success' || ($splitLotteryAndWholeAmount[0]['count'] ?? 0) !== 512 || ($splitLotteryAndWholeAmount[0]['amount'] ?? null) !== '4096.00' || ($splitLotteryAndWholeAmount[1]['status'] ?? null) !== 'success' || ($splitLotteryAndWholeAmount[1]['amount'] ?? null) !== '1500.00') {
     fwrite(STDERR, "Failed: split lottery and whole amount\n" . json_encode($splitLotteryAndWholeAmount, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");

@@ -35,7 +35,7 @@ try{
     catch(InvalidArgumentException $error){$minimumRejected=str_contains($error->getMessage(),'最小下注金额');}
     if(!$minimumRejected)throw new RuntimeException('min_bet 未按每号码最低10元拒绝下注');
     $limited=$applyLimits->invoke($controller,$limitSession,'福彩3D',['amount'=>'100.00','count'=>2,'number_text'=>'123 456','settlement_text'=>'123 456直 福']);
-    if(abs((float)$limited['actual']-15.0)>0.001||abs((float)$limited['stop_amount']-85.0)>0.001)throw new RuntimeException('单注上限按号码累计、单项上限按整条执行时应实收15');
+    if(abs((float)$limited['actual']-30.0)>0.001||abs((float)$limited['stop_amount']-70.0)>0.001)throw new RuntimeException('单注上限按号码累计、单项上限按每个号码执行时应实收30');
     if(abs((float)$limited['original_odds']-2.5)>0.0001||abs((float)$limited['actual_odds']-2.5)>0.0001)throw new RuntimeException('odds_limit 未将赔率3限制为2.5');
 
     $explicit=$quickLines->invoke($controller,'体123直10倍','福彩3D',$tenantId)[0]??null;

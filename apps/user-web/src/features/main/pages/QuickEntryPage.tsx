@@ -56,6 +56,16 @@ export function QuickEntryPage({
     amount: "0.00",
   });
   const [generating, setGenerating] = useState(false);
+  const splitTicketBlocks = (source: string) => {
+    const blocks: string[] = []; let current: string[] = [];
+    const flush = () => { const value = current.join("\n").trim(); if (value) blocks.push(value); current = []; };
+    for (const line of source.split(/\r?\n/)) {
+      if (!line.trim()) { flush(); continue; }
+      current.push(line);
+      if (/(?:合计|🈴|^\s*合)\s*\d+(?:\.\d+)?\s*$/u.test(line.trim()) || /(?:一元|两元|二元|\d+元)?\s*单\s*[,，]?\s*(?:一元|两元|二元|\d+元)?\s*组\s*\d+/u.test(line)) flush();
+    }
+    flush(); return blocks;
+  };
   const [warningAmount, setWarningAmount] = useState("0");
   const suppressResultRecognition = useRef(false);
   useEffect(() => {
@@ -142,7 +152,7 @@ export function QuickEntryPage({
     } catch (error) {
       setGeneratedLines([]);
       setGeneratedTotal({ count: 0, codeCount: 0, amount: "0.00" });
-      message.error(apiErrorMessage(error, "生成失败"));
+      modal.error({ title: "生成失败", content: apiErrorMessage(error, "生成失败"), okText: "确认" });
       return null;
     } finally {
       setGenerating(false);
@@ -215,13 +225,30 @@ export function QuickEntryPage({
       );
       return true;
     } catch (error) {
-      message.error(apiErrorMessage(error, "下注失败"));
+      modal.error({ title: "下注失败", content: apiErrorMessage(error, "下注失败"), okText: "确认" });
       return false;
     }
   };
   const place = () => {
     if (!timing.canBet) {
       message.warning(timing.status || "当前时间段不可下注");
+      return;
+    }
+    const blocks = splitTicketBlocks(text);
+    if (blocks.length > 1) {
+      modal.confirm({
+        title: "确认分单下注",
+        content: `检测到 ${blocks.length} 张注单（空行分隔），将分别提交，确认吗？`,
+        okText: "确认下注",
+        cancelText: "取消",
+        onOk: async () => {
+          for (const block of blocks) {
+            const blockPreview = await generateText(block, false);
+            if (!blockPreview || !blockPreview.lines.some((line) => line.status === "success")) return;
+            if (!(await submitBet(block, blockPreview))) return;
+          }
+        },
+      });
       return;
     }
     const preview: QuickPreview = {
@@ -231,7 +258,7 @@ export function QuickEntryPage({
       formatted_text: text,
     };
     if (!preview.lines.some((line) => line.status === "success")) {
-      message.warning("请先生成有效投注内容");
+      modal.warning({ title: "无法下注", content: "请先生成有效投注内容", okText: "确认" });
       return;
     }
     modal.confirm({

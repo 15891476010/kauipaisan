@@ -236,10 +236,30 @@ final class BetSettlement
     {
         $numberCount=count($numbers);
         if($numberCount<1)throw new \InvalidArgumentException('结算号码不能为空');
-        $stake=$amount/$numberCount;$matched=0;
+        // Position bets are stored as one compact expression while the amount
+        // is the sum of all generated combinations. Split it back to the
+        // per-number stake before applying the odds; otherwise one hit would
+        // incorrectly pay total_detail_amount × odds.
+        $positionCount=$this->positionCombinationCount($source);
+        $stake=$positionCount>1&&$numberCount===1?$amount/$positionCount:$amount/$numberCount;
+        $matched=0;
         foreach($numbers as $number)if($this->matches($number,$draw,$source))$matched++;
         $effectiveOdds=$this->isExpandedGroupPackage($numbers,$source)?$packageOdds*$numberCount:$packageOdds;
         return ['matched'=>$matched,'stake'=>$stake,'effective_odds'=>$effectiveOdds,'win'=>$matched*$stake*$effectiveOdds];
+    }
+
+    private function positionCombinationCount(string $source): int
+    {
+        $counts=[];
+        foreach (['百','十','个'] as $marker) {
+            if (!preg_match('/'.$marker.'\s*([0-9]+)/u', $source, $match)) continue;
+            $digits=array_values(array_unique(str_split((string)$match[1])));
+            if ($digits !== []) $counts[] = count($digits);
+        }
+        if (count($counts) < 1) return 0;
+        $total=1;
+        foreach ($counts as $count) $total*=$count;
+        return $total;
     }
 
     /** @param array<int,string> $numbers */
@@ -257,6 +277,13 @@ final class BetSettlement
 
     private function matches(string $number, string $draw, string $source): bool
     {
+        // Standalone 胆 entries may contain several one-digit tokens (for
+        // example “1独胆 6独胆”).  Match each persisted token to its own
+        // digit; treating the whole string as one three-digit direct number
+        // would make the second token reuse the first 胆 digit.
+        if (preg_match('/独胆|(?<!\d)胆/u', $source) && preg_match('/^\d$/', trim($number)) === 1) {
+            return str_contains($draw, trim($number));
+        }
         $compactResult=$this->matchesCompactExpression($number,$draw,$source);
         if($compactResult!==null)return $compactResult;
         $sourceCompact=preg_replace('/\s+/u','',$source)??$source;
@@ -331,7 +358,7 @@ final class BetSettlement
             }
             return preg_match('/^\d{3}$/', $number) === 1 && $number !== '000' ? $number === $draw : true;
         }
-        if (preg_match('/(\d)\s*(?:独胆|胆)/u', $source, $match)) return str_contains($draw, $match[1]);
+        if (preg_match('/(?:独胆|胆)\s*(\d)/u', $source, $match)) return str_contains($draw, $match[1]);
         return $number === $draw;
     }
 

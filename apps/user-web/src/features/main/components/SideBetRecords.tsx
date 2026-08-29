@@ -102,6 +102,9 @@ export function SideBetRecords({
     const play = playName(detail);
     const sticky = source.match(/(\d{4,10})\s*(组三|组六)六码/u);
     if (sticky) return `${sticky[2] === "组三" ? "三" : "六"}${sticky[1]}`;
+    if (play.includes("组3") || play.includes("组6")) {
+      return (detail.number_text || "").replace(/^[三六]/u, "");
+    }
     if (play.includes("双飞") || source.includes("对子")) {
       const number = (detail.number_text || "")
         .replace(/^0(?=\d{2}(?:飞)?$)/, "")
@@ -110,7 +113,8 @@ export function SideBetRecords({
     }
     if (detail.number_text === "000" && play.startsWith("跨度")) return `跨${play.slice(2)}`;
     if (detail.number_text === "000" && play.startsWith("和值")) return play;
-    return detail.number_text || "-";
+    const value = detail.number_text || "";
+    return /^\d{3}$/.test(value) ? String(Number(value)) : value || "-";
   };
   const groupedDetails = Array.from(details.reduce((lotteryMap, detail) => {
     const lottery = lotteryName(detail.lottery);
@@ -300,7 +304,7 @@ export function SideBetRecords({
                     <h3>{play}</h3>
                     {playDetails.map((detail, index) => (
                       <div className="record-detail-card" key={`${detail.id}-${index}`}>
-                        <div className="record-detail-card-label">号码</div><div>{displayDetailNumber(detail)}</div>
+                        <div className="record-detail-card-label">号码</div><div><span>{displayDetailNumber(detail)}</span><em className="record-detail-play-mark">{play}</em></div>
                         <div className="record-detail-card-label">金额</div><div className="amount">{detail.amount}</div>
                         <div className="record-detail-card-label">赔率</div><div className="odds">{detail.odds || "---"}</div>
                         <div className="record-detail-card-label">中奖</div><div>{Number(detail.win_amount || 0) > 0 ? detail.win_amount : "---"}</div>

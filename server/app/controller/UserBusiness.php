@@ -111,8 +111,16 @@ final class UserBusiness
         $minimum=(float)($odds['min_bet']??0);$perNumber=$requested/$count;
         if($minimum>0&&$perNumber+0.000001<$minimum)throw new \InvalidArgumentException('每个号码最小下注金额为 '.rtrim(rtrim(number_format($minimum,2,'.',''),'0'),'.'));
         $singleBet=(float)($odds['single_bet_limit']??0); $singleItem=(float)($odds['single_item_limit']??0);
-        if ($singleBet>0) $actual=min($actual,$singleBet*$count);
-        if ($singleItem>0) $actual=min($actual,$singleItem);
+        if ($singleBet>0 && $requested > $singleBet*$count + 0.000001) {
+            throw new \InvalidArgumentException('玩法“'.(string)($line['play_type']??$line['category']??'当前玩法').'”超过单注上限：最多 '.number_format($singleBet*$count,2,'.','').' 元，当前输入 '.number_format($requested,2,'.','').' 元，请修改后再提交');
+        }
+        // single_item_limit is the maximum stake for one generated number,
+        // not for the whole compact detail. A position selection such as
+        // 百012345678十01234569个08964532 contains 576 combinations; with
+        // 10元 per number it must remain 5760元 (each number is below 1500).
+        if ($singleItem>0 && $requested > $singleItem*$count + 0.000001) {
+            throw new \InvalidArgumentException('玩法“'.(string)($line['play_type']??$line['category']??'当前玩法').'”超过单项上限：最多 '.number_format($singleItem*$count,2,'.','').' 元，当前输入 '.number_format($requested,2,'.','').' 元，请修改后再提交');
+        }
         $rebate=max(0,(float)($odds['offline_rebate']??0)); $rawOdds=$odds['odds']??null; $baseOdds=$rawOdds!==null && is_numeric($rawOdds)?(float)$rawOdds:null;
         $oddsLimit=max(0,(float)($odds['odds_limit']??0));if($baseOdds!==null&&$oddsLimit>0)$baseOdds=min($baseOdds,$oddsLimit);
         $actualOdds=$baseOdds===null?null:max(0,$baseOdds-$rebate);
@@ -297,6 +305,7 @@ final class UserBusiness
         $value=trim((string)($playType?:$category));
         if ($value==='') return '';
         if (str_contains($value,'直选')||$value==='直') return '直';
+        if ($value==='胆') return '独胆';
         if (str_contains($value,'组三')) return '组3';
         if (str_contains($value,'组六')) return '组6';
         if (str_contains($value,'组选')) return '组';

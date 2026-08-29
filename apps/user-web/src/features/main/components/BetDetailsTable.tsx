@@ -26,7 +26,8 @@ function displayNumber(row: BetDetail): string {
   if (play.includes("双飞") || source.includes("对子")) {
     return value.replace(/^0(?=\d{2}(?:飞)?$)/, "").replace(/飞$/, "");
   }
-  return value;
+  if (play.includes("组3") || play.includes("组6")) return value.replace(/^[三六]/u, "");
+  return /^\d{3}$/.test(value) ? String(Number(value)) : value;
 }
 
 const statusLabels: Record<string, string> = {

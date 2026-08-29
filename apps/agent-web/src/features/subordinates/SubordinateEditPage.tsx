@@ -175,7 +175,7 @@ export function SubordinateEditPage({ agentName }: { agentName: string }) {
 
       <section className="edit-settings-panel">
         <div className="edit-password"><label htmlFor="edit-password">密码</label><input id="edit-password" type="password" autoComplete="new-password" maxLength={40} placeholder="请输入密码" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /><small>密码不能跟账号相同，尽量不要使用连续的数字和字母，尽量使用数字、大写字母、小写字母的组合。</small></div>
-        <div className="edit-permission-list">{permissions.map((permission) => <div className="edit-permission" key={permission.lottery_id}><b>{permission.name}：</b><label>权限 <Switch size="small" checked={permission.can_view} onChange={(value) => updatePermission(permission.lottery_id, "can_view", value)} /></label></div>)}</div>
+        <div className="edit-permission-list">{permissions.map((permission) => <div className="edit-permission" key={permission.lottery_id}><b>{permission.name}：</b><label>权限 <Switch size="small" checked={permission.can_view} onChange={(value) => updatePermission(permission.lottery_id, "can_view", value)} /></label><label>下注 <Switch size="small" checked={permission.can_bet} disabled={!permission.can_view} onChange={(value) => updatePermission(permission.lottery_id, "can_bet", value)} /></label></div>)}</div>
       </section>
 
       <div className="edit-finance-row">

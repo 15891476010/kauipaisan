@@ -30,7 +30,11 @@ final class QuickEntryRules
         'lottery_only' => '/^(福|体|福体)$/u',
         'lottery_following_bet' => '/(?=.*\d)(?=.*(?:直|单|组|胆|拖|跨|和|飞|定位|复式|豹子))/u',
         'position_segment' => '/(?:百|十|个)\s*[0-9]/u',
-        'per_unit_amount' => '/(?:各|每|个|打|下)\s*(\d+(?:\.\d+)?)\s*(元|米|块|角|毛|倍)?/u',
+        // “个” is also the positional marker in 百…十…个… expressions.
+        // Only treat it as an amount marker when it is not directly preceded
+        // by a digit; otherwise “个567890” would be stripped as a 567890
+        // amount and the position parser would silently lose the 个位 set.
+        'per_unit_amount' => '/(?:各|每|(?<![0-9])个|打|下)\s*(\d+(?:\.\d+)?)\s*(元|米|块|角|毛|倍)?/u',
         'declared_total' => '/(?:共|合计|总计)\s*(\d+(?:\.\d+)?)\s*(元|米|块|角|毛)?\s*(?:福体|福|体)?\s*$/u',
         'overall_total' => '/\s*合\s*(\d+(?:\.\d+)?)\s*(元|米|块|角|毛)?\s*$/u',
         'overall_total_raw' => '/\s*(?:🈴|合)\s*\d+(?:\.\d+)?\s*(?:元|米|块|角|毛)?\s*$/u',
@@ -77,7 +81,7 @@ final class QuickEntryRules
         'sticky_lian6_bet' => '/^\s*(?:福体|福|体)?\s*([0-9]{1,7})\s*([一二三四五六七])码组六\s*(?:(\d+(?:\.\d+)?)(?:\s*(倍|注|元|米|块|角|毛))?)?\s*$/u',
         'sticky_lian3_bet' => '/^\s*(?:福体|福|体)?\s*([0-9]{1,7})\s*([一二三四五六七])码组三\s*(?:(\d+(?:\.\d+)?)(?:\s*(倍|注|元|米|块|角|毛))?)?\s*$/u',
         'dantuo_bet' => '/^\s*(?:福体|福|体)?\s*([0-9]{1,2})胆([0-9]{1,9})拖\s*(?:(\d+(?:\.\d+)?)(?:\s*(倍|注|元|米|块|角|毛))?)?\s*$/u',
-        'double_fly_bet' => '/^\s*(?:福体|福|体)?\s*([0-9]{2})\s*(?:双飞|对子|对)\s*(?:(?:各|每|值|各值|注值)\s*)?(\d+(?:\.\d+)?)(?:\s*(倍|注|元|米|块|角|毛))?\s*$/u',
+        'double_fly_bet' => '/^\s*(?:福体|福|体)?\s*([0-9]{2})\s*(?:双飞|飞|对子|对)\s*(?:(?:各|每|值|各值|注值)\s*)?(\d+(?:\.\d+)?)(?:\s*(倍|注|元|米|块|角|毛))?\s*$/u',
         // Do not treat the “值” character inside “和值” as a cash marker.
         'value_amount' => '/(?<!和)(?:值|各值|注值)\s*(\d+(?:\.\d+)?)/u',
         'unsupported_play' => '/包选[36]|通选|(?:三|3)同|拖拉机|奇偶|杀\s*[0-9]|组三\s*(?:跨|跨度|和|和值)|组六\s*(?:跨|跨度|和|和值)|(?:和|和值)\s*\d+\s*(?:组三|组六)/u',
@@ -165,6 +169,7 @@ final class QuickEntryRules
         $text = preg_replace('/^\s*((?:(?:百|十|个)\s*\d+\s*){1,3})(?:单|直)\s*(\d+(?:\.\d+)?)\s*(?:元|米|块)?\s*$/u', '$1各$2元', $text) ?? $text;
         $text = preg_replace('/^\s*((?:(?:百|十|个)\s*\d+\s*){1,3})\s+(\d+(?:\.\d+)?)\s*$/u', '$1各$2元', $text) ?? $text;
         $text = preg_replace('/^\s*(\d{3})\s+(\d+(?:\.\d+)?)\s*(元|米|块|角|毛)\s*$/u', '$1直$2$3', $text) ?? $text;
+        $text = preg_replace('/(?<!\d)跨\s*([0-9])(?!\d)/u', '$1跨', $text) ?? $text;
         $text = preg_replace('/^\s*((?:和值\s*(?:2[0-7]|1\d|\d)|跨度\s*\d))\s*(福体|福|体)\s*(?:各|每)?\s*(\d+(?:\.\d+)?)\s*(?:元|米|块)?\s*$/u', '$2$1$3元', $text) ?? $text;
         $text = preg_replace($this->pattern('chinese_multiplier_boundary'), ' ', $text) ?? $text;
         $text = preg_replace_callback(
@@ -204,12 +209,13 @@ final class QuickEntryRules
     /** @return ?array{category: string, name: string, count: int} */
     public function catalogPlay(string $family, string $countToken): ?array
     {
-        $counts = ['一'=>1, '1'=>1, '二'=>2, '两'=>2, '2'=>2, '三'=>3, '四'=>4, '3'=>3, '4'=>4, '五'=>5, '六'=>6, '七'=>7, '八'=>8, '九'=>9, '5'=>5, '6'=>6, '7'=>7, '8'=>8, '9'=>9];
+        $counts = ['一'=>1, '1'=>1, '二'=>2, '两'=>2, '2'=>2, '三'=>3, '四'=>4, '3'=>3, '4'=>4, '五'=>5, '六'=>6, '七'=>7, '八'=>8, '九'=>9, '5'=>5, '6'=>6, '7'=>7, '8'=>8, '9'=>9, '十'=>10, '10'=>10];
         $words = [1=>'一', 2=>'二', 3=>'三', 4=>'四', 5=>'五', 6=>'六', 7=>'七', 8=>'八', 9=>'九'];
         $count = $counts[$countToken] ?? 0;
-        $ranges = ['组三'=>[2,9], '组六'=>[4,9], '复式'=>[3,9], '组三赖'=>[1,7], '组六赖'=>[1,7]];
+        $ranges = ['组三'=>[2,10], '组六'=>[4,10], '复式'=>[3,9], '组三赖'=>[1,7], '组六赖'=>[1,7]];
         if (!isset($ranges[$family]) || $count < $ranges[$family][0] || $count > $ranges[$family][1]) return null;
         $category = ['组三'=>'组三多码', '组六'=>'组六多码', '复式'=>'复式多码', '组三赖'=>'组三赖', '组六赖'=>'组六赖'][$family];
+        if ($count === 10 && in_array($family, ['组三','组六'], true)) return ['category'=>$family.'多码','name'=>$family.'全包','count'=>$count];
         $word = $family === '组三' && $count === 2 ? '两' : $words[$count];
         return ['category'=>$category, 'name'=>$family.$word.'码', 'count'=>$count];
     }
@@ -298,6 +304,9 @@ final class QuickEntryRules
         }
         if (str_contains($source,'大小单双')) return ['category'=>'大小单双','name'=>'大小单双','direct'=>true];
         if (str_contains($source,'三码定位')) return ['category'=>'三码定位','name'=>'三码定位','direct'=>true];
+        // A repeated pair entered as “飞/双飞” keeps that display label, but
+        // must use the 对子 odds row for pricing and settlement.
+        if (preg_match('/(?<!\d)(\d)(\d)\s*(?:双飞|飞)/u', $source, $pair) && $pair[1] === $pair[2]) return ['category'=>'对子','name'=>'对子','direct'=>true];
         if (str_contains($source, '豹子全包')) return ['category' => '和值', 'name' => '豹子全包', 'direct' => false];
         if (str_contains($source, '对子全包')) return ['category' => '组六赖', 'name' => '对子全包', 'direct' => false];
         if (str_contains($source, '组三全包')) return ['category' => '组三多码', 'name' => '组三全包', 'direct' => false];

@@ -83,6 +83,20 @@ $assert(count($compactBoth) === 2
     && $settlement->numberMatches('378直', '378', '37810直组')
     && $settlement->numberMatches('378组', '873', '37810直组'), 'compact 直组拆分', $compactBoth);
 
+$detailPayout = new ReflectionMethod($settlement, 'detailPayout');
+$detailPayout->setAccessible(true);
+$positionPayout = $detailPayout->invoke($settlement,
+    ['百012345678十01234569个08964532定位'],
+    '828',
+    '福百012345678 十01234569 个08964532各10米',
+    5760.00,
+    900.00
+);
+$assert(($positionPayout['matched'] ?? 0) === 1
+    && abs((float)($positionPayout['stake'] ?? 0) - 10.00) < 0.001
+    && abs((float)($positionPayout['win'] ?? 0) - 9000.00) < 0.001,
+    '定位复式单号按组合数分摊赔付', $positionPayout);
+
 foreach ([
     ['沾边赖34组三1倍', '组三赖二码', '68.00'],
     ['沾边赖345组六1倍', '组六赖三码', '170.00'],
