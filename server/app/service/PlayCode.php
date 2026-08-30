@@ -1,0 +1,4 @@
+<?php
+declare(strict_types=1);
+namespace app\service;
+enum PlayCode:string { case DIRECT='direct'; case GROUP='group'; case GROUP_THREE='group_three'; case GROUP_SIX='group_six'; case COMPOUND='compound'; case DAN='dan'; case DAN_TUO='dan_tuo'; case FLY='fly'; case LEOPARD_PACKAGE='leopard_package'; case PAIR_PACKAGE='pair_package'; case GROUP_THREE_PACKAGE='group_three_package'; case GROUP_SIX_PACKAGE='group_six_package'; case SUM='sum'; case SPAN='span'; case POSITION='position'; case TRANSFER='transfer'; case GROUP_DRAG='group_drag'; public function label():string{return match($this){self::DIRECT=>'直',self::GROUP=>'组',self::GROUP_THREE=>'组三',self::GROUP_SIX=>'组六',self::COMPOUND=>'复式',self::DAN=>'胆',self::DAN_TUO=>'胆拖',self::FLY=>'双飞',self::LEOPARD_PACKAGE=>'豹子全包',self::PAIR_PACKAGE=>'对子全包',self::GROUP_THREE_PACKAGE=>'组三全包',self::GROUP_SIX_PACKAGE=>'组六全包',self::SUM=>'和值',self::SPAN=>'跨度',self::POSITION=>'定位',self::TRANSFER=>'转',self::GROUP_DRAG=>'组拖'};}}

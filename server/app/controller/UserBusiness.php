@@ -516,7 +516,36 @@ final class UserBusiness
             $candidateSignature=(string)($candidate['play_type']??'').'|'.(string)($candidate['number_text']??'');
             if($candidateSignature===$signature)$matches[]=$candidate;
         }
-        if(count($matches)!==1)throw new \InvalidArgumentException('投注行无法按'.$lottery.'的单注金额唯一重算，已禁止下注');
+        if(count($matches)!==1){
+            // The parser may intentionally split one physical input line into
+            // several internal plays. In that case the row already contains
+            // its validated amount/count/settlement expression; do not parse
+            // the same source a second time and reject it as ambiguous.
+            if (($line['status'] ?? '') === 'success' && trim((string)($line['settlement_text'] ?? '')) !== '') {
+                // The original V2 row may already contain a 福体 amount. If
+                // a single-lottery reparse fails because its ticket total is
+                // the cross-lottery total (e.g. 🈴12), split the row before
+                // returning it; otherwise quickPreview adds the full amount
+                // once per lottery and doubles the displayed total.
+                $lineLotteries = $this->lotteriesForLine($line,$lottery);
+                $parts = count($lineLotteries);
+                if ($parts > 1) {
+                    foreach (['count','stake_count','code_count'] as $field) {
+                        if (isset($line[$field])) {
+                            $value = (int)$line[$field];
+                            if ($value < 1 || $value % $parts !== 0) throw new \InvalidArgumentException('福体投注'.$field.'无法按彩种拆分');
+                            $line[$field] = intdiv($value, $parts);
+                        }
+                    }
+                    $line['amount'] = number_format((float)($line['amount'] ?? 0) / $parts, 2, '.', '');
+                    if (isset($line['ast']['amount'])) $line['ast']['amount'] = (float)$line['amount'];
+                }
+                $line['category'] = $lottery==='福彩3D' ? '福' : ($lottery==='排列三' ? '体' : ($line['category'] ?? $lottery));
+                if (isset($line['settlement_text'])) $line['settlement_text']=str_replace('福体',$line['category'],(string)$line['settlement_text']);
+                return $line;
+            }
+            throw new \InvalidArgumentException('投注行无法按'.$lottery.'的单注金额唯一重算，已禁止下注');
+        }
         $line=$matches[0];
         $lotteries=$this->lotteriesForLine($line,$lottery);
         $parts=count($lotteries);

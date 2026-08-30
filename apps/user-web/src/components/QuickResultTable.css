@@ -36,6 +36,23 @@
   cursor: pointer;
 }
 
+.quick-result-confirm {
+  width: 24px;
+  height: 24px;
+  border: 1px solid #2f8f46;
+  border-radius: 50%;
+  color: #fff;
+  background: #2f8f46;
+  cursor: pointer;
+}
+
+.quick-result-manual-warning {
+  display: block;
+  margin-top: 4px;
+  color: #b54708;
+  font-weight: 600;
+}
+
 .quick-result-index,
 .quick-result-status {
   min-width: 32px;

@@ -15,14 +15,6 @@ final class QuickEntryRules
     public const MAX_TEXT_LENGTH = 10000;
     public const MAX_NUMBERS_PER_LINE = 1000;
 
-    /** One-bet principal for the sticky/赖 group plays. */
-    private const BASE_STAKE = [
-        'Z6_1'=>72, 'Z6_2'=>128, 'Z6_3'=>170, 'Z6_4'=>200,
-        'Z6_5'=>220, 'Z6_6'=>232, 'Z6_7'=>238,
-        'Z3_1'=>36, 'Z3_2'=>68, 'Z3_3'=>96, 'Z3_4'=>120,
-        'Z3_5'=>140, 'Z3_6'=>156, 'Z3_7'=>168,
-    ];
-
     /** @var array<string, string> */
     private const PATTERNS = [
         'standalone_number_line' => '/^(?:\d{3}(?:\s+|$))+$/u',
@@ -53,15 +45,15 @@ final class QuickEntryRules
         'whole_ticket_amount' => '/(\d+(?:\.\d+)?)\s*(元|米|块|角|毛|倍)\s*$/u',
         'position' => '/百\s*([0-9]+)\s*十\s*([0-9]+)\s*个\s*([0-9]+)/u',
         'single_position' => '/(?<!\d)(\d)\s*(百|十|个)(?!\d)/u',
-        'size_parity_bet' => '/^\s*(?:福体|福|体)?\s*(?:和值\s*)?(和大|和小|和单|和双|大|小|单|双)\s*(\d+(?:\.\d+)?)\s*(元|米|块|角|毛)?\s*$/u',
+        'size_parity_bet' => '/^\s*(?:福体|福|体)?\s*(?:和值\s*)?(和大|和小|和单|和双|大|小|单|双)\s*(\d+(?:\.\d+)?)\s*(元|米|块|角|毛|倍)?\s*$/u',
         'size_parity_stake_bet' => '/^\s*(?:福体|福|体)?\s*(?:和值\s*)?(和大|和小|和单|和双|大|小|单|双)\s*(?:各|每)?\s*(\d+(?:\.\d+)?)\s*注\s*$/u',
         'size_parity_both_bet' => '/^\s*(?:福体|福|体)?\s*(?:和值\s*)?大小\s*(?:各|每)?\s*(\d+(?:\.\d+)?)\s*(注|元|米|块|角|毛)?\s*$/u',
-        'span_bet' => '/^\s*(?:福体|福|体)?\s*跨度\s*([0-9])\s*(\d+(?:\.\d+)?)\s*(元|米|块|角|毛)?\s*$/u',
+        'span_bet' => '/^\s*(?:福体|福|体)?\s*跨度\s*([0-9])\s*(\d+(?:\.\d+)?)\s*(元|米|块|角|毛|倍)?\s*$/u',
         'span_prefix_bet' => '/^\s*(?:福体|福|体)?\s*([0-9])\s*跨(?:度)?\s*(\d+(?:\.\d+)?)\s*(注|元|米|块|角|毛)?\s*$/u',
         'span_suffix_bet' => '/^\s*(?:福体|福|体)?\s*跨\s*([0-9])\s+(\d+(?:\.\d+)?)\s*(倍|注|元|米|块|角|毛)?\s*$/u',
-        'sum_bet' => '/^\s*(?:福体|福|体)?\s*和值\s*(2[0-7]|1\d|[0-9])\s*(\d+(?:\.\d+)?)\s*(元|米|块|角|毛)?\s*$/u',
-        'package_bet' => '/^\s*(?:福体|福|体)?\s*(豹子全包|对子全包)\s*(\d+(?:\.\d+)?)\s*(元|米|块|角|毛)?\s*$/u',
-        'group_package_bet' => '/^\s*(?:福体|福|体)?\s*(组三全包|组六全包)\s*(\d+(?:\.\d+)?)\s*(元|米|块|角|毛)?\s*$/u',
+        'sum_bet' => '/^\s*(?:福体|福|体)?\s*和值\s*(2[0-7]|1\d|[0-9])\s*(\d+(?:\.\d+)?)\s*(元|米|块|角|毛|倍)?\s*$/u',
+        'package_bet' => '/^\s*(?:福体|福|体)?\s*(豹子全包|对子全包)\s*(\d+(?:\.\d+)?)\s*(元|米|块|角|毛|倍)?\s*$/u',
+        'group_package_bet' => '/^\s*(?:福体|福|体)?\s*(组三全包|组六全包)\s*(\d+(?:\.\d+)?)\s*(元|米|块|角|毛|倍)?\s*$/u',
         'catalog_digit_set_bet' => '/^\s*(?:福体|福|体)?\s*([0-9]{1,10})\s*(组三赖|组六赖|组三|组六|复式)\s*([一二三四2-9])码\s*((?:各|每)\s*)?(\d+(?:\.\d+)?)\s*(元|米|块|角|毛)?\s*$/u',
         'multi_play_shared_amount' => '/((?:(?:组三|组六|复式)\s*){2,3})\s*(?:各|每)\s*(\d+(?:\.\d+)?)\s*(元|米|块|角|毛|倍)?/u',
         'multi_play_amount' => '/(组三|组六|复式)\s*(?:各|每)\s*(\d+(?:\.\d+)?)\s*(元|米|块|角|毛|倍)?/u',
@@ -93,19 +85,19 @@ final class QuickEntryRules
 
     /** @var array<string, string> */
     private const TEXT_ALIASES = [
-        '褔' => '福', '陪' => '倍', '夸' => '跨', '垮' => '跨',
+        '褔' => '福', '排三' => '体', '排' => '体', '陪' => '倍', '夸' => '跨', '垮' => '跨',
         '胯' => '跨', '挎' => '跨', '跨渡' => '跨度', '跨都' => '跨度',
         '托' => '拖', '拖拉' => '拖', '旦' => '胆', '担' => '胆', '粘' => '沾', '賴' => '赖', '癞' => '赖',
         '黏边' => '沾边', '粘边' => '沾边', '黏邊' => '沾边', '粘邊' => '沾边', '沾邊' => '沾边',
         '对孑' => '对子', '对字' => '对子', '对仔' => '对子',
-        '双非' => '双飞', '双蜚' => '双飞',
-        '黏' => '沾', '买' => ' ', '快' => '块', '🈴' => '合',
+        '双非' => '双飞', '双蜚' => '双飞', '全包豹子' => '豹子全包', '包豹子' => '豹子全包',
+        '黏' => '沾', '俩' => '两', '买' => ' ', '快' => '块', '🈴' => '合',
         // “复式”和“复试”是现场录入中常见的两种写法，统一到同一玩法。
         '复试' => '复式', '複式' => '复式', '複試' => '复式',
-        '合大' => '和大', '合小' => '和小', '合单' => '和单', '合双' => '和双',
+        '合大' => '和大', '合小' => '和小', '合单' => '和单', '合双' => '和双', '共计' => '合计', '总计' => '合计', '总合' => '合计', '合共' => '合计', '共合' => '合计',
         '组3' => '组三', '组6' => '组六',
         '直选' => '直', '福彩' => '福', '体彩' => '体', '双打' => '福体',
-        '，' => ' ', '、' => ' ', '。' => ' ', ',' => ' ', '/' => ' ', '|' => ' ', '；' => ' ', ';' => ' ',
+        '，' => ' ', '、' => ' ', '。' => ' ', ',' => ' ', '/' => ' ', '|' => ' ', '；' => ' ', ';' => ' ', ':' => ' ', '：' => ' ', '—' => ' ', '－' => ' ', '·' => ' ', '…' => ' ', '[' => ' ', ']' => ' ', '［' => ' ', '］' => ' ',
     ];
 
     /** @var array<string, string> */
@@ -155,6 +147,7 @@ final class QuickEntryRules
         $text = preg_replace('/通(?=\s*\d|\s*$)/u', '通选', $text) ?? $text;
         $text = preg_replace('/1D\s*(\d+(?:\.\d+)?)\s*(?:元|米|块)?/iu', '各$1元', $text) ?? $text;
         $text = preg_replace('/2D\s*(\d+(?:\.\d+)?)\s*(?:元|米|块)?/iu', '各$1元', $text) ?? $text;
+        $text = preg_replace('/打\s*([一二两三四五六七八九十\d]+)\s*倍/u', '$1倍', $text) ?? $text;
         $text = preg_replace('/(?:×|[xX*])\s*(\d+(?:\.\d+)?)/u', ' $1倍', $text) ?? $text;
         $text = preg_replace('/(?<!\d)(\d{1,2})\s*胆\s*(\d{2,9})\s*拖(?!\d)/u', '$1胆拖$2', $text) ?? $text;
         $text = preg_replace('/(\d{3,9})\s*包(?:组六)?\s*(\d+(?:\.\d+)?)/u', '$1组六$2', $text) ?? $text;
@@ -169,6 +162,7 @@ final class QuickEntryRules
         $text = preg_replace('/^\s*((?:(?:百|十|个)\s*\d+\s*){1,3})(?:单|直)\s*(\d+(?:\.\d+)?)\s*(?:元|米|块)?\s*$/u', '$1各$2元', $text) ?? $text;
         $text = preg_replace('/^\s*((?:(?:百|十|个)\s*\d+\s*){1,3})\s+(\d+(?:\.\d+)?)\s*$/u', '$1各$2元', $text) ?? $text;
         $text = preg_replace('/^\s*(\d{3})\s+(\d+(?:\.\d+)?)\s*(元|米|块|角|毛)\s*$/u', '$1直$2$3', $text) ?? $text;
+        $text = preg_replace('/(\d{3})\s*一块值组\s*(\d+(?:\.\d+)?)\s*(元|米|块|角|毛)/u', '$1组各$2$3', $text) ?? $text;
         $text = preg_replace('/(?<!\d)跨\s*([0-9])(?!\d)/u', '$1跨', $text) ?? $text;
         $text = preg_replace('/^\s*((?:和值\s*(?:2[0-7]|1\d|\d)|跨度\s*\d))\s*(福体|福|体)\s*(?:各|每)?\s*(\d+(?:\.\d+)?)\s*(?:元|米|块)?\s*$/u', '$2$1$3元', $text) ?? $text;
         $text = preg_replace($this->pattern('chinese_multiplier_boundary'), ' ', $text) ?? $text;
@@ -279,7 +273,20 @@ final class QuickEntryRules
 
     public function baseStake(string $play, int $count): float
     {
-        return (float)(self::BASE_STAKE[$play.'_'.$count] ?? 0);
+        try {
+            return match ($play) {
+                'Z6' => BetMultiplierAmount::STICKY_GROUP_SIX->oneMultiplier($count),
+                'Z3' => BetMultiplierAmount::STICKY_GROUP_THREE->oneMultiplier($count),
+                default => 0.0,
+            };
+        } catch (\InvalidArgumentException) {
+            return 0.0;
+        }
+    }
+
+    public function multiplierAmount(BetMultiplierAmount $play, float $multiplier, int $count = 0): float
+    {
+        return $play->oneMultiplier($count) * $multiplier;
     }
 
     public function category(string $text, string $lottery): string
@@ -297,6 +304,12 @@ final class QuickEntryRules
     /** @return ?array{category: string, name: string, direct: bool} */
     public function oddsIdentity(string $source): ?array
     {
+        if (preg_match('/(?<!\d)(\d{3})\s*组/u', $source, $genericGroup)) {
+            $unique = count(array_unique(str_split($genericGroup[1])));
+            if ($unique === 1) return ['category'=>'三码定位','name'=>'三码定位','direct'=>true];
+            $play = $unique === 2 ? '组三' : '组六';
+            return ['category'=>$play, 'name'=>$play, 'direct'=>true];
+        }
         foreach (['口XX', 'X口X', 'XX口'] as $name) if (str_contains($source,$name)) return ['category'=>'一码定位','name'=>$name,'direct'=>false];
         foreach (['口口X', '口X口', 'X口口'] as $name) if (str_contains($source,$name)) return ['category'=>'二码定位','name'=>$name,'direct'=>false];
         foreach (['和大', '和小', '和单', '和双'] as $name) {

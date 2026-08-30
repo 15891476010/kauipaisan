@@ -356,7 +356,13 @@ final class BetSettlement
                 $index = ['百' => 0, '十' => 1, '个' => 2][$position];
                 if (($number[$index] ?? '') !== ($draw[$index] ?? '')) return false;
             }
-            return preg_match('/^\d{3}$/', $number) === 1 && $number !== '000' ? $number === $draw : true;
+            if (preg_match('/^\d{3}$/', $number) === 1 && $number !== '000') {
+                foreach (array_values(array_unique($positions[0])) as $position) {
+                    $index = ['百' => 0, '十' => 1, '个' => 2][$position];
+                    if (($number[$index] ?? '') !== ($draw[$index] ?? '')) return false;
+                }
+            }
+            return true;
         }
         if (preg_match('/(?:独胆|胆)\s*(\d)/u', $source, $match)) return str_contains($draw, $match[1]);
         return $number === $draw;
@@ -475,7 +481,10 @@ final class BetSettlement
                 foreach($positionRules as $index=>$allowed)if(!isset($draw[$index])||!in_array($draw[$index],$allowed,true))return false;
                 // Expanded position selections contain every permitted
                 // combination. Only the exact drawn combination wins.
-                return preg_match('/^\d{3}$/', $number) === 1 && $number !== '000' ? $number === $draw : true;
+                if (preg_match('/^\d{3}$/', $number) === 1 && $number !== '000') {
+                    foreach (array_keys($positionRules) as $index) if (($number[$index] ?? '') !== ($draw[$index] ?? '')) return false;
+                }
+                return true;
             }
             $dMatch=[];
             $digits=preg_match('/^([0-9]+)D$/i',$compact,$dMatch)?(string)$dMatch[1]:'';

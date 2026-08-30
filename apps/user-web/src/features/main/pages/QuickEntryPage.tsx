@@ -56,11 +56,13 @@ export function QuickEntryPage({
     amount: "0.00",
   });
   const [generating, setGenerating] = useState(false);
+  const previewRequestId = useRef(0);
   const splitTicketBlocks = (source: string) => {
-    const blocks: string[] = []; let current: string[] = [];
+    const blocks: string[] = []; let current: string[] = []; let blankRun = 0;
     const flush = () => { const value = current.join("\n").trim(); if (value) blocks.push(value); current = []; };
     for (const line of source.split(/\r?\n/)) {
-      if (!line.trim()) { flush(); continue; }
+      if (!line.trim()) { blankRun++; if (blankRun >= 2) { flush(); blankRun = 0; } else current.push(line); continue; }
+      blankRun = 0;
       current.push(line);
       if (/(?:合计|🈴|^\s*合)\s*\d+(?:\.\d+)?\s*$/u.test(line.trim()) || /(?:一元|两元|二元|\d+元)?\s*单\s*[,，]?\s*(?:一元|两元|二元|\d+元)?\s*组\s*\d+/u.test(line)) flush();
     }
@@ -134,9 +136,11 @@ export function QuickEntryPage({
       return null;
     }
     setGenerating(true);
+    const requestId = ++previewRequestId.current;
     try {
       const response = await previewQuickEntry({ text: sourceText, lottery });
       const data = response.data?.data || null;
+      if (requestId !== previewRequestId.current) return data;
       setGeneratedLines(data?.lines || []);
       setGeneratedTotal({
         count: data?.count || 0,
@@ -155,7 +159,7 @@ export function QuickEntryPage({
       modal.error({ title: "生成失败", content: apiErrorMessage(error, "生成失败"), okText: "确认" });
       return null;
     } finally {
-      setGenerating(false);
+      if (requestId === previewRequestId.current) setGenerating(false);
     }
   };
   const generate = () => void generateText(text);
@@ -469,6 +473,14 @@ export function QuickEntryPage({
           </div>
           <QuickResultTable
             lines={generatedLines}
+            sourceText={text}
+            onConfirmMismatch={(line) => {
+              const corrected = line.corrected_text;
+              if (!corrected) return;
+              suppressResultRecognition.current = true;
+              setText(corrected);
+              void generateText(corrected);
+            }}
             onChange={(lines, reason) => {
               if (reason === "structure")
                 suppressResultRecognition.current = true;
@@ -477,7 +489,7 @@ export function QuickEntryPage({
               // only once, otherwise editing a displayed row would append
               // the same ticket and generate an extra result.
               const sourceLines = lines.reduce<string[]>((result, line) => {
-                const raw = line.raw_text || "";
+            const raw = line.input_text || line.raw_text || "";
                 if (raw !== "" && result[result.length - 1] !== raw) result.push(raw);
                 return result;
               }, []);

@@ -57,6 +57,14 @@ try{
     $symbolBothPl=$lineForLottery->invoke($controller,$symbolBoth,'排列三',$tenantId);
     if(($symbolBothFc['amount']??'')!=='100.00'||($symbolBothPl['amount']??'')!=='250.00')throw new RuntimeException('福体符号倍数未分别使用 unit_stake');
 
+    $fuTiDirectGroupRows=$quickLines->invoke($controller,'965 956 775 福体直组1米🈴12','福彩3D',$tenantId);
+    $fuTiDirectRow=null;
+    foreach($fuTiDirectGroupRows as $candidate) if(($candidate['play_type']??'')==='直'){$fuTiDirectRow=$candidate;break;}
+    if(!is_array($fuTiDirectRow))throw new RuntimeException('缺少福体直组回退测试行');
+    $fuTiDirectFc=$lineForLottery->invoke($controller,$fuTiDirectRow,'福彩3D',$tenantId);
+    $fuTiDirectPl=$lineForLottery->invoke($controller,$fuTiDirectRow,'排列三',$tenantId);
+    if(($fuTiDirectFc['amount']??'')!=='3.00'||($fuTiDirectPl['amount']??'')!=='3.00'||abs((float)$fuTiDirectFc['amount']+(float)$fuTiDirectPl['amount']-6.0)>0.001)throw new RuntimeException('带🈴合计的福体直组行被重复计额');
+
     $user=Db::name('site_users')->whereNull('deleted_at')->field('id,site_id,tenant_id')->find();
     if(!$user)throw new RuntimeException('缺少防重测试用户');
     $session=['tenant_id'=>(int)$user['tenant_id'],'site_id'=>(int)$user['site_id'],'user_id'=>(int)$user['id']];

@@ -6,7 +6,9 @@ import "./QuickResultTable.css";
 
 type QuickResultTableProps = {
   lines: QuickEntryLine[];
+  sourceText?: string;
   onChange?: (lines: QuickEntryLine[], reason: "structure" | "text") => void;
+  onConfirmMismatch?: (line: QuickEntryLine) => void;
 };
 
 const formatAmount = (value: string) => value.replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
@@ -41,31 +43,86 @@ const clearBatchMetadata = (line: QuickEntryLine): QuickEntryLine => {
   return next;
 };
 
-export function QuickResultTable({ lines, onChange }: QuickResultTableProps) {
+type DisplayLine = QuickEntryLine & {
+  __sourceIds?: number[];
+  __detailLines?: QuickEntryLine[];
+};
+
+export function QuickResultTable({ lines, sourceText: _sourceText, onChange, onConfirmMismatch }: QuickResultTableProps) {
   const [detailLines, setDetailLines] = useState<QuickEntryLine[]>([]);
   const [mergedLine, setMergedLine] = useState<QuickEntryLine | null>(null);
   const [draftTexts, setDraftTexts] = useState<Record<string, string>>({});
   const [editingGroupKey, setEditingGroupKey] = useState<string | null>(null);
   const renumber = (next: QuickEntryLine[]) => next.map((line, index) => ({ ...line, id: index + 1 }));
-  const addLine = (line: QuickEntryLine) => {
-    const index = lines.indexOf(line);
+  const addLine = (line: DisplayLine) => {
+    const sourceId = line.__sourceIds?.[line.__sourceIds.length - 1] ?? line.id;
+    const index = lines.findIndex((item) => item.id === sourceId);
     const blankLine: QuickEntryLine = { id: 0, raw_text: "", status: "new", number_text: "", amount: "0", count: 0, category: null, reason: null };
     const next = [...lines];
     next.splice(index + 1, 0, blankLine);
     onChange?.(renumber(next.map(clearBatchMetadata)), "structure");
   };
-  const displayGroups: QuickEntryLine[][] = [];
-  lines.forEach((line) => {
+  const expandedLines: DisplayLine[] = [];
+  const sourcePhysical = _sourceText ? _sourceText.split(/\r?\n/u) : [];
+  if (sourcePhysical.length > lines.length && lines.length > 0) {
+    sourcePhysical.forEach((raw, physicalIndex) => {
+      const last = physicalIndex === sourcePhysical.length - 1;
+      const semantic = lines[Math.min(physicalIndex, lines.length - 1)];
+      expandedLines.push({
+        ...semantic,
+        id: physicalIndex + 1,
+        raw_text: raw,
+        input_text: raw,
+        status: last ? semantic.status : raw.trim() ? "new" : "new",
+        amount: last ? lines.reduce((sum, item) => sum + Number(item.amount || 0), 0).toFixed(2) : "0.00",
+        count: last ? lines.reduce((sum, item) => sum + Number(item.count || 0), 0) : 0,
+        code_count: last ? lines.reduce((sum, item) => sum + Number(item.code_count ?? item.count ?? 0), 0) : 0,
+        stake_count: last ? lines.reduce((sum, item) => sum + Number(item.stake_count ?? item.count ?? 0), 0) : 0,
+        __sourceIds: lines.map((item) => item.id),
+        __detailLines: lines,
+      });
+    });
+  }
+  for (let index = sourcePhysical.length > lines.length ? lines.length : 0; index < lines.length; ) {
+    const source = lines[index].input_text || lines[index].raw_text || "";
+    const members: QuickEntryLine[] = [];
+    while (index < lines.length && (lines[index].input_text || lines[index].raw_text || "") === source) {
+      members.push(lines[index]);
+      index++;
+    }
+    const physical = source.includes("\n") ? source.split(/\r?\n/u) : [source];
+    if (physical.length <= 1 || members.length <= 1) {
+      expandedLines.push(...members.map((member) => ({ ...member, __sourceIds: [member.id] })));
+      continue;
+    }
+    physical.forEach((raw, physicalIndex) => {
+      const last = physicalIndex === physical.length - 1;
+      const semantic = members[physicalIndex] || members[0];
+      expandedLines.push({
+        ...semantic,
+        raw_text: raw,
+        input_text: raw,
+        status: last ? semantic.status : "new",
+        amount: last ? members.reduce((sum, item) => sum + Number(item.amount || 0), 0).toFixed(2) : "0.00",
+        count: last ? members.reduce((sum, item) => sum + Number(item.count || 0), 0) : 0,
+        code_count: last ? members.reduce((sum, item) => sum + Number(item.code_count ?? item.count ?? 0), 0) : 0,
+        stake_count: last ? members.reduce((sum, item) => sum + Number(item.stake_count ?? item.count ?? 0), 0) : 0,
+        __sourceIds: members.map((item) => item.id),
+        __detailLines: members,
+      });
+    });
+  }
+  const displayGroups: DisplayLine[][] = [];
+  expandedLines.forEach((line) => {
     const previous = displayGroups[displayGroups.length - 1];
-    // A single quick-entry sentence can produce several internal rows (for
-    // example 直选 and 组选). Keep those rows for submission/settlement, but
-    // present them as one source row in the preview.
     if (
       previous &&
       line.status === "success" &&
       !line.batch_id &&
       previous.every((item) => item.status === "success" && !item.batch_id) &&
-      previous[0].raw_text === line.raw_text &&
+      (previous[0].input_text || previous[0].raw_text) === (line.input_text || line.raw_text) &&
+      !previous[0].raw_text.includes("\n") &&
+      !line.raw_text.includes("\n") &&
       previous[0].category === line.category &&
       previous.some((item) => item.play_type !== line.play_type)
     ) {
@@ -74,13 +131,12 @@ export function QuickResultTable({ lines, onChange }: QuickResultTableProps) {
       displayGroups.push([line]);
     }
   });
-
   const numberTokens = (line: QuickEntryLine) => {
     // Multi-code plays such as “组六六码/组三六码” are represented internally
     // by their expanded settlement combinations, while the detail dialog
     // should show the original six-digit selection as one item.
-    if (line.play_type?.endsWith("六码")) {
-      const selection = (line.settlement_text || "").match(/([0-9]{4,10})\s+(?:组六|组三)六码/)?.[1];
+    if (line.play_type?.includes("码") && line.play_type !== "复式") {
+      const selection = (line.settlement_text || "").match(/([0-9]{3,10})\s+(?:组六|组三)(?:两|三|四|五|六|七|八|九)?码/)?.[1];
       if (selection) return [`${line.play_type.startsWith("组三") ? "三" : "六"}${selection}`];
     }
     const tokens = (line.batch_occurrence_text || line.display_number_text || line.number_text || "")
@@ -122,14 +178,17 @@ export function QuickResultTable({ lines, onChange }: QuickResultTableProps) {
   });
   const detailCount = detailLines.reduce((sum, line) => sum + Number(line.batch_count ?? line.code_count ?? line.count ?? 0), 0);
   const detailAmount = detailLines.reduce((sum, line) => sum + Number(line.batch_amount ?? line.amount ?? 0), 0);
-  const openDetails = (group: QuickEntryLine[]) => setDetailLines(group);
-  const removeGroup = (group: QuickEntryLine[]) => {
-    const members = new Set(group);
-    onChange?.(renumber(lines.filter((item) => !members.has(item)).map(clearBatchMetadata)), "structure");
+  const openDetails = (group: DisplayLine[]) => {
+    const details = group[group.length - 1]?.__detailLines;
+    setDetailLines(details?.length ? details : group);
   };
-  const updateGroupText = (group: QuickEntryLine[], rawText: string) => {
-    const members = new Set(group);
-    const next = lines.map((item) => members.has(item) ? { ...item, raw_text: rawText } : item).map(clearBatchMetadata);
+  const removeGroup = (group: DisplayLine[]) => {
+    const ids = new Set(group.flatMap((item) => item.__sourceIds || [item.id]));
+    onChange?.(renumber(lines.filter((item) => !ids.has(item.id)).map(clearBatchMetadata)), "structure");
+  };
+  const updateGroupText = (group: DisplayLine[], rawText: string) => {
+    const ids = new Set(group.flatMap((item) => item.__sourceIds || [item.id]));
+    const next = lines.map((item) => ids.has(item.id) ? { ...item, raw_text: rawText, input_text: rawText } : item).map(clearBatchMetadata);
     onChange?.(next, "text");
   };
 
@@ -140,7 +199,7 @@ export function QuickResultTable({ lines, onChange }: QuickResultTableProps) {
         const line = group[0];
         const groupKey = group.map((item) => item.id).join("-");
         const isEditing = editingGroupKey === groupKey;
-        const draftText = draftTexts[groupKey] ?? line.raw_text;
+        const draftText = draftTexts[groupKey] ?? line.input_text ?? line.raw_text;
         const isBatch = Boolean(line.batch_id);
         const isBatchEnd = isBatch && line.batch_end === true && line.batch_valid !== false;
         const groupCount = group.reduce((sum, item) => sum + Number(item.code_count ?? item.count ?? 0), 0);
@@ -154,6 +213,9 @@ export function QuickResultTable({ lines, onChange }: QuickResultTableProps) {
           <div className={`quick-result-row ${visualStatus}${isBatchEnd ? " batch-end" : ""}`}>
             <div className="quick-result-main">
               <button type="button" className="quick-result-remove" aria-label={`删除第${line.id}条`} onClick={() => removeGroup(group)} />
+              {line.status === "failed" && line.suggested_amount && onConfirmMismatch && (
+                <button type="button" className="quick-result-confirm" aria-label={`确认按${line.suggested_amount}元修正`} onClick={() => onConfirmMismatch(line)}>✓</button>
+              )}
               <span className="quick-result-index">{line.id}</span>
               <button type="button" className="quick-result-add" aria-label={`新增第${line.id}条`} onClick={() => addLine(line)} />
               <span className="quick-result-detail-slot">
@@ -202,6 +264,7 @@ export function QuickResultTable({ lines, onChange }: QuickResultTableProps) {
             ) : line.status === "failed" ? (
               <div className="quick-result-detail quick-result-reason">
                 <span>原因：</span><b>{line.reason || "语句存在问题，无法识别"}</b>
+                {line.suggested_amount && <span className="quick-result-manual-warning">检测到多条语句的总金额对不上，请进行人工确认（确认后按 {formatAmount(line.suggested_amount)} 元生成）</span>}
               </div>
             ) : null}
           </div>
@@ -249,7 +312,7 @@ export function QuickResultTable({ lines, onChange }: QuickResultTableProps) {
                   <div className="game-type-wrapper">
                     <div className="game-type-title">{section.title}</div>
                     <div className="row-container row-header-container">
-                      {Array.from({ length: 8 }, (_, index) => (
+                      {Array.from({ length: 4 }, (_, index) => (
                         <div className="row-label-container" key={`header-${section}-${index}`}>
                           <span className="label-wrapper">号码</span>
                           <span className="label-wrapper">金额</span>
@@ -257,9 +320,9 @@ export function QuickResultTable({ lines, onChange }: QuickResultTableProps) {
                       ))}
                     </div>
                     <div className="row-container">
-                      {Array.from({ length: Math.ceil(section.numbers.length / 8) }, (_, rowIndex) => section.numbers.slice(rowIndex * 8, rowIndex * 8 + 8)).map((row, rowIndex) => (
+                      {Array.from({ length: Math.ceil(section.numbers.length / 4) }, (_, rowIndex) => section.numbers.slice(rowIndex * 8, rowIndex * 8 + 8)).map((row, rowIndex) => (
                         <Fragment key={`${section}-row-${rowIndex}`}>
-                          {Array.from({ length: 8 }, (_, index) => row[index] || null).map((number, index) => (
+                          {Array.from({ length: 4 }, (_, index) => row[index] || null).map((number, index) => (
                             <div className={`row-label-container${number ? " has-amount" : ""}`} key={`${section.category}-${section.title}-${rowIndex}-${index}`}>
                               <span className="label-wrapper">{number || "--"}</span>
                               <span className="label-wrapper">{number ? formatAmount((section.unitAmount * (section.frequency[number] || 1)).toFixed(2)) : "--"}</span>
