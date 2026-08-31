@@ -4,10 +4,10 @@ import zhCN from "antd/es/date-picker/locale/zh_CN";
 import dayjs from "dayjs";
 import { ExportOutlined, SearchOutlined } from "@ant-design/icons";
 import { apiErrorMessage } from "../../../utils/request";
-import { getBetRecords, type BetRecord } from "../../../api/user";
+import { getBetRecords, refundBetRecord, type BetRecord } from "../../../api/user";
 
 export function BettingRecordsPage() {
-  const { message } = AntdApp.useApp();
+  const { message, modal } = AntdApp.useApp();
   const today = dayjs().format("YYYY-MM-DD");
   const [records, setRecords] = useState<BetRecord[]>([]);
   const [status, setStatus] = useState("all");
@@ -68,6 +68,26 @@ export function BettingRecordsPage() {
     a.download = `投注记录-${from}-${to}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+  const refund = (record: BetRecord) => {
+    modal.confirm({
+      title: "确认退单",
+      content: `确定退回该注单，金额 ¥ ${record.amount} 吗？`,
+      okText: "确认退单",
+      cancelText: "取消",
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        try {
+          await refundBetRecord(record.id);
+          message.success("退单成功");
+          await loadRecords(1);
+          window.dispatchEvent(new Event("profile-updated"));
+          window.dispatchEvent(new Event("bet-records-updated"));
+        } catch (error) {
+          message.error(apiErrorMessage(error, "退单失败"));
+        }
+      },
+    });
   };
   return (
     <div className="records-panel">
@@ -150,7 +170,13 @@ export function BettingRecordsPage() {
               <span>{record.source_text || "-"}</span>
               <span>{record.sealed ? "已封盘" : "-"}</span>
               <span>{record.placed_at}</span>
-              <span>{record.status === "refunded" ? "已退" : "-"}</span>
+              <span>
+                {record.status === "refunded" ? "已退" : record.can_refund ? (
+                  <button type="button" className="records-refund" disabled={loading} onClick={() => refund(record)}>
+                    退
+                  </button>
+                ) : "-"}
+              </span>
             </div>
           ))
         ) : (

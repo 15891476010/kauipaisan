@@ -1,0 +1,4565 @@
+[
+    {
+        "block": 14,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "96.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福彩两单一组079     407    \/ 12 \/ 福彩一单一组789  089   489 \/ 403  307   947 \/ 24 \/ 福彩四码组六3倍0479    \/ 30 \/ 福彩五码组六三倍03479 \/ 30 \/ 🈴96"
+    },
+    {
+        "block": 15,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "26.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福907.043.143.179.643.743.943.543.079.679.858.856.888一米直组 \/ 🈴26"
+    },
+    {
+        "block": 18,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "32.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "904.916.896.089.958.973.256.856直组一倍 \/ 福   🈴32"
+    },
+    {
+        "block": 19,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "32.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福彩一单444   777 \/ 福彩一单一组309   241   574   534   945   942   303 \/ 🈴32"
+    },
+    {
+        "block": 20,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "6.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福彩两单一组507 \/ 🈴6"
+    },
+    {
+        "block": 22,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "100.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福独胆2-8各50 \/ 🈴100"
+    },
+    {
+        "block": 25,
+        "recognized": false,
+        "rows": 4,
+        "count": 19,
+        "amount": "136.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六五码",
+                "source": "23567 组六五码 福",
+                "unique": true,
+                "odds": "15.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "537 567 547 457 367 752 362 432 562 直各2.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "537 567 547 457 367 752 362 432 562 组六各2.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "23567组六100 \/ 537.567 547.457 367.752 362.432 562.一单一组 \/ 🈴136米   福"
+    },
+    {
+        "block": 28,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "10.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福 880 942 869 908  248一组合10米"
+    },
+    {
+        "block": 30,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "100.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福六码034689 \/ 体六码245678 \/ 组六30组三20 \/ 🈴100"
+    },
+    {
+        "block": 32,
+        "recognized": false,
+        "rows": 5,
+        "count": 6,
+        "amount": "13474.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "548 543 直各2.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "548 543 组六各2.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六五码",
+                "source": "03589 组六五码 福",
+                "unique": true,
+                "odds": "15.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组三五码",
+                "source": "03589 组三五码 福",
+                "unique": true,
+                "odds": "15.0000"
+            }
+        ],
+        "text": "福548、543、180一直组🈴️6 \/ 03589、13456组六10组三5 \/ 🈴️36"
+    },
+    {
+        "block": 35,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "19.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福直2毛 \/ 006 016 024 026 028 036 042 044 046 056 060 061 062 063 064 065 067 068 069 076 082 086 096 306 324 326 328 342 344 346 360 362 364 382 402 404 406 412 414 416 420 421 422 423 424 425 426 427 428 429 432 434 436 440 441 442 443 445 4"
+    },
+    {
+        "block": 38,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "106.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福 \/ 986.976.086.680.036.673.486.476.046.886.686.996.696.776.676.638直组各一米 \/ 体184.148.174.714.967.986.784.014.064.917.911.991.744.774.044.767.117.177.491直组各一米 \/ 福358.357.378复试直选一倍 \/ 合106"
+    },
+    {
+        "block": 43,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "80.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福直组各1米共40注 \/ 813 881 683 868 \/ 840 908 485 589 \/ 168 388 508 498 \/ 301 801 306 680 \/ 004  045 590 934 \/ 160 380 500 409 \/ 135 518 365 685 \/ 540 509 545 955 \/ 165 853 550 495 \/ 515 133 183 633  \/ 🈴80"
+    },
+    {
+        "block": 48,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "10.80",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "014 041 104 114 124 134 140 141 142 143 144 145 146 147 148 149 154 164 174 184 194 214 241 314 341 401 410 411 412 413 414 415 416 417 418 419 421 431 441 451 461 471 481 491 514 541 614 641 714 741 814 841 914 941直2角福54注合10.8"
+    },
+    {
+        "block": 49,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "48.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "003 009 023 029 083 089 303 309 323 329 383 389 403 409 423 429 483 489 803 809 823 829 883 889 903 909 923 929 983 989 \/ 447 457 467 474 475 476 477 547 574 647 674 744 745 746 747 754 764 774 \/ 福彩单挑1米的 \/ 合48米"
+    },
+    {
+        "block": 52,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "8.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福279 927一倍值组  \/ 🈴8"
+    },
+    {
+        "block": 53,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "10.80",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "015 051 105 115 125 135 145 150 151 152 153 154 155 156 157 158 159 165 175 185 195 215 251 315 351 415 451 501 510 511 512 513 514 515 516 517 518 519 521 531 541 551 561 571 581 591 615 651 715 751 815 851 915 951直2角福54注福合10.8"
+    },
+    {
+        "block": 60,
+        "recognized": false,
+        "rows": 2,
+        "count": 47,
+        "amount": "91274.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "112 121 125 129 152 179 192 197 211 215 219 235 251 253 259 291 295 325 348 352 355 384 438 478 483 487 512 521 523 529 532 535 553 592 719 748 784 791 834 843 847 874 912 917 921 925 952 直各1942.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            }
+        ],
+        "text": "福体直0.1米［🈴9.6］ \/ 112 121 125 129 152 179 192 197 211 215 219 235 251 253 259 291 295 325 348 352 355 384 438 478 483 487 512 521 523 529 532 535 553 592 719 748 784 791 834 843 847 874 912 917 921 925 952 971"
+    },
+    {
+        "block": 61,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "5.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "872.852各一直一组一元 \/ 286组一元 \/ 福  🈴5米"
+    },
+    {
+        "block": 73,
+        "recognized": true,
+        "rows": 1,
+        "count": 1,
+        "amount": "2.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "组",
+                "source": "732 组 福",
+                "unique": false,
+                "odds": null
+            }
+        ],
+        "text": "福732一块值组  2米"
+    },
+    {
+        "block": 79,
+        "recognized": true,
+        "rows": 2,
+        "count": 20,
+        "amount": "620.00",
+        "declared_amount": "100.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "排列三",
+                "play_type": "直",
+                "source": "506 515 272 191 536 513 316 516 503 100 直各2.00元 体",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "排列三",
+                "play_type": "组六",
+                "source": "506 515 272 191 536 513 316 516 503 100 组六各60.00元 体",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "体 \/ 506 515 272 191 536 513 316 516 503  \/ 直组各2米计40米 \/ 03468 \/ 组六60米 \/ 共计100米"
+    },
+    {
+        "block": 82,
+        "recognized": false,
+        "rows": 4,
+        "count": 19,
+        "amount": "86.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六五码",
+                "source": "03589 组六五码 福",
+                "unique": true,
+                "odds": "15.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "095 953 538 380 809 093 958 530 389 直各2.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "095 953 538 380 809 093 958 530 389 组六各2.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "03589组六50 \/ 095 953 538 380 809 093 958 530 389 805一单一组 \/ 🈴90  体"
+    },
+    {
+        "block": 83,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "80.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "体直组各1米40注 \/ 514 546 951 596 \/ 531 518 365 658 \/ 945 561 538 184  \/ 468 918 869 831  \/ 188 683 868 948  \/ 816 388 164 466  \/ 169 966 613 186  \/ 636 686 496 166  \/ 368 196 641 483 \/ 421 462 312 218 \/ 🈴80"
+    },
+    {
+        "block": 84,
+        "recognized": false,
+        "rows": 3,
+        "count": 2,
+        "amount": "4.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "543 直各2.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "543 组六各2.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "543 180两单一组 \/ 体  12"
+    },
+    {
+        "block": 86,
+        "recognized": false,
+        "rows": 7,
+        "count": 8,
+        "amount": "48.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "排列三",
+                "play_type": "直",
+                "source": "180 543 直各2.00元 体",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "排列三",
+                "play_type": "组六",
+                "source": "180 543 组六各2.00元 体",
+                "unique": true,
+                "odds": "150.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组三五码",
+                "source": "02358 组三五码 福",
+                "unique": true,
+                "odds": "15.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六五码",
+                "source": "02358 组六五码 福",
+                "unique": true,
+                "odds": "15.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组三五码",
+                "source": "01489 组三五码 福",
+                "unique": true,
+                "odds": "15.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六五码",
+                "source": "01489 组六五码 福",
+                "unique": true,
+                "odds": "15.0000"
+            }
+        ],
+        "text": "体180、543、235一米直组🈴️6 \/ 02358、01489组三组六各10 \/ 🈴️46"
+    },
+    {
+        "block": 88,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "24.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福521 516 251 两倍值组 \/ 🈴24"
+    },
+    {
+        "block": 89,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "24.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "943.940.942.945.691.840直组一倍 \/ 福  🈴24"
+    },
+    {
+        "block": 90,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "10.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福，七码，组六，组三0123578各5米 \/ 🈴10"
+    },
+    {
+        "block": 94,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "24.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福 直一米 \/ 146,164,416,461,614,641 \/ 147,174,417,471,714,741 \/ 167,176,617,671,716,761 \/ 467,476,647,674,746,764 \/ 🈴24米"
+    },
+    {
+        "block": 95,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "16.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": ":156:157 176 756 \/ :158,186,178,856,758,786 \/ :151,116,155,166,556,656 \/ 福  五毛值组 \/ 🈴16"
+    },
+    {
+        "block": 97,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "240.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "体，634-983-469十单五组90米 \/ 34689两倍组三  一倍组六  30 \/ 🈴240"
+    },
+    {
+        "block": 98,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福26双飞两倍  20"
+    },
+    {
+        "block": 99,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "12.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "791，197，071，170，091，190，750 760 166 724.福直组0.6合12"
+    },
+    {
+        "block": 104,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "12.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "692 926两单一组 \/ 福🈴12"
+    },
+    {
+        "block": 105,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "16.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "719 217 927 761 一单一组 \/ 福  🈴16"
+    },
+    {
+        "block": 106,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "12.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "791，197，071，170，091，190，750 760 166 724.体直组0.6合12"
+    },
+    {
+        "block": 107,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "16.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福347 327  \/ 体568 257 \/ 一直一组 \/ 🈴16"
+    },
+    {
+        "block": 108,
+        "recognized": false,
+        "rows": 5,
+        "count": 4,
+        "amount": "8.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "241 直各2.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "241 组六各2.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            },
+            {
+                "lottery": "排列三",
+                "play_type": "直",
+                "source": "412 直各2.00元 体",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "排列三",
+                "play_type": "组六",
+                "source": "412 组六各2.00元 体",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "福彩四单一组241 \/ 体彩4单一组412 \/ 🈴二十"
+    },
+    {
+        "block": 110,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "10.80",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "028 082 128 182 208 218 228 238 248 258 268 278 280 281 282 283 284 285 286 287 288 289 298 328 382 428 482 528 582 628 682 728 782 802 812 820 821 822 823 824 825 826 827 828 829 832 842 852 862 872 882 892 928 982直2角福54注合10.8"
+    },
+    {
+        "block": 117,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "30.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "610  620  602  601   612 \/ 610  601  061  016  106  160   \/ 620  602  260  206  026  062   \/ 612   621  126  162  216  261  780  870   708  807  780  087  078  福彩单挑1米的 \/ 合30米"
+    },
+    {
+        "block": 118,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "10.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "两码定位百位9个位4五块 \/ 49双飞五块 \/ 福🈴10"
+    },
+    {
+        "block": 119,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "30.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "263-363-063三单两组，福 \/ 🈴30"
+    },
+    {
+        "block": 120,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福012346789豹子各打五倍共90米"
+    },
+    {
+        "block": 123,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "100.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福六码234789 \/ 体六码145679 \/ 组六30米组三20米 \/ 🈴100"
+    },
+    {
+        "block": 130,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "42.80",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福直2毛 \/ 017 022 024 026 028 033 037 039 042 062 071 073 077 082 093 202 204 206 208 212 214 216 217 218 220 221 223 224 225 226 227 228 229 232 233 234 236 237 238 239 240 241 242 243 244 245 246 247 248 249 252 254 256 258 260 261 262 263 2"
+    },
+    {
+        "block": 132,
+        "recognized": true,
+        "rows": 2,
+        "count": 4,
+        "amount": "8.00",
+        "declared_amount": "4.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "263 373 直各2.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "263 373 组六各2.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "福263、373、一元直组，共计4米"
+    },
+    {
+        "block": 141,
+        "recognized": false,
+        "rows": 2,
+        "count": 29,
+        "amount": "56608.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "237 256 265 267 273 276 327 357 372 375 526 537 562 573 625 627 652 672 679 697 723 726 732 735 753 762 769 796 967 直各1952.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            }
+        ],
+        "text": "福体直0.1米［🈴6］ \/ 237 256 265 267 273 276 327 357 372 375 526 537 562 573 625 627 652 672 679 697 723 726 732 735 753 762 769 796 967 976"
+    },
+    {
+        "block": 146,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "10.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福02469 \/ 0234679 组六 5 米 🈴10"
+    },
+    {
+        "block": 150,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "128.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福245789组六20组三20 \/ 24579组六组三各20 \/ 529.599.595.254.257.279一单一组 \/ 237 256 267 357 679组一倍 \/ 114.414.294一单一组 \/ 合128米"
+    },
+    {
+        "block": 154,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "44.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福直组各1米共22注 \/ 232 327 282 287 \/ 022 252 207 527 \/ 238 227 250 \/ 392 397 289 879 \/ 029 952 907 579 \/ 938 972 059 \/ 🈴44"
+    },
+    {
+        "block": 156,
+        "recognized": false,
+        "rows": 3,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福007.070.700.770.707.077一直 \/ 福225.252.522.552.525.255一直 \/ 福224.242.422.442.424.244一直 \/ 🈴18*2=36"
+    },
+    {
+        "block": 157,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "1.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福组 1 毛 026 261 236 264 258 256 259 086 028  056 🈴1 米"
+    },
+    {
+        "block": 159,
+        "recognized": true,
+        "rows": 1,
+        "count": 1,
+        "amount": "30.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "独胆",
+                "source": "",
+                "unique": false,
+                "odds": null
+            }
+        ],
+        "text": "福独胆2   30米"
+    },
+    {
+        "block": 160,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "354.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "001 003 007 009 010 011 013 016 018 027 030 031 033 034 036 039 043 049 056 058 061 063 065 067 069 070 072 076 077 081 085 090 093 094 096 099 100 101 103 106 108 110 112 114 118 121 122 125 127 128 130 141 144 149 152 158 160 168 172 178 "
+    },
+    {
+        "block": 161,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "16.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "体.478\/.472:\/752\/596一单一组 \/ 🈴16"
+    },
+    {
+        "block": 165,
+        "recognized": true,
+        "rows": 1,
+        "count": 10,
+        "amount": "10.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "豹子全包",
+                "source": "",
+                "unique": false,
+                "odds": null
+            }
+        ],
+        "text": "福豹子全包一米10米"
+    },
+    {
+        "block": 166,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "005 007 008 009 044 050 055 066 077 080 090 099 116 117 144 161 166 171 177 224 226 227 229 242 244 262 266 272 292 299 404 414 422 424 440 441 442 446 447 449 464 474 477 488 494 499 500 505 550 557 575 577 606 611 622 626 644 660 661 668 "
+    },
+    {
+        "block": 169,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "6.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福彩，452打俩直一组 \/ 🈴6"
+    },
+    {
+        "block": 173,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "20.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "0123456789福豹子一倍 \/ 🈴20"
+    },
+    {
+        "block": 174,
+        "recognized": false,
+        "rows": 3,
+        "count": 2,
+        "amount": "1.50",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "排列三",
+                "play_type": "直",
+                "source": "147 直各1.00元 体",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "排列三",
+                "play_type": "组六",
+                "source": "147 组六各0.50元 体",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "体147直1米组5毛   \/ 🈴️1.5"
+    },
+    {
+        "block": 176,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "10.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "体七码组六组三5元0135679 \/ 🈴10"
+    },
+    {
+        "block": 186,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "20.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "体百位7 \/ 十位3 \/ 个位0123456789 \/ 一倍 \/ 合20米"
+    },
+    {
+        "block": 187,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "016 017 026 036 037 047 061 062 063 068 071 072 073 074 078 097 106 107 147 168 169 174 179 186 196 197 206 207 236 246 263 264 268 269 279 296 297 307 326 347 362 369 374 379 397 407 417 426 437 462 468 478 486 487 601 602 603 608 618 619 "
+    },
+    {
+        "block": 188,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "体六码145679组六组三各5米共10米"
+    },
+    {
+        "block": 190,
+        "recognized": false,
+        "rows": 3,
+        "count": 1,
+        "amount": "10.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "跨度2",
+                "source": "跨度2 福",
+                "unique": true,
+                "odds": "9.3000"
+            }
+        ],
+        "text": "福0跨 \/ 1跨 \/ 2跨各10米"
+    },
+    {
+        "block": 196,
+        "recognized": true,
+        "rows": 2,
+        "count": 4,
+        "amount": "24.00",
+        "declared_amount": "60.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "616 661 直各10.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "616 661 组六各2.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "福616-661-166五直五组 \/ 合计60"
+    },
+    {
+        "block": 197,
+        "recognized": true,
+        "rows": 2,
+        "count": 2,
+        "amount": "4.00",
+        "declared_amount": "32.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "373 直各2.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "373 组六各2.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "福373-337五直三组 \/ 合计32"
+    },
+    {
+        "block": 198,
+        "recognized": true,
+        "rows": 2,
+        "count": 2,
+        "amount": "6.00",
+        "declared_amount": "20.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "排列三",
+                "play_type": "直",
+                "source": "091 直各4.00元 体",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "排列三",
+                "play_type": "组六",
+                "source": "091 组六各2.00元 体",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "体 091 八单二组合计20"
+    },
+    {
+        "block": 201,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "468.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福 \/ 百1234567 \/ 十0345679 \/ 个0123589 \/ 各1米 \/ 共343米 \/ 百23467 \/ 十34579 \/ 个01239 \/ 各1米 \/ 共125米 \/ 合计468"
+    },
+    {
+        "block": 202,
+        "recognized": true,
+        "rows": 1,
+        "count": 1,
+        "amount": "10.00",
+        "declared_amount": "60.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "",
+                "source": "",
+                "unique": false,
+                "odds": null
+            }
+        ],
+        "text": "福238转五倍 \/ 合计60"
+    },
+    {
+        "block": 203,
+        "recognized": true,
+        "rows": 1,
+        "count": 7,
+        "amount": "1400.00",
+        "declared_amount": "400.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "独胆",
+                "source": "3 独胆 4 独胆 5 独胆 6 独胆 7 独胆 8 独胆 9 独胆各200.00元 福",
+                "unique": true,
+                "odds": "3.3000"
+            }
+        ],
+        "text": "福独胆3-9各200米 \/ 合计400"
+    },
+    {
+        "block": 205,
+        "recognized": true,
+        "rows": 1,
+        "count": 248,
+        "amount": "498.00",
+        "declared_amount": "496.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "012 013 018 021 023 028 031 032 038 041 042 043 062 068 081 082 083 102 103 108 113 121 122 123 127 131 133 137 140 142 143 147 148 149 153 157 162 163 169 173 180 182 183 189 191 193 201 203 208 211 212 213 217 221 223 231 232 233 237 240 241 243 247 248 251 253 257 260 261 262 263 267 268 269 271 273 280 281 283 291 293 301 302 308 311 313 317 321 322 323 327 331 340 341 342 347 348 349 351 357 361 362 367 368 371 380 381 382 389 391 401 402 403 410 412 413 417 418 419 420 421 423 427 428 430 431 432 437 438 439 451 452 453 460 462 463 467 468 469 471 472 473 481 482 483 491 493 513 517 521 523 527 531 537 541 542 543 562 563 567 568 569 571 573 581 582 583 591 593 602 608 612 613 619 620 621 622 623 627 628 629 631 632 637 638 640 642 643 647 648 649 652 653 657 658 659 662 672 673 680 682 683 689 691 692 698 713 723 731 741 742 743 751 753 762 763 803 813 819 823 830 831 832 839 841 842 843 851 852 853 860 862 863 869 891 893 913 923 931 941 943 951 953 961 962 968 981 983 248 直各2.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            }
+        ],
+        "text": "012 013 018 021 023 028 031 032 038 041 042 043 062 068 081 082 083 102 103 108 113 121 122 123 127 131 133 137 140 142 143 147 148 149 153 157 162 163 169 173 180 182 183 189 191 193 201 203 208 211 212 213 217 221 223 231 232 233 237 240 "
+    },
+    {
+        "block": 207,
+        "recognized": true,
+        "rows": 1,
+        "count": 370,
+        "amount": "740.00",
+        "declared_amount": "738.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "011 012 013 018 021 022 023 028 031 032 038 041 042 043 051 052 053 061 062 068 081 082 083 101 102 103 108 110 111 112 113 117 118 119 120 121 122 123 127 128 129 130 131 132 133 137 138 139 140 141 142 143 147 148 149 150 151 152 153 157 158 159 160 161 162 163 167 168 169 180 181 182 183 187 188 189 191 192 193 198 201 202 203 208 210 211 212 213 217 218 219 220 221 222 223 227 228 229 230 231 232 233 237 238 239 240 241 242 243 247 248 249 250 251 252 253 257 258 259 260 261 262 263 267 268 269 280 281 282 283 287 288 289 291 292 293 298 301 302 308 310 311 312 313 317 318 319 320 321 322 323 327 328 329 331 332 337 338 340 341 342 343 347 348 349 350 351 352 353 357 358 359 361 362 367 368 380 381 382 383 387 388 389 391 392 398 401 402 403 410 411 412 413 417 418 419 420 421 422 423 427 428 429 430 431 432 433 437 438 439 441 442 443 451 452 453 460 461 462 463 467 468 469 481 482 483 491 492 493 501 502 503 510 511 512 513 517 518 519 520 521 522 523 527 528 529 530 531 532 533 537 538 539 541 542 543 551 552 553 560 561 562 563 567 568 569 581 582 583 591 592 593 601 602 608 610 611 612 613 617 618 619 620 621 622 623 627 628 629 631 632 637 638 640 641 642 643 647 648 649 650 651 652 653 657 658 659 661 662 667 668 680 681 682 683 687 688 689 691 692 698 711 712 713 718 721 722 723 728 731 732 733 738 741 742 743 751 752 753 761 762 763 768 781 782 783 911 912 913 918 921 922 923 928 931 932 938 941 942 943 951 952 953 961 962 968 981 982 983 369 直各2.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            }
+        ],
+        "text": "011 012 013 018 021 022 023 028 031 032 038 041 042 043 051 052 053 061 062 068 081 082 083 101 102 103 108 110 111 112 113 117 118 119 120 121 122 123 127 128 129 130 131 132 133 137 138 139 140 141 142 143 147 148 149 150 151 152 153 157 "
+    },
+    {
+        "block": 209,
+        "recognized": true,
+        "rows": 1,
+        "count": 6,
+        "amount": "300.00",
+        "declared_amount": "300.00",
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "",
+                "source": "",
+                "unique": false,
+                "odds": null
+            }
+        ],
+        "text": "福+体15-17-57飞各50米 \/ 合计300"
+    },
+    {
+        "block": 210,
+        "recognized": false,
+        "rows": 7,
+        "count": 16,
+        "amount": "180.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "116 161 直各20.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "259 196 直各10.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "275 697 976 259 529 419 直各10.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "916 169 297 298 691 265 直各10.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            }
+        ],
+        "text": "116-161-福直10倍共40米 \/ 116转圈1倍共6米 \/ 259-196福直5倍共20米 \/ 259-196转圈1米共12 \/  275-697-976-259-529-419 \/ 福直5倍共60米 \/ 916-169-297-298-691-265福直5倍共60米 \/ 40+6+20+12+60+60=198"
+    },
+    {
+        "block": 212,
+        "recognized": true,
+        "rows": 2,
+        "count": 2,
+        "amount": "8.00",
+        "declared_amount": "12.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "排列三",
+                "play_type": "直",
+                "source": "437 直各2.00元 体",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "排列三",
+                "play_type": "组六",
+                "source": "437 组六各6.00元 体",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "体437 直组3倍   \/ 合计 12"
+    },
+    {
+        "block": 213,
+        "recognized": true,
+        "rows": 2,
+        "count": 2,
+        "amount": "8.00",
+        "declared_amount": "12.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "排列三",
+                "play_type": "直",
+                "source": "437 直各2.00元 体",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "排列三",
+                "play_type": "组六",
+                "source": "437 组六各6.00元 体",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "体437 直组3倍   \/ 合计 12"
+    },
+    {
+        "block": 214,
+        "recognized": true,
+        "rows": 1,
+        "count": 1,
+        "amount": "10.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "组",
+                "source": "336 组 福",
+                "unique": false,
+                "odds": null
+            }
+        ],
+        "text": "福336组10米"
+    },
+    {
+        "block": 215,
+        "recognized": false,
+        "rows": 2,
+        "count": 4,
+        "amount": "40.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "排列三",
+                "play_type": "直",
+                "source": "134 143 314 413 直各10.00元 体",
+                "unique": true,
+                "odds": "900.0000"
+            }
+        ],
+        "text": "体341一直共2 \/ 体134 143 314 413 431一米直5 \/ 共7"
+    },
+    {
+        "block": 216,
+        "recognized": true,
+        "rows": 2,
+        "count": 16,
+        "amount": "56.00",
+        "declared_amount": "26.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "812 612 827 825 724 725 925 692 直各2.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "812 612 827 825 724 725 925 692 组六各5.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "福 \/ 812.612.827.825.724.725.925.692直组各一块16米 \/ 02479组六5米 \/ 04578组六5米 \/ 合计26米"
+    },
+    {
+        "block": 217,
+        "recognized": false,
+        "rows": 4,
+        "count": 8,
+        "amount": "10.00",
+        "declared_amount": "10.00",
+        "amount_ok": true,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "845 847 849 直各1.00元 福体",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "847 直各2.00元 福体",
+                "unique": true,
+                "odds": "900.0000"
+            }
+        ],
+        "text": "福体 \/ 845  847  849 \/ 直一米共计六米 \/ 福体 \/ 847直二米共计四米 \/ 合计10"
+    },
+    {
+        "block": 219,
+        "recognized": true,
+        "rows": 6,
+        "count": 12,
+        "amount": "248.00",
+        "declared_amount": "416.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "835 538 834 438 直各10.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "835 538 834 438 组六各2.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六五码",
+                "source": "13458 组六五码 福",
+                "unique": true,
+                "odds": "15.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组三五码",
+                "source": "13458 组三五码 福",
+                "unique": true,
+                "odds": "15.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六五码",
+                "source": "03458 组六五码 福",
+                "unique": true,
+                "odds": "15.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组三五码",
+                "source": "03458 组三五码 福",
+                "unique": true,
+                "odds": "15.0000"
+            }
+        ],
+        "text": "835 538  834 438 各22直5组 \/ 13458组六100组三20 \/ 03458组六50组三30 \/ 福合计416"
+    },
+    {
+        "block": 224,
+        "recognized": false,
+        "rows": 3,
+        "count": 32,
+        "amount": "48.00",
+        "declared_amount": "42.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "297 249 298 506 507 395 956 775 直各2.00元 福体",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "297 249 298 506 507 395 956 775 组六各1.00元 福体",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "145 358 599 198 398 558 548 158 549 595福体直0.5米🈴10 \/ 297 249 298 506 507 395 956 775福体直组1米🈴32 \/ 共计42"
+    },
+    {
+        "block": 227,
+        "recognized": false,
+        "rows": 2,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "90.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "02389-01237-12680 \/ 福组六各二十组三各一倍 \/ 合计90"
+    },
+    {
+        "block": 228,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "6.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "166 188 199福体直组0.5米🈴6"
+    },
+    {
+        "block": 229,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "体3578 \/ 组六组三组各五块钱 \/ 共10"
+    },
+    {
+        "block": 231,
+        "recognized": false,
+        "rows": 2,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "25.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福 \/ 12459组六10米 \/ 2459组六10米 \/ 349组选5米   合计25"
+    },
+    {
+        "block": 232,
+        "recognized": true,
+        "rows": 1,
+        "count": 1,
+        "amount": "2.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "组",
+                "source": "081 组 福",
+                "unique": false,
+                "odds": null
+            }
+        ],
+        "text": "福081组2米"
+    },
+    {
+        "block": 233,
+        "recognized": true,
+        "rows": 1,
+        "count": 2,
+        "amount": "200.00",
+        "declared_amount": "200.00",
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "双飞",
+                "source": "",
+                "unique": false,
+                "odds": null
+            }
+        ],
+        "text": "福双飞78.28各100元共计200米"
+    },
+    {
+        "block": 235,
+        "recognized": true,
+        "rows": 2,
+        "count": 2,
+        "amount": "4.00",
+        "declared_amount": "10.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "638 直各2.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "638 组六各2.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "638福四单一组共计10米"
+    },
+    {
+        "block": 237,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "20.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "14567—04679福组六一倍共计20米"
+    },
+    {
+        "block": 238,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "14.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福   \/ 257*590一组\/ \/ 组三7托012345689一倍 \/ 共计14米"
+    },
+    {
+        "block": 239,
+        "recognized": true,
+        "rows": 2,
+        "count": 6,
+        "amount": "12.00",
+        "declared_amount": "6.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "539 347 385 直各2.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "539 347 385 组六各2.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "539   347   385  福直组各1共计6米"
+    },
+    {
+        "block": 241,
+        "recognized": true,
+        "rows": 2,
+        "count": 2,
+        "amount": "6.00",
+        "declared_amount": "8.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "567 直各4.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "567 组六各2.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "福567，各两单两组共计8米"
+    },
+    {
+        "block": 242,
+        "recognized": true,
+        "rows": 5,
+        "count": 7,
+        "amount": "192.00",
+        "declared_amount": "136.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "572 527 直各4.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "572 527 组六各32.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六四码",
+                "source": "2457 组六四码 福",
+                "unique": true,
+                "odds": "37.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六五码",
+                "source": "24567 组六五码 福",
+                "unique": true,
+                "odds": "15.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六六码",
+                "source": "245678 组六六码 福",
+                "unique": true,
+                "odds": "7.5000"
+            }
+        ],
+        "text": "572 \/ 527 \/ 两直两组16 \/ 2457\/组六30 \/ 24567\/组六40 \/ 245678\/组六50 \/ 福共计136"
+    },
+    {
+        "block": 245,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "25.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "体 \/ 03689组六10米 \/ 0689组六10米 \/ 689组选5米 \/ 合计25"
+    },
+    {
+        "block": 246,
+        "recognized": false,
+        "rows": 4,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福一码定位各30元共90 \/ 百位8 \/ 十位8 \/ 个位9"
+    },
+    {
+        "block": 247,
+        "recognized": false,
+        "rows": 4,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "体一码定位各30元共180 \/ 百位16 \/ 十位19 \/ 个位69"
+    },
+    {
+        "block": 248,
+        "recognized": false,
+        "rows": 7,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "98.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "体定位各5毛合计49 \/ 百位16 \/ 十位0234578 \/ 个位0234578 \/ 体定位各5毛合计49 \/ 百位0234578 \/ 十位19 \/ 个位0234578 \/ 合计98"
+    },
+    {
+        "block": 253,
+        "recognized": true,
+        "rows": 2,
+        "count": 6,
+        "amount": "6.60",
+        "declared_amount": "1.60",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "146 216 832 直各0.20元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "146 216 832 组六各2.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "福146 216 832 802两毛单，两毛组，共计1.6"
+    },
+    {
+        "block": 254,
+        "recognized": true,
+        "rows": 2,
+        "count": 10,
+        "amount": "10.50",
+        "declared_amount": "1.50",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "823 123 127 137 237 直各2.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "823 123 127 137 237 组六各0.10元 福",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "福823 123 127 137 237 两毛组，一毛单，共计1.5"
+    },
+    {
+        "block": 256,
+        "recognized": false,
+        "rows": 3,
+        "count": 6,
+        "amount": "12.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "734 直各2.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "374 754 647 749 274 组六各2.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "直选734，一倍 \/ 组选374，754，647，749，274各一倍 \/ 福计12"
+    },
+    {
+        "block": 258,
+        "recognized": true,
+        "rows": 2,
+        "count": 16,
+        "amount": "16.80",
+        "declared_amount": "2.70",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "排列三",
+                "play_type": "直",
+                "source": "550 551 552 553 554 556 557 558 直各2.00元 体",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "排列三",
+                "play_type": "组六",
+                "source": "550 551 552 553 554 556 557 558 组六各0.10元 体",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "排三550 551 552 553 554 556 557 558 559两毛组一毛单，共计2.7"
+    },
+    {
+        "block": 260,
+        "recognized": false,
+        "rows": 2,
+        "count": 1,
+        "amount": "10.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "组三4码",
+                "source": "2378 组三4码 福",
+                "unique": true,
+                "odds": "300.0000"
+            }
+        ],
+        "text": "25678一12368一倍组六 \/ 2378组三一倍 \/ 福共30"
+    },
+    {
+        "block": 263,
+        "recognized": true,
+        "rows": 2,
+        "count": 2,
+        "amount": "4.00",
+        "declared_amount": "10.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "978 直各2.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "978 组六各2.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "978 福 4单1 组共计10米"
+    },
+    {
+        "block": 264,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "12378组六组三各10元 \/ 4. 23和值各10元福共40"
+    },
+    {
+        "block": 270,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "1.90",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福110 112 113 114 115 116 117 118 911 100 101 102 103 104 105 106 107 108 901一毛单，共计1.9"
+    },
+    {
+        "block": 271,
+        "recognized": false,
+        "rows": 3,
+        "count": 11,
+        "amount": "0.00",
+        "declared_amount": "12.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "168 458 568 068 467 468 478 045 047 组六各0.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组三",
+                "source": "688 001 组三各0.00元 福",
+                "unique": true,
+                "odds": "300.0000"
+            }
+        ],
+        "text": "168  458  568  068  467  688 468  478  045  047 福一元组合计 10 元 \/  074  470 福 1️⃣元直合计 2 元共计 12 元"
+    },
+    {
+        "block": 272,
+        "recognized": true,
+        "rows": 2,
+        "count": 38,
+        "amount": "76.00",
+        "declared_amount": "236.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "831 380 183 082 391 459 365 357 358 367 378 456 468 479 567 578 579 679 236 直各2.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "831 380 183 082 391 459 365 357 358 367 378 456 468 479 567 578 579 679 236 组六各2.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "福 \/ 34567组六50组三30 \/ 01238组六50组三20 \/ 831 380 183 082 391，459.365.457两单两组 \/ 357，358，367，378，456，468，479，567，578，579，679各一直一组（一元） \/ 合计236"
+    },
+    {
+        "block": 275,
+        "recognized": false,
+        "rows": 3,
+        "count": 11,
+        "amount": "242.00",
+        "declared_amount": "32.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "组三",
+                "source": "838 131 202 组三各22.00元 福",
+                "unique": true,
+                "odds": "300.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "360 689 670 620 918 973 719 614 组六各22.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "360\/838\/689\/670\/620\/131\/202\/918\/973\/719 \/614组22米 \/ 03567组六🈴10 \/ 福共计32米"
+    },
+    {
+        "block": 277,
+        "recognized": false,
+        "rows": 5,
+        "count": 15,
+        "amount": "36.00",
+        "declared_amount": "26.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六五码",
+                "source": "02367 组六五码 福",
+                "unique": true,
+                "odds": "15.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六五码",
+                "source": "34678 组六五码 福",
+                "unique": true,
+                "odds": "15.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组三",
+                "source": "733 002 003 004 005 006 007 008 009 001 组三各2.00元 福",
+                "unique": true,
+                "odds": "300.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "724 726 780 组六各2.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "02367，34678组六5， \/ 733，724，726，780，002，003，004，005，006，007，008，009，一组1， \/ 475一单一组26 \/ 福共计26米"
+    },
+    {
+        "block": 279,
+        "recognized": false,
+        "rows": 8,
+        "count": 8,
+        "amount": "90.00",
+        "declared_amount": "29.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "012 001 直各1.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "012 001 直各24.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "排列三",
+                "play_type": "直",
+                "source": "134 143 314 413 直各10.00元 体",
+                "unique": true,
+                "odds": "900.0000"
+            }
+        ],
+        "text": "体007两直一米组 \/ 福561两直一米组 \/ 福12注一米直12 \/ 百位357 \/ 十位69 \/ 个位35 \/ 体341一直2 \/ 体134 143 314 413 431一米直5 \/ 合计29"
+    },
+    {
+        "block": 284,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "14.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福：391  719 直组各 1 米  19 双飞 10 米🈴14 米"
+    },
+    {
+        "block": 287,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "10.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "03478排列三，组六一倍共计10米"
+    },
+    {
+        "block": 289,
+        "recognized": true,
+        "rows": 2,
+        "count": 44,
+        "amount": "55.00",
+        "declared_amount": "22.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "排列三",
+                "play_type": "直",
+                "source": "261 732 264 241 461 730 702 032 201 401 061 240 260 460 082 038 708 832 782 738 251 215 直各2.00元 体",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "排列三",
+                "play_type": "组六",
+                "source": "261 732 264 241 461 730 702 032 201 401 061 240 260 460 082 038 708 832 782 738 251 215 组六各0.50元 体",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "261.732.264.241.461.730. 702.032.201.401.061.240. 260.460.082.038.708.832. 782 .738 251.215 \/ 体 单组各5毛合计22"
+    },
+    {
+        "block": 290,
+        "recognized": true,
+        "rows": 1,
+        "count": 3,
+        "amount": "600.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [
+            {
+                "lottery": "排列三",
+                "play_type": "独胆",
+                "source": "",
+                "unique": false,
+                "odds": null
+            }
+        ],
+        "text": "体独胆2-3各200米，计400米"
+    },
+    {
+        "block": 293,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "20.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "02983，23475，45903，34978组六5体共计20米"
+    },
+    {
+        "block": 294,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "23\/24\/34各20米，体计60米"
+    },
+    {
+        "block": 301,
+        "recognized": true,
+        "rows": 2,
+        "count": 11,
+        "amount": "0.00",
+        "declared_amount": "10.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "排列三",
+                "play_type": "组六",
+                "source": "458 348 348 234 458 068 467 468 045 123 组六各0.00元 体",
+                "unique": true,
+                "odds": "150.0000"
+            },
+            {
+                "lottery": "排列三",
+                "play_type": "组三",
+                "source": "001 组三各0.00元 体",
+                "unique": true,
+                "odds": "300.0000"
+            }
+        ],
+        "text": "458  348  348  234 458  068  467  468   045  123 体 1️⃣元组合计 10 元"
+    },
+    {
+        "block": 314,
+        "recognized": true,
+        "rows": 2,
+        "count": 12,
+        "amount": "12.60",
+        "declared_amount": "2.10",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "排列三",
+                "play_type": "直",
+                "source": "550 551 552 556 557 558 直各2.00元 体",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "排列三",
+                "play_type": "组六",
+                "source": "550 551 552 556 557 558 组六各0.10元 体",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "排三550 551 552 556 557 558 559两毛组一毛单，共计2.1"
+    },
+    {
+        "block": 315,
+        "recognized": false,
+        "rows": 2,
+        "count": 9,
+        "amount": "5.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [
+            {
+                "lottery": "排列三",
+                "play_type": "",
+                "source": "",
+                "unique": false,
+                "odds": null
+            }
+        ],
+        "text": "体直组0.2米共8注合计3.2米 \/ 673  634  184  488 \/ 718  188  183  198 \/ 18体飞5米"
+    },
+    {
+        "block": 317,
+        "recognized": false,
+        "rows": 8,
+        "count": 1,
+        "amount": "0.20",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "056 直各0.20元 福",
+                "unique": true,
+                "odds": "900.0000"
+            }
+        ],
+        "text": "福32注 \/ 百位0367 \/ 十位3478 \/ 个位56 \/ 直各0.2元 \/ 体32注 \/ 百位1579 \/ 十位0257 \/ 个位56 \/ 直0.2米12.8"
+    },
+    {
+        "block": 318,
+        "recognized": false,
+        "rows": 4,
+        "count": 46,
+        "amount": "633.60",
+        "declared_amount": "32.50",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "875 475 976 476 275 直各12.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "005 015 025 035 045 055 105 116 126 136 146 156 165 166 205 216 275 276 305 316 385 386 405 416 495 496 505 516 615 616 725 726 835 836 945 946 036 000 002 直各14.40元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "排列三",
+                "play_type": "直",
+                "source": "806 556 直各6.00元 体",
+                "unique": true,
+                "odds": "900.0000"
+            }
+        ],
+        "text": "福875 475 976 476 275 276一米直6 \/ 福035 116 275 305 495 725 945直0.5米3.5 \/ 福005 015 025 035 045 055 105 116 126 136 146 156 165 166 205 216 275 276 305 316 385 386 405 416 495 496 505 516 615 616 725 726 835 836 945 946直36注0.2米直7.2 \/ 体806 556 65"
+    },
+    {
+        "block": 322,
+        "recognized": false,
+        "rows": 2,
+        "count": 2,
+        "amount": "2.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "439 直各1.00元 福体",
+                "unique": true,
+                "odds": "900.0000"
+            }
+        ],
+        "text": "福体 \/  439直一米共计二米"
+    },
+    {
+        "block": 328,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福5托7930624组六一倍10"
+    },
+    {
+        "block": 331,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福彩直组各1米 \/ 986 985 085 905 806 975 075 976 079 413 635 415 453 513 631 615 135 412 512 423 523 452 125 612 235 632 625 113 313 433 443 304 314 371 374 134 153 154 164 349 410 033 300 581 085 418 379 018 088 510 045 854 408 014 415 844 800 48"
+    },
+    {
+        "block": 332,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福彩直组各1米 \/ 986 985 085 905 806 975 075 976 079 413 635 415 453 513 631 615 135 412 512 423 523 452 125 612 235 632 625 113 313 433 443 304 314 371 374 134 153 154 164 349 410 033 300 581 085 418 379 018 088 510 045 854 408 014 415 844 800 48"
+    },
+    {
+        "block": 337,
+        "recognized": false,
+        "rows": 2,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福各5毛直组共30 \/ 160-650-640-654-653-687 691-693--678-675-067-694-683-630-680-684-641-647-643-673-689-658-695-670-690-697-639-677-644-378"
+    },
+    {
+        "block": 338,
+        "recognized": false,
+        "rows": 3,
+        "count": 11,
+        "amount": "100.00",
+        "declared_amount": "29.60",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "578 750 058 139 469 651 658 654 015 组六各10.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组三",
+                "source": "008 005 组三各5.00元 福",
+                "unique": true,
+                "odds": "300.0000"
+            }
+        ],
+        "text": "福体直组0.3米共8注合计9.6 \/ 578  750  058  139 469   \/ 651  658  654 \/ 04568福组六10米组三5米合计15米 \/ 福飞08  5米 \/ 合计29.6米"
+    },
+    {
+        "block": 339,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "150.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福 \/ 234679组六50组三20 \/ 46789组六50组三20 \/ 466 877 686 797 798 697 764  784 391各一组 \/ 合计150"
+    },
+    {
+        "block": 341,
+        "recognized": true,
+        "rows": 5,
+        "count": 8,
+        "amount": "24.00",
+        "declared_amount": "30.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六五码",
+                "source": "69431 组六五码 福",
+                "unique": true,
+                "odds": "15.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六五码",
+                "source": "03567 组六五码 福",
+                "unique": true,
+                "odds": "15.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组三五码",
+                "source": "98401 组三五码 福",
+                "unique": true,
+                "odds": "15.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六五码",
+                "source": "03567 组六五码 福",
+                "unique": true,
+                "odds": "15.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "701 945 654 940 组六各1.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "69431，03567组六5， \/ 98401组三5， \/ 03567组三组六5， \/ 701，945，654，940，494一组1米 \/ 福共计30米"
+    },
+    {
+        "block": 342,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "20.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "12458组六🈴10 \/ 28双飞🈴10 \/ 福共计20"
+    },
+    {
+        "block": 345,
+        "recognized": false,
+        "rows": 14,
+        "count": 19,
+        "amount": "2648.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "491 直各994.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "409 直各94.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "460 直各890.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "750 直各594.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "944 直各32.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "394 454 455 492 445 066 直各2.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "394 454 455 492 445 066 组六各2.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六五码",
+                "source": "01247 组六五码 福",
+                "unique": true,
+                "odds": "15.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组三五码",
+                "source": "01247 组三五码 福",
+                "unique": true,
+                "odds": "15.0000"
+            }
+        ],
+        "text": "福491，497 \/ 498，089- \/ 097-078，575 \/ 670，266- \/ 048-469. \/ 409，047 \/ 460，445 \/ 750，297 \/ 944，016 \/ 294.278.248 \/ 394，454，455 \/ 492，445.066 \/ 福一直一组 \/ 01247一倍组六一倍组三"
+    },
+    {
+        "block": 347,
+        "recognized": true,
+        "rows": 1,
+        "count": 3,
+        "amount": "300.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "独胆",
+                "source": "",
+                "unique": false,
+                "odds": null
+            }
+        ],
+        "text": "胆2，4，9，各100"
+    },
+    {
+        "block": 349,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "3.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "541，543，542福一组1共计3米"
+    },
+    {
+        "block": 352,
+        "recognized": false,
+        "rows": 3,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "12346789 \/ 01345689 \/ 02345678 \/ 体定位 512×0.2=102.4"
+    },
+    {
+        "block": 353,
+        "recognized": false,
+        "rows": 4,
+        "count": 2,
+        "amount": "6.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六五码",
+                "source": "12478 组六五码 福",
+                "unique": true,
+                "odds": "15.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组三五码",
+                "source": "12478 组三五码 福",
+                "unique": true,
+                "odds": "15.0000"
+            }
+        ],
+        "text": "12478组六组三各三十 \/ 48飞五十 \/ 89.38各飞二十"
+    },
+    {
+        "block": 355,
+        "recognized": false,
+        "rows": 2,
+        "count": 2,
+        "amount": "3432.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "排列三",
+                "play_type": "直",
+                "source": "333 444 直各1716.00元 体",
+                "unique": true,
+                "odds": "900.0000"
+            }
+        ],
+        "text": "体，333 444 858， \/ 各一倍，共6"
+    },
+    {
+        "block": 359,
+        "recognized": true,
+        "rows": 1,
+        "count": 3,
+        "amount": "150.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [
+            {
+                "lottery": "排列三",
+                "play_type": "独胆",
+                "source": "",
+                "unique": false,
+                "odds": null
+            }
+        ],
+        "text": "体独胆1-9各50米，计100米"
+    },
+    {
+        "block": 360,
+        "recognized": false,
+        "rows": 10,
+        "count": 9,
+        "amount": "142.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "013 直各16.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "135 直各16.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "014 直各16.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "256 直各16.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "156 直各16.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "134 直各16.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "135 直各14.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "012 直各16.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "145 直各16.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            }
+        ],
+        "text": "0138 \/ 1358 \/ 0148 \/ 2568 \/ 1568 \/ 1348 \/ 1357 \/ 0128 \/ 1458 \/ 1468 \/ 组六组三各10米，体计200米"
+    },
+    {
+        "block": 361,
+        "recognized": true,
+        "rows": 1,
+        "count": 3,
+        "amount": "300.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [
+            {
+                "lottery": "排列三",
+                "play_type": "独胆",
+                "source": "",
+                "unique": false,
+                "odds": null
+            }
+        ],
+        "text": "体独胆1-9各100米，计200米"
+    },
+    {
+        "block": 362,
+        "recognized": true,
+        "rows": 1,
+        "count": 5,
+        "amount": "50.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [
+            {
+                "lottery": "排列三",
+                "play_type": "双飞",
+                "source": "",
+                "unique": false,
+                "odds": null
+            }
+        ],
+        "text": "13\/17\/93\/97双飞各10米，体计40米"
+    },
+    {
+        "block": 369,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "体彩2349组三组六各10共20"
+    },
+    {
+        "block": 370,
+        "recognized": false,
+        "rows": 2,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "15.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "体直组六10米组三5米023479合计15米 \/ 体直组0.3米共5注合计3米 \/ 432   207   430  094  092 \/ 体组六10米组三5米024583合计15米"
+    },
+    {
+        "block": 374,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "024,045,049,123,124,127,157,179,234,238,245,246,248,249,278,457,479,578,789组1元计19元体"
+    },
+    {
+        "block": 376,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "234,235,238,239,245,248,249组2倍计28元体"
+    },
+    {
+        "block": 377,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "013,014,016,017,019,069,134,136,137,139,146,147,149,167,169,179,369,469,679组1倍计38元福"
+    },
+    {
+        "block": 382,
+        "recognized": false,
+        "rows": 2,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "130.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福7 \/ 全托组六100米组三30米 \/ 合计130"
+    },
+    {
+        "block": 383,
+        "recognized": true,
+        "rows": 1,
+        "count": 1,
+        "amount": "200.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "独胆",
+                "source": "",
+                "unique": false,
+                "odds": null
+            }
+        ],
+        "text": "福独胆9-200米"
+    },
+    {
+        "block": 384,
+        "recognized": false,
+        "rows": 3,
+        "count": 4,
+        "amount": "8.00",
+        "declared_amount": "40.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "732 712 直各2.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "732 712 组六各2.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "12+10福彩和值各一倍。 \/ 732+712福彩各两单三组。 \/ 合计40"
+    },
+    {
+        "block": 387,
+        "recognized": true,
+        "rows": 5,
+        "count": 5,
+        "amount": "9.00",
+        "declared_amount": "20.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "594 直各2.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "594 组六各2.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "449 直各1.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "449 组六各1.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六四码",
+                "source": "4589 组六四码 福",
+                "unique": true,
+                "odds": "37.0000"
+            }
+        ],
+        "text": "福594一直一组 \/ 449直组各一元 \/ 4589组六三各5元 \/ 合计20"
+    },
+    {
+        "block": 388,
+        "recognized": true,
+        "rows": 1,
+        "count": 1,
+        "amount": "20.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "组",
+                "source": "027 组 福",
+                "unique": false,
+                "odds": null
+            }
+        ],
+        "text": "福彩 \/ 027组20米"
+    },
+    {
+        "block": 389,
+        "recognized": true,
+        "rows": 1,
+        "count": 3,
+        "amount": "150.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "独胆",
+                "source": "",
+                "unique": false,
+                "odds": null
+            }
+        ],
+        "text": "福独胆1-9各50米，计100米"
+    },
+    {
+        "block": 391,
+        "recognized": false,
+        "rows": 5,
+        "count": 32,
+        "amount": "60.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "584 610 784 564 567 580 581 582 583 584 585 586 587 588 589 直各1.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "584 610 784 564 567 580 581 582 583 584 585 586 587 588 589 组六各1.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六六码",
+                "source": "345678 组六六码 福",
+                "unique": true,
+                "odds": "7.5000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组三六码",
+                "source": "345678 组三六码 福",
+                "unique": true,
+                "odds": "10.0000"
+            }
+        ],
+        "text": "福584-610-784-564-567 580-581-582-583-584-585-586- 587-588-589直组各1元计30元 \/ 345678组六20元组三10元合计30元 \/ 🈴计60元"
+    },
+    {
+        "block": 393,
+        "recognized": true,
+        "rows": 1,
+        "count": 3,
+        "amount": "150.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "独胆",
+                "source": "",
+                "unique": false,
+                "odds": null
+            }
+        ],
+        "text": "福独胆1-9各50米，计100米"
+    },
+    {
+        "block": 395,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "146.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福彩单组各1米 \/ 216  214  246  416  261  264  241  461  146  142  126  246 \/ 580 314  267 268 037  203 \/ 208 238 033  300 107 470 \/ 721  147 117  627  621 617 927  527  697  592  521 622 \/ 132  134  142  432  172  137 \/ 147  732  472  437  612  6"
+    },
+    {
+        "block": 396,
+        "recognized": true,
+        "rows": 2,
+        "count": 122,
+        "amount": "366.00",
+        "declared_amount": "610.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "481 148 416 146 479 847 896 481 486 248 348 489 487 048 483 491 149 804 460 048 843 767 469 649 679 567 576 537 375 723 207 037 367 127 927 327 178 027 731 978 478 827 678 078 237 378 578 857 277 077 779 397 937 679 278 287 728 578 857 767 610 直各4.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "481 148 416 146 479 847 896 481 486 248 348 489 487 048 483 491 149 804 460 048 843 767 469 649 679 567 576 537 375 723 207 037 367 127 927 327 178 027 731 978 478 827 678 078 237 378 578 857 277 077 779 397 937 679 278 287 728 578 857 767 610 组六各2.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "福481.148.416.146.479.847.896.481.486.248.348.489.487.048.483.491.149.804.460.048.843.767.469.649.679.567.576.537.375.723.207.037.367.127.927.327.178.027.17.731.978.478.827.678.078.237.378.578.857.277.077.779.397.937.679.278.287.728.578.857."
+    },
+    {
+        "block": 397,
+        "recognized": true,
+        "rows": 2,
+        "count": 22,
+        "amount": "44.00",
+        "declared_amount": "220.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "769 169 109 107 006 007 406 004 768 765 220 直各2.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "769 169 109 107 006 007 406 004 768 765 220 组六各2.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "769  169  109  107  006 \/ 007  406  004  768  765 \/ 福十单一组共计220米"
+    },
+    {
+        "block": 401,
+        "recognized": false,
+        "rows": 4,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "40.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福毒5 \/ 福毒0 \/ 福毒8 \/ 福毒1各10米 \/ 合计40米"
+    },
+    {
+        "block": 402,
+        "recognized": true,
+        "rows": 2,
+        "count": 2,
+        "amount": "4.00",
+        "declared_amount": "10.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "789 直各2.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "789 组六各2.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "789福四单一组共计10米"
+    },
+    {
+        "block": 403,
+        "recognized": true,
+        "rows": 2,
+        "count": 2,
+        "amount": "12.00",
+        "declared_amount": "6.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "805 直各6.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "805 组六各6.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "福805三直三组各1米共计6米"
+    },
+    {
+        "block": 405,
+        "recognized": false,
+        "rows": 5,
+        "count": 10,
+        "amount": "20.00",
+        "declared_amount": "20.00",
+        "amount_ok": true,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "164 943 165 134 直各2.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "164 943 165 134 组六各2.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            },
+            {
+                "lottery": "排列三",
+                "play_type": "直",
+                "source": "407 直各2.00元 体",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "排列三",
+                "play_type": "组六",
+                "source": "407 组六各2.00元 体",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "3D \/ 164   943  165   134 \/ 直组一倍16米 \/ 体彩：407 \/ 直组一倍4米 \/ 共计20米"
+    },
+    {
+        "block": 408,
+        "recognized": true,
+        "rows": 2,
+        "count": 8,
+        "amount": "10.00",
+        "declared_amount": "4.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "排列三",
+                "play_type": "直",
+                "source": "550 413 854 547 直各2.00元 体",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "排列三",
+                "play_type": "组六",
+                "source": "550 413 854 547 组六各0.50元 体",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "体550 413 854 547直组各0.5米，合计4米"
+    },
+    {
+        "block": 409,
+        "recognized": false,
+        "rows": 2,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "20.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "体组六 04569  02378 \/ 各一倍合计20"
+    },
+    {
+        "block": 411,
+        "recognized": false,
+        "rows": 2,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福组六23789.46789.12789 \/ 各打十元共30"
+    },
+    {
+        "block": 413,
+        "recognized": true,
+        "rows": 4,
+        "count": 5,
+        "amount": "16.00",
+        "declared_amount": "6.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "排列三",
+                "play_type": "组六",
+                "source": "345 组六各2.00元 体",
+                "unique": true,
+                "odds": "150.0000"
+            },
+            {
+                "lottery": "排列三",
+                "play_type": "组三",
+                "source": "001 组三各2.00元 体",
+                "unique": true,
+                "odds": "300.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "245 156 组六各4.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组三",
+                "source": "001 组三各4.00元 福",
+                "unique": true,
+                "odds": "300.0000"
+            }
+        ],
+        "text": "体晚345组1倍2元 \/ 福晚245-156组1倍4元 \/ 共计6元"
+    },
+    {
+        "block": 415,
+        "recognized": false,
+        "rows": 2,
+        "count": 1,
+        "amount": "20.00",
+        "declared_amount": "168.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六六码",
+                "source": "012469 组六六码 福",
+                "unique": true,
+                "odds": "7.5000"
+            }
+        ],
+        "text": "0126\/2469福组六各10米，计20米 \/ 012469福组六20米 \/ 合计168米"
+    },
+    {
+        "block": 416,
+        "recognized": true,
+        "rows": 1,
+        "count": 3,
+        "amount": "300.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "独胆",
+                "source": "",
+                "unique": false,
+                "odds": null
+            }
+        ],
+        "text": "福独胆1-9各100米，计200米"
+    },
+    {
+        "block": 417,
+        "recognized": true,
+        "rows": 1,
+        "count": 3,
+        "amount": "60.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "双飞",
+                "source": "",
+                "unique": false,
+                "odds": null
+            }
+        ],
+        "text": "15\/95双飞各20米，福计40米"
+    },
+    {
+        "block": 419,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "10.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福组六01468各一倍合计10"
+    },
+    {
+        "block": 420,
+        "recognized": false,
+        "rows": 7,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "98.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福定位各5毛共49 \/ 百位12 \/ 十位0456789 \/ 个位0456789 \/ 福定位各5毛共49 \/ 百位0456789 \/ 十位13 \/ 个位0456789 \/ 合计98"
+    },
+    {
+        "block": 421,
+        "recognized": false,
+        "rows": 4,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "体一码定位各60元共360 \/ 百位26 \/ 十位28 \/ 个位68"
+    },
+    {
+        "block": 422,
+        "recognized": false,
+        "rows": 7,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "196.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "体定位各1元共98 \/ 百位26 \/ 十位0134579 \/ 个位0134579 \/ 体定位各1元共98 \/ 百位0134579 \/ 十位28 \/ 个位0134579 \/ 合计196"
+    },
+    {
+        "block": 424,
+        "recognized": true,
+        "rows": 4,
+        "count": 8,
+        "amount": "24.00",
+        "declared_amount": "56.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "638 315 直各4.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "638 315 组六各2.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            },
+            {
+                "lottery": "排列三",
+                "play_type": "直",
+                "source": "624 524 直各4.00元 体",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "排列三",
+                "play_type": "组六",
+                "source": "624 524 组六各2.00元 体",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "638.315福各打5直2组 \/ 624.524体各打5直2组 \/ 合计56"
+    },
+    {
+        "block": 425,
+        "recognized": false,
+        "rows": 5,
+        "count": 6,
+        "amount": "14.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "排列三",
+                "play_type": "直",
+                "source": "653 直各4.00元 体",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "排列三",
+                "play_type": "组六",
+                "source": "653 组六各2.00元 体",
+                "unique": true,
+                "odds": "150.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "654 695 直各2.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "654 695 组六各2.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "体彩 \/ 653直两倍组一倍 \/ 654 695直一倍组一倍 \/ 共6+8=14"
+    },
+    {
+        "block": 426,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "20.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福25670组六组三一倍共计20米"
+    },
+    {
+        "block": 427,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "20.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福25670组六组三一倍共计20米"
+    },
+    {
+        "block": 431,
+        "recognized": false,
+        "rows": 6,
+        "count": 6,
+        "amount": "70.00",
+        "declared_amount": "60.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "排列三",
+                "play_type": "直",
+                "source": "027 直各2.00元 体",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "排列三",
+                "play_type": "组六",
+                "source": "027 组六各16.00元 体",
+                "unique": true,
+                "odds": "150.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "012 124 直各2.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "012 124 组六各24.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "福012458组六组三各一倍20 \/ 体023578组六组三各一倍20 \/ 体:027-578一直一组8 \/ 福:012-124-548一直一组12 \/ 合计60"
+    },
+    {
+        "block": 433,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福 \/ 016 017 025 027 035 036 037 045 047 056 057 067 125 126 127 128 136 138 145 146 147 148 156 158 167 168 178 235 236 237 238 239 249 259 269 279 289 346 347 348 349 356 358 367 368 369 378 389 459 469 479 489 \/ 共52注各组选2元104元 \/ 007 055 07"
+    },
+    {
+        "block": 436,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福13469组六一倍共10"
+    },
+    {
+        "block": 437,
+        "recognized": false,
+        "rows": 2,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "20.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "体组六 34589 03579  \/ 各一倍合计20"
+    },
+    {
+        "block": 439,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福 \/ 124   034   048     \/ 各组选2元 \/ 0跨10元 \/ 共16元"
+    },
+    {
+        "block": 442,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "358一组体共2"
+    },
+    {
+        "block": 443,
+        "recognized": false,
+        "rows": 8,
+        "count": 1,
+        "amount": "0.20",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "056 直各0.20元 福",
+                "unique": true,
+                "odds": "900.0000"
+            }
+        ],
+        "text": "福32注 \/ 百位0367 \/ 十位3478 \/ 个位56 \/ 直各0.2元 \/ 体32注 \/ 百位1579 \/ 十位0257 \/ 个位56 \/ 直0.2米12.8"
+    },
+    {
+        "block": 444,
+        "recognized": false,
+        "rows": 4,
+        "count": 46,
+        "amount": "633.60",
+        "declared_amount": "32.50",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "875 475 976 476 275 直各12.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "005 015 025 035 045 055 105 116 126 136 146 156 165 166 205 216 275 276 305 316 385 386 405 416 495 496 505 516 615 616 725 726 835 836 945 946 036 000 002 直各14.40元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "排列三",
+                "play_type": "直",
+                "source": "806 556 直各6.00元 体",
+                "unique": true,
+                "odds": "900.0000"
+            }
+        ],
+        "text": "福875 475 976 476 275 276一米直6 \/ 福035 116 275 305 495 725 945直0.5米3.5 \/ 福005 015 025 035 045 055 105 116 126 136 146 156 165 166 205 216 275 276 305 316 385 386 405 416 495 496 505 516 615 616 725 726 835 836 945 946直36注0.2米直7.2 \/ 体806 556 65"
+    },
+    {
+        "block": 448,
+        "recognized": false,
+        "rows": 3,
+        "count": 12,
+        "amount": "24.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "323 339 711 752 972 319 直各2.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "323 339 711 752 972 319 组六各2.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "福12349  23459 \/ 组六四倍组三一倍共100 \/ 323  339  711  752  972  319直组一倍共24 \/ 共124"
+    },
+    {
+        "block": 449,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "2.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福 \/ 256一元直一元组 \/ 合计2"
+    },
+    {
+        "block": 450,
+        "recognized": true,
+        "rows": 1,
+        "count": 3,
+        "amount": "150.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "独胆",
+                "source": "",
+                "unique": false,
+                "odds": null
+            }
+        ],
+        "text": "福独胆3-9各50米，计100米"
+    },
+    {
+        "block": 451,
+        "recognized": true,
+        "rows": 2,
+        "count": 2,
+        "amount": "4.00",
+        "declared_amount": "10.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "497 直各2.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "497 组六各2.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "497福四单一组共计10米"
+    },
+    {
+        "block": 452,
+        "recognized": false,
+        "rows": 2,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "20.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福毒6                  10米 \/ 福毒9                   10米 \/ 共计20米"
+    },
+    {
+        "block": 456,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福组六 \/ 1267 \/ 0689 \/ 1789 \/ 各一倍共30米 \/ 福组六 \/ 123456 \/ 135679 \/ 各二倍共40米 \/ 共计:70米"
+    },
+    {
+        "block": 459,
+        "recognized": true,
+        "rows": 0,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "348.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "合计348米"
+    },
+    {
+        "block": 464,
+        "recognized": false,
+        "rows": 3,
+        "count": 10,
+        "amount": "20.00",
+        "declared_amount": "20.00",
+        "amount_ok": true,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "组三",
+                "source": "414 494 454 组三各2.00元 福",
+                "unique": true,
+                "odds": "300.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "496 491 456 423 413 492 493 组六各2.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "福 \/ 414  494  454  496  491 \/ 456  423  413  492  493 \/ 组一倍共计20米"
+    },
+    {
+        "block": 465,
+        "recognized": false,
+        "rows": 2,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "20.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "341·351.391.514.194.591.394.359.310.301.051.019.351.318.319.159.145.641.941.615.915.961.309.509.907.539.397.379.597.783 517 945 904 186 \/ 248 574 718 942 983 871 \/ 体直各5毛合计20"
+    },
+    {
+        "block": 468,
+        "recognized": true,
+        "rows": 1,
+        "count": 3,
+        "amount": "300.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "独胆",
+                "source": "",
+                "unique": false,
+                "odds": null
+            }
+        ],
+        "text": "福独胆3-9各100米，计200米"
+    },
+    {
+        "block": 472,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "34.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福   \/ 和值15   一倍\/ \/ 7 4 组六一倍\/ \/ 774*744*337*377*267*034*078一组 \/ 共计34米"
+    },
+    {
+        "block": 474,
+        "recognized": true,
+        "rows": 2,
+        "count": 6,
+        "amount": "12.00",
+        "declared_amount": "6.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "排列三",
+                "play_type": "直",
+                "source": "269 188 444 直各2.00元 体",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "排列三",
+                "play_type": "组六",
+                "source": "269 188 444 组六各2.00元 体",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "体     \/ 269*188一组\/ \/ 444直一倍\/ \/ 共计6米"
+    },
+    {
+        "block": 477,
+        "recognized": false,
+        "rows": 5,
+        "count": 8,
+        "amount": "16.00",
+        "declared_amount": "16.00",
+        "amount_ok": true,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "712 749 648 直各2.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "712 749 648 组六各2.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            },
+            {
+                "lottery": "排列三",
+                "play_type": "直",
+                "source": "984 直各2.00元 体",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "排列三",
+                "play_type": "组六",
+                "source": "984 组六各2.00元 体",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "3D \/ 712   749   648 \/ 直组一倍12米 \/ 体彩：984 \/ 直组一倍4米 \/ 共计16米"
+    },
+    {
+        "block": 478,
+        "recognized": true,
+        "rows": 2,
+        "count": 2,
+        "amount": "3.00",
+        "declared_amount": "2.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "916 直各2.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "916 组六各1.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "福916直组各一米共计2米"
+    },
+    {
+        "block": 479,
+        "recognized": true,
+        "rows": 2,
+        "count": 2,
+        "amount": "4.00",
+        "declared_amount": "12.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "168 直各2.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "168 组六各2.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "福168，141两单一组共计12米"
+    },
+    {
+        "block": 481,
+        "recognized": true,
+        "rows": 2,
+        "count": 6,
+        "amount": "9.00",
+        "declared_amount": "6.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "539 347 385 直各2.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "539 347 385 组六各1.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "539   347   385  福直组各1米共计6米"
+    },
+    {
+        "block": 482,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "40.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "47组六全托一倍共计16米 \/ 合计40米"
+    },
+    {
+        "block": 483,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "10.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "02456福组六一倍共计10米"
+    },
+    {
+        "block": 484,
+        "recognized": true,
+        "rows": 2,
+        "count": 2,
+        "amount": "12.00",
+        "declared_amount": "20.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "193 直各2.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "193 组六各10.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "福直组193各五倍共计20米"
+    },
+    {
+        "block": 486,
+        "recognized": false,
+        "rows": 4,
+        "count": 3,
+        "amount": "20.00",
+        "declared_amount": "30.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "945 直各6.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "945 组六各4.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六四码",
+                "source": "4569 组六四码 福",
+                "unique": true,
+                "odds": "37.0000"
+            }
+        ],
+        "text": "福945直3倍组2倍。 \/ 4569组6 10块。 \/ 14569组6 10块。共计30块"
+    },
+    {
+        "block": 489,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "福晚五码03678组六20元"
+    },
+    {
+        "block": 493,
+        "recognized": true,
+        "rows": 1,
+        "count": 1,
+        "amount": "30.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "口XX",
+                "source": "",
+                "unique": false,
+                "odds": null
+            }
+        ],
+        "text": "福定位百位1点，30米"
+    },
+    {
+        "block": 494,
+        "recognized": true,
+        "rows": 2,
+        "count": 80,
+        "amount": "80.00",
+        "declared_amount": "134.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "247 146 258 168 148 124 267 147 467 127 158 258 458 758 257 249 256 457 145 027 029 347 269 414 454 474 494 146 164 461 416 641 614 256 265 562 526 652 625 134 直各1.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "247 146 258 168 148 124 267 147 467 127 158 258 458 758 257 249 256 457 145 027 029 347 269 414 454 474 494 146 164 461 416 641 614 256 265 562 526 652 625 134 组六各1.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "福 \/ 1245679   组六20组三10 \/ 12456       组六20组三10 \/ 60元 \/ 247  146  258  168  148  124 \/ 267  147  467  127   158  258   \/ 458 758  257  249  256  457 \/ 145  027  029  347  269 \/ 组选2元   46元  \/ 414  454  474  494 \/ 组选一元   4元 \/ 146  164  461  416"
+    },
+    {
+        "block": 497,
+        "recognized": false,
+        "rows": 2,
+        "count": 4,
+        "amount": "5352.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "114 225 389 588 直各1338.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            }
+        ],
+        "text": "福组一倍5注 \/ 114 225 389 588 669 \/ 共10"
+    },
+    {
+        "block": 498,
+        "recognized": false,
+        "rows": 7,
+        "count": 23,
+        "amount": "4750.00",
+        "declared_amount": "50.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "排列三",
+                "play_type": "组三",
+                "source": "020 115 449 组三各2.00元 体",
+                "unique": true,
+                "odds": "300.0000"
+            },
+            {
+                "lottery": "排列三",
+                "play_type": "组六",
+                "source": "492 436 354 024 046 408 047 746 459 149 组六各2.00元 体",
+                "unique": true,
+                "odds": "150.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "449 直各2.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "115 直各2.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "126 401 103 713 直各318.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "158 175 716 201 直各862.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            }
+        ],
+        "text": "福组一倍 \/ 492 436 354 024 046 \/             408 047 746 459 149 \/ 020 \/ 115 \/ 449 \/ 体组一倍 \/ 449 \/ 115 \/ 126 401 103 713 159 \/             158 175 716 201 431 \/ 合计50"
+    },
+    {
+        "block": 500,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "6.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "045 146 247 348 449 459 469 479 489 499福彩各4角组.豹子全包各2角.共计6"
+    },
+    {
+        "block": 506,
+        "recognized": false,
+        "rows": 4,
+        "count": 25,
+        "amount": "40.00",
+        "declared_amount": "42.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六四码",
+                "source": "0179 组六四码 福",
+                "unique": true,
+                "odds": "37.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "701 710 791 719 709 790 713 750 760 150 751 351 直各2.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "701 710 791 719 709 790 713 750 760 150 751 351 组六各0.50元 福",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "福，01579，01379，组三组六各5米，合计20米 \/ 0179组六10米， \/ 701 710 791 719 709 790 713 750 760 150 751 351 ，单组5毛，合计12米，总合计42米"
+    },
+    {
+        "block": 508,
+        "recognized": true,
+        "rows": 3,
+        "count": 31,
+        "amount": "389.00",
+        "declared_amount": "36.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "排列三",
+                "play_type": "直",
+                "source": "359 350 309 直各118.00元 体",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "301 051 019 351 319 159 353 339 355 399 559 959 657 431 直各2.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "301 051 019 351 319 159 353 339 355 399 559 959 657 431 组六各0.50元 福",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "体359\/350\/ 309 \/059\/ \/ 301 \/051 \/019 \/351 \/319\/ 159\/353 \/339 \/355 \/399\/559\/ 959\/657\/431直组各5毛 \/ 合计36"
+    },
+    {
+        "block": 509,
+        "recognized": false,
+        "rows": 5,
+        "count": 86,
+        "amount": "88.60",
+        "declared_amount": "14.80",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "347 128 156 930 910 365 147 398 397 235 组六各0.50元 福",
+                "unique": true,
+                "odds": "150.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "944 644 544 144 914 924 934 954 964 499 949 994 494 449 156 365 392 214 215 216 218 578 158 510 252 255 233 939 292 644 119 911 337 678 827 637 448 844 直各2.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "944 644 544 144 914 924 934 954 964 499 949 994 494 449 156 365 392 214 215 216 218 578 158 510 252 255 233 939 292 644 119 911 337 678 827 637 448 844 组六各0.20元 福",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "福， \/ 347 128 156 930 910 365 147 398 397 235，组5毛，合计5米 \/ 体， \/ 944 644 544 144 914 924 934 954 964 499 949 994 494 449 156 365 392 214 215 216 218 578 158 510 252 255 233 939 292 644 119 911 337 678 827 637 448 844 ，单组2毛，合计14.8米"
+    },
+    {
+        "block": 510,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "107 直 6 米转圈一倍 12+6=18 福"
+    },
+    {
+        "block": 511,
+        "recognized": true,
+        "rows": 2,
+        "count": 6,
+        "amount": "12.00",
+        "declared_amount": "6.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "107 108 904 直各2.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "107 108 904 组六各2.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "福107 108 904组直1合计6"
+    },
+    {
+        "block": 512,
+        "recognized": false,
+        "rows": 6,
+        "count": 6,
+        "amount": "9.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "974 479 直各2.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "974 479 组六各1.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "107 直各2.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "107 组六各1.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "794..974 \/ 974..479 \/ 直1倍 \/ 组一米 \/ 107直组1米 \/ 8+9+2=19米福"
+    },
+    {
+        "block": 514,
+        "recognized": true,
+        "rows": 2,
+        "count": 4,
+        "amount": "8.00",
+        "declared_amount": "16.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "870 555 直各2.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "870 555 组六各2.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "福  \/ 34569组六一倍\/ \/ 870*555一单 \/ 807一组 \/ 共计16米"
+    },
+    {
+        "block": 518,
+        "recognized": true,
+        "rows": 4,
+        "count": 6,
+        "amount": "142.00",
+        "declared_amount": "86.00",
+        "amount_ok": false,
+        "odds_all_unique": true,
+        "odds": [
+            {
+                "lottery": "福彩3D",
+                "play_type": "组三四码",
+                "source": "3678 组三四码 福",
+                "unique": true,
+                "odds": "25.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组三五码",
+                "source": "34678 组三五码 福",
+                "unique": true,
+                "odds": "15.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "直",
+                "source": "886 788 直各4.00元 福",
+                "unique": true,
+                "odds": "900.0000"
+            },
+            {
+                "lottery": "福彩3D",
+                "play_type": "组六",
+                "source": "886 788 组六各32.00元 福",
+                "unique": true,
+                "odds": "150.0000"
+            }
+        ],
+        "text": "3678\/福组三30米 \/ 34678福组三40米 \/ 886\/788福两直两组16 \/ 合计86米"
+    },
+    {
+        "block": 519,
+        "recognized": false,
+        "rows": 3,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": null,
+        "amount_ok": true,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "186-501-901-860-618-605-851-061-165-915-680-056-596- \/ 福三元单一元组共13*4=52 \/ 015689 \/ 福组六组三各十快 \/ 合计52+20=72"
+    },
+    {
+        "block": 520,
+        "recognized": false,
+        "rows": 1,
+        "count": 0,
+        "amount": "0.00",
+        "declared_amount": "12.00",
+        "amount_ok": false,
+        "odds_all_unique": false,
+        "odds": [],
+        "text": "965 956 775 福体直组1米🈴12"
+    }
+]

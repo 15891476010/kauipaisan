@@ -63,6 +63,7 @@ final class AgentReport
 
     private function rows(array $session,string $from,string $to,array $lotteries): array
     {
+        [$darkWaterRate,$brightWaterRate]=$this->waterRates((int)$session['site_id']);
         $query=Db::name('bet_details')->alias('d')
             ->join('bet_records r','r.id=d.bet_record_id')
             ->join('site_users u','u.id=d.user_id')
@@ -77,12 +78,16 @@ final class AgentReport
         $interceptions=Db::name('agent_interceptions')->whereIn('bet_detail_id',$detailIds)->whereNull('released_at')->field('bet_detail_id,SUM(intercepted_amount) AS intercepted_amount,SUM(bet_amount) AS intercepted_base')->group('bet_detail_id')->select()->toArray();
         $map=[]; foreach($interceptions as $row) $map[(int)$row['bet_detail_id']]=$row;
         foreach($rows as &$row) {
-            $amount=(float)$row['amount']; $win=(float)$row['win_amount']; $rebate=(float)$row['rebate']; $actualOdds=max(0,(float)($row['odds']??0)); $dropOdds=max(0,(float)($row['drop_odds']??0));
-            $offline=$win>0&&$actualOdds>0?$win*$dropOdds/$actualOdds:0;
-            $intercepted=(float)($map[(int)$row['id']]['intercepted_amount']??0); $ratio=$amount>0?min(1,$intercepted/$amount):0;
-            $memberProfit=$win+$rebate-$amount; $houseProfit=-$memberProfit; $shareProfit=$houseProfit*$ratio; $agentProfit=$shareProfit;
+            $amount=(float)$row['amount']; $win=(float)$row['win_amount']; $rebate=(float)$row['rebate'];
+            $intercepted=(float)($map[(int)$row['id']]['intercepted_amount']??0);
+            // Occupation is based on the member's own P/L and configured
+            // occupation percentage. It is independent of how much capacity
+            // was actually intercepted. Dark water is based on the full bet;
+            // bright water is based on the occupation amount.
+            $memberProfit=$win+$rebate-$amount; $shareRate=max(0,min(100,(float)($row['share_rate']??0))); $occupationAmount=$memberProfit*$shareRate/100;
+            $darkWater=$amount*$darkWaterRate; $brightWater=$occupationAmount*$brightWaterRate; $houseProfit=-$memberProfit; $shareProfit=$occupationAmount; $agentProfit=$occupationAmount+$darkWater+$brightWater;
             $numbers=preg_split('/[\s,，]+/u',trim((string)$row['number_text']),-1,PREG_SPLIT_NO_EMPTY)?:[];
-            $row['metrics']=['bet_count'=>max(1,count($numbers)),'amount'=>$amount,'win_amount'=>$win,'water'=>$rebate,'member_profit'=>$memberProfit,'share_amount'=>$intercepted,'share_profit'=>$shareProfit,'offline_water'=>$offline*$ratio,'agent_water'=>$offline*$ratio,'agent_profit'=>$agentProfit,'platform_amount'=>max(0,$amount-$intercepted),'platform_profit'=>$houseProfit-$shareProfit];
+            $row['metrics']=['bet_count'=>max(1,count($numbers)),'amount'=>$amount,'win_amount'=>$win,'water'=>$rebate,'member_profit'=>$memberProfit,'share_amount'=>$occupationAmount,'share_profit'=>$shareProfit,'offline_water'=>$darkWater,'agent_water'=>$brightWater,'agent_profit'=>$agentProfit,'platform_amount'=>max(0,$amount-$intercepted),'platform_profit'=>$houseProfit-$occupationAmount-$darkWater-$brightWater];
         }
         unset($row); return $rows;
     }
@@ -139,5 +144,12 @@ final class AgentReport
     private function number(float $value): string
     {
         return rtrim(rtrim(number_format(abs($value)<0.005?0:$value,2,'.',''),'0'),'.')?:'0';
+    }
+
+    private function waterRates(int $siteId): array
+    {
+        $settings=Db::name('sites')->where('id',$siteId)->value('settings');
+        $settings=is_string($settings)?json_decode($settings,true):(is_array($settings)?$settings:[]);
+        return [max(0,min(1,(float)($settings['dark_water_rate']??0.085))),max(0,min(1,(float)($settings['bright_water_rate']??0.012)))];
     }
 }

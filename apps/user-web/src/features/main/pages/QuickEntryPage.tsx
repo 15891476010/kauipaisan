@@ -219,6 +219,10 @@ export function QuickEntryPage({
       if (showSuccess)
         message.success(response.data?.message || "下注提交成功");
       if (options[2]) await copyTicket(sourceText, valid, options[3]);
+      // A successful submission starts a fresh ticket. Keep the generated
+      // result and input area in sync by clearing the editor after the ticket
+      // has been accepted (including auto-bet/paste submissions).
+      setText("");
       setGeneratedLines([]);
       setGeneratedTotal({ count: 0, codeCount: 0, amount: "0.00" });
       window.dispatchEvent(new Event("bet-records-updated"));

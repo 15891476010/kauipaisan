@@ -194,7 +194,7 @@ final class BetSettlement
             $chain[]=$node;$nodeId=(int)$node['parent_id'];
         }
         if($chain===[])return;
-        foreach(SequentialProfitShare::allocate($houseProfit,$chain,$siteCap) as $allocation){
+        foreach(SequentialProfitShare::allocateDirect($houseProfit,$chain,$siteCap) as $allocation){
             $node=$allocation['node'];$amount=$allocation['amount'];
             if(abs($amount)<0.005)continue;
             $before=(float)$node['balance'];Db::name('organization_nodes')->where('id',(int)$node['id'])->update(['balance'=>Db::raw('balance + '.number_format($amount,2,'.','')),'updated_at'=>date('Y-m-d H:i:s')]);
@@ -202,7 +202,7 @@ final class BetSettlement
                 $record,(int)$node['id'],$amount,$before,$before+$amount,
                 $amount>=0?'本期投注盈利占成':'本期投注亏损承担',
                 [
-                    'allocation_method'=>'sequential_remainder',
+                    'allocation_method'=>'direct_member_profit_remainder',
                     'line_organization_id'=>(int)($user['organization_id']??0),
                     'organization_level'=>(string)($node['level']??''),
                     'incoming_amount'=>$allocation['incoming_amount'],

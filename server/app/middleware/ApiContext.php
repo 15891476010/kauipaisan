@@ -49,6 +49,8 @@ final class ApiContext
             if (is_array($agentSession) && !empty($agentSession['is_subaccount'])) {
                 $activeSubaccount=Db::name('agent_subaccounts')->where('id',(int)($agentSession['user_id']??0))->where('site_id',(int)($agentSession['site_id']??0))->where('status',1)->whereNull('deleted_at')->find();
                 if(!$activeSubaccount) { if($token!=='')Cache::delete('token:'.$token); return $this->cors(json(['code'=>401,'message'=>'子账号已停用或删除','data'=>null,'request_id'=>bin2hex(random_bytes(8))],401)); }
+                $activeNode=Db::name('organization_nodes')->where('id',(int)($activeSubaccount['organization_id']??0))->where('site_id',(int)($agentSession['site_id']??0))->where('status',1)->whereNull('deleted_at')->find();
+                if(!$activeNode) { if($token!=='')Cache::delete('token:'.$token); return $this->cors(json(['code'=>401,'message'=>'当前组织已停用或删除','data'=>null,'request_id'=>bin2hex(random_bytes(8))],401)); }
                 $permissions=OrganizationHierarchy::effectivePermissions((int)$activeSubaccount['organization_id'],OrganizationHierarchy::decodePermissions($activeSubaccount['permissions']??null));
                 $lotteryPermissions=json_decode((string)($activeSubaccount['lottery_permissions']??''),true);if(!is_array($lotteryPermissions))$lotteryPermissions=[];
                 $refreshed=array_merge($agentSession,['organization_id'=>(int)$activeSubaccount['organization_id'],'permissions'=>$permissions,'lottery_permissions'=>$lotteryPermissions,'report_limit_enabled'=>(int)($activeSubaccount['report_limit_enabled']??0),'report_from_issue'=>$activeSubaccount['report_from_issue']??null,'report_to_issue'=>$activeSubaccount['report_to_issue']??null]);

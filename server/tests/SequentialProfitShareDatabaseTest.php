@@ -26,7 +26,7 @@ if(!$sourceRecord)throw new RuntimeException('测试会员缺少历史注单');
 
 $record=['id'=>(int)$sourceRecord['id'],'tenant_id'=>(int)$user['tenant_id'],'site_id'=>(int)$user['site_id'],'user_id'=>(int)$user['id'],'issue_no'=>'SEQUENTIAL-SHARE-DB-TEST'];
 $rates=['agent'=>10.0,'general_agent'=>5.0,'small_shareholder'=>2.0,'shareholder'=>10.0];
-$expected=['agent'=>1000.0,'general_agent'=>450.0,'small_shareholder'=>171.0,'shareholder'=>837.9,'director'=>7541.1];
+$expected=['agent'=>1000.0,'general_agent'=>500.0,'small_shareholder'=>200.0,'shareholder'=>1000.0,'director'=>7300.0];
 $now=date('Y-m-d H:i:s');
 
 Db::startTrans();
@@ -54,7 +54,7 @@ try{
         $amount=(float)$row['amount'];$sum+=$amount;
         if(abs($amount-$expected[(string)$node['level']])>0.001)throw new RuntimeException((string)$node['level'].' 占成金额错误：'.$amount);
         $metadata=json_decode((string)($row['metadata']??''),true)?:[];
-        if(($metadata['allocation_method']??'')!=='sequential_remainder')throw new RuntimeException('占成流水缺少逐级剩余法标记');
+        if(($metadata['allocation_method']??'')!=='direct_member_profit_remainder')throw new RuntimeException('占成流水缺少按会员盈亏直算标记');
         if((int)($metadata['line_organization_id']??0)!==(int)$agent['id'])throw new RuntimeException('占成流水线路归属错误');
     }
     if(abs($sum-10000.0)>0.001)throw new RuntimeException('数据库逐级占成分配不守恒');

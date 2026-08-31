@@ -41,4 +41,8 @@ $lineA=SequentialProfitShare::allocate(216,$chain);
 $lineB=SequentialProfitShare::allocate(300,$chain);
 $check($sum($lineA)===216.0&&$sum($lineB)===300.0,'不同直属线路必须分别守恒');
 
+$direct=SequentialProfitShare::allocateDirect(10000,$chain);
+$check($money($direct)===[1000.0,500.0,200.0,1000.0,7300.0],'按会员盈亏直算占成金额不正确');
+$check($sum($direct)===10000.0,'直算占成分配不守恒');
+
 echo "Sequential profit share tests passed: {$assertions} assertions\n";

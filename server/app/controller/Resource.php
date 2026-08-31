@@ -96,6 +96,14 @@ final class Resource
         return $rate;
     }
 
+    private function waterRate(mixed $value): float
+    {
+        if (!is_numeric($value)) throw new \InvalidArgumentException('暗水/明水比例必须是数字');
+        $rate=(float)$value;
+        if ($rate<0 || $rate>1) throw new \InvalidArgumentException('暗水/明水比例必须在 0 到 1 之间');
+        return round($rate,4);
+    }
+
     private function syncSiteShareCap(int $siteId,int $tenantId,float $cap): void
     {
         Db::name('organization_profit_shares')->where('site_id',$siteId)->where('share_rate','>',$cap)->update(['share_rate'=>number_format($cap,4,'.',''),'updated_at'=>date('Y-m-d H:i:s')]);
@@ -289,7 +297,7 @@ final class Resource
                 $site['domain'] = $site['agent_domain'];
                 $site['lottery_ids']=array_map('intval',Db::name('site_lotteries')->where('site_id',(int)$site['id'])->column('lottery_id'));
                 $site['admin_count']=$adminCounts[(int)$site['id']]??0;
-                $settings=$site['settings']??[]; $settings=is_string($settings)?json_decode($settings,true):(is_array($settings)?$settings:[]); $account=ScoreTransfer::siteAccount((int)$site['tenant_id'],(int)$site['id']); $site['credit_limit']=number_format((float)$account['total_score'],2,'.',''); $site['site_available_score']=number_format((float)$account['balance'],2,'.',''); $site['director_allocated_score']=number_format($this->directorCreditTotal((int)$site['id']),2,'.',''); $site['max_profit_share_rate']=number_format((float)($settings['max_profit_share_rate']??100),4,'.','');
+                $settings=$site['settings']??[]; $settings=is_string($settings)?json_decode($settings,true):(is_array($settings)?$settings:[]); $account=ScoreTransfer::siteAccount((int)$site['tenant_id'],(int)$site['id']); $site['credit_limit']=number_format((float)$account['total_score'],2,'.',''); $site['site_available_score']=number_format((float)$account['balance'],2,'.',''); $site['director_allocated_score']=number_format($this->directorCreditTotal((int)$site['id']),2,'.',''); $site['max_profit_share_rate']=number_format((float)($settings['max_profit_share_rate']??100),4,'.',''); $site['dark_water_rate']=number_format((float)($settings['dark_water_rate']??0.085),4,'.',''); $site['bright_water_rate']=number_format((float)($settings['bright_water_rate']??0.012),4,'.','');
             }
         }
         if ($resource === 'site-users') {
@@ -595,8 +603,8 @@ final class Resource
             if ($data['parent_id'] < 1 || !Db::name('agents')->where('id',$data['parent_id'])->where('level',1)->find()) throw new \InvalidArgumentException('二级代理必须归属有效的一级代理');
         }
         if ($resource === 'agent-center') {
-            $domainGroups=$this->domainGroups($data); $lotteryIds=$data['lottery_ids']??[]; $creditLimit=max(0,(float)($data['credit_limit']??0)); $maxProfitShareRate=$this->siteMaxShareRate($data['max_profit_share_rate']??100); unset($data['domain'], $data['agent_domain'], $data['user_domain'], $data['agent_domains'], $data['user_domains'], $data['lottery_ids'], $data['credit_limit'], $data['max_profit_share_rate'], $data['code'], $data['parent_id'], $data['level'], $data['site_id'], $data['username'], $data['display_name'], $data['phone'], $data['password'], $data['manager_username'], $data['manager_password'], $data['manager_phone']);
-            $data['settings']=json_encode(['credit_limit'=>$creditLimit,'max_profit_share_rate'=>$maxProfitShareRate],JSON_UNESCAPED_UNICODE);
+            $domainGroups=$this->domainGroups($data); $lotteryIds=$data['lottery_ids']??[]; $creditLimit=max(0,(float)($data['credit_limit']??0)); $maxProfitShareRate=$this->siteMaxShareRate($data['max_profit_share_rate']??100); $darkWaterRate=$this->waterRate($data['dark_water_rate']??0.085); $brightWaterRate=$this->waterRate($data['bright_water_rate']??0.012); unset($data['domain'], $data['agent_domain'], $data['user_domain'], $data['agent_domains'], $data['user_domains'], $data['lottery_ids'], $data['credit_limit'], $data['max_profit_share_rate'], $data['dark_water_rate'], $data['bright_water_rate'], $data['code'], $data['parent_id'], $data['level'], $data['site_id'], $data['username'], $data['display_name'], $data['phone'], $data['password'], $data['manager_username'], $data['manager_password'], $data['manager_phone']);
+            $data['settings']=json_encode(['credit_limit'=>$creditLimit,'max_profit_share_rate'=>$maxProfitShareRate,'dark_water_rate'=>$darkWaterRate,'bright_water_rate'=>$brightWaterRate],JSON_UNESCAPED_UNICODE);
             $data['agent_id'] = (int)($data['agent_id'] ?? 1);
             $operator=$this->scoreOperator($request);
             $siteId=Db::transaction(function () use ($data,$domainGroups,$lotteryIds,$creditLimit,$maxProfitShareRate,$operator): int {
@@ -646,11 +654,11 @@ final class Resource
         if ($resource === 'agent-center') {
             $domainGroups=$this->domainGroups($data); $lotteryIds=$data['lottery_ids']??[];
             $siteBefore=Db::name('sites')->where('id',$id)->value('settings'); $siteSettings=is_string($siteBefore)?json_decode($siteBefore,true):(is_array($siteBefore)?$siteBefore:[]);
-            $creditLimit=max(0,(float)($data['credit_limit']??($siteSettings['credit_limit']??0))); $maxProfitShareRate=$this->siteMaxShareRate($data['max_profit_share_rate']??($siteSettings['max_profit_share_rate']??100)); unset($data['credit_limit'],$data['max_profit_share_rate']);
+            $creditLimit=max(0,(float)($data['credit_limit']??($siteSettings['credit_limit']??0))); $maxProfitShareRate=$this->siteMaxShareRate($data['max_profit_share_rate']??($siteSettings['max_profit_share_rate']??100)); $darkWaterRate=$this->waterRate($data['dark_water_rate']??($siteSettings['dark_water_rate']??0.085)); $brightWaterRate=$this->waterRate($data['bright_water_rate']??($siteSettings['bright_water_rate']??0.012)); unset($data['credit_limit'],$data['max_profit_share_rate'],$data['dark_water_rate'],$data['bright_water_rate']);
             // Score is managed on each root director. Keep this legacy field as
             // a read-only aggregate so editing site metadata can never move
             // the first director's balance or mix director pools together.
-            $siteSettings['credit_limit']=$creditLimit; $siteSettings['max_profit_share_rate']=$maxProfitShareRate; $data['settings']=json_encode($siteSettings,JSON_UNESCAPED_UNICODE);
+            $siteSettings['credit_limit']=$creditLimit; $siteSettings['max_profit_share_rate']=$maxProfitShareRate; $siteSettings['dark_water_rate']=$darkWaterRate; $siteSettings['bright_water_rate']=$brightWaterRate; $data['settings']=json_encode($siteSettings,JSON_UNESCAPED_UNICODE);
             unset($data['domain'], $data['agent_domain'], $data['user_domain'], $data['agent_domains'], $data['user_domains'], $data['lottery_ids'], $data['code'], $data['parent_id'], $data['level'], $data['site_id'], $data['username'], $data['display_name'], $data['phone'], $data['password']);
             unset($data['manager_username'],$data['manager_password'],$data['manager_phone']);
             $operator=$this->scoreOperator($request);

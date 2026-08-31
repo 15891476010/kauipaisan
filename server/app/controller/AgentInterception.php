@@ -86,7 +86,8 @@ final class AgentInterception
         $directIds = []; foreach ($rows as $row) if ((int)$row['lottery_odds_id'] >= 1000000000) $directIds[] = (int)$row['lottery_odds_id'] - 1000000000;
         $directNames = $directIds === [] ? [] : Db::name('lottery_odds_categories')->whereIn('id', array_values(array_unique($directIds)))->column('name', 'id');
         foreach ($rows as &$row) if ((int)$row['lottery_odds_id'] >= 1000000000) $row['odds_name'] = (string)($directNames[(int)$row['lottery_odds_id'] - 1000000000] ?? $row['odds_name']); unset($row);
-        foreach ($rows as &$row) $row = $this->detailRow($row); unset($row);
+        [$darkRate,$brightRate]=$this->waterRates((int)$session['site_id']);
+        foreach ($rows as &$row) $row = $this->detailRow($row,$darkRate,$brightRate); unset($row);
         return $this->reply(['list' => $rows, 'total' => count($rows), 'summary' => $this->summary($rows)]);
     }
 
@@ -101,8 +102,8 @@ final class AgentInterception
         $configuration=(new \app\service\InterceptionAllocator())->agentConfiguration((int)$session['tenant_id'],$siteId,(int)$node['id'],$lotteryId);
         $amounts=$configuration['amounts'];
         $usageRows=Db::name('interception_capacity_usage')->where('tenant_id',(int)$session['tenant_id'])->where('scope_type','organization')->where('scope_id',(int)$node['id'])
-            ->where('lottery_id',$lotteryId)->where('issue_no',$issue)->where('used_amount','>',0)->field('lottery_odds_id,number_key,used_amount')->order('number_key asc')->select()->toArray();
-        $usage = []; foreach ($usageRows as $row) { $limit=max(0,(float)($amounts[(string)(int)$row['lottery_odds_id']]??0));$used=(float)$row['used_amount'];$usage[(int)$row['lottery_odds_id']][] = ['number' => (string)$row['number_key'], 'used' => $this->number($used),'remaining'=>$this->number(max(0,$limit-$used))]; }
+            ->where('lottery_id',$lotteryId)->where('issue_no',$issue)->where('used_amount','>',0)->where('number_key','__PLAY_TOTAL__')->field('lottery_odds_id,used_amount')->order('lottery_odds_id asc')->select()->toArray();
+        $usage = []; foreach ($usageRows as $row) { $limit=max(0,(float)($amounts[(string)(int)$row['lottery_odds_id']]??0));$used=(float)$row['used_amount'];$usage[(int)$row['lottery_odds_id']] = ['used' => $this->number($used),'remaining'=>$this->number(max(0,$limit-$used))]; }
         $odds = Db::name('lottery_odds')->where('lottery_id', $lotteryId)->where('status', 1)->whereNull('deleted_at')->field('id,category,name,odds,sort')->order('sort asc')->order('id asc')->select()->toArray();
         foreach (Db::name('lottery_odds_categories')->where('lottery_id', $lotteryId)->where('is_playable', 1)->where('status', 1)->whereNull('deleted_at')->field('id,name,odds,sort')->select()->toArray() as $row) {
             $odds[] = ['id' => 1000000000 + (int)$row['id'], 'category' => (string)$row['name'], 'name' => (string)$row['name'], 'odds' => $row['odds'], 'sort' => $row['sort']];
@@ -110,10 +111,9 @@ final class AgentInterception
         usort($odds, static fn(array $a, array $b): int => ((int)$a['sort'] <=> (int)$b['sort']) ?: ((int)$a['id'] <=> (int)$b['id']));
         $groups = [];
         foreach ($odds as $row) {
-            $id = (int)$row['id']; $limit = max(0, (float)($amounts[(string)$id] ?? 0)); $used = 0.0;
-            $remaining=$limit;foreach ($usage[$id] ?? [] as $item) {$used += (float)$item['used'];$remaining=min($remaining,(float)$item['remaining']);}
+            $id = (int)$row['id']; $limit = max(0, (float)($amounts[(string)$id] ?? 0)); $used = (float)($usage[$id]['used'] ?? 0); $remaining=max(0,$limit-$used);
             $category = (string)($row['category'] ?: '其他');
-            $groups[$category][] = ['odds_id' => $id, 'name' => (string)$row['name'], 'odds' => $this->number((float)$row['odds']), 'limit' => $this->number($limit), 'used' => $this->number($used), 'remaining' => $this->number($remaining), 'numbers' => $usage[$id] ?? []];
+            $groups[$category][] = ['odds_id' => $id, 'name' => (string)$row['name'], 'odds' => $this->number((float)$row['odds']), 'limit' => $this->number($limit), 'used' => $this->number($used), 'remaining' => $this->number($remaining), 'numbers' => []];
         }
         $list = []; foreach ($groups as $category => $items) $list[] = ['category' => $category, 'items' => $items];
         return $this->reply(['issue_no' => $issue, 'capacity_scope'=>'organization','organization_id'=>(int)$node['id'],'configuration_source'=>$configuration['source'],'groups' => $list]);
@@ -129,11 +129,19 @@ final class AgentInterception
         return array_values(array_unique(array_map('strval', Db::name('lottery_histories')->where('lottery_id', $lotteryId)->where('draw_day', '>=', $fromDate)->where('draw_day', '<=', $toDate)->column('code'))));
     }
 
-    private function detailRow(array $row): array
+    private function detailRow(array $row,float $darkRate=0.085,float $brightRate=0.012): array
     {
         $detailAmount = max(0, (float)$row['detail_amount']); $intercepted = max(0, (float)$row['intercepted_amount']);
         $ratio = $detailAmount > 0 ? min(1, $intercepted / $detailAmount) : 0; $rebate = (float)$row['rebate'] * $ratio; $winning = (float)$row['win_amount'] * $ratio;
-        return ['id' => (int)$row['id'], 'order_no' => (string)$row['bet_record_id'], 'issue_no' => (string)$row['issue_no'], 'member' => (string)$row['username'], 'placed_at' => (string)$row['created_at'], 'number' => (string)$row['number_key'], 'category' => (string)($row['odds_name'] ?: $row['category'] ?: '未分类'), 'bet_amount' => $this->number((float)$row['bet_amount']), 'share_rate' => $this->number((float)$row['share_rate']).'%', 'intercepted_amount' => $this->number($intercepted), 'odds' => $this->number((float)$row['odds']), 'rebate' => $this->number($rebate), 'win_amount' => $this->number($winning), 'profit' => $this->number($intercepted - $rebate - $winning), 'source' => '快录', 'device' => '网', 'status' => (string)$row['allocation_status']];
+        $memberProfit=(float)$row['win_amount']+(float)$row['rebate']-$detailAmount; $occupation=$memberProfit*max(0,min(100,(float)$row['share_rate']))/100; $dark=$detailAmount*max(0,min(1,$darkRate)); $bright=$occupation*max(0,min(1,$brightRate));
+        return ['id' => (int)$row['id'], 'order_no' => (string)$row['bet_record_id'], 'issue_no' => (string)$row['issue_no'], 'member' => (string)$row['username'], 'placed_at' => (string)$row['created_at'], 'number' => (string)$row['number_key'], 'category' => (string)($row['odds_name'] ?: $row['category'] ?: '未分类'), 'bet_amount' => $this->number((float)$row['bet_amount']), 'share_rate' => $this->number((float)$row['share_rate']).'%', 'intercepted_amount' => $this->number($intercepted), 'odds' => $this->number((float)$row['odds']), 'rebate' => $this->number($rebate), 'win_amount' => $this->number($winning), 'profit' => $this->number($occupation+$dark+$bright), 'dark_water' => $this->number($dark), 'bright_water' => $this->number($bright), 'occupation_amount' => $this->number($occupation), 'source' => '快录', 'device' => '网', 'status' => (string)$row['allocation_status']];
+    }
+
+    private function waterRates(int $siteId): array
+    {
+        $settings=Db::name('sites')->where('id',$siteId)->value('settings');
+        $settings=is_string($settings)?json_decode($settings,true):(is_array($settings)?$settings:[]);
+        return [max(0,min(1,(float)($settings['dark_water_rate']??0.085))),max(0,min(1,(float)($settings['bright_water_rate']??0.012)))];
     }
 
     private function summary(array $rows): array

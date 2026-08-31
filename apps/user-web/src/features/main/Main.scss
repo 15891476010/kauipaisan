@@ -614,8 +614,9 @@ body {
   cursor: wait;
 }
 .app {
-  height: 100vh;
-  overflow: auto;
+  min-height: 100vh;
+  height: auto;
+  overflow: visible;
   min-width: 1100px;
   background: #dcecff;
 }
@@ -922,10 +923,15 @@ body {
   display: grid;
   grid-template-columns: 250px 1fr;
   min-height: calc(100vh - 142px);
+  align-items: start;
   gap: 10px;
   padding: 5px 10px 10px;
 }
 .body aside {
+  height: calc(100vh - 152px);
+  max-height: calc(100vh - 152px);
+  min-height: 0;
+  overflow: hidden;
   background: #fff;
 }
 .side-total {
@@ -981,6 +987,7 @@ body {
 .body main {
   background: #dcecff;
   min-width: 0;
+  min-height: calc(100vh - 152px);
 }
 .body.panel-right {
   grid-template-columns: 1fr 250px;
@@ -1216,6 +1223,21 @@ body {
   height: 28px;
   align-items: center;
 }
+.records-refund {
+  min-width: 28px;
+  height: 25px;
+  padding: 0 5px;
+  border: 1px solid #8c1820;
+  border-radius: 4px;
+  background: #c2212b;
+  color: #fff;
+  font-weight: 700;
+  line-height: 20px;
+  cursor: pointer;
+}
+.records-refund:hover {
+  background: #a81922;
+}
 .records-search,
 .records-export {
   display: inline-flex;
@@ -1305,8 +1327,12 @@ body {
   cursor: not-allowed;
 }
 .side-record-list {
-  max-height: calc(100vh - 187px);
+  height: calc(100% - 40px);
+  max-height: none;
+  min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
   background: #fff;
 }
 .side-record-item {
@@ -1344,10 +1370,10 @@ body {
 
     p {
       margin: 2px 0 0;
-      overflow: hidden;
       overflow-wrap: anywhere;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      /* Keep the complete input visible. Long text wraps onto additional
+         lines and the record item's height grows with its content. */
+      white-space: pre-wrap;
     }
   }
 
@@ -3384,6 +3410,9 @@ body {
 .quick-result-row.new .quick-result-main {
   background: #afecff;
 }
+.quick-result-row.blank .quick-result-main {
+  background: #d3d3d3;
+}
 .quick-result-remove,
 .quick-result-add,
 .quick-result-combine,
@@ -3485,6 +3514,10 @@ body {
 }
 .quick-result-status.new {
   background: #0095c3;
+}
+.quick-result-status.blank {
+  background: #bfbfbf;
+  color: transparent;
 }
 .quick-result-status.success.fu {
   background: #7a2bc3;

@@ -135,12 +135,17 @@ final class Auth
         $platformSite=$siteId>0 && (int)Db::name('sites')->where('id',$siteId)->value('is_platform_site')===1;
         // 组织架构账号直接归属于站点和组织，不依赖旧的 agents 代理记录。
         // 只有历史代理账号仍需校验 legacy agent 的启用状态。
-        if (!$platformSite && $accountTable!=='organization_accounts' && ($agentId < 1 || !Db::name('agents')->where('id',$agentId)->where('status',1)->find())) { $this->log($request,['username'=>$username], 'login_failed', 'agent'); return $this->reply(null,'当前代理已停用',403); }
+        // Organization accounts and their subaccounts are scoped by their
+        // active organization/site records, not by the legacy `agents` table.
+        // Newly-created subaccounts can legitimately carry an old/stale
+        // agent_id, so checking that table here incorrectly rejected login as
+        // “当前代理已停用”.
+        if (!$platformSite && !in_array($accountTable,['organization_accounts','agent_subaccounts'],true) && ($agentId < 1 || !Db::name('agents')->where('id',$agentId)->where('status',1)->find())) { $this->log($request,['username'=>$username], 'login_failed', 'agent'); return $this->reply(null,'当前代理已停用',403); }
 
         $isSubaccount=$accountTable==='agent_subaccounts';
         $permissions=$accountTable==='organization_accounts'||$accountTable==='agent_subaccounts'?OrganizationHierarchy::effectivePermissions($organizationId,OrganizationHierarchy::decodePermissions($account['permissions']??null)):['*'];
         $lotteryPermissions=$isSubaccount?(json_decode((string)($account['lottery_permissions']??''),true)?:[]):['*'];
-        if ($accountTable==='organization_accounts' && ($organizationId<1 || $organizationLevel==='' || !Db::name('organization_nodes')->where('id',$organizationId)->where('status',1)->whereNull('deleted_at')->find())) { $this->log($request,['username'=>$username], 'login_failed', 'agent'); return $this->reply(null,'当前组织已停用或删除',403); }
+        if (in_array($accountTable,['organization_accounts','agent_subaccounts'],true) && ($organizationId<1 || $organizationLevel==='' || !Db::name('organization_nodes')->where('id',$organizationId)->where('site_id',$siteId)->where('status',1)->whereNull('deleted_at')->find())) { $this->log($request,['username'=>$username], 'login_failed', 'agent'); return $this->reply(null,'当前组织已停用或删除',403); }
         $accountType=match($accountTable){'site_admins'=>'site_admin','agent_subaccounts'=>'agent_subaccount','organization_accounts'=>'organization_account','sites'=>'legacy_site_admin',default=>'agent_admin'};
         $mustChangePassword=(int)($account['must_change_password']??0)===1;
         $token=$this->sessionToken($request,(int)$account['id'],'agent',['tenant_id'=>(int)$account['tenant_id'],'agent_id'=>$agentId,'site_id'=>$siteId,'organization_id'=>$organizationId?:null,'organization_level'=>$organizationLevel?:null,'account_table'=>$accountTable,'username'=>(string)$account['username'],'is_subaccount'=>$isSubaccount?1:0,'must_change_password'=>$mustChangePassword?1:0,'permissions'=>$permissions,'lottery_permissions'=>$lotteryPermissions,'report_limit_enabled'=>(int)($account['report_limit_enabled']??0),'report_from_issue'=>$account['report_from_issue']??null,'report_to_issue'=>$account['report_to_issue']??null],$accountType);

@@ -8,6 +8,8 @@ use think\facade\Db;
 final class InterceptionAllocator
 {
     private const FOLLOW_SETTING_KEY = 'agent_follow_platform_interception';
+    /** Capacity is scoped to one lottery/play/issue, not to each number. */
+    private const CAPACITY_NUMBER_KEY = '__PLAY_TOTAL__';
 
     public function agentConfiguration(int $tenantId,int $siteId,int $organizationId,int $lotteryId,bool $lock=false): array
     {
@@ -48,12 +50,12 @@ final class InterceptionAllocator
         foreach($stakes as $entry) {
             $number=$entry['number'];$stake=$entry['amount'];
             $wanted=round($stake*$rate/100,2);
-            $agentTaken=$this->reserve('organization',$organizationId,$tenantId,$lotteryId,$issue,$oddsId,$number,$agentLimit,$wanted,$now);
+            $agentTaken=$this->reserve('organization',$organizationId,$tenantId,$lotteryId,$issue,$oddsId,self::CAPACITY_NUMBER_KEY,$agentLimit,$wanted,$now);
             $taken=$agentTaken; $reason=$agentTaken+0.000001<$wanted?'agent_full':'allocated';
             if($follow&&$agentTaken>0&&$platformLimit>0) {
-                $platformTaken=$this->reserve('platform',$tenantId,$tenantId,$lotteryId,$issue,$oddsId,$number,$platformLimit,$agentTaken,$now);
+                $platformTaken=$this->reserve('platform',$tenantId,$tenantId,$lotteryId,$issue,$oddsId,self::CAPACITY_NUMBER_KEY,$platformLimit,$agentTaken,$now);
                 if($platformTaken+0.000001<$agentTaken) {
-                    $this->releaseCapacity('organization',$organizationId,$tenantId,$lotteryId,$issue,$oddsId,$number,$agentTaken-$platformTaken,$now);
+                    $this->releaseCapacity('organization',$organizationId,$tenantId,$lotteryId,$issue,$oddsId,self::CAPACITY_NUMBER_KEY,$agentTaken-$platformTaken,$now);
                     $reason=$platformTaken<=0?'platform_full':'platform_partial';
                 }
                 $taken=$platformTaken;
@@ -81,8 +83,8 @@ final class InterceptionAllocator
             if($amount>0) {
                 $organizationId=(int)($row['organization_id']??0);
                 if($organizationId<1)throw new \RuntimeException('历史拦货记录缺少代理归属，无法安全释放容量');
-                $this->releaseCapacity('organization',$organizationId,(int)$row['tenant_id'],(int)$row['lottery_id'],(string)$row['issue_no'],(int)$row['lottery_odds_id'],(string)$row['number_key'],$amount,$now);
-                if((int)$row['follow_platform']===1&&(float)$row['platform_limit']>0) $this->releaseCapacity('platform',(int)$row['tenant_id'],(int)$row['tenant_id'],(int)$row['lottery_id'],(string)$row['issue_no'],(int)$row['lottery_odds_id'],(string)$row['number_key'],$amount,$now);
+                $this->releaseCapacity('organization',$organizationId,(int)$row['tenant_id'],(int)$row['lottery_id'],(string)$row['issue_no'],(int)$row['lottery_odds_id'],self::CAPACITY_NUMBER_KEY,$amount,$now);
+                if((int)$row['follow_platform']===1&&(float)$row['platform_limit']>0) $this->releaseCapacity('platform',(int)$row['tenant_id'],(int)$row['tenant_id'],(int)$row['lottery_id'],(string)$row['issue_no'],(int)$row['lottery_odds_id'],self::CAPACITY_NUMBER_KEY,$amount,$now);
             }
             Db::name('agent_interceptions')->where('id',(int)$row['id'])->update(['allocation_status'=>'refunded','released_at'=>$now]);
         }
