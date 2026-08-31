@@ -157,8 +157,8 @@ const labels: Record<string, string> = {
   available_balance: "可用余额",
   credit_limit: "站点分数",
   max_profit_share_rate: "每级最高占成",
-  dark_water_rate: "暗水比例",
-  bright_water_rate: "明水比例",
+  dark_water_rate: "离线反水（明水）比例",
+  bright_water_rate: "占成明水比例",
   last_login_at: "最后登录",
   last_seen_at: "最后活跃",
   last_login_device: "最后登录设备",
@@ -921,10 +921,10 @@ onBeforeUnmount(() => {
           ><el-input-number v-model="form.credit_limit" :min="0" :precision="2" controls-position="right" style="width: 100%" /><div class="lottery-tip">平台预留给本站点的独立资金池。保存后进入组织架构，点击具体总监单独分配分数；不同总监之间不共享。</div></el-form-item
         ><el-form-item v-if="resource === 'agent-center'" label="每级最高占成"
           ><el-input-number v-model="form.max_profit_share_rate" :min="0" :max="100" :precision="4" controls-position="right" style="width: 100%" /><div class="lottery-tip">动态限制本站点每一级向直属下级分配的占成比例；逐级按上一级实际占成继续计算。</div></el-form-item
-        ><el-form-item v-if="resource === 'agent-center'" label="暗水比例"
-          ><el-input-number v-model="form.dark_water_rate" :min="0" :max="1" :precision="4" :step="0.001" controls-position="right" style="width: 100%" /><div class="lottery-tip">代理按会员整笔投注金额计提；例如 0.085 表示每 100 分暗水 8.5 分。</div></el-form-item
-        ><el-form-item v-if="resource === 'agent-center'" label="明水比例"
-          ><el-input-number v-model="form.bright_water_rate" :min="0" :max="1" :precision="4" :step="0.001" controls-position="right" style="width: 100%" /><div class="lottery-tip">代理明水 = 占成金 × 此比例；例如 0.012 表示 1.2%。</div></el-form-item
+        ><el-form-item v-if="resource === 'agent-center'" label="离线反水（明水）比例"
+          ><el-input-number v-model="form.dark_water_rate" :min="0" :max="1" :precision="4" :step="0.001" controls-position="right" style="width: 100%" /><div class="lottery-tip">离线反水 = 该代理线路全部用户总投 × 此比例；例如 0.085 表示每 100 分返 8.5 分。</div></el-form-item
+        ><el-form-item v-if="resource === 'agent-center'" label="占成明水比例"
+          ><el-input-number v-model="form.bright_water_rate" :min="0" :max="1" :precision="4" :step="0.001" controls-position="right" style="width: 100%" /><div class="lottery-tip">占成明水 = 占成金 × 此比例；例如 0.012 表示 1.2%。</div></el-form-item
         ><el-form-item
           v-if="resource === 'domains'"
           label="域名"

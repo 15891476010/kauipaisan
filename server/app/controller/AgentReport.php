@@ -72,7 +72,7 @@ final class AgentReport
             ->where('r.status','<>','refunded');
         OrganizationHierarchy::applyUserScope($query,$session,'d.user_id');
         if($lotteries!==[]) $query->whereIn('s.lottery',$lotteries);
-        $rows=$query->field('d.id,d.user_id,u.username,d.issue_no,d.number_text,d.amount,d.odds,d.win_amount,d.rebate,d.placed_at,s.lottery,s.drop_odds')->select()->toArray();
+        $rows=$query->field('d.id,d.user_id,u.username,u.interception_rate AS share_rate,d.issue_no,d.number_text,d.amount,d.odds,d.win_amount,d.rebate,d.placed_at,s.lottery,s.drop_odds')->select()->toArray();
         if($rows===[]) return [];
         $detailIds=array_map(static fn(array $row): int=>(int)$row['id'],$rows);
         $interceptions=Db::name('agent_interceptions')->whereIn('bet_detail_id',$detailIds)->whereNull('released_at')->field('bet_detail_id,SUM(intercepted_amount) AS intercepted_amount,SUM(bet_amount) AS intercepted_base')->group('bet_detail_id')->select()->toArray();

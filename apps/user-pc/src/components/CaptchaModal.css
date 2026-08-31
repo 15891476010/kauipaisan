@@ -1,0 +1,98 @@
+.captcha-modal {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: #10105c55;
+  z-index: 5;
+}
+
+.captcha-card {
+  width: min(520px, calc(100vw - 32px));
+  padding: 22px 24px 26px;
+  border-radius: 4px;
+  background: #fff;
+  box-shadow: 0 12px 36px #11115a55;
+}
+
+.captcha-card h2 {
+  margin: 0 0 18px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #555666;
+  color: #555666;
+  font-size: 20px;
+  text-align: center;
+}
+
+.captcha-equation {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 66px;
+  padding-bottom: 12px;
+}
+
+.captcha-image,
+.captcha-equation strong {
+  display: inline-flex;
+  height: 47px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #4f4f4f;
+  font-size: 20px;
+  letter-spacing: 3px;
+}
+
+.captcha-image {
+  width: 102px;
+  gap: 2px;
+  background: #e8e8e8;
+  color: #334ba9;
+  transform: rotate(-2deg);
+}
+
+.captcha-equation strong {
+  width: 78px;
+  color: #222;
+}
+
+.digit-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 56px);
+  justify-content: center;
+  gap: 6px 10px;
+  margin-top: 0;
+  padding-top: 12px;
+  border-top: 1px solid #e5e5e5;
+}
+
+.digit-grid button {
+  height: 40px;
+  padding: 0;
+  border: 1px dashed #22206c;
+  border-radius: 3px;
+  background: #fff;
+  color: #22206c;
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.digit-grid button:hover,
+.digit-grid button:focus {
+  outline: none;
+  background: #22206c;
+  color: #fff;
+}
+
+.captcha-submit {
+  display: block;
+  min-width: 52px;
+  height: 30px;
+  margin: 12px auto 0;
+  border: 0;
+  border-radius: 0;
+  background: #22206c;
+  color: #fff;
+  cursor: pointer;
+}

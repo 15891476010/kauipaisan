@@ -175,6 +175,9 @@ final class AgentBusiness
     private function detailResponse(Request $request, bool $winningOnly=false): \think\response\Json
     {
         $session=$this->session($request);
+        $siteSettings=Db::name('sites')->where('id',(int)$session['site_id'])->value('settings');
+        $siteSettings=is_string($siteSettings)?json_decode($siteSettings,true):(is_array($siteSettings)?$siteSettings:[]);
+        $offlineRate=max(0,min(1,(float)($siteSettings['dark_water_rate']??0.085)));
         $query=$this->detailQuery($request,$session,$winningOnly);
         $summary=(clone $query)->field('COALESCE(SUM(d.amount),0) total_amount,COALESCE(SUM(d.win_amount),0) win_amount,COUNT(d.id) total')->find() ?: [];
         [$page,$size]=$this->page($request);
@@ -196,7 +199,9 @@ final class AgentBusiness
             $row['received_amount']=number_format($amount-$win-$rebate,2,'.','');
             $row['own_rebate']='0.00';
             $row['paid_upstream']=number_format(max(0,$amount-$rebate),2,'.','');
-            $row['rebate_profit']='0.00';
+            $offlineRebate=$amount*$offlineRate;
+            $row['rebate_profit']=number_format($offlineRebate,2,'.','');
+            $row['offline_rebate']=number_format($offlineRebate,2,'.','');
             $row['source']='快录';
             $row['device']='网';
             $row['path']='会员 / '.$row['username'];
@@ -364,6 +369,10 @@ final class AgentBusiness
     public function reports(Request $request): \think\response\Json
     {
         $session=$this->session($request);
+        $siteSettings=Db::name('sites')->where('id',(int)$session['site_id'])->value('settings');
+        $siteSettings=is_string($siteSettings)?json_decode($siteSettings,true):(is_array($siteSettings)?$siteSettings:[]);
+        $offlineRate=max(0,min(1,(float)($siteSettings['dark_water_rate']??0.085)));
+        $brightRate=max(0,min(1,(float)($siteSettings['bright_water_rate']??0.012)));
         $type=(string)$request->param('type','summary');
         if (!in_array($type,['summary','monthly'],true)) return $this->reply(null,'报表类型无效',422);
 
@@ -377,13 +386,13 @@ final class AgentBusiness
             "COALESCE(SUM(d.win_amount),0) total_win,".
             "COALESCE(SUM(d.rebate),0) total_rebate,".
             "COALESCE(SUM(d.win_amount-d.amount+d.rebate),0) member_profit,".
-            "COALESCE(SUM(d.amount*COALESCE(u.interception_rate,0)/100),0) agent_share_amount,".
-            "COALESCE(SUM((d.amount-d.win_amount-d.rebate)*COALESCE(u.interception_rate,0)/100),0) agent_share_profit,".
-            "COALESCE(SUM(d.amount*COALESCE(s.drop_odds,0)),0) offline_rebate,".
-            "COALESCE(SUM(d.rebate+d.amount*COALESCE(s.drop_odds,0)),0) agent_total_rebate,".
-            "COALESCE(SUM(d.amount-d.win_amount-d.rebate),0) agent_total_profit,".
+            "COALESCE(SUM((d.win_amount-d.amount+d.rebate)*COALESCE(u.interception_rate,0)/100),0) agent_share_amount,".
+            "COALESCE(SUM((d.win_amount-d.amount+d.rebate)*COALESCE(u.interception_rate,0)/100),0) agent_share_profit,".
+            "COALESCE(SUM(d.amount)*".$offlineRate.",0) offline_rebate,".
+            "COALESCE(SUM(d.rebate)+SUM(d.amount)*".$offlineRate.",0) agent_total_rebate,".
+            "COALESCE(SUM((d.win_amount-d.amount+d.rebate)*COALESCE(u.interception_rate,0)/100)+SUM(d.amount)*".$offlineRate."+SUM((d.win_amount-d.amount+d.rebate)*COALESCE(u.interception_rate,0)/100)*".$brightRate.",0) agent_total_profit,".
             "COALESCE(SUM(d.amount*(1-COALESCE(u.interception_rate,0)/100)),0) master_total_bet,".
-            "COALESCE(SUM((d.amount-d.win_amount-d.rebate)*(1-COALESCE(u.interception_rate,0)/100)),0) master_profit"
+            "COALESCE(SUM((d.amount-d.win_amount-d.rebate)*(1-COALESCE(u.interception_rate,0)/100))-SUM(d.amount)*".$offlineRate."-SUM((d.win_amount-d.amount+d.rebate)*COALESCE(u.interception_rate,0)/100)*".$brightRate.",0) master_profit"
         )->group($group)->order($label,$type === 'monthly' ? 'desc' : 'asc')->select()->toArray();
 
         $moneyFields=['total_bet','total_win','total_rebate','member_profit','agent_share_amount','agent_share_profit','offline_rebate','agent_total_rebate','agent_total_profit','master_total_bet','master_profit'];
