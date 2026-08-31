@@ -10,9 +10,12 @@ final class OrganizationHierarchy
     public const LEVELS = ['director','shareholder','small_shareholder','general_agent','agent'];
     public const LABELS = ['director'=>'总监','shareholder'=>'大股东','small_shareholder'=>'小股东','general_agent'=>'总代理','agent'=>'代理'];
     public const CHILD_LEVELS = [
-        'director' => ['shareholder'],
-        'shareholder' => ['small_shareholder'],
-        'small_shareholder' => ['general_agent'],
+        // A parent may create any lower level directly.  The relationship is
+        // still a real parent/child link, so credit, permissions and reports
+        // follow the selected direct parent rather than an inferred level.
+        'director' => ['shareholder', 'small_shareholder', 'general_agent', 'agent'],
+        'shareholder' => ['small_shareholder', 'general_agent', 'agent'],
+        'small_shareholder' => ['general_agent', 'agent'],
         'general_agent' => ['agent'],
         'agent' => [],
     ];

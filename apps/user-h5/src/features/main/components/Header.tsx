@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { App as AntdApp, Modal } from "antd";
+import { App as AntdApp } from "antd";
 import { NavLink } from "react-router-dom";
 import loginLogo from "../../../assets/login-logo.svg";
 import logoutIcon from "../../../assets/logout.svg";
 import swapIcon from "../../../assets/swap.svg";
-import { getLineOptions, type Lottery } from "../../../api/user";
+import { getLineOptions, type LineOption, type Lottery } from "../../../api/user";
 import { apiErrorMessage } from "../../../utils/request";
 import {
   lotteryTiming,
@@ -38,8 +38,15 @@ export function Header({
   const [now, setNow] = useState(Date.now());
   const [lineOpen, setLineOpen] = useState(false);
   const [lineLoading, setLineLoading] = useState(false);
+  const [headerCollapsed, setHeaderCollapsed] = useState(false);
+  const [lineOptions, setLineOptions] = useState<LineOption[]>([]);
   const [lineResults, setLineResults] = useState<
-    Array<{ line: number; delay: number | null; fastest?: boolean }>
+    Array<{
+      line: number;
+      delay: number | null;
+      fastest?: boolean;
+      status: "testing" | "pending" | "loaded" | "failed";
+    }>
   >([]);
   const [lineCountdown, setLineCountdown] = useState<number | null>(null);
   const lineRedirectTimer = useRef<number | null>(null);
@@ -60,6 +67,15 @@ export function Header({
     try {
       const response = await getLineOptions();
       const options = response.data?.data?.list || [];
+      setLineOptions(options);
+      setLineResults(
+        options.map((option, index) => ({
+          line: option.line,
+          delay: null,
+          fastest: false,
+          status: index < 4 ? "testing" : "pending",
+        })),
+      );
       const results = await Promise.all(
         options.map(async (option) => {
           const started = performance.now();
@@ -74,9 +90,10 @@ export function Header({
             return {
               line: option.line,
               delay: Math.max(1, Math.round(performance.now() - started)),
+              status: "loaded" as const,
             };
           } catch {
-            return { line: option.line, delay: null };
+            return { line: option.line, delay: null, status: "failed" as const };
           } finally {
             window.clearTimeout(timeout);
           }
@@ -164,7 +181,7 @@ export function Header({
           {announcement.content || "暂无公告"}
         </span>
       </button>
-      <header className="site-header">
+      <header className={`site-header${headerCollapsed ? " header-collapsed" : ""}`}>
         <img className="fish-logo" src={loginLogo} alt="快排" />
         <div className="account">
           <label className="account-field">
@@ -251,8 +268,21 @@ export function Header({
                 aria-hidden="true"
               />
             </span>
-            <em>更换线路</em>
+            <em>测速</em>
           </button>
+          <span
+            className={`nav-arrow t-b ${headerCollapsed ? "rv" : "v"}`}
+            role="button"
+            tabIndex={0}
+            aria-label={headerCollapsed ? "展开顶部信息" : "收起顶部信息"}
+            onClick={() => setHeaderCollapsed((value) => !value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                setHeaderCollapsed((value) => !value);
+              }
+            }}
+          />
           <button className="exit" onClick={logout}>
             <span className="nav-icon-shell">
               <img
@@ -266,53 +296,63 @@ export function Header({
           </button>
         </nav>
       </header>
-      <Modal
-        title="切换线路"
-        open={lineOpen}
-        onCancel={closeLineModal}
-        footer={null}
-        width={460}
-        destroyOnHidden
-      >
-        <div className="line-tip">
-          测速完成后将 <b>自动跳转</b> 至 <b>速度最快</b> 的线路
-        </div>
-        <div className="line-tip">
-          数字越 <b>小</b>，速度越 <b>快</b>
-        </div>
-        {lineLoading && <div className="line-modal-loading">正在检测线路…</div>}
-        {!lineLoading && lineResults.length === 0 && (
-          <div className="line-modal-empty">当前站点暂无可用线路</div>
-        )}
-        {lineResults.length > 0 && (
-          <div className="line-table">
-            <div className="line-table-row line-table-head">
-              <span>线路</span>
-              <span>延时</span>
+      {lineOpen && (
+        <div className="line-overlay" role="dialog" aria-modal="true" aria-label="切换线路" onClick={(event) => { if (event.target === event.currentTarget) closeLineModal(); }}>
+          <div className="line-container">
+            <div className="line-title">
+              <h5>切换线路</h5>
+              <button type="button" aria-label="关闭测速窗口" onClick={closeLineModal}>×</button>
             </div>
-            {lineResults.map((item) => (
-              <div className="line-table-row" key={item.line}>
-                <span className="line-name">线路{item.line}</span>
-                <strong className={delayClass(item.delay)}>
-                  {item.delay === null ? (
-                    "检测失败"
-                  ) : (
-                    <>
-                      {item.delay}ms
-                      {item.fastest && <em className="line-fastest">最快</em>}
-                    </>
-                  )}
-                </strong>
+            <div className="line-tip">
+              测速完成后将 <b>自动跳转</b> 至 <b>速度最快</b> 的线路
+            </div>
+            <div className="line-tip">
+              数字越 <b>小</b>，速度越 <b>快</b>
+            </div>
+            {!lineLoading && lineResults.length === 0 && (
+              <div className="line-modal-empty">当前站点暂无可用线路</div>
+            )}
+            {lineResults.length > 0 && (
+              <div className="line-table">
+                <div className="line-table-row line-table-head">
+                  <span>线路</span>
+                  <span>速度</span>
+                </div>
+                {lineResults.map((item) => {
+                  const option = lineOptions.find((entry) => entry.line === item.line);
+                  const href = option?.url ? `${option.url.replace(/\/$/, "")}/` : "#";
+                  return (
+                    <div className="line-table-row" key={item.line}>
+                      <span className="line-name">
+                        <a href={href}>线路{item.line}</a>
+                      </span>
+                      <strong className={item.status === "testing" ? "line-delay-medium" : delayClass(item.delay)}>
+                        {item.status === "testing"
+                          ? "测速中..."
+                          : item.status === "pending"
+                            ? "等待中"
+                            : item.delay === null
+                              ? "检测失败"
+                              : (
+                                <>
+                                  {item.delay}ms
+                                  {item.fastest && <em className="line-fastest">最快</em>}
+                                </>
+                              )}
+                      </strong>
+                    </div>
+                  );
+                })}
               </div>
-            ))}
+            )}
+            {lineCountdown !== null && (
+              <div className="line-countdown">
+                <b>{lineCountdown}</b> 秒后自动跳转至最快线路
+              </div>
+            )}
           </div>
-        )}
-        {lineCountdown !== null && (
-          <div className="line-countdown">
-            <b>{lineCountdown}</b> 秒后自动跳转至最快线路
-          </div>
-        )}
-      </Modal>
+        </div>
+      )}
     </>
   );
 }

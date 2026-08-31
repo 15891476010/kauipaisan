@@ -36,7 +36,7 @@ const detailColumns: Column[] = [
   { key: "amount", width: 100, label: "下注金额" }, { key: "odds", width: 90, label: "赔率" },
   { key: "win", width: 100, label: "中奖" }, { key: "downline", width: 110, label: "下线回水" },
   { key: "received", width: 120, label: "实收下线" }, { key: "own", width: 110, label: "自己回水" },
-  { key: "upstream", width: 110, label: "实付上线" }, { key: "profit", width: 100, label: "赚水" },
+  { key: "upstream", width: 110, label: "实付上线" }, { key: "profit", width: 100, label: "明水" },
 ];
 
 const winningColumns: Column[] = [

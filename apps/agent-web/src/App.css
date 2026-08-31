@@ -1042,6 +1042,9 @@ body {
   height: 90px !important;
   padding: 0 18px 0 24px !important;
   gap: 0 !important;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
   border-top: 3px solid #006400;
   border-bottom: 2px solid #006400;
   overflow: hidden;
@@ -1052,8 +1055,8 @@ body {
   height: 87px;
   flex: 0 0 auto;
   align-items: center;
-  gap: 55px;
-  padding-right: 24px;
+  gap: 22px;
+  padding-right: 18px;
 }
 .agent-identity .agent-logo {
   width: 80px;
@@ -1065,37 +1068,85 @@ body {
 .agent-account-box {
   position: relative;
   display: flex;
-  width: max-content;
-  min-width: 130px;
-  max-width: 280px;
-  height: 40px;
+  width: 158px;
+  min-width: 158px;
+  max-width: 158px;
+  height: 87px;
   flex: 0 0 auto;
   align-items: center;
-  padding: 7px 8px 2px;
-  border: 1px solid #8f8f8f;
-  border-radius: 4px;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
   color: #111;
-  font-size: 16px;
-  line-height: 17px;
+  font-size: 14px;
+  line-height: 18px;
   white-space: nowrap;
 }
-.agent-account-label {
+.agent-account-field {
+  position: relative;
+  display: flex;
+  width: 138px;
+  min-width: 138px;
+  max-width: 138px;
+  height: 40px;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: flex-start;
+  margin: 0;
+  padding: 8px 8px 2px;
+  border: 1px solid #8f8f8f;
+  border-radius: 2px;
+  overflow: visible;
+  color: #111;
+  font-size: 14px;
+  line-height: 18px;
+}
+.agent-account-field .agent-account-label {
   position: absolute;
-  top: -14px;
-  left: 9px;
+  top: -9px;
+  left: 7px;
   padding: 0 4px;
   background: #fff;
   color: #111;
-  font-size: 16px;
-  line-height: 18px;
+  font-size: 13px;
+  line-height: 16px;
 }
-.agent-account-value {
+.agent-account-field .agent-account-value {
   display: block;
+  width: 100%;
   min-width: 0;
-  max-width: 262px;
+  max-width: 100%;
+  height: 20px;
+  margin: 0;
+  padding: 0;
   overflow: hidden;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #111;
+  font-size: 14px;
   line-height: 20px;
+  text-align: left;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Keep the legacy account rules from reintroducing the two-column/grid layout. */
+.agent-account-box .account-field {
+  display: flex;
+  grid-column: auto;
+}
+.agent-account-box .account-field > span:not(.agent-account-label) {
+  display: none;
+}
+/* The shell, rather than the text itself, is centered in the header identity area. */
+.agent-account-box > .agent-account-field {
+  align-self: center;
+}
+/* Existing shared header styles are intentionally scoped away from the agent header. */
+.agent-header > .agent-identity {
+  align-self: stretch;
 }
 .agent-navigation {
   display: flex;
@@ -6590,7 +6641,7 @@ body .ant-modal-confirm-info .ant-modal-confirm-icon { color:#006400; }
   background: #006b00;
 }
 .agent-app .site-header {
-  height: 110px;
+  height: 100px;
   display: flex;
   align-items: center;
   gap: 20px;
@@ -6608,78 +6659,103 @@ body .ant-modal-confirm-info .ant-modal-confirm-icon { color:#006400; }
     hue-rotate(88deg) brightness(82%) contrast(105%);
 }
 .agent-app .account {
-  width: 235px;
-  flex: 0 0 235px;
+  width: 170px;
+  flex: 0 0 170px;
 }
 .agent-app .account-field {
   height: 34px;
 }
-.agent-app .lottery {
-  width: 300px;
-  height: 102px;
-  min-width: 300px;
-  flex: none;
+.agent-app .account-current input {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-app .agent-lottery-strip {
+  position: relative;
+  z-index: 2;
   display: flex;
-  flex-direction: column;
+  width: 100%;
+  height: 46px;
+  min-height: 46px;
+  align-items: stretch;
+  box-sizing: border-box;
+  border: 0;
+  background: #fff;
+  color: #006400;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.agent-app .agent-lottery-strip .lottery {
+  display: flex;
+  width: auto;
+  height: 46px;
+  box-sizing: border-box;
+  min-width: 0;
+  flex: none;
   margin: 0;
   padding: 0;
-  border: 1px solid #3f3f3f;
-  background: #fff;
-  color: #000;
+  border: 0;
+  background: transparent;
+  color: #006400;
   list-style: none;
 }
-.agent-app .lottery > li {
+.agent-app .agent-lottery-strip .lottery > li {
   display: flex;
-  width: 298px;
-  height: 50px;
-  flex: none;
+  width: 200px;
+  height: 46px;
+  flex: 0 0 200px;
   align-items: center;
-  justify-content: center;
-  color: #000;
-}
-.agent-app .lottery > li + li {
-  border-top: 1px dashed #afafaf;
-}
-.agent-app .lottery > li[role="button"] {
+  box-sizing: border-box;
+  padding: 1px 16px;
+  border: 0;
+  border-right: 1px solid #006400;
+  background: transparent;
+  color: #006400;
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
   cursor: pointer;
 }
-.agent-app .lottery > li[role="button"]:not(.selected):hover {
-  background: #f2fff2;
+.agent-app .agent-lottery-strip .lottery > li:hover {
+  background: #e5f1e5;
 }
-.agent-app .lottery > li.selected {
+.agent-app .agent-lottery-strip .lottery > li.selected {
   position: relative;
   z-index: 1;
-  box-shadow: inset 0 0 0 2px #008000;
   background: #008000;
   color: #fff;
 }
-.agent-app .lottery > li.selected .lottery-name span,
-.agent-app .lottery > li.selected .lottery-name b,
-.agent-app .lottery > li.selected .lottery-meta label,
-.agent-app .lottery > li.selected .lottery-meta strong {
+.agent-app .agent-lottery-strip .lottery > li.selected .lottery-name span,
+.agent-app .agent-lottery-strip .lottery > li.selected .lottery-name b,
+.agent-app .agent-lottery-strip .lottery > li.selected .lottery-meta label,
+.agent-app .agent-lottery-strip .lottery > li.selected .lottery-meta strong {
   color: #fff;
 }
 .agent-app .lottery-row {
   display: flex;
   width: 100%;
-  height: 50px;
+  height: 46px;
+  flex: 1 1 auto;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
 }
 .agent-app .lottery-name,
 .agent-app .lottery-meta {
   display: flex;
-  height: 50px;
+  height: 46px;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  margin: 0 20px;
+  margin: 0;
+  min-width: 0;
 }
 .agent-app .lottery-name {
-  width: 64px;
+  width: 78px;
+  align-items: flex-start;
 }
 .agent-app .lottery-meta {
-  width: 91.5px;
+  width: 92px;
+  align-items: flex-end;
 }
 .agent-app .lottery-name span {
   font-size: 16px;
@@ -6693,6 +6769,7 @@ body .ant-modal-confirm-info .ant-modal-confirm-icon { color:#006400; }
   color: #b76400;
   font-size: 14px;
   line-height: 17px;
+  white-space: nowrap;
 }
 .agent-app .lottery-meta strong {
   font-size: 16px;
@@ -6772,11 +6849,11 @@ body .ant-modal-confirm-info .ant-modal-confirm-icon { color:#006400; }
   color: #a00;
 }
 .agent-app .body.agent-body {
-  min-height: calc(100vh - 142px) !important;
+  min-height: calc(100vh - 180px) !important;
   background: #e8e8e8 !important;
 }
 .agent-app .agent-body main {
-  min-height: calc(100vh - 142px);
+  min-height: calc(100vh - 180px);
   background: #e8e8e8 !important;
 }
 @media (max-width: 1200px) {
@@ -6785,12 +6862,9 @@ body .ant-modal-confirm-info .ant-modal-confirm-icon { color:#006400; }
     padding-left: 20px;
     padding-right: 20px;
   }
-  .agent-app .lottery {
-    width: 260px;
-    min-width: 260px;
-  }
-  .agent-app .lottery > li {
-    width: 258px;
+  .agent-app .agent-lottery-strip .lottery > li {
+    width: 200px;
+    flex-basis: 200px;
   }
 }
 
@@ -7132,4 +7206,11 @@ body .ant-modal-confirm-info .ant-modal-confirm-icon { color:#006400; }
   align-items: center;
   margin-inline-end: 0;
   white-space: nowrap;
+}
+
+/* 明水由站点统一配置（0.085），不再在会员赔率表中按玩法单独设置。 */
+.agent-app .member-odds-scroll col.odds-rebate-col,
+.agent-app .member-odds-scroll th:last-child,
+.agent-app .member-odds-scroll td:last-child {
+  display: none;
 }

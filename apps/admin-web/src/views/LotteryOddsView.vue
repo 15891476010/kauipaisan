@@ -195,9 +195,10 @@ async function save() {
         playForm.value.offline_rebate !== "" &&
         Number(playForm.value.offline_rebate) > 0.1
       )
-        return ElMessage.warning("离线赚水必须在0到0.1之间");
+        return ElMessage.warning("明水统一由站点配置（0.085），玩法不再单独设置");
       const payload = {
         ...playForm.value,
+        offline_rebate: "0.0000",
         ...Object.fromEntries(
           numericKeys.map((key) => [
             key,
@@ -328,7 +329,7 @@ onMounted(() => { void load(); void loadSources(); });
               >{{ displayValue(row.odds) }}</span
             ></template
           ></el-table-column
-        ><el-table-column label="离线赚水" width="105"
+        ><el-table-column label="明水（统一）" width="105"
           ><template #default="{ row }"
             ><span
               v-if="row.node_type === 'play' || row.is_playable"
@@ -381,7 +382,7 @@ onMounted(() => { void load(); void loadSources(); });
             placeholder="例如：一码定位" /></el-form-item
         ><el-form-item label="节点类型"
           ><el-switch v-model="categoryForm.is_playable" :active-value="1" :inactive-value="0" active-text="类别本身就是玩法" inactive-text="类别下挂玩法" /></el-form-item
-        ><div v-if="categoryForm.is_playable" class="number-grid"><el-form-item label="最小下注"><el-input v-model="categoryForm.min_bet" type="number" min="0" placeholder="可留空" /></el-form-item><el-form-item label="赔率上限"><el-input v-model="categoryForm.odds_limit" type="number" min="0" placeholder="可留空" /></el-form-item><el-form-item label="单注上限"><el-input v-model="categoryForm.single_bet_limit" type="number" min="0" placeholder="可留空" /></el-form-item><el-form-item label="单项上限"><el-input v-model="categoryForm.single_item_limit" type="number" min="0" placeholder="可留空" /></el-form-item><el-form-item label="赔率"><el-input v-model="categoryForm.odds" type="number" min="0" placeholder="可留空" /></el-form-item><el-form-item label="离线赚水"><el-input v-model="categoryForm.offline_rebate" type="number" min="0" max="0.1" step="0.001" placeholder="可留空" /></el-form-item></div
+        ><div v-if="categoryForm.is_playable" class="number-grid"><el-form-item label="最小下注"><el-input v-model="categoryForm.min_bet" type="number" min="0" placeholder="可留空" /></el-form-item><el-form-item label="赔率上限"><el-input v-model="categoryForm.odds_limit" type="number" min="0" placeholder="可留空" /></el-form-item><el-form-item label="单注上限"><el-input v-model="categoryForm.single_bet_limit" type="number" min="0" placeholder="可留空" /></el-form-item><el-form-item label="单项上限"><el-input v-model="categoryForm.single_item_limit" type="number" min="0" placeholder="可留空" /></el-form-item><el-form-item label="赔率"><el-input v-model="categoryForm.odds" type="number" min="0" placeholder="可留空" /></el-form-item><el-form-item label="明水（统一）"><el-input model-value="0.085" disabled /></el-form-item></div
         ><el-form-item label="排序"
           ><el-input-number
             v-model="categoryForm.sort"
@@ -436,9 +437,10 @@ onMounted(() => { void load(); void loadSources(); });
               type="number"
               min="0"
               placeholder="可留空" /></el-form-item
-          ><el-form-item label="离线赚水"
+          ><el-form-item label="明水（统一）"
             ><el-input
-              v-model="playForm.offline_rebate"
+              model-value="0.085"
+              disabled
               type="number"
               min="0"
               max="0.1"

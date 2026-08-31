@@ -8,13 +8,13 @@ import trophyIcon from "../../assets/trophy.svg";
 import userIcon from "../../assets/user.svg";
 
 export const nav = [
-  { path: "kb", title: "快速录入", icon: importIcon },
-  { path: "zh", title: "下注明细", icon: fileDoneIcon },
-  { path: "zd", title: "历史账单", icon: accountBookIcon },
+  { path: "kb", title: "快录", icon: importIcon },
+  { path: "zh", title: "记录", icon: fileDoneIcon },
+  { path: "jg", title: "奖号", icon: trophyIcon },
+  { path: "xgmm", title: "密码", icon: keyIcon },
+  { path: "zd", title: "账单", icon: accountBookIcon },
   { path: "hyxx", title: "会员资料", icon: userIcon },
-  { path: "jg", title: "开奖号码", icon: trophyIcon },
   { path: "gz", title: "规则说明", icon: alertIcon },
-  { path: "xgmm", title: "修改密码", icon: keyIcon },
 ] as const;
 
 export type Announcement = { title: string; content: string };

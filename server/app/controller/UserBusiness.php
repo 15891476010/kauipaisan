@@ -121,7 +121,9 @@ final class UserBusiness
         if ($singleItem>0 && $requested > $singleItem*$count + 0.000001) {
             throw new \InvalidArgumentException('玩法“'.(string)($line['play_type']??$line['category']??'当前玩法').'”超过单项上限：最多 '.number_format($singleItem*$count,2,'.','').' 元，当前输入 '.number_format($requested,2,'.','').' 元，请修改后再提交');
         }
-        $rebate=max(0,(float)($odds['offline_rebate']??0)); $rawOdds=$odds['odds']??null; $baseOdds=$rawOdds!==null && is_numeric($rawOdds)?(float)$rawOdds:null;
+        // 统一口径：系统不再使用玩法级离线反水，唯一明水仅用于代理
+        // 占成结算，因此用户下注赔率不再扣除 offline_rebate。
+        $rebate=0.0; $rawOdds=$odds['odds']??null; $baseOdds=$rawOdds!==null && is_numeric($rawOdds)?(float)$rawOdds:null;
         $oddsLimit=max(0,(float)($odds['odds_limit']??0));if($baseOdds!==null&&$oddsLimit>0)$baseOdds=min($baseOdds,$oddsLimit);
         $actualOdds=$baseOdds===null?null:max(0,$baseOdds-$rebate);
         if($actualOdds!==null&&$actualOdds<=0)throw new \InvalidArgumentException('当前玩法有效赔率为0，已禁止下注');
@@ -143,7 +145,7 @@ final class UserBusiness
             $query=Db::name('bet_records')->where('site_id',$s['site_id'])->where('user_id',$s['user_id']);
             if ($from) $query->where('placed_at','>=',$from); if ($to) $query->where('placed_at','<=',$to);
             $status=(string)$request->param('status',''); if (in_array($status,['won','unwon'],true)) $query->where('status',$status);
-            $source=trim((string)$request->param('source','')); if ($source !== '') $query->where(function($nested)use($source):void{$nested->whereLike('source_text','%'.$source.'%')->whereOrLike('formatted_text','%'.$source.'%');});
+            $source=trim((string)$request->param('source','')); if ($source !== '') $query->where(function($nested)use($source):void{$nested->whereLike('source_text','%'.$source.'%');});
             $total=(clone $query)->count(); $amountTotal=(float)(clone $query)->sum('amount'); $page=max(1,(int)$request->param('page',1)); $size=min(100,max(1,(int)$request->param('page_size',20)));
             $list=$query->order('placed_at','desc')->page($page,$size)->select()->toArray();
             foreach ($list as &$record) {
@@ -159,7 +161,7 @@ final class UserBusiness
         $query=Db::name('bet_submissions')->where('site_id',$s['site_id'])->where('user_id',$s['user_id']);
         if ($from) $query->where('placed_at','>=',$from); if ($to) $query->where('placed_at','<=',$to);
         $status=(string)$request->param('status',''); if (in_array($status,['won','unwon'],true)) $query->where('status',$status);
-        $source=trim((string)$request->param('source','')); if ($source !== '') $query->where(function($nested)use($source):void{$nested->whereLike('source_text','%'.$source.'%')->whereOrLike('formatted_text','%'.$source.'%');});
+        $source=trim((string)$request->param('source','')); if ($source !== '') $query->where(function($nested)use($source):void{$nested->whereLike('source_text','%'.$source.'%');});
         $total=(clone $query)->count(); $amountTotal=(float)(clone $query)->sum('amount'); $page=max(1,(int)$request->param('page',1)); $size=min(100,max(1,(int)$request->param('page_size',20)));
         $list=$query->order('placed_at','desc')->page($page,$size)->select()->toArray();
         foreach ($list as &$record) {
@@ -410,11 +412,11 @@ final class UserBusiness
             // 一条真实的复式选号（例如“复024567”），不能显示 000。
             if(count($tokens)===1&&$tokens[0]==='000'&&preg_match('/(?<!\d)(\d{1,10})\s+复式[一二两三四五六七八九1-9]码/u',$source,$package))$tokens=['复'.$package[1]];
             if($tokens===[])$tokens=['-'];if($sort==='desc')$tokens=array_reverse($tokens);$count=count($tokens);
-            $amounts=$this->splitDetailMoney((float)$row['amount'],$count);$wins=$this->splitDetailMoney((float)$row['win_amount'],$count);$rebates=$this->splitDetailMoney((float)$row['rebate'],$count);$offlineTotal=round((float)$row['amount']*max(0,(float)($row['drop_odds']??0)),2);$offlineRebates=$this->splitDetailMoney($offlineTotal,$count);$orderNo=$this->detailOrderNumber($row);$resolved=(float)$row['win_amount']<=0;$winningIndexes=[];
+            $amounts=$this->splitDetailMoney((float)$row['amount'],$count);$wins=$this->splitDetailMoney((float)$row['win_amount'],$count);$rebates=$this->splitDetailMoney((float)$row['rebate'],$count);$offlineRebates=array_fill(0,$count,0.0);$orderNo=$this->detailOrderNumber($row);$resolved=(float)$row['win_amount']<=0;$winningIndexes=[];
             $draw=$draws[(string)($row['lottery']??'').'|'.(string)($row['issue_no']??'')]??'';
             if((float)$row['win_amount']>0&&$draw!==''){$winningIndexes=array_keys(array_filter($matchTokens,static fn(string $token):bool=>$matcher->numberMatches($token,$draw,$source)));if($winningIndexes!==[]){$wins=array_fill(0,$count,'0');$winningParts=$this->splitDetailMoney((float)$row['win_amount'],count($winningIndexes));foreach($winningIndexes as $winningIndex=>$tokenIndex)$wins[$tokenIndex]=$winningParts[$winningIndex];$resolved=true;}}
             $groupPackage=$this->isExpandedGroupPackage($matchTokens,$source);$displayOdds=$row['odds']===null?null:(float)$row['odds']*($groupPackage?$count:1);$oddsText=$displayOdds===null?'-':rtrim(rtrim(number_format($displayOdds,3,'.',''),'0'),'.');
-            foreach($tokens as $index=>$token){$amount=(float)$amounts[$index];$win=(float)$wins[$index];$rebate=(float)$rebates[$index];$offlineRebate=(float)$offlineRebates[$index];$tokenStatus=(string)($row['status']??$row['record_status']??'pending');if($resolved&&$tokenStatus==='won')$tokenStatus=$win>0?'won':'unwon';$groupFirst=$index===0;$profit=$tokenStatus==='pending'?0.0:($win-$amount+$rebate+$offlineRebate);$expanded[]=['id'=>(int)$row['id'],'row_key'=>(int)$row['id'].'-'.$index,'detail_group_id'=>(int)$row['id'],'detail_group_index'=>$index,'detail_group_size'=>$count,'group_first'=>$groupFirst,'is_group_first'=>$groupFirst,'show_text_button'=>$groupFirst,'bet_record_id'=>(int)($row['bet_record_id']??0),'submission_id'=>(int)($row['submission_id']??0)?:null,'order_no'=>$orderNo,'issue_no'=>(string)$row['issue_no'],'number_text'=>$token,'stored_number_text'=>$storedNumberText,'category'=>(string)($row['category']??''),'play_type'=>(string)($row['play_type']??''),'play_label'=>$this->detailPlayLabel($row['play_type']??'',$row['category']??''),'lottery'=>(string)($row['lottery']??''),'amount'=>$amounts[$index],'odds'=>$oddsText,'win_amount'=>$wins[$index],'is_winning_number'=>in_array($index,$winningIndexes,true),'win_projection_resolved'=>$resolved,'rebate'=>$rebates[$index],'offline_rebate'=>$this->detailMoney($offlineRebate),'profit'=>$this->detailMoney($profit),'status'=>$tokenStatus,'placed_at'=>(string)$row['placed_at'],'source_text'=>$originalSource,'original_source_text'=>$originalSource,'parsed_source_text'=>$parsedText];}
+            foreach($tokens as $index=>$token){$amount=(float)$amounts[$index];$win=(float)$wins[$index];$rebate=(float)$rebates[$index];$tokenStatus=(string)($row['status']??$row['record_status']??'pending');if($resolved&&$tokenStatus==='won')$tokenStatus=$win>0?'won':'unwon';$groupFirst=$index===0;$profit=$tokenStatus==='pending'?0.0:($win-$amount+$rebate);$expanded[]=['id'=>(int)$row['id'],'row_key'=>(int)$row['id'].'-'.$index,'detail_group_id'=>(int)$row['id'],'detail_group_index'=>$index,'detail_group_size'=>$count,'group_first'=>$groupFirst,'is_group_first'=>$groupFirst,'show_text_button'=>$groupFirst,'bet_record_id'=>(int)($row['bet_record_id']??0),'submission_id'=>(int)($row['submission_id']??0)?:null,'order_no'=>$orderNo,'issue_no'=>(string)$row['issue_no'],'number_text'=>$token,'stored_number_text'=>$storedNumberText,'category'=>(string)($row['category']??''),'play_type'=>(string)($row['play_type']??''),'play_label'=>$this->detailPlayLabel($row['play_type']??'',$row['category']??''),'lottery'=>(string)($row['lottery']??''),'amount'=>$amounts[$index],'odds'=>$oddsText,'win_amount'=>$wins[$index],'is_winning_number'=>in_array($index,$winningIndexes,true),'win_projection_resolved'=>$resolved,'rebate'=>$rebates[$index],'offline_rebate'=>'0.00','profit'=>$this->detailMoney($profit),'status'=>$tokenStatus,'placed_at'=>(string)$row['placed_at'],'source_text'=>$originalSource,'original_source_text'=>$originalSource,'parsed_source_text'=>$parsedText];}
         }
         $total=count($expanded);$page=max(1,(int)$request->param('page',1));$size=min(100,max(1,(int)$request->param('page_size',40)));$pageRows=array_slice($expanded,($page-1)*$size,$size);$allTotals=$this->detailTotals($expanded);$pageTotals=$this->detailTotals($pageRows);
         return $this->reply(['list'=>$pageRows,'total'=>$total,'page'=>$page,'page_size'=>$size,'total_amount'=>$allTotals['amount'],'win_amount'=>$allTotals['win_amount'],'rebate'=>$allTotals['rebate'],'offline_rebate'=>$allTotals['offline_rebate'],'profit'=>$allTotals['profit'],'page_total'=>$pageTotals]);
@@ -423,24 +425,44 @@ final class UserBusiness
     {
         $s=$this->session($request); $query=Db::name('bills')->where('site_id',$s['site_id'])->where('user_id',$s['user_id']);
         $from=trim((string)$request->param('from','')); $to=trim((string)$request->param('to','')); if ($from) $query->where('bill_date','>=',$from); if ($to) $query->where('bill_date','<=',$to);
-        $list=$query->order('bill_date','desc')->select()->toArray();
+        $lottery=trim((string)$request->param('lottery',''));
+        $list=$lottery==='' ? $query->order('bill_date','desc')->select()->toArray() : [];
+        if ($lottery!=='') {
+            // The summary table is intentionally grouped by date only. When a
+            // single lottery is selected, rebuild the daily view from its
+            // detail rows so 福/体 clicks return independent totals.
+            $detailIds=Db::name('user_stop_drops')->where('site_id',$s['site_id'])->where('user_id',$s['user_id'])->where('lottery',$lottery)->column('bet_detail_id');
+            $detailQuery=Db::name('bet_details')->where('site_id',$s['site_id'])->where('user_id',$s['user_id'])->whereIn('id',$detailIds ?: [0]);
+            if ($from) $detailQuery->where('placed_at','>=',$from.' 00:00:00');
+            if ($to) $detailQuery->where('placed_at','<=',$to.' 23:59:59');
+            $detailRows=$detailQuery->field('id,placed_at,amount,rebate,win_amount')->select()->toArray();
+            $daily=[];
+            foreach ($detailRows as $detail) {
+                $date=substr((string)$detail['placed_at'],0,10);
+                if (!isset($daily[$date])) $daily[$date]=['bill_date'=>$date,'bet_count'=>0,'amount'=>0.0,'rebate'=>0.0,'offline_rebate'=>0.0,'win_amount'=>0.0,'profit'=>0.0];
+                $amount=(float)$detail['amount']; $rebate=(float)($detail['rebate']??0); $win=(float)$detail['win_amount'];
+                $daily[$date]['bet_count']++;
+                $daily[$date]['amount']+=$amount; $daily[$date]['rebate']+=$rebate; $daily[$date]['win_amount']+=$win; $daily[$date]['profit']+=($win-$amount+$rebate);
+            }
+            $list=array_values($daily); usort($list,static fn(array $a,array $b): int => strcmp($b['bill_date'],$a['bill_date']));
+        }
         // Older deployments do not backfill the bills summary table. Build the
         // same daily view from the source records until a summary exists.
         $recordsQuery=Db::name('bet_records')->where('site_id',$s['site_id'])->where('user_id',$s['user_id']);
         if ($from) $recordsQuery->where('placed_at','>=',$from.' 00:00:00');
         if ($to) $recordsQuery->where('placed_at','<=',$to.' 23:59:59');
-        $records=$recordsQuery->select()->toArray();
-        if ($records) {
+        $records=$lottery==='' ? $recordsQuery->select()->toArray() : [];
+        if ($lottery==='' && $records) {
             $recordIds=array_map(static fn(array $row): int => (int)$row['id'],$records);
-            $detailRows=$recordIds ? Db::name('bet_details')->alias('d')->leftJoin('user_stop_drops s','s.bet_detail_id=d.id')->whereIn('d.bet_record_id',$recordIds)->field('d.bet_record_id,d.rebate,d.amount,s.drop_odds')->select()->toArray() : [];
-            $rebates=[];$offlineRebates=[];
-            foreach ($detailRows as $detail) {$recordKey=(int)$detail['bet_record_id'];$rebates[$recordKey]=($rebates[$recordKey]??0)+(float)$detail['rebate'];$offlineRebates[$recordKey]=($offlineRebates[$recordKey]??0)+round((float)$detail['amount']*max(0,(float)($detail['drop_odds']??0)),2);}
+            $detailRows=$recordIds ? Db::name('bet_details')->whereIn('bet_record_id',$recordIds)->field('bet_record_id,rebate')->select()->toArray() : [];
+            $rebates=[];
+            foreach ($detailRows as $detail) {$recordKey=(int)$detail['bet_record_id'];$rebates[$recordKey]=($rebates[$recordKey]??0)+(float)$detail['rebate'];}
             $daily=[];
             foreach ($records as $record) {
                 $date=substr((string)$record['placed_at'],0,10);
                 if (!isset($daily[$date])) $daily[$date]=['bill_date'=>$date,'bet_count'=>0,'amount'=>0.0,'rebate'=>0.0,'offline_rebate'=>0.0,'win_amount'=>0.0,'profit'=>0.0];
-                $amount=(float)$record['amount']; $rebate=(float)($rebates[(int)$record['id']]??0); $offline=(float)($offlineRebates[(int)$record['id']]??0); $win=(float)$record['win_amount'];
-                $daily[$date]['bet_count']+=(int)$record['bet_count']; $daily[$date]['amount']+=$amount; $daily[$date]['rebate']+=$rebate; $daily[$date]['offline_rebate']+=$offline; $daily[$date]['win_amount']+=$win; $daily[$date]['profit']+=($win-$amount+$rebate+$offline);
+                $amount=(float)$record['amount']; $rebate=(float)($rebates[(int)$record['id']]??0); $win=(float)$record['win_amount'];
+                $daily[$date]['bet_count']+=(int)$record['bet_count']; $daily[$date]['amount']+=$amount; $daily[$date]['rebate']+=$rebate; $daily[$date]['offline_rebate']+=0; $daily[$date]['win_amount']+=$win; $daily[$date]['profit']+=($win-$amount+$rebate);
             }
             $list=array_values($daily); usort($list,static fn(array $a,array $b): int => strcmp($b['bill_date'],$a['bill_date']));
         }

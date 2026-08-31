@@ -15,11 +15,20 @@ final class ScoreTransfer
     public static function organizationAllocation(array $child,float $delta,array $operator=[]): void
     {
         if(abs($delta)<0.005)return;
-        $childId=(int)$child['id'];$parentId=(int)$child['parent_id'];$tenantId=(int)$child['tenant_id'];$siteId=(int)$child['site_id'];$tx=self::transactionNo('AL');
-        $lockedChild=Db::name('organization_nodes')->where('id',$childId)->lock(true)->find();if(!$lockedChild)throw new \RuntimeException('下级组织不存在');
+        $childId=(int)$child['id'];$parentId=(int)$child['parent_id'];$tenantId=(int)$child['tenant_id'];$siteId=(int)$child['site_id'];
+        if($childId<1||$tenantId<1||$siteId<1)throw new \InvalidArgumentException('组织账户信息不完整');
+        $tx=self::transactionNo('AL');
+        $lockedChild=Db::name('organization_nodes')->where('id',$childId)->where('tenant_id',$tenantId)->where('site_id',$siteId)->whereNull('deleted_at')->lock(true)->find();if(!$lockedChild)throw new \RuntimeException('下级组织不存在');
+        if($parentId===0) {
+            if((string)$lockedChild['level']!=='director')throw new \InvalidArgumentException('只有根总监可以直接从站点分配分数');
+        } else {
+            $parentCheck=Db::name('organization_nodes')->where('id',$parentId)->where('tenant_id',$tenantId)->where('site_id',$siteId)->whereNull('deleted_at')->find();
+            if(!$parentCheck)throw new \RuntimeException('组织上级不存在');
+            if(!OrganizationHierarchy::canParentLevelAccept((string)$parentCheck['level'],(string)$lockedChild['level']))throw new \InvalidArgumentException('组织层级关系无效，不能跨级分配分数');
+        }
         if($delta<0 && (float)$lockedChild['balance']+0.000001<abs($delta))throw new \InvalidArgumentException('下级可用分数不足，已有分数已继续分配或产生亏损，不能收回这么多');
         if($parentId>0){
-            $parent=Db::name('organization_nodes')->where('id',$parentId)->lock(true)->find();if(!$parent)throw new \RuntimeException('上级组织不存在');
+            $parent=Db::name('organization_nodes')->where('id',$parentId)->where('tenant_id',$tenantId)->where('site_id',$siteId)->whereNull('deleted_at')->lock(true)->find();if(!$parent)throw new \RuntimeException('上级组织不存在');
             if($delta>0&&(float)$parent['balance']+0.000001<$delta)throw new \InvalidArgumentException('上级可用分数不足，无法继续分配');
             self::changeOrganization($parent,-$delta,$tx,'层级分数分配',$childId,'organization',$operator);
         }else{
@@ -32,12 +41,64 @@ final class ScoreTransfer
 
     public static function userAllocation(array $user,float $delta,array $operator=[]): void
     {
-        if(abs($delta)<0.005)return;$organizationId=(int)($user['organization_id']??0);if($organizationId<1)throw new \InvalidArgumentException('用户尚未归属代理');
-        $agent=Db::name('organization_nodes')->where('id',$organizationId)->where('level','agent')->lock(true)->find();if(!$agent)throw new \InvalidArgumentException('用户所属代理不存在');
+        if(abs($delta)<0.005)return;
+        $userId=(int)($user['id']??0);$siteId=(int)($user['site_id']??0);$tenantId=(int)($user['tenant_id']??0);
+        if($userId<1||$siteId<1||$tenantId<1)throw new \InvalidArgumentException('用户账户信息不完整');
+        $lockedUser=Db::name('site_users')->where('id',$userId)->where('site_id',$siteId)->where('tenant_id',$tenantId)->whereNull('deleted_at')->lock(true)->find();
+        if(!$lockedUser)throw new \InvalidArgumentException('用户不存在或已停用');
+        $organizationId=(int)($lockedUser['organization_id']??0);if($organizationId<1)throw new \InvalidArgumentException('用户尚未归属代理');
+        $agent=Db::name('organization_nodes')->where('id',$organizationId)->where('tenant_id',$tenantId)->where('site_id',$siteId)->where('level','agent')->where('status',1)->whereNull('deleted_at')->lock(true)->find();if(!$agent)throw new \InvalidArgumentException('用户所属代理不存在或已停用');
         if($delta>0&&(float)$agent['balance']+0.000001<$delta)throw new \InvalidArgumentException('代理可用分数不足，无法分配给用户');
-        $available=(float)$user['balance']+(float)$user['credit_balance']-(float)$user['used_balance'];if($delta<0&&$available+0.000001<abs($delta))throw new \InvalidArgumentException('用户可用分数不足，不能收回这么多');
-        $tx=self::transactionNo('US');self::changeOrganization($agent,-$delta,$tx,$delta>0?'向用户分配分数':'收回用户分数',(int)$user['id'],'user',$operator);
-        CreditLedger::writeExtended(['tenant_id'=>(int)$user['tenant_id'],'site_id'=>(int)$user['site_id']],$tx,$organizationId,'user',(int)$user['id'],(int)$user['id'],null,null,null,$delta,$available,$available+$delta,$delta>0?'收到代理分配分数':'向代理归还分数','score_allocation','allocation',$operator,'organization',$organizationId,null);
+        $available=(float)$lockedUser['balance']+(float)$lockedUser['credit_balance']-(float)$lockedUser['used_balance'];if($delta<0&&$available+0.000001<abs($delta))throw new \InvalidArgumentException('用户可用分数不足，不能收回这么多');
+        self::transferBetweenOrganizationAndUser($agent,$lockedUser,$delta,$operator);
+    }
+
+    /**
+     * Atomically set a member's cash and credit balances and book the net
+     * movement against the member's direct agent. This is the only supported
+     * path for administrative score edits.
+     *
+     * @return array{balance:string,credit_balance:string,used_balance:string,available_balance:string}
+     */
+    public static function setUserBalances(array $user,float $balance,float $creditBalance,array $operator=[]): array
+    {
+        $userId=(int)($user['id']??0);$siteId=(int)($user['site_id']??0);$tenantId=(int)($user['tenant_id']??0);
+        if($userId<1||$siteId<1||$tenantId<1)throw new \InvalidArgumentException('会员账户信息不完整');
+        if($balance<0||$creditBalance<0)throw new \InvalidArgumentException('余额和信用余额必须为非负数字');
+        $locked=Db::name('site_users')->where('id',$userId)->where('site_id',$siteId)->where('tenant_id',$tenantId)->whereNull('deleted_at')->lock(true)->find();
+        if(!$locked)throw new \RuntimeException('会员不存在或已停用');
+        $organizationId=(int)($locked['organization_id']??0);
+        $oldTotal=(float)$locked['balance']+(float)$locked['credit_balance'];$newTotal=round($balance+$creditBalance,2);$delta=round($newTotal-$oldTotal,2);
+        if($organizationId<1) {
+            if(abs($delta)>=0.005)throw new \InvalidArgumentException('会员尚未归属代理，不能进行分数变更');
+        } else {
+            $agent=Db::name('organization_nodes')->where('id',$organizationId)->where('tenant_id',$tenantId)->where('site_id',$siteId)->where('level','agent')->where('status',1)->whereNull('deleted_at')->lock(true)->find();
+            if(!$agent)throw new \RuntimeException('会员所属代理不存在或已停用');
+            $available=$oldTotal-(float)$locked['used_balance'];
+            if($delta<0&&$available+0.000001<abs($delta))throw new \InvalidArgumentException('会员有已下注锁定分数，不能收回这么多');
+            if($delta>0&&(float)$agent['balance']+0.000001<$delta)throw new \InvalidArgumentException('代理可用分数不足，无法分配给会员');
+            if(abs($delta)>=0.005)self::transferBetweenOrganizationAndUser($agent,$locked,$delta,$operator);
+        }
+        Db::name('site_users')->where('id',$userId)->update(['balance'=>number_format($balance,2,'.',''),'credit_balance'=>number_format($creditBalance,2,'.',''),'updated_at'=>date('Y-m-d H:i:s')]);
+        $locked['balance']=$balance;$locked['credit_balance']=$creditBalance;
+        return self::formattedUserBalances($locked);
+    }
+
+    /** @return array{balance:string,credit_balance:string,used_balance:string,available_balance:string} */
+    private static function formattedUserBalances(array $user): array
+    {
+        $balance=round((float)($user['balance']??0),2);$credit=round((float)($user['credit_balance']??0),2);$used=round((float)($user['used_balance']??0),2);
+        return ['balance'=>number_format($balance,2,'.',''),'credit_balance'=>number_format($credit,2,'.',''),'used_balance'=>number_format($used,2,'.',''),'available_balance'=>number_format(max(0,$balance+$credit-$used),2,'.','')];
+    }
+
+    /** Book both sides of a member allocation using one transaction number. */
+    private static function transferBetweenOrganizationAndUser(array $agent,array $user,float $delta,array $operator): void
+    {
+        $tx=self::transactionNo('US');$beforeAgent=(float)$agent['balance'];$afterAgent=$beforeAgent-$delta;
+        Db::name('organization_nodes')->where('id',(int)$agent['id'])->update(['balance'=>number_format($afterAgent,2,'.',''),'updated_at'=>date('Y-m-d H:i:s')]);
+        CreditLedger::writeExtended(['tenant_id'=>(int)$agent['tenant_id'],'site_id'=>(int)$agent['site_id']],$tx,(int)$agent['id'],'organization',(int)$agent['id'],null,null,null,null,-$delta,$beforeAgent,$afterAgent,$delta>0?'向用户分配分数':'收回用户分数','score_allocation','allocation',$operator,'user',(int)$user['id'],null);
+        $beforeUser=(float)$user['balance']+(float)$user['credit_balance']-(float)$user['used_balance'];$afterUser=$beforeUser+$delta;
+        CreditLedger::writeExtended(['tenant_id'=>(int)$user['tenant_id'],'site_id'=>(int)$user['site_id']],$tx,(int)$agent['id'],'user',(int)$user['id'],(int)$user['id'],null,null,null,$delta,$beforeUser,$afterUser,$delta>0?'收到代理分配分数':'向代理归还分数','score_allocation','allocation',$operator,'organization',(int)$agent['id'],null);
     }
 
     public static function adjustPlatformTotal(int $tenantId,float $newTotal,array $operator=[],?string $note=null): array

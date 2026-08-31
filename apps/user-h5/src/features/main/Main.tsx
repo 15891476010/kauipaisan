@@ -11,13 +11,14 @@ import { Header } from "./components/Header";
 import { SideBetRecords } from "./components/SideBetRecords";
 import { MorePanel } from "./components/MorePanel";
 import { QuickEntryPage } from "./pages/QuickEntryPage";
-import { BetDetailsPage } from "./pages/BetDetailsPage";
+import { RecordsPage } from "./pages/RecordsPage";
 import { BillsPage } from "./pages/BillsPage";
 import { DrawsPage } from "./pages/DrawsPage";
 import { MemberPage } from "./pages/MemberPage";
 import { ChangePasswordPage } from "./pages/ChangePasswordPage";
 import { RulesPage } from "./pages/RulesPage";
 import { GenericPage } from "./pages/GenericPage";
+import { StopDropPage } from "./pages/StopDropPage";
 import { displayAmount, nav, type Announcement, type Balances } from "./shared";
 import "./Main.scss";
 
@@ -140,7 +141,7 @@ function MainShell({ name, logout, forcePasswordChange = false, onPasswordChange
     (item) => item.id === selectedLotteryId,
   );
   const fullPage = !forcePasswordChange && location.pathname !== "/" && location.pathname !== "/kb";
-  const lotterySwitchPages = new Set(["/zh", "/hyxx", "/jg", "/gz"]);
+  const lotterySwitchPages = new Set(["/hyxx", "/jg", "/gz"]);
   const title = useMemo(
     () =>
       nav.find((item) => "/" + item.path === location.pathname)?.title ||
@@ -148,7 +149,7 @@ function MainShell({ name, logout, forcePasswordChange = false, onPasswordChange
     [location.pathname],
   );
   return (
-    <div className="app">
+    <div className={`app${location.pathname === "/zh" ? " records-app" : ""}`}>
       <Header
         name={name}
         logout={logout}
@@ -171,7 +172,13 @@ function MainShell({ name, logout, forcePasswordChange = false, onPasswordChange
               <SideBetRecords
                 onMore={() => setMoreOpen(true)}
                 panelRight={panelRight}
-                onToggleSide={() => setPanelRight((value) => !value)}
+                onToggleSide={() => {
+                  if (window.matchMedia("(max-width: 599px)").matches) {
+                    window.location.hash = "#/dbl";
+                    return;
+                  }
+                  setPanelRight((value) => !value);
+                }}
                 disabled={locked}
               />
             </aside>
@@ -204,16 +211,10 @@ function MainShell({ name, logout, forcePasswordChange = false, onPasswordChange
                   />
                 }
               />
-              <Route
-                path="/zh"
-                element={
-                  <BetDetailsPage
-                    lotteries={lotteries}
-                    selectedLotteryId={selectedLotteryId}
-                  />
-                }
-              />
+              <Route path="/zh" element={<RecordsPage />} />
               <Route path="/zd" element={<BillsPage />} />
+              <Route path="/dbl" element={<StopDropPage />} />
+              <Route path="/rtl" element={<MorePanel lotteries={lotteries} onBack={() => window.history.back()} />} />
               <Route
                 path="/hyxx"
                 element={<MemberPage name={name} selectedLottery={selectedLottery} />}
@@ -239,7 +240,7 @@ function MainShell({ name, logout, forcePasswordChange = false, onPasswordChange
           </div>
         </header>
         <div className="warm-content">
-          【温馨提示】各位会员在下注确定后请到“下注明细”里确认注单，一切注单结算以下注明细里资料为准！
+          {announcement.content || "暂无公告"}
         </div>
       </section> : null}
     </div>

@@ -45,7 +45,7 @@ final class Organization
         $token=trim(str_ireplace('Bearer ','',(string)$request->header('authorization')));$session=$token!==''?Cache::get('token:'.$token):[];return['type'=>(string)(($session['scope']??'admin')==='agent'?'organization_admin':'platform_admin'),'id'=>(int)($session['user_id']??0),'name'=>(string)($session['username']??'')];
     }
 
-    private function catalog(int $siteId,?string $level=null,array $parentPermissions=['*']): array
+    private function catalog(int $siteId,?string $level=null,array $parentPermissions=['*'],?string $parentLevel=null): array
     {
         if($level!==null&&isset(AgentAuthorization::LEVELS[$level]))$sitePermissions=AgentAuthorization::sitePermissions($siteId,$level);
         else {
@@ -58,7 +58,8 @@ final class Organization
         $sitePermissions=AgentAuthorization::intersect($sitePermissions,$parentPermissions);
         $permissions=OrganizationHierarchy::PERMISSIONS;
         if(!in_array('*',$sitePermissions,true))$permissions=array_intersect_key($permissions,array_flip($sitePermissions));
-        return ['target_level'=>$level,'levels'=>array_map(static fn(string $level): array=>['value'=>$level,'label'=>OrganizationHierarchy::LABELS[$level]],OrganizationHierarchy::LEVELS),'permissions'=>array_map(static fn(string $code,string $label): array=>['code'=>$code,'label'=>$label],array_keys($permissions),array_values($permissions))];
+        $childLevels=$parentLevel===null?OrganizationHierarchy::LEVELS:OrganizationHierarchy::childLevels($parentLevel);
+        return ['target_level'=>$level,'child_levels'=>array_map(static fn(string $item): array=>['value'=>$item,'label'=>OrganizationHierarchy::LABELS[$item]],$childLevels),'levels'=>array_map(static fn(string $item): array=>['value'=>$item,'label'=>OrganizationHierarchy::LABELS[$item]],OrganizationHierarchy::LEVELS),'permissions'=>array_map(static fn(string $code,string $label): array=>['code'=>$code,'label'=>$label],array_keys($permissions),array_values($permissions))];
     }
 
     private function generateNodeCode(int $siteId, string $level): string
@@ -75,7 +76,9 @@ final class Organization
     {
         $parentId=$forcedParent?(int)$forcedParent['id']:(int)$request->post('parent_id',$current['parent_id']??0);
         $parent=$parentId>0?Db::name('organization_nodes')->where('id',$parentId)->where('site_id',(int)$site['id'])->whereNull('deleted_at')->find():null;
-        $level=$forcedParent?(string)OrganizationHierarchy::nextLevel((string)$forcedParent['level']):(string)$request->post('level',$current['level']??'director');
+        $level=$forcedParent
+            ? (string)$request->post('level',$current['level'] ?? (OrganizationHierarchy::nextLevel((string)$forcedParent['level']) ?? ''))
+            : (string)$request->post('level',$current['level']??'director');
         if (!in_array($level,OrganizationHierarchy::LEVELS,true)) throw new \InvalidArgumentException('组织层级无效');
         if ($level==='director'&&$parentId!==0) throw new \InvalidArgumentException('总监必须是站点根节点');
         if ($level!=='director'&&(!$parent||!OrganizationHierarchy::canParentLevelAccept((string)$parent['level'],$level))) throw new \InvalidArgumentException('上下级关系不符合总监、大股东、小股东、总代理、代理的顺序');
@@ -143,7 +146,8 @@ final class Organization
     {
         $site=$this->site($siteId);$siteCap=$this->siteMaxShareRate($site);
         $catalogLevel=null;$catalogParentPermissions=['*'];
-        if($parentId!==null){$catalogParent=Db::name('organization_nodes')->where('id',$parentId)->where('site_id',$siteId)->whereNull('deleted_at')->find();if($catalogParent){$catalogLevel=OrganizationHierarchy::nextLevel((string)$catalogParent['level'])??(string)$catalogParent['level'];$catalogParentPermissions=OrganizationHierarchy::decodePermissions($catalogParent['permissions']??null);}}
+        $catalogParentLevel=null;
+        if($parentId!==null){$catalogParent=Db::name('organization_nodes')->where('id',$parentId)->where('site_id',$siteId)->whereNull('deleted_at')->find();if($catalogParent){$catalogParentLevel=(string)$catalogParent['level'];$catalogLevel=OrganizationHierarchy::nextLevel($catalogParentLevel)??$catalogParentLevel;$catalogParentPermissions=OrganizationHierarchy::decodePermissions($catalogParent['permissions']??null);}}
         $query=Db::name('organization_nodes')->where('site_id',$siteId)->whereNull('deleted_at');
         if ($parentId!==null) $query->where('parent_id',$parentId);
         $nodes=$query->order('path asc,id asc')->select()->toArray();
@@ -181,7 +185,7 @@ final class Organization
                 } unset($member);
             }
         }
-        return ['nodes'=>$nodes,'members'=>$members,'accounts'=>$accounts,'catalog'=>$this->catalog($siteId,$catalogLevel,$catalogParentPermissions),'site_max_share_rate'=>number_format($siteCap,4,'.','')];
+        return ['nodes'=>$nodes,'members'=>$members,'accounts'=>$accounts,'catalog'=>$this->catalog($siteId,$catalogLevel,$catalogParentPermissions,$catalogParentLevel),'site_max_share_rate'=>number_format($siteCap,4,'.','')];
     }
 
     private function breadcrumbs(int $siteId, int $organizationId, int $rootId): array

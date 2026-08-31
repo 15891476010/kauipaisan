@@ -49,7 +49,7 @@ final class AgentMember
         $result=[];
         foreach ($this->siteLotteries($siteId,$tenantId) as $lottery) {
             $row=$saved[(int)$lottery['id']]??null;
-            $result[]=['lottery_id'=>(int)$lottery['id'],'name'=>(string)$lottery['name'],'code'=>(string)$lottery['code'],'can_view'=>$row ? (int)$row['can_view']===1 : true,'can_bet'=>$row ? (int)$row['can_bet']===1 : true,'offline_rebate'=>number_format((float)($row['offline_rebate']??0),4,'.','')];
+            $result[]=['lottery_id'=>(int)$lottery['id'],'name'=>(string)$lottery['name'],'code'=>(string)$lottery['code'],'can_view'=>$row ? (int)$row['can_view']===1 : true,'can_bet'=>$row ? (int)$row['can_bet']===1 : true,'offline_rebate'=>'0.0000'];
         }
         return $result;
     }
@@ -60,7 +60,7 @@ final class AgentMember
         $explicit=is_array($input); $provided=[];
         if (is_array($input)) foreach ($input as $row) if (is_array($row)) {
             $lotteryId=(int)($row['lottery_id']??0);
-            if (in_array($lotteryId,$valid,true)) { $rebate=$row['offline_rebate']??0; if (!is_numeric($rebate)||(float)$rebate<0||(float)$rebate>0.1) throw new \InvalidArgumentException('离线赚水必须在0到0.1之间'); $provided[$lotteryId]=['lottery_id'=>$lotteryId,'can_view'=>(bool)($row['can_view']??false),'can_bet'=>(bool)($row['can_bet']??false),'offline_rebate'=>(float)$rebate]; }
+            if (in_array($lotteryId,$valid,true)) { $provided[$lotteryId]=['lottery_id'=>$lotteryId,'can_view'=>(bool)($row['can_view']??false),'can_bet'=>(bool)($row['can_bet']??false),'offline_rebate'=>0.0]; }
         }
         $result=[];
         foreach ($valid as $lotteryId) {
@@ -76,7 +76,7 @@ final class AgentMember
         Db::name('user_lottery_permissions')->where('site_id',$siteId)->where('user_id',$userId)->delete();
         if (!$permissions) return;
         $rows=[];
-        foreach ($permissions as $row) $rows[]=['tenant_id'=>$tenantId,'site_id'=>$siteId,'user_id'=>$userId,'lottery_id'=>(int)$row['lottery_id'],'can_view'=>$row['can_view']?1:0,'can_bet'=>$row['can_bet']?1:0,'offline_rebate'=>number_format((float)($row['offline_rebate']??0),4,'.',''),'created_at'=>$now,'updated_at'=>$now];
+        foreach ($permissions as $row) $rows[]=['tenant_id'=>$tenantId,'site_id'=>$siteId,'user_id'=>$userId,'lottery_id'=>(int)$row['lottery_id'],'can_view'=>$row['can_view']?1:0,'can_bet'=>$row['can_bet']?1:0,'offline_rebate'=>'0.0000','created_at'=>$now,'updated_at'=>$now];
         Db::name('user_lottery_permissions')->insertAll($rows);
     }
 
@@ -89,10 +89,10 @@ final class AgentMember
             $rows=Db::name('lottery_odds')->where('lottery_id',(int)$lottery['id'])->where('status',1)->whereNull('deleted_at')->order('sort asc')->order('id asc')->select()->toArray();
             $categories=Db::name('lottery_odds_categories')->where('lottery_id',(int)$lottery['id'])->where('is_playable',1)->where('status',1)->whereNull('deleted_at')->order('sort asc')->order('id asc')->select()->toArray();
             foreach ($categories as $category) {
-                $rows[]=['id'=>$this->directOddsId((int)$category['id']),'lottery_id'=>(int)$lottery['id'],'category_id'=>(int)$category['id'],'category'=>(string)$category['name'],'name'=>(string)$category['name'],'min_bet'=>$category['min_bet'],'odds_limit'=>$category['odds_limit'],'single_bet_limit'=>$category['single_bet_limit'],'single_item_limit'=>$category['single_item_limit'],'odds'=>$category['odds'],'offline_rebate'=>$category['offline_rebate'],'status'=>$category['status'],'sort'=>$category['sort'],'direct_category'=>1];
+                $rows[]=['id'=>$this->directOddsId((int)$category['id']),'lottery_id'=>(int)$lottery['id'],'category_id'=>(int)$category['id'],'category'=>(string)$category['name'],'name'=>(string)$category['name'],'min_bet'=>$category['min_bet'],'odds_limit'=>$category['odds_limit'],'single_bet_limit'=>$category['single_bet_limit'],'single_item_limit'=>$category['single_item_limit'],'odds'=>$category['odds'],'offline_rebate'=>'0.0000','status'=>$category['status'],'sort'=>$category['sort'],'direct_category'=>1];
             }
             usort($rows,static fn(array $a,array $b): int => ((int)$a['sort']<=> (int)$b['sort']) ?: ((int)$a['id']<=> (int)$b['id']));
-            foreach ($rows as &$row) { $override=$overrides[(int)$row['id']]??null; foreach (['min_bet','odds_limit','single_bet_limit','single_item_limit','odds','offline_rebate'] as $field) if ($override) $row[$field]=$override[$field]; $row['lottery_name']=$lottery['name']; $row['lottery_code']=$lottery['code']; }
+            foreach ($rows as &$row) { $override=$overrides[(int)$row['id']]??null; foreach (['min_bet','odds_limit','single_bet_limit','single_item_limit','odds'] as $field) if ($override) $row[$field]=$override[$field]; $row['offline_rebate']='0.0000'; $row['lottery_name']=$lottery['name']; $row['lottery_code']=$lottery['code']; }
             unset($row); $result=array_merge($result,$rows);
         }
         return $result;
@@ -104,7 +104,7 @@ final class AgentMember
         $valid=Db::name('lottery_odds')->alias('o')->join('site_lotteries sl','sl.lottery_id=o.lottery_id')->where('sl.site_id',$siteId)->whereNull('o.deleted_at')->field('o.id,o.lottery_id')->select()->toArray(); $map=[]; foreach ($valid as $row) $map[(int)$row['id']]=(int)$row['lottery_id'];
         $direct=Db::name('lottery_odds_categories')->alias('c')->join('site_lotteries sl','sl.lottery_id=c.lottery_id')->where('sl.site_id',$siteId)->where('c.is_playable',1)->where('c.status',1)->whereNull('c.deleted_at')->field('c.id,c.lottery_id')->select()->toArray(); foreach ($direct as $row) $map[$this->directOddsId((int)$row['id'])]=(int)$row['lottery_id'];
         Db::name('user_lottery_odds')->where('site_id',$siteId)->where('agent_id',$agentId)->where('user_id',$userId)->delete(); $rows=[];
-        foreach ($input as $row) if (is_array($row) && isset($map[(int)($row['lottery_odds_id']??0)])) { $data=['tenant_id'=>$tenantId,'site_id'=>$siteId,'agent_id'=>$agentId,'user_id'=>$userId,'lottery_id'=>$map[(int)$row['lottery_odds_id']],'lottery_odds_id'=>(int)$row['lottery_odds_id'],'created_at'=>$now,'updated_at'=>$now]; foreach(['min_bet','odds_limit','single_bet_limit','single_item_limit','odds','offline_rebate'] as $field) { $value=$row[$field]??0; if(!is_numeric($value)||(float)$value<0) throw new \InvalidArgumentException('赔率和限额必须为非负数字'); if($field==='offline_rebate'&&(float)$value>0.1) throw new \InvalidArgumentException('离线赚水必须在0到0.1之间'); $data[$field]=number_format((float)$value,in_array($field,['single_bet_limit','single_item_limit'],true)?2:4,'.',''); } $rows[]=$data; }
+        foreach ($input as $row) if (is_array($row) && isset($map[(int)($row['lottery_odds_id']??0)])) { $data=['tenant_id'=>$tenantId,'site_id'=>$siteId,'agent_id'=>$agentId,'user_id'=>$userId,'lottery_id'=>$map[(int)$row['lottery_odds_id']],'lottery_odds_id'=>(int)$row['lottery_odds_id'],'created_at'=>$now,'updated_at'=>$now]; foreach(['min_bet','odds_limit','single_bet_limit','single_item_limit','odds'] as $field) { $value=$row[$field]??0; if(!is_numeric($value)||(float)$value<0) throw new \InvalidArgumentException('赔率和限额必须为非负数字'); $data[$field]=number_format((float)$value,in_array($field,['single_bet_limit','single_item_limit'],true)?2:4,'.',''); } $data['offline_rebate']='0.0000'; $rows[]=$data; }
         if ($rows) Db::name('user_lottery_odds')->insertAll($rows);
     }
 
@@ -151,7 +151,8 @@ final class AgentMember
         $operator=['type'=>'organization_admin','id'=>(int)($session['user_id']??0),'name'=>(string)($session['username']??'')];
         $id=(int)Db::transaction(function () use ($tenantId,$siteId,$organizationId,$username,$displayName,$password,$credit,$data,$now,$permissions,$operator): int {
             $userId=(int)Db::name('site_users')->insertGetId(['tenant_id'=>$tenantId,'site_id'=>$siteId,'organization_id'=>$organizationId,'username'=>$username,'display_name'=>$displayName,'phone'=>trim((string)($data['phone']??''))?:null,'balance'=>'0.00','credit_balance'=>'0.00','used_balance'=>'0.00','password'=>password_hash($password,PASSWORD_DEFAULT),'must_change_password'=>1,'status'=>(int)($data['status']??1)===0?0:1,'created_at'=>$now,'updated_at'=>$now]);
-            $user=Db::name('site_users')->where('id',$userId)->find();ScoreTransfer::userAllocation($user,(float)$credit,$operator);Db::name('site_users')->where('id',$userId)->update(['credit_balance'=>number_format((float)$credit,2,'.','')]);
+            $user=Db::name('site_users')->where('id',$userId)->find();
+            ScoreTransfer::setUserBalances($user,0.0,(float)$credit,$operator);
             $this->savePermissions($tenantId,$siteId,$userId,$permissions,$now);
             return $userId;
         });
@@ -187,7 +188,10 @@ final class AgentMember
         $odds=$data['odds']??null;
         $operator=['type'=>'organization_admin','id'=>(int)($session['user_id']??0),'name'=>(string)($session['username']??'')];
         Db::transaction(function () use ($id,$siteId,$tenantId,$agentId,$current,$update,$permissions,$odds,$operator): void {
-            if(array_key_exists('credit_balance',$update))ScoreTransfer::userAllocation($current,(float)$update['credit_balance']-(float)$current['credit_balance'],$operator);
+            if(array_key_exists('credit_balance',$update)) {
+                ScoreTransfer::setUserBalances($current,(float)$current['balance'],(float)$update['credit_balance'],$operator);
+                unset($update['credit_balance']);
+            }
             Db::name('site_users')->where('id',$id)->where('site_id',$siteId)->update($update);
             if ($permissions !== null) $this->savePermissions($tenantId,$siteId,$id,$permissions,(string)$update['updated_at']);
             if ($odds !== null) $this->saveOdds($tenantId,$siteId,$agentId,$id,$odds,(string)$update['updated_at']);

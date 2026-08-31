@@ -5,7 +5,7 @@ namespace app\service;
 
 use think\facade\Db;
 
-/** Reporting-only offline-water ledger; it deliberately never mutates balances. */
+/** Legacy compatibility ledger. New settlement paths do not write per-bet water. */
 final class WaterLedger
 {
     /** @return array{base_amount:float,water_rate:float,amount:float} */
@@ -20,7 +20,7 @@ final class WaterLedger
         ];
     }
 
-    /** Write one detail's realized offline water inside the settlement transaction. */
+    /** Legacy writer retained for old integrations; new code does not call it. */
     public static function recordForDetail(array $record, array $user, array $detail, array $stop): void
     {
         $calculated = self::calculate((float)($detail['amount'] ?? 0), (float)($stop['drop_odds'] ?? 0));
@@ -51,7 +51,7 @@ final class WaterLedger
                 number_format($calculated['water_rate'], 4, '.', ''),
                 number_format($calculated['amount'], 2, '.', ''),
                 'water_profit',
-                '离线赚水',
+                '明水（旧流水）',
                 date('Y-m-d H:i:s'),
             ],
         );

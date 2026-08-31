@@ -193,3 +193,146 @@
   border-color: darkblue;
   color: #fff;
 }
+
+/* Compact H5 responsibility statement layout. */
+.agreement-page {
+  min-height: 100dvh;
+  padding: 0 0 56px;
+  overflow: auto;
+  background: #8eb7fe;
+}
+
+.agreement-card {
+  width: calc(100% - 14px);
+  min-height: calc(100dvh - 2px);
+  margin: 0 7px;
+  padding: 0 10px 58px;
+  border: 1px solid #d9d9d9;
+  border-radius: 16px;
+  background: #fff;
+  color: #111;
+}
+
+.agreement-card h1 {
+  position: relative;
+  height: 30px;
+  margin: 8px 8px 8px;
+  padding: 0;
+  border: 0;
+  background: #101090;
+  color: #fff;
+  font-size: 16px;
+  line-height: 30px;
+  text-align: center;
+  clip-path: polygon(0 0, 100% 0, 88% 100%, 12% 100%);
+}
+
+.agreement-markdown,
+.agreement-rich-html {
+  color: #111;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.agreement-markdown > p:first-child {
+  display: none;
+}
+
+.agreement-markdown ol,
+.agreement-rich-html ol {
+  margin: 0;
+  padding: 0 8px 0 24px;
+  color: #111;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.agreement-markdown li,
+.agreement-rich-html li {
+  padding-left: 0;
+  margin: 0;
+}
+
+.agreement-markdown strong,
+.agreement-rich-html strong {
+  color: #f00000;
+  font-weight: 700;
+}
+
+.agreement-markdown h2,
+.agreement-rich-html h2 {
+  margin: 6px 8px 2px;
+  color: #f00000;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.agreement-markdown blockquote,
+.agreement-rich-html blockquote {
+  margin: 0 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #f00000;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.agreement-markdown blockquote p,
+.agreement-rich-html blockquote p {
+  margin: 0;
+  padding: 0;
+}
+
+.agreement-actions {
+  position: fixed;
+  z-index: 10;
+  right: 7px;
+  bottom: 0;
+  left: 7px;
+  display: flex;
+  min-height: 45px;
+  height: 45px;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  margin: 0;
+  padding: 0 10px;
+  border-radius: 0 0 16px 16px;
+  background: #c9c5ff;
+}
+
+.agreement-actions strong {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  color: #111;
+  font-size: 15px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.agreement-actions .ant-btn {
+  min-width: 0;
+  height: 28px;
+  margin: 0;
+  padding: 0 10px;
+  border: 1px solid #777;
+  border-radius: 4px;
+  color: #555;
+  font-size: 16px;
+  line-height: 26px;
+}
+
+.agreement-actions .ant-btn-primary {
+  min-width: 66px;
+  border-color: #00008b;
+  background: #00008b;
+  color: #fff;
+}
+
+.agreement-actions .ant-btn-primary:hover {
+  background: #00008b;
+  border-color: #00008b;
+  color: #fff;
+}

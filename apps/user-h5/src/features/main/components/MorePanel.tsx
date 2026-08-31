@@ -33,8 +33,13 @@ export function MorePanel({
   ).slice(0, 30);
   const [selectedDay, setSelectedDay] = useState(dateOptions[0]?.day || today);
   const [source, setSource] = useState("");
+  const [board, setBoard] = useState("all");
+  const [onlyRefunded, setOnlyRefunded] = useState(false);
   const [records, setRecords] = useState<BetRecord[]>([]);
   const [amountTotal, setAmountTotal] = useState("0.00");
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const pageSize = 20;
   const [loading, setLoading] = useState(false);
   useEffect(() => {
     if (
@@ -49,13 +54,16 @@ export function MorePanel({
       from: selectedDay,
       to: selectedDay,
       source: source.trim() || undefined,
-      page: 1,
-      page_size: 100,
+      page,
+      page_size: pageSize,
+      board: board === "all" ? undefined : board,
     })
       .then((response) => {
         const data = response.data?.data;
-        setRecords(data?.list || []);
+        const list = data?.list || [];
+        setRecords(onlyRefunded ? list.filter((item) => item.status === "refunded") : list);
         setAmountTotal(data?.amount_total || "0.00");
+        setTotal(Number(data?.total || list.length));
       })
       .catch((error) => {
         setRecords([]);
@@ -66,7 +74,11 @@ export function MorePanel({
   };
   useEffect(() => {
     if (dateOptions.length) search();
-  }, [selectedDay]);
+  }, [selectedDay, page, board, onlyRefunded]);
+  const runSearch = () => {
+    setPage(1);
+    if (page === 1) search();
+  };
   return (
     <section className="more-panel">
       <div className="more-search">
@@ -94,65 +106,45 @@ export function MorePanel({
             )}
           </select>
         </label>
+        <label className="more-field more-board-field">
+          <span>盘口</span>
+          <select value={board} onChange={(event) => { setBoard(event.target.value); setPage(1); }}>
+            <option value="all">全部</option><option value="A">A盘 - A</option><option value="B">B盘 - B</option><option value="C">C盘 - C</option><option value="D">D盘 - D</option>
+          </select>
+        </label>
         <label className="more-field more-text-field">
-          <span>原始文本搜索：</span>
+          <span>原始文本搜索</span>
           <input
             value={source}
             onChange={(event) => setSource(event.target.value)}
             placeholder="输入文本"
             onKeyDown={(event) => {
-              if (event.key === "Enter") search();
+              if (event.key === "Enter") runSearch();
             }}
           />
         </label>
         <button
           className="more-search-button"
           type="button"
-          onClick={search}
+          onClick={runSearch}
           disabled={loading}
         >
           ⌕ 搜索
         </button>
-        <button className="more-back-button" type="button" onClick={onBack}>
-          返回
-        </button>
+        <label className="more-refund-toggle"><span>仅退码</span><input type="checkbox" checked={onlyRefunded} onChange={(event) => { setOnlyRefunded(event.target.checked); setPage(1); }} /><i>{onlyRefunded ? "是" : "否"}</i></label>
+        <button className="more-back-button" type="button" onClick={onBack}>返回</button>
       </div>
       <div className="more-total">
         总金额: <b>{amountTotal}</b>
       </div>
       <div className="more-results">
-        {records.length > 0 && (
-          <div className="more-table">
-            <div className="more-table-head">
-              <span>期号</span>
-              <span>笔数/金额</span>
-              <span>中奖金额</span>
-              <span>原始文本</span>
-              <span>投注时间</span>
-              <span>状态</span>
-            </div>
-            {records.map((record) => (
-              <div className="more-table-row" key={record.id}>
-                <span>{record.issue_no}</span>
-                <span>
-                  {record.bet_count}/{record.amount}
-                </span>
-                <span>{record.win_amount}</span>
-                <span>{record.source_text || "-"}</span>
-                <span>{record.placed_at}</span>
-                <span>
-                  {record.status === "refunded"
-                    ? "已退"
-                    : record.status === "won"
-                      ? "中奖"
-                      : record.status === "unwon"
-                        ? "未中奖"
-                        : "未结算"}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
+        {records.length > 0 && <div className="more-card-list">{records.map((record) => <article className={`more-card${record.status === "refunded" ? " is-refunded" : ""}`} key={record.id}>
+          <div className="more-card-meta"><b>{record.lottery === "体" ? "体" : "福"}盘</b><span>时间：{record.placed_at}</span></div>
+          <p>{record.source_text || record.formatted_text || "-"}</p>
+          <footer><strong>{record.status === "refunded" ? "0.00" : record.amount}</strong><span>{record.status === "refunded" ? "已退码" : record.status === "won" ? "中奖" : record.status === "unwon" ? "未中奖" : "未结算"}</span></footer>
+        </article>)}</div>}
+        {!loading && records.length === 0 && <div className="more-empty">暂无数据</div>}
+        {total > pageSize && <div className="more-pagination"><span>{page} / {Math.max(1, Math.ceil(total / pageSize))}</span><button type="button" disabled={page <= 1 || loading} onClick={() => setPage((value) => value - 1)}>上页</button><button type="button" disabled={page >= Math.ceil(total / pageSize) || loading} onClick={() => setPage((value) => value + 1)}>下页</button></div>}
         {loading && (
           <div
             className="page-local-loading"

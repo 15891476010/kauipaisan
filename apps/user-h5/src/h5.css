@@ -74,3 +74,3383 @@ table { min-width: 620px; }
   .site-navigation { grid-template-columns: repeat(8, minmax(0, 1fr)); }
   .body { padding: 10px; }
 }
+
+/* Match the compact H5 verification dialog: 361px card, 55/170/49 sections. */
+.captcha-login-modal.ant-modal {
+  width: min(362px, calc(100vw - 32px)) !important;
+  max-width: calc(100vw - 32px) !important;
+  top: calc(50dvh - 149px) !important;
+  margin: 0 auto !important;
+  padding: 0 0 24px !important;
+}
+
+.captcha-login-modal .ant-modal-container {
+  padding: 0 !important;
+  border-radius: 4px !important;
+  background: #fff;
+}
+
+.captcha-login-modal .ant-modal-header {
+  height: 55px;
+  margin: 0 !important;
+  padding: 16px 24px !important;
+  border-radius: 4px 4px 0 0;
+}
+
+.captcha-login-modal .ant-modal-title {
+  font-size: 16px;
+  line-height: 22px;
+  text-align: left;
+}
+
+.captcha-login-modal .ant-modal-close {
+  top: 0;
+  right: 0;
+  width: 56px;
+  height: 56px;
+  color: rgba(0, 0, 0, 0.45);
+}
+
+.captcha-login-modal .ant-modal-close:focus,
+.captcha-login-modal .ant-modal-close:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.captcha-login-modal .ant-modal-body {
+  height: 170px;
+  max-height: none;
+  margin: 0 !important;
+  padding: 16px 12px 15px !important;
+  overflow: hidden;
+}
+
+.captcha-login-modal .captcha-box {
+  width: 244px;
+  height: 116px;
+  box-sizing: border-box;
+  margin: 23px auto 0;
+  padding: 4px 3px;
+  border: 1px solid #000;
+  border-radius: 1px;
+  background: #fff;
+}
+
+.captcha-login-modal .captcha-equation {
+  width: 194px;
+  height: 37px;
+  min-height: 0;
+  margin: 0 auto 4px;
+  padding: 0;
+  gap: 4px;
+  align-items: center;
+}
+
+.captcha-login-modal .captcha-image {
+  width: 79px;
+  height: 35px;
+  transform: none;
+  object-fit: fill;
+}
+
+.captcha-login-modal .captcha-equation strong {
+  width: 63px;
+  height: 37px;
+  box-sizing: border-box;
+  padding: 0 8px;
+  font-size: 20px;
+  line-height: 29px;
+}
+
+.captcha-login-modal .captcha-equation .ant-btn-link {
+  width: 31px;
+  height: 24px;
+  min-width: 31px;
+  padding: 0 !important;
+  font-size: 16px;
+  line-height: 24px;
+}
+
+.captcha-login-modal .digit-grid {
+  width: 235px;
+  height: 66px;
+  box-sizing: border-box;
+  grid-template-columns: repeat(5, 44px);
+  gap: 2px 4px;
+  margin: 0 auto;
+  padding: 0;
+  border-top: 0;
+}
+
+.captcha-login-modal .digit-grid .captcha-digit {
+  width: 44px;
+  min-width: 44px;
+  height: 31px;
+  box-sizing: border-box;
+  padding: 0;
+  border-radius: 0;
+  font-size: 14px;
+  line-height: 21px;
+}
+
+.captcha-login-modal .ant-modal-footer {
+  height: 49px;
+  margin: 0 !important;
+  padding: 10px 16px !important;
+  border-radius: 0 0 4px 4px;
+}
+
+.captcha-login-modal .captcha-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0;
+}
+
+.captcha-login-modal .captcha-footer .ant-btn {
+  min-width: 0;
+  width: 45px;
+  height: 28px;
+  padding: 0;
+  border-radius: 4px;
+  font-size: 14px;
+  line-height: 21px;
+}
+
+.captcha-login-modal .captcha-footer .ant-btn:last-child {
+  width: 47px;
+  border-color: #d9d9d9 !important;
+  background: #fff !important;
+  color: rgba(0, 0, 0, 0.65) !important;
+}
+
+/* Final H5 agreement overrides: keep the mobile statement compact and fixed to the viewport. */
+.agreement-page {
+  min-height: 100dvh !important;
+  padding: 0 0 52px !important;
+  overflow: auto !important;
+  background: #8eb7fe !important;
+}
+
+.agreement-card {
+  width: calc(100% - 14px) !important;
+  min-height: calc(100dvh - 2px) !important;
+  margin: 0 7px !important;
+  padding: 0 10px 56px !important;
+  border: 1px solid #d9d9d9 !important;
+  border-radius: 16px !important;
+  background: #fff !important;
+}
+
+.agreement-card h1 {
+  position: relative !important;
+  height: 30px !important;
+  margin: 8px 8px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: #101090 !important;
+  color: #fff !important;
+  font-size: 16px !important;
+  line-height: 30px !important;
+  text-align: center !important;
+  clip-path: polygon(0 0, 100% 0, 88% 100%, 12% 100%) !important;
+}
+
+.agreement-markdown,
+.agreement-rich-html {
+  color: #111 !important;
+  font-size: 14px !important;
+  line-height: 20px !important;
+}
+
+.agreement-markdown > p:first-child {
+  display: block !important;
+  margin: 0 !important;
+  padding: 0 8px !important;
+  color: #111 !important;
+  font-size: 14px !important;
+  line-height: 20px !important;
+}
+
+.agreement-markdown ol,
+.agreement-rich-html ol {
+  margin: 0 !important;
+  padding: 0 8px 0 24px !important;
+  color: #111 !important;
+  font-size: 14px !important;
+  line-height: 20px !important;
+}
+
+.agreement-markdown li,
+.agreement-rich-html li {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.agreement-markdown strong,
+.agreement-rich-html strong {
+  color: #f00000 !important;
+  font-weight: 700 !important;
+}
+
+.agreement-markdown h2,
+.agreement-rich-html h2 {
+  margin: 6px 8px 2px !important;
+  color: #f00000 !important;
+  font-size: 14px !important;
+  line-height: 20px !important;
+}
+
+.agreement-markdown blockquote,
+.agreement-rich-html blockquote {
+  margin: 0 8px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  color: #f00000 !important;
+  font-size: 14px !important;
+  line-height: 20px !important;
+}
+
+.agreement-markdown blockquote p,
+.agreement-rich-html blockquote p {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.agreement-actions {
+  position: fixed !important;
+  z-index: 10 !important;
+  right: 7px !important;
+  bottom: 0 !important;
+  left: 7px !important;
+  display: flex !important;
+  height: 45px !important;
+  min-height: 45px !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 8px !important;
+  margin: 0 !important;
+  padding: 0 10px !important;
+  border-radius: 0 0 16px 16px !important;
+  background: #c9c5ff !important;
+}
+
+.agreement-actions strong {
+  flex: 1 !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  color: #111 !important;
+  font-size: 15px !important;
+  line-height: 20px !important;
+  white-space: nowrap !important;
+}
+
+.agreement-actions .ant-btn {
+  min-width: 0 !important;
+  height: 28px !important;
+  margin: 0 !important;
+  padding: 0 10px !important;
+  border: 1px solid #777 !important;
+  border-radius: 4px !important;
+  color: #555 !important;
+  font-size: 16px !important;
+  line-height: 26px !important;
+}
+
+.agreement-actions .ant-btn-primary {
+  min-width: 66px !important;
+  border-color: #00008b !important;
+  background: #00008b !important;
+  color: #fff !important;
+}
+
+/* Pixel-aligned H5 agreement layout for the 430px reference viewport. */
+.agreement-page {
+  min-height: 100dvh !important;
+  padding: 0 0 11vw !important;
+  overflow: auto !important;
+  border: 2px solid #8eb7fe !important;
+  background: #fff !important;
+}
+
+.agreement-card {
+  width: 100% !important;
+  min-height: calc(100dvh - 2px) !important;
+  margin: 0 !important;
+  padding: 2vw 0 13vw !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: #fff !important;
+}
+
+.agreement-card h1 {
+  width: 71.1vw !important;
+  height: 8vw !important;
+  margin: 0 auto 2vw !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 0 1.2vw 1.2vw !important;
+  background: #0f0fa5 !important;
+  color: #fff !important;
+  font-size: 4vw !important;
+  line-height: 7.6vw !important;
+  clip-path: none !important;
+}
+
+.agreement-card h1::before,
+.agreement-card h1::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 11.9vw;
+  height: 8vw;
+  border-top: 8vw solid #0f0fa5;
+}
+
+.agreement-card h1::before {
+  left: -11.4vw;
+  border-left: 11.9vw solid transparent;
+}
+
+.agreement-card h1::after {
+  right: -11.4vw;
+  border-right: 11.9vw solid transparent;
+}
+
+.agreement-markdown {
+  width: 97vw !important;
+  margin: 0 auto !important;
+  color: #111 !important;
+  font-size: 3.2vw !important;
+  line-height: 5vw !important;
+}
+
+.agreement-markdown > p:first-child {
+  display: none !important;
+}
+
+.agreement-markdown ol {
+  width: 97vw !important;
+  margin: 0 auto !important;
+  padding: 0 2vw 0 5.5vw !important;
+  color: #111 !important;
+  font-size: 3.2vw !important;
+  line-height: 5vw !important;
+}
+
+.agreement-markdown li {
+  margin: 0 !important;
+  padding: .2vw 0 !important;
+}
+
+.agreement-markdown strong {
+  color: #f00 !important;
+}
+
+.agreement-markdown h2 {
+  margin: 1vw 2vw .4vw !important;
+  color: #f00 !important;
+  font-size: 3vw !important;
+  line-height: 4.2vw !important;
+}
+
+.agreement-markdown blockquote {
+  margin: 0 2vw !important;
+  padding: 0 !important;
+  color: #f00 !important;
+  font-size: 3vw !important;
+  line-height: 4.3vw !important;
+}
+
+.agreement-markdown blockquote p {
+  margin: 0 !important;
+  padding: .5vw 0 !important;
+}
+
+.agreement-actions {
+  position: fixed !important;
+  z-index: 10 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  left: 0 !important;
+  display: flex !important;
+  width: 100% !important;
+  height: 11vw !important;
+  min-height: 11vw !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+  background: #ccccff !important;
+}
+
+.agreement-actions strong {
+  flex: none !important;
+  width: 46.8vw !important;
+  min-width: 0 !important;
+  margin: 0 0 0 3vw !important;
+  color: #000 !important;
+  font-size: 3.6vw !important;
+  line-height: 5vw !important;
+  white-space: nowrap !important;
+}
+
+.agreement-actions .ant-btn {
+  flex: none !important;
+  width: 18.3vw !important;
+  min-width: 18.3vw !important;
+  height: 7vw !important;
+  margin: 0 3vw !important;
+  padding: 0 !important;
+  border: 1px solid #5f5f5f !important;
+  border-radius: 1.2vw !important;
+  color: #4f4f4f !important;
+  font-size: 4.2vw !important;
+  line-height: 6.8vw !important;
+}
+
+.agreement-actions .ant-btn-primary {
+  width: 17vw !important;
+  min-width: 17vw !important;
+  margin-left: 0 !important;
+  border-color: #00008b !important;
+  background: #00008b !important;
+  color: #fff !important;
+}
+
+/* H5 welcome notice overlay, matched to the reference 80vw by 70vh panel. */
+.warm {
+  position: fixed !important;
+  z-index: 999 !important;
+  top: 15vh !important;
+  right: auto !important;
+  bottom: auto !important;
+  left: 10vw !important;
+  width: 80vw !important;
+  height: 70vh !important;
+  overflow: hidden !important;
+  border: 1px solid #3892a1 !important;
+  border-radius: 1.6vw !important;
+  background: #fff !important;
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.55) !important;
+  transform: none !important;
+  transition: none !important;
+}
+
+.warm-header {
+  position: relative !important;
+  display: flex !important;
+  width: 100% !important;
+  height: 12vw !important;
+  min-height: 12vw !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding: 0 2.4vw !important;
+  border-radius: 1vw 1vw 0 0 !important;
+  background: #00008b !important;
+  color: #fff !important;
+  font-size: 6vw !important;
+  line-height: 12vw !important;
+}
+
+.warm-header > strong {
+  flex: 1 !important;
+  color: #fff !important;
+  font-size: 6vw !important;
+  font-weight: 700 !important;
+  line-height: 12vw !important;
+  text-align: center !important;
+}
+
+.warm-actions {
+  position: static !important;
+  display: flex !important;
+  width: 9.6vw !important;
+  height: 8.4vw !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 0 !important;
+}
+
+.warm-actions button:first-child {
+  display: none !important;
+}
+
+.warm-actions button:last-child {
+  display: inline-flex !important;
+  width: 8.4vw !important;
+  height: 8.4vw !important;
+  min-width: 8.4vw !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0 !important;
+  border: 2px solid #fff !important;
+  border-radius: 50% !important;
+  background: transparent !important;
+  color: #fff !important;
+  font-size: 6vw !important;
+  line-height: 8vw !important;
+}
+
+.warm-actions button > span {
+  display: block !important;
+  width: auto !important;
+  height: auto !important;
+  line-height: 7.6vw !important;
+}
+
+.warm-content,
+.warm.is-collapsed .warm-content {
+  display: block !important;
+  width: 100% !important;
+  height: calc(70vh - 12vw) !important;
+  max-height: none !important;
+  box-sizing: border-box !important;
+  margin: 0 !important;
+  padding: 2vw !important;
+  overflow: hidden !important;
+  background: #fff !important;
+  color: #000 !important;
+  opacity: 1 !important;
+  font-size: 4.4vw !important;
+  font-weight: 400 !important;
+  line-height: 6vw !important;
+  text-align: left !important;
+  white-space: pre-wrap !important;
+  transition: none !important;
+}
+
+/* H5 quick-entry home layout aligned with the reference page. */
+.app > .notice {
+  display: none !important;
+}
+
+.app {
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 100dvh !important;
+  background: #fff !important;
+  overflow-x: hidden !important;
+}
+
+.site-header {
+  position: relative !important;
+  display: grid !important;
+  grid-template-columns: 30vw 70vw !important;
+  grid-template-rows: 10vw 31vw !important;
+  width: 100% !important;
+  height: 41vw !important;
+  min-height: 0 !important;
+  gap: 0 !important;
+  padding: 0 !important;
+  background: #fff !important;
+}
+
+.site-header .fish-logo {
+  display: none !important;
+}
+
+.site-navigation {
+  grid-column: 1 / -1 !important;
+  grid-row: 1 !important;
+  display: grid !important;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) 15vw 10vw !important;
+  width: 100% !important;
+  height: 10vw !important;
+  min-height: 0 !important;
+  gap: 0 !important;
+  background: #2f42bd !important;
+  overflow: hidden !important;
+}
+
+.site-navigation a,
+.site-navigation button {
+  position: relative !important;
+  display: flex !important;
+  width: auto !important;
+  height: 10vw !important;
+  min-width: 0 !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0 !important;
+  border: 0 !important;
+  color: #fff !important;
+  font-size: 4vw !important;
+  font-weight: 700 !important;
+  line-height: 10vw !important;
+  white-space: nowrap !important;
+}
+
+.site-navigation a .nav-icon-shell {
+  display: none !important;
+}
+
+.site-navigation a.selected {
+  background: #2034a6 !important;
+  color: #fff !important;
+}
+
+.site-navigation a:nth-child(1),
+.site-navigation a:nth-child(2),
+.site-navigation a:nth-child(3),
+.site-navigation a:nth-child(4),
+.site-navigation a:nth-child(5) {
+  font-size: 0 !important;
+}
+
+.site-navigation a:nth-child(1)::after { content: "快录"; font-size: 4vw; }
+.site-navigation a:nth-child(2)::after { content: "记录"; font-size: 4vw; }
+.site-navigation a:nth-child(3)::after { content: "奖号"; font-size: 4vw; }
+.site-navigation a:nth-child(4)::after { content: "密码"; font-size: 4vw; }
+.site-navigation a:nth-child(5)::after { content: "账单"; font-size: 4vw; }
+.site-navigation a:nth-child(n+6) { display: none !important; }
+
+.site-navigation .line {
+  grid-column: 6 !important;
+  grid-row: 1 !important;
+  display: block !important;
+  background: #2f42bd !important;
+  font-size: 0 !important;
+  text-align: left !important;
+}
+
+.site-navigation .line em {
+  display: block !important;
+  margin-left: 1vw !important;
+  font-size: 4vw !important;
+  font-style: normal !important;
+  line-height: 10vw !important;
+}
+
+.site-navigation .line .nav-icon-shell {
+  display: none !important;
+}
+
+.site-navigation .line::after {
+  content: "▼";
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: grid;
+  width: 8vw;
+  height: 10vw;
+  place-items: center;
+  background: #d1d1ff;
+  color: #00008b;
+  font-size: 4vw;
+  line-height: 10vw;
+}
+
+.site-navigation .exit {
+  grid-column: 7 !important;
+  grid-row: 1 !important;
+  display: grid !important;
+  place-items: center !important;
+  background: #d87500 !important;
+  font-size: 0 !important;
+}
+
+.site-navigation .exit .nav-icon-shell {
+  display: none !important;
+}
+
+.site-navigation .exit::before {
+  content: "⏻";
+  color: #fff;
+  font-size: 7vw;
+  line-height: 10vw;
+}
+
+.account {
+  grid-column: 1 !important;
+  grid-row: 2 !important;
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  grid-template-rows: repeat(3, 9vw) !important;
+  width: 30vw !important;
+  height: 31vw !important;
+  gap: 1vw !important;
+  padding: 2vw !important;
+  background: #fff !important;
+}
+
+.account .account-credit {
+  display: none !important;
+}
+
+.account-field {
+  width: 26vw !important;
+  height: 9vw !important;
+  padding: 1.5vw 1vw .2vw !important;
+  border: 1px solid #777 !important;
+  border-radius: 1vw !important;
+  font-size: 3.2vw !important;
+}
+
+.account-field span {
+  top: -2.2vw !important;
+  left: 1vw !important;
+  padding: 0 .8vw !important;
+  font-size: 3.2vw !important;
+  line-height: 4vw !important;
+}
+
+.account-field input {
+  width: 100% !important;
+  height: 5vw !important;
+  font-size: 4vw !important;
+  line-height: 5vw !important;
+  text-align: center !important;
+}
+
+.lottery,
+.lottery-single {
+  grid-column: 2 !important;
+  grid-row: 2 !important;
+  width: 70vw !important;
+  height: 31vw !important;
+  min-height: 0 !important;
+  margin: 2vw 0 0 !important;
+  border: 0 !important;
+  background: #d1d1ff !important;
+}
+
+.lottery > li,
+.lottery-single > li {
+  width: 70vw !important;
+  height: 15.5vw !important;
+  border-top: 1px dashed #fff !important;
+}
+
+.lottery > li:first-child {
+  border-top: 0 !important;
+}
+
+.lottery-row,
+.lottery-name,
+.lottery-meta {
+  height: 15.5vw !important;
+}
+
+.lottery-name,
+.lottery-meta {
+  margin: 0 2vw !important;
+}
+
+.lottery-name {
+  width: 20vw !important;
+  align-items: flex-start !important;
+}
+
+.lottery-meta {
+  width: 37vw !important;
+  min-width: 0 !important;
+  align-items: flex-start !important;
+}
+
+.lottery-name span,
+.lottery-name b {
+  font-size: 4vw !important;
+  line-height: 6vw !important;
+}
+
+.lottery-meta label {
+  font-size: 4vw !important;
+  line-height: 6vw !important;
+}
+
+.lottery-meta strong {
+  font-size: 4vw !important;
+  line-height: 5vw !important;
+}
+
+.body {
+  display: block !important;
+  min-height: calc(100dvh - 41vw) !important;
+  padding: 0 !important;
+  background: #fff !important;
+}
+
+.body:not(.full-page) aside {
+  display: none !important;
+}
+
+.body main,
+.body.full-page main {
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: calc(100dvh - 41vw) !important;
+  background: #fff !important;
+}
+
+.entry {
+  position: relative !important;
+  min-height: calc(100dvh - 41vw) !important;
+  background: #fff !important;
+}
+
+.entry > .tabs {
+  display: none !important;
+}
+
+.entry > .replace {
+  display: grid !important;
+  grid-template-columns: 23vw 23vw 1fr !important;
+  grid-template-rows: 12vw 15vw !important;
+  width: 100% !important;
+  height: 27vw !important;
+  margin: 0 !important;
+  padding: 2vw 4vw 0 !important;
+  background: #fff !important;
+  color: transparent !important;
+  font-size: 0 !important;
+}
+
+.entry > .replace::before {
+  content: "A - A";
+  grid-column: 1 / -1;
+  grid-row: 1;
+  display: grid;
+  width: 47vw;
+  height: 7vw;
+  place-items: center;
+  border: 1px solid #315bdc;
+  border-radius: .8vw;
+  background: #b5c8ff;
+  color: #111 !important;
+  font-size: 4vw !important;
+  line-height: 7vw;
+}
+
+.entry > .replace::after {
+  display: none !important;
+}
+
+.entry > .replace input {
+  display: none !important;
+}
+
+.entry > .replace button:not(.new) {
+  grid-column: 2;
+  grid-row: 2;
+  display: grid !important;
+  width: 20vw !important;
+  height: 8vw !important;
+  margin: 1vw 0 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 1vw !important;
+  background: #d87500 !important;
+  color: transparent !important;
+  font-size: 0 !important;
+}
+
+.entry > .replace button:not(.new)::after {
+  content: "替换文本";
+  color: #fff;
+  font-size: 3.6vw;
+  line-height: 8vw;
+}
+
+.entry > .replace .new {
+  grid-column: 1;
+  grid-row: 2;
+  position: static !important;
+  display: grid !important;
+  width: 20vw !important;
+  height: 8vw !important;
+  margin: 1vw 0 0 !important;
+  padding: 0 !important;
+  border-radius: 1vw !important;
+  background: #008f10 !important;
+  color: #fff !important;
+  font-size: 3.6vw !important;
+  line-height: 8vw !important;
+}
+
+.entry > .actions {
+  position: absolute !important;
+  top: 27vw !important;
+  right: 0 !important;
+  left: 0 !important;
+  display: flex !important;
+  width: 100% !important;
+  height: 15vw !important;
+  margin: 0 !important;
+  padding: 2vw 4vw 0 !important;
+  background: #fff !important;
+  color: #111 !important;
+}
+
+.entry > .actions > button:not(.rule-action),
+.entry > .actions > .action-separator,
+.entry > .actions > .action-total {
+  display: none !important;
+}
+
+.entry > .actions .rule-action {
+  display: grid !important;
+  width: 13vw !important;
+  height: 8vw !important;
+  margin: 1vw 0 0 50vw !important;
+  padding: 0 !important;
+  border: 1px solid #008f10 !important;
+  border-radius: 1vw !important;
+  background: #fff !important;
+  color: #008f10 !important;
+  font-size: 3.6vw !important;
+  line-height: 8vw !important;
+}
+
+.entry > .actions .warning-label {
+  position: absolute !important;
+  top: 0 !important;
+  right: 24vw !important;
+  width: 22vw !important;
+  height: 8vw !important;
+  border: 1px solid #777 !important;
+  border-radius: 1vw 1vw 0 0 !important;
+  background: #fff !important;
+  color: #111 !important;
+  font-size: 3.4vw !important;
+  line-height: 8vw !important;
+}
+
+.entry > .actions .warning-label::before {
+  display: none !important;
+}
+
+.entry > .actions .warning-label label {
+  position: absolute !important;
+  top: -4vw !important;
+  left: 0 !important;
+  padding: 0 1vw !important;
+  background: #fff !important;
+  color: #111 !important;
+  font-size: 3.4vw !important;
+  line-height: 4vw !important;
+}
+
+.entry > .actions .warning-input {
+  position: absolute !important;
+  top: 5vw !important;
+  right: 24vw !important;
+  width: 22vw !important;
+  height: 8vw !important;
+  margin: 0 !important;
+  border: 1px solid #aaa !important;
+  border-radius: 0 0 1vw 1vw !important;
+  background: #f3f3f3 !important;
+  font-size: 3.4vw !important;
+}
+
+.entry > .text-entry {
+  height: calc(100dvh - 83vw) !important;
+  min-height: 390px !important;
+  margin: 15vw 0 0 !important;
+  border: 0 !important;
+  background: #fff !important;
+}
+
+.entry > .text-entry textarea {
+  flex: 1 1 auto !important;
+  width: 100% !important;
+  height: auto !important;
+  min-height: 0 !important;
+  padding: 2vw !important;
+  border: 0 !important;
+  background: #f3e8fc !important;
+  color: #000 !important;
+  font-size: 3.6vw !important;
+  line-height: 5vw !important;
+}
+
+.entry > .text-entry-footer {
+  flex: 0 0 12vw !important;
+  height: 12vw !important;
+  min-height: 12vw !important;
+  padding: 0 3vw !important;
+  border-top: 1px dashed #111 !important;
+  color: #111 !important;
+  font-size: 3.6vw !important;
+}
+
+.entry > .text-entry-footer .clear-text {
+  width: 18vw !important;
+  height: 8vw !important;
+  padding: 0 !important;
+  border: 0 !important;
+  color: #00008b !important;
+  font-size: 4vw !important;
+}
+
+.entry > .text-entry-footer .clear-text .anticon {
+  font-size: 5vw !important;
+}
+
+.entry > .text-entry-footer > span {
+  margin-left: 2vw !important;
+  font-size: 3.6vw !important;
+}
+
+/* Mobile action controls share the same footer row as clear/count. */
+.mobile-entry-actions { display: none; }
+
+.entry > .options {
+  display: flex !important;
+  width: 100% !important;
+  height: 15vw !important;
+  margin: 0 !important;
+  gap: 1vw !important;
+  padding: 2vw 2vw 0 !important;
+  overflow: hidden !important;
+  background: #fff !important;
+}
+
+.entry > .options .option-card {
+  display: flex !important;
+  width: 18.6vw !important;
+  height: 12vw !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  padding: 3vw 1vw 0 !important;
+  border: 1px solid #999 !important;
+  border-radius: 1vw !important;
+}
+
+.entry > .options .option-card-lottery {
+  display: none !important;
+}
+
+.entry > .options .option-label {
+  top: -2.5vw !important;
+  left: 1vw !important;
+  height: 4vw !important;
+  padding: 0 1vw !important;
+  font-size: 3.2vw !important;
+  line-height: 4vw !important;
+}
+
+.entry > .options .option-hint {
+  display: none !important;
+}
+
+.entry > .options .ant-switch {
+  width: 11vw !important;
+  min-width: 11vw !important;
+  height: 6vw !important;
+  margin: 1vw auto 0 !important;
+  border-radius: 4vw !important;
+}
+
+.entry > .options .ant-switch-inner {
+  font-size: 3vw !important;
+}
+
+.entry > .actions .warning-label + .warning-input {
+  display: block !important;
+}
+
+.entry > .quick-result {
+  display: none !important;
+}
+
+/* Final quick-entry geometry: preserve handlers, place controls like the H5 reference. */
+.lottery,
+.lottery-single {
+  height: 28.2vw !important;
+  min-height: 0 !important;
+  margin-top: 2vw !important;
+}
+
+.lottery > li,
+.lottery-single > li,
+.lottery-row,
+.lottery-name,
+.lottery-meta {
+  height: 14.1vw !important;
+}
+
+.lottery-name b {
+  color: #d87500 !important;
+}
+
+.lottery-meta label {
+  color: #00008b !important;
+  font-weight: 700 !important;
+}
+
+.entry > .replace {
+  position: relative !important;
+  z-index: 2 !important;
+  height: 27vw !important;
+  min-height: 27vw !important;
+}
+
+.entry > .actions {
+  position: absolute !important;
+  z-index: 3 !important;
+  top: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  left: 0 !important;
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  pointer-events: none !important;
+}
+
+.entry > .actions > * {
+  pointer-events: auto !important;
+}
+
+.entry > .actions > button:nth-child(1),
+.entry > .actions > button:nth-child(2),
+.entry > .actions > .action-total {
+  position: absolute !important;
+  z-index: 4 !important;
+  bottom: 3.2vw !important;
+  margin: 0 !important;
+}
+
+.entry > .actions > button:nth-child(1) {
+  right: 16.5vw !important;
+  width: 11.8vw !important;
+  height: 8vw !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 1vw !important;
+  background: #00008b !important;
+  font-size: 3.6vw !important;
+  line-height: 8vw !important;
+}
+
+.entry > .actions > button:nth-child(2) {
+  right: 29.5vw !important;
+  width: 11.8vw !important;
+  height: 8vw !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 1vw !important;
+  background: #d87500 !important;
+  font-size: 3.6vw !important;
+  line-height: 8vw !important;
+}
+
+.entry > .actions > .action-total {
+  right: 1.8vw !important;
+  display: flex !important;
+  height: 8vw !important;
+  align-items: center !important;
+  margin: 0 !important;
+  font-size: 3.6vw !important;
+  line-height: 8vw !important;
+}
+
+.entry > .actions > .action-total > span:first-child {
+  display: none !important;
+}
+
+.entry > .actions > .action-total > span:last-child {
+  display: flex !important;
+  align-items: center !important;
+}
+
+.entry > .actions > .action-total i {
+  font-size: 3.6vw !important;
+}
+
+.entry > .actions > .action-total b {
+  margin-left: 1vw !important;
+  color: #f00000 !important;
+  font-size: 3.8vw !important;
+}
+
+.entry > .actions > .rule-action {
+  position: absolute !important;
+  z-index: 4 !important;
+  top: 15vw !important;
+  left: 50vw !important;
+  display: grid !important;
+  width: 13vw !important;
+  height: 8vw !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 1px solid #008f10 !important;
+  border-radius: 1vw !important;
+  background: #fff !important;
+  color: #008f10 !important;
+  font-size: 3.6vw !important;
+  line-height: 8vw !important;
+}
+
+.entry > .actions > .warning-label {
+  position: absolute !important;
+  z-index: 4 !important;
+  top: 11vw !important;
+  right: 24vw !important;
+  display: flex !important;
+  width: 22vw !important;
+  height: 8vw !important;
+  align-items: center !important;
+  justify-content: center !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 1px solid #777 !important;
+  border-radius: 1vw 1vw 0 0 !important;
+  background: #fff !important;
+  color: #111 !important;
+  font-size: 3.4vw !important;
+  line-height: 8vw !important;
+}
+
+.entry > .actions > .warning-label::before {
+  display: none !important;
+}
+
+.entry > .actions > .warning-label label {
+  position: absolute !important;
+  top: -4vw !important;
+  left: 0 !important;
+  margin: 0 !important;
+  padding: 0 1vw !important;
+  background: #fff !important;
+  color: #111 !important;
+  font-size: 3.4vw !important;
+  line-height: 4vw !important;
+}
+
+.entry > .actions > .warning-input {
+  position: absolute !important;
+  z-index: 4 !important;
+  top: 16vw !important;
+  right: 24vw !important;
+  display: block !important;
+  width: 22vw !important;
+  height: 8vw !important;
+  margin: 0 !important;
+  padding: 0 1vw !important;
+  border: 1px solid #aaa !important;
+  border-radius: 0 0 1vw 1vw !important;
+  background: #f3f3f3 !important;
+  font-size: 3.4vw !important;
+}
+
+.entry > .text-entry {
+  height: calc(100dvh - 93vw) !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  border: 0 !important;
+}
+
+.entry > .text-entry textarea {
+  flex: 1 1 auto !important;
+  height: auto !important;
+  min-height: 0 !important;
+}
+
+.entry > .text-entry-footer {
+  flex: 0 0 11vw !important;
+  height: 11vw !important;
+  min-height: 11vw !important;
+}
+
+.entry > .options {
+  height: 14vw !important;
+  min-height: 14vw !important;
+  padding-top: 2vw !important;
+}
+
+.entry > .options .option-card {
+  height: 11vw !important;
+  padding-top: 2.5vw !important;
+}
+
+.entry > .options .ant-switch {
+  margin-top: .5vw !important;
+}
+
+.entry > .actions > button:nth-child(1),
+.entry > .actions > button:nth-child(2) {
+  display: none !important;
+}
+
+.entry > .text-entry .mobile-entry-actions {
+  display: inline-flex !important;
+  flex: 0 0 auto !important;
+  align-items: center !important;
+  gap: 1.4vw !important;
+  margin-left: auto !important;
+  padding-right: 2vw !important;
+}
+.entry > .text-entry .mobile-entry-actions button {
+  display: inline-flex !important;
+  width: 11.8vw !important;
+  height: 8vw !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 1vw !important;
+  color: #fff !important;
+  font-size: 3.6vw !important;
+  line-height: 8vw !important;
+}
+.entry > .text-entry .mobile-identify { background: #d87500 !important; }
+.entry > .text-entry .mobile-place { background: #00008b !important; }
+.entry > .text-entry .mobile-entry-total {
+  display: inline-flex !important;
+  min-width: 12vw !important;
+  align-items: center !important;
+  margin-left: .3vw !important;
+  color: #111 !important;
+  font-size: 3.4vw !important;
+  white-space: nowrap !important;
+}
+.entry > .text-entry .mobile-entry-total b { color: #f00 !important; font-weight: 400 !important; }
+
+.entry > .text-entry .text-entry-footer {
+  flex: 0 0 12vw !important;
+  height: 12vw !important;
+  min-height: 12vw !important;
+}
+
+.entry > .text-entry .text-entry-footer .clear-text {
+  display: inline-flex !important;
+}
+
+.entry > .text-entry .text-entry-footer > span {
+  display: block !important;
+}
+
+/* Reference geometry pass for the H5 quick-entry screen. */
+.site-header {
+  grid-template-rows: 10vw 32.2vw !important;
+  height: 42.2vw !important;
+}
+
+.account {
+  height: 32.2vw !important;
+}
+
+.lottery,
+.lottery-single {
+  height: 28.2vw !important;
+}
+
+.lottery > li,
+.lottery-single > li,
+.lottery-row,
+.lottery-name,
+.lottery-meta {
+  height: 14.1vw !important;
+}
+
+.body {
+  min-height: calc(100dvh - 42.2vw) !important;
+  position: relative !important;
+}
+
+.body main,
+.body.full-page main {
+  min-height: calc(100dvh - 42.2vw) !important;
+}
+
+.entry {
+  min-height: calc(100dvh - 42.2vw) !important;
+}
+
+.entry > .replace {
+  height: 9.4vw !important;
+  min-height: 9.4vw !important;
+  padding: 1.2vw 2.5vw 0 !important;
+  grid-template-columns: 23vw 23vw 1fr !important;
+  grid-template-rows: 8vw !important;
+  overflow: visible !important;
+}
+
+.entry > .replace::before {
+  width: 47vw !important;
+  height: 7vw !important;
+}
+
+.entry > .replace button:not(.new) {
+  position: absolute !important;
+  top: 14.2vw !important;
+  left: 28vw !important;
+  width: 20vw !important;
+  margin: 0 !important;
+}
+
+.entry > .replace .new {
+  position: absolute !important;
+  top: 14.2vw !important;
+  left: 4vw !important;
+  width: 20vw !important;
+  margin: 0 !important;
+}
+
+.entry > .actions > button:nth-child(1),
+.entry > .actions > button:nth-child(2) {
+  display: grid !important;
+}
+
+.entry > .actions > .rule-action {
+  top: 14.2vw !important;
+}
+
+.entry > .actions > .warning-label {
+  top: 10.8vw !important;
+  right: 5vw !important;
+  width: 28vw !important;
+}
+
+.entry > .actions > .warning-label label {
+  font-size: 3.2vw !important;
+}
+
+.entry > .actions > .warning-input {
+  top: 15.8vw !important;
+  right: 5vw !important;
+  width: 28vw !important;
+}
+
+.entry > .text-entry {
+  height: 122.7vw !important;
+  min-height: 0 !important;
+  margin: 17.2vw 0 1.6vw !important;
+}
+
+.entry > .text-entry textarea {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  height: auto !important;
+}
+
+.entry > .text-entry .text-entry-footer {
+  flex: 0 0 10vw !important;
+  height: 10vw !important;
+  min-height: 10vw !important;
+}
+
+.entry > .options {
+  height: 14vw !important;
+  min-height: 14vw !important;
+  margin: 0 !important;
+  padding: 2vw 2vw 0 !important;
+}
+
+.body:not(.full-page) aside {
+  position: absolute !important;
+  z-index: 8 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  left: 0 !important;
+  display: block !important;
+  width: 100% !important;
+  height: 9.6vw !important;
+  max-height: none !important;
+  margin: 0 !important;
+  overflow: hidden !important;
+  background: #fff !important;
+}
+
+.body:not(.full-page) aside .side-record-list {
+  display: none !important;
+}
+
+.body:not(.full-page) aside .side-total {
+  display: flex !important;
+  width: 100% !important;
+  height: 9.6vw !important;
+  min-height: 9.6vw !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 2vw !important;
+  padding: 0 !important;
+  border-top: 1px solid #ddd !important;
+  border-bottom: 0 !important;
+  background: #fff !important;
+}
+
+.body:not(.full-page) aside .side-total > span {
+  display: none !important;
+}
+
+.body:not(.full-page) aside .side-actions {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 2vw !important;
+  width: 100% !important;
+}
+
+.body:not(.full-page) aside .side-actions button {
+  position: static !important;
+  width: 18vw !important;
+  height: 8vw !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 1vw !important;
+  background: #00008b !important;
+  color: #fff !important;
+  font-size: 0 !important;
+  line-height: 8vw !important;
+}
+
+.body:not(.full-page) aside .side-actions button:first-child::after {
+  content: "查看更多";
+  font-size: 3.6vw;
+}
+
+.body:not(.full-page) aside .side-actions .side-right {
+  width: 20vw !important;
+  background: #d87500 !important;
+}
+
+.body:not(.full-page) aside .side-actions .side-right::after {
+  content: "停押/降水";
+  font-size: 3.6vw;
+}
+
+.body:not(.full-page) aside .side-actions .side-right img {
+  display: none !important;
+}
+
+/* Final alignment for the quick-entry controls and bottom options. */
+.site-header {
+  grid-template-rows: 10vw 31vw !important;
+  height: 41vw !important;
+}
+
+.account {
+  height: 31vw !important;
+}
+
+.entry > .replace button:not(.new) {
+  grid-row: auto !important;
+  grid-column: auto !important;
+  top: 14.2vw !important;
+  left: 28vw !important;
+}
+
+.entry > .replace .new {
+  grid-row: auto !important;
+  grid-column: auto !important;
+  top: 14.2vw !important;
+  left: 4vw !important;
+}
+
+.entry > .actions > button:not(.rule-action):nth-child(1),
+.entry > .actions > button:not(.rule-action):nth-child(2) {
+  display: grid !important;
+}
+
+.entry > .actions > button:not(.rule-action):nth-child(2) {
+  font-size: 0 !important;
+}
+
+.entry > .actions > button:not(.rule-action):nth-child(2)::after {
+  content: "识 别";
+  font-size: 3.6vw;
+  line-height: 8vw;
+}
+
+.entry > .actions > .rule-action {
+  left: 50.5vw !important;
+  width: 12vw !important;
+}
+
+.entry > .actions > .warning-label,
+.entry > .actions > .warning-input {
+  right: 5vw !important;
+  width: 28vw !important;
+}
+
+.entry > .text-entry {
+  margin-top: 18.4vw !important;
+}
+
+.entry > .options {
+  gap: 1vw !important;
+  padding-inline: 2vw !important;
+}
+
+.entry > .options .option-card {
+  width: 18.4vw !important;
+  flex: 0 0 18.4vw !important;
+}
+
+.entry > .options .option-card-1 {
+  display: none !important;
+}
+
+.entry > .options .option-card-0 {
+  order: 1 !important;
+}
+
+.entry > .options .option-card-2 {
+  order: 2 !important;
+}
+
+.entry > .options .option-card-3 {
+  order: 3 !important;
+}
+
+.entry > .options .option-card-4 {
+  order: 4 !important;
+}
+
+.entry > .options .option-card-lottery {
+  display: flex !important;
+  order: 0 !important;
+  gap: 0 !important;
+}
+
+.entry > .options .option-card-lottery .option-label {
+  font-size: 0 !important;
+}
+
+.entry > .options .option-card-lottery .option-label::after {
+  content: "默认";
+  font-size: 3.2vw;
+}
+
+.entry > .options .option-card-lottery b {
+  display: none !important;
+}
+
+.entry > .options .option-card-lottery b.selected {
+  display: inline-block !important;
+  width: 11vw !important;
+  min-width: 11vw !important;
+  height: 6vw !important;
+  padding: 0 !important;
+  margin: .5vw auto 0 !important;
+  border-radius: 4vw !important;
+  font-size: 3vw !important;
+  line-height: 6vw !important;
+}
+
+.entry > .options .option-card-0 .option-label {
+  font-size: 0 !important;
+}
+
+.entry > .options .option-card-0 .option-label::after {
+  content: "自动下注";
+  font-size: 3.2vw;
+}
+
+.entry > .options .option-card-2 .option-label {
+  font-size: 0 !important;
+}
+
+.entry > .options .option-card-2 .option-label::after {
+  content: "自动复制";
+  font-size: 3.2vw;
+}
+
+.entry > .options .option-card-3 .option-label {
+  font-size: 0 !important;
+}
+
+.entry > .options .option-card-3 .option-label::after {
+  content: "小票头尾";
+  font-size: 3.2vw;
+}
+
+.entry > .options .option-card-4 .option-label {
+  font-size: 0 !important;
+}
+
+.entry > .options .option-card-4 .option-label::after {
+  content: "文本/号码";
+  font-size: 3.2vw;
+}
+
+.entry > .options .option-card .ant-switch {
+  margin-top: .5vw !important;
+}
+
+/* Final coordinate alignment against the reference 430px H5 viewport. */
+.site-header {
+  grid-template-rows: 10vw 32.2vw !important;
+  height: 42.2vw !important;
+}
+
+.account {
+  height: 32.2vw !important;
+}
+
+.entry > .replace {
+  padding-top: 1.8vw !important;
+}
+
+.entry > .replace button:not(.new),
+.entry > .replace .new {
+  top: 14.2vw !important;
+}
+
+.entry > .actions > .warning-label {
+  top: 11.4vw !important;
+}
+
+.entry > .text-entry {
+  margin-top: 17.2vw !important;
+}
+
+.entry > .actions > button:nth-child(1),
+.entry > .actions > button:nth-child(2),
+.entry > .actions > .action-total {
+  top: 140.7vw !important;
+  bottom: auto !important;
+}
+
+.entry > .actions > button:nth-child(1),
+.entry > .actions > button:nth-child(2) {
+  width: 11.6vw !important;
+  height: 7.2vw !important;
+  line-height: 7.2vw !important;
+}
+
+.entry > .actions > button:nth-child(1) {
+  right: 16.5vw !important;
+}
+
+.entry > .actions > button:nth-child(2) {
+  right: 29.4vw !important;
+}
+
+.entry > .actions > .action-total {
+  height: 7.2vw !important;
+  line-height: 7.2vw !important;
+}
+
+.entry > .actions > button:nth-child(2)::after {
+  line-height: 7.2vw !important;
+}
+
+/* Final copy alignment: keep semantic handlers while matching reference labels. */
+.site-navigation a:nth-child(-n+5) {
+  font-size: 4vw !important;
+}
+
+.site-navigation a:nth-child(-n+5)::after {
+  content: none !important;
+}
+
+.entry > .actions > .rule-action {
+  font-size: 0 !important;
+}
+
+.entry > .actions > .rule-action::after {
+  content: "规 则";
+  display: block;
+  color: #008f10;
+  font-size: 3.6vw;
+  line-height: 7.2vw;
+}
+
+.entry > .actions > button:nth-child(2) {
+  font-size: 3.6vw !important;
+}
+
+.entry > .actions > button:nth-child(2)::after {
+  display: none !important;
+}
+
+.entry > .options .option-card-lottery b.selected {
+  font-size: 0 !important;
+}
+
+.entry > .options .option-card-lottery b.selected::after {
+  content: attr(data-short-label);
+  font-size: 3vw;
+}
+
+.entry > .actions > button:not(.rule-action):nth-child(2) {
+  font-size: 3.6vw !important;
+}
+
+.entry > .actions > button:not(.rule-action):nth-child(2)::after {
+  display: none !important;
+}
+
+.entry > .actions > .rule-action::after {
+  position: absolute !important;
+  inset: 0 !important;
+  display: grid !important;
+  place-items: center !important;
+  line-height: normal !important;
+}
+
+/* Exact H5 header grid: six menus, one dropdown cell, one power cell. */
+.site-navigation {
+  grid-template-columns: repeat(6, 13.76vw) 8.27vw 9.17vw !important;
+}
+
+.site-navigation .line {
+  grid-column: 6 !important;
+  width: auto !important;
+  background: #3053cf !important;
+  border-radius: 0 0 2vw 0 !important;
+}
+
+.site-navigation .line::after {
+  display: none !important;
+}
+
+.site-navigation::before {
+  content: "▼";
+  grid-column: 7 !important;
+  grid-row: 1 !important;
+  display: grid !important;
+  width: auto !important;
+  height: 10vw !important;
+  place-items: center !important;
+  background: #fffaf0 !important;
+  color: #00008b !important;
+  font-size: 4vw !important;
+  line-height: 10vw !important;
+}
+
+.site-navigation .exit {
+  grid-column: 8 !important;
+  width: auto !important;
+  background: #d16c15 !important;
+  border-radius: 0 0 0 2vw !important;
+}
+
+.entry > .actions > .rule-action::after {
+  position: absolute !important;
+  inset: 0 !important;
+  display: grid !important;
+  place-items: center !important;
+  line-height: normal !important;
+}
+
+.entry > .options .option-card-lottery {
+  height: 10vw !important;
+  min-height: 10vw !important;
+  padding-top: 2vw !important;
+  border-color: #5f5f5f !important;
+}
+
+.entry > .options .option-card-lottery .option-label {
+  top: -1.8vw !important;
+}
+
+.entry > .options .option-card-lottery b.selected {
+  width: 12vw !important;
+  min-width: 12vw !important;
+  height: 6vw !important;
+  margin-top: .5vw !important;
+  margin-inline: auto !important;
+  border-color: #56008b !important;
+  border-radius: 4vw !important;
+  background: #56008b !important;
+}
+
+/* Reference micro-details: rounded speed cell, dashed toolbar dividers and switch knob. */
+.site-navigation .line {
+  border-radius: 0 0 2vw 0 !important;
+}
+
+.site-navigation::before {
+  border-radius: 0 0 0 2vw !important;
+}
+
+.entry > .replace {
+  border-top: 1px solid #111 !important;
+  background-image:
+    repeating-linear-gradient(to bottom, transparent 0, transparent 8.2vw, #777 8.2vw, #777 8.5vw, transparent 8.5vw, transparent 15vw),
+    repeating-linear-gradient(to bottom, transparent 0, transparent 8.2vw, #777 8.2vw, #777 8.5vw, transparent 8.5vw, transparent 15vw),
+    repeating-linear-gradient(to bottom, transparent 0, transparent 8.2vw, #777 8.2vw, #777 8.5vw, transparent 8.5vw, transparent 15vw);
+  background-size: 1px 15vw, 1px 15vw, 1px 15vw;
+  background-position: 25.5vw 0, 48.5vw 0, 65vw 0;
+  background-repeat: no-repeat;
+}
+
+.entry > .options .option-card-lottery b.selected {
+  position: relative !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  padding-left: 1.2vw !important;
+  overflow: visible !important;
+  background: #56008b !important;
+  color: #fff !important;
+  text-align: left !important;
+}
+
+.entry > .options .option-card-lottery b.selected::before {
+  content: "" !important;
+  position: absolute !important;
+  top: .7vw !important;
+  right: .7vw !important;
+  width: 4.8vw !important;
+  height: 4.8vw !important;
+  border-radius: 50% !important;
+  background: #fff !important;
+  box-shadow: 0 .5vw 1vw rgba(0, 35, 11, .2) !important;
+}
+
+.entry > .options .option-card-lottery b.selected::after {
+  content: attr(data-short-label) !important;
+  position: static !important;
+  display: block !important;
+  color: transparent !important;
+  font-size: 0 !important;
+}
+
+/* Pixel pass for the 393px reference toolbar. */
+.entry > .replace::before {
+  width: 46.4vw !important;
+}
+
+.entry > .replace .new {
+  left: 4.14vw !important;
+  width: 19.2vw !important;
+}
+
+.entry > .replace button:not(.new) {
+  left: 28.82vw !important;
+  width: 17.6vw !important;
+}
+
+.entry > .actions > .rule-action {
+  left: 50.66vw !important;
+}
+
+.entry > .actions > .warning-label {
+  top: 11.4vw !important;
+  right: 5vw !important;
+  width: 28vw !important;
+  height: 13.2vw !important;
+  min-height: 13.2vw !important;
+  align-items: center !important;
+  border: 1px solid #5f5f5f !important;
+  border-radius: 1vw 1vw 0 0 !important;
+}
+
+.entry > .actions > .warning-input {
+  top: 15.8vw !important;
+  right: 5.8vw !important;
+  width: 26vw !important;
+  height: 6.4vw !important;
+  border: 1px dashed #8f8f8f !important;
+  border-radius: 1vw !important;
+  background: #f0f0f0 !important;
+}
+
+.entry > .options .option-card-lottery {
+  width: 18.3vw !important;
+  min-width: 18.3vw !important;
+  flex-basis: 18.3vw !important;
+}
+
+.entry > .options .option-card-lottery b.selected {
+  width: 11.9vw !important;
+  min-width: 11.9vw !important;
+  height: 6vw !important;
+}
+
+/* Final button height alignment with reference controls. */
+.entry > .replace .new,
+.entry > .replace button:not(.new),
+.entry > .actions > button:nth-child(1),
+.entry > .actions > button:nth-child(2),
+.entry > .actions > .rule-action {
+  height: 7.2vw !important;
+  line-height: 7.2vw !important;
+}
+
+.entry > .actions > .rule-action {
+  top: 14.44vw !important;
+}
+
+/* Final H5 toolbar parity: use real label text and reference-style dashed separators. */
+.entry > .replace button:not(.new) {
+  display: grid !important;
+  place-items: center !important;
+  color: #fff !important;
+  font-size: 3.6vw !important;
+  line-height: 1 !important;
+  text-indent: 0 !important;
+}
+
+.entry > .replace button:not(.new)::after {
+  content: none !important;
+  display: none !important;
+}
+
+.entry > .replace button:not(.new) > span {
+  display: block !important;
+  color: #fff !important;
+  font-size: 3.6vw !important;
+  line-height: 1 !important;
+  white-space: nowrap !important;
+}
+
+.entry > .replace::after {
+  content: "" !important;
+  position: absolute !important;
+  z-index: 3 !important;
+  border: 0 !important;
+  border-top: 0 !important;
+  top: 12.04vw !important;
+  left: 0 !important;
+  display: block !important;
+  width: 100% !important;
+  height: 12vw !important;
+  pointer-events: none !important;
+  background-image:
+    repeating-linear-gradient(to bottom, #3f3f3f 0 1px, transparent 1px 4px),
+    repeating-linear-gradient(to bottom, #3f3f3f 0 1px, transparent 1px 4px),
+    repeating-linear-gradient(to bottom, #3f3f3f 0 1px, transparent 1px 4px) !important;
+  background-size: 1px 100%, 1px 100%, 1px 100% !important;
+  background-position: 25.37vw 0, 48.41vw 0, 64.69vw 0 !important;
+  background-repeat: no-repeat !important;
+}
+/* H5 records page: match the compact reference /dl layout. */
+.records-page {
+  display: flex;
+  width: 100%;
+  min-height: calc(100dvh - 42.2vw);
+  flex-direction: column;
+  background: #fff;
+  color: #000;
+  font-size: 3.2vw;
+}
+.records-page-filter {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 1.4vw 0 0;
+  background: #fff;
+}
+.records-page-row {
+  display: flex;
+  width: 100%;
+  height: 8vw;
+  min-height: 31px;
+  align-items: center;
+  padding: 0 1vw;
+  color: #000;
+  font-size: 3.2vw;
+}
+.records-page-row + .records-page-row {
+  margin-top: 1.4vw;
+}
+.records-page-source label {
+  width: 14.8vw;
+  flex: 0 0 14.8vw;
+}
+.records-page-source input {
+  width: calc(100% - 14.8vw - 1vw);
+  height: 8vw;
+  min-height: 31px;
+  padding: 0 2vw;
+  border: 1px solid #d9d9d9;
+  border-radius: 1vw;
+  outline: 0;
+  background: #fff;
+  color: #000;
+  font-size: 3.2vw;
+}
+.records-page-source input::placeholder {
+  color: #bfbfbf;
+}
+.records-page-dates label {
+  width: 14.8vw;
+  flex: 0 0 14.8vw;
+}
+.records-page-dates select {
+  width: 25.2vw;
+  height: 8vw;
+  min-height: 31px;
+  padding: 0 1vw;
+  border: 1px solid #8f8f8f;
+  border-radius: 0;
+  background: #fff;
+  color: #000;
+  font-size: 3.2vw;
+}
+.records-page-dates > span {
+  width: 7.2vw;
+  text-align: center;
+}
+.records-page-actions label {
+  width: 9.2vw;
+  flex: 0 0 9.2vw;
+}
+.records-page-actions select {
+  width: 16.8vw;
+  height: 8vw;
+  min-height: 31px;
+  padding: 0 1vw;
+  border: 1px solid #8f8f8f;
+  border-radius: 0;
+  background: #fff;
+  color: #000;
+  font-size: 3.2vw;
+}
+.records-page-actions button {
+  display: inline-flex;
+  width: 16.4vw;
+  height: 8vw;
+  min-height: 31px;
+  align-items: center;
+  justify-content: center;
+  gap: .8vw;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 1vw;
+  background: #00008b;
+  color: #fff;
+  font-size: 3.2vw;
+  line-height: 8vw;
+}
+.records-page-actions button:disabled {
+  opacity: .55;
+}
+.records-page-pagination {
+  display: flex;
+  width: 100%;
+  height: 8vw;
+  min-height: 31px;
+  align-items: center;
+  gap: 1.3vw;
+  margin-top: 1.4vw;
+  padding: 0 2vw;
+  background: #fff;
+  color: #111;
+  font-size: 3.2vw;
+}
+.records-page-number {
+  width: 7vw;
+  height: 7vw;
+  min-height: 27px;
+  padding: 0;
+  border: 1px solid #cfcfcf;
+  border-radius: .5vw;
+  background: #fff;
+  color: #555;
+  font-size: 3.2vw;
+  text-align: center;
+}
+.records-page-nav {
+  display: inline-flex;
+  gap: 1vw;
+  margin-left: 1vw;
+}
+.records-page-nav button {
+  width: 7vw;
+  height: 7vw;
+  padding: 0;
+  border: 1px solid #ccc;
+  background: #fff;
+  color: #222;
+}
+.records-page-nav button:disabled {
+  color: #bbb;
+}
+.records-page-table-wrap {
+  width: 100%;
+  min-height: 54.8vw;
+  margin-top: 0;
+  overflow: hidden;
+  border-top: 1px solid #444;
+  border-bottom: 1px solid #eee;
+  background: #fff;
+}
+.records-page-table {
+  width: 100%;
+  color: #222;
+}
+.records-page-head,
+.records-page-row-data {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  width: 100%;
+  text-align: center;
+}
+.records-page-head {
+  height: 12.9vw;
+  min-height: 49px;
+  align-items: center;
+  border-bottom: 1px solid #bcbcbc;
+  background: #f3f3f3;
+  font-size: 3.2vw;
+  line-height: 4.5vw;
+}
+.records-page-head > span + span,
+.records-page-row-data > span + span {
+  border-left: 1px solid #999;
+}
+.records-page-row-data {
+  min-height: 12vw;
+  align-items: center;
+  border-bottom: 1px solid #eee;
+  font-size: 3vw;
+}
+.records-page-row-data > span {
+  min-width: 0;
+  overflow: hidden;
+  padding: 0 1vw;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.records-page-row-data b,
+.records-page-row-data em {
+  display: block;
+  font-style: normal;
+  font-weight: 400;
+  line-height: 4.5vw;
+}
+.records-page-empty {
+  display: flex;
+  height: 42vw;
+  min-height: 160px;
+  align-items: center;
+  justify-content: center;
+  color: rgba(0, 0, 0, .25);
+}
+.records-page-empty .ant-empty {
+  margin: 0;
+}
+.records-page-empty .ant-empty-description {
+  color: rgba(0, 0, 0, .45);
+  font-size: 3.2vw;
+}
+.records-page-spinner {
+  width: 8vw;
+  height: 8vw;
+  border: .8vw solid #d9d9d9;
+  border-top-color: #00008b;
+  border-radius: 50%;
+  animation: records-spin .8s linear infinite;
+}
+@keyframes records-spin {
+  to { transform: rotate(360deg); }
+}
+@media (min-width: 600px) {
+  .records-page {
+    min-height: calc(100vh - 110px);
+    font-size: 14px;
+  }
+  .records-page-filter {
+    display: flex;
+    height: 70px;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+  }
+  .records-page-row {
+    width: auto;
+    height: 50px;
+    min-height: 0;
+    padding: 0 8px;
+    font-size: 14px;
+  }
+  .records-page-row + .records-page-row { margin-top: 0; }
+  .records-page-source { width: 360px; }
+  .records-page-source label { width: 76px; flex-basis: 76px; }
+  .records-page-source input { width: 270px; height: 32px; font-size: 14px; }
+  .records-page-dates label { width: 70px; flex-basis: 70px; }
+  .records-page-dates select { width: 130px; height: 32px; font-size: 14px; }
+  .records-page-actions label { width: 42px; flex-basis: 42px; }
+  .records-page-actions select { width: 72px; height: 32px; font-size: 14px; }
+  .records-page-actions button { width: 68px; height: 28px; font-size: 14px; line-height: 28px; }
+  .records-page-pagination { height: 42px; min-height: 42px; margin-top: 0; padding: 0 16px; font-size: 13px; }
+  .records-page-number { width: 28px; height: 26px; font-size: 13px; }
+  .records-page-table-wrap { min-height: 218px; }
+  .records-page-head { height: 50px; min-height: 50px; font-size: 14px; }
+  .records-page-row-data { min-height: 40px; font-size: 13px; }
+  .records-page-empty { height: 167px; min-height: 167px; }
+  .records-page-empty .ant-empty-description { font-size: 14px; }
+}
+/* Records header keeps the reference lottery strip in its non-selectable state. */
+.records-app .lottery > li,
+.records-app .lottery > li.selected {
+  background: #d6d2ff !important;
+  color: #000 !important;
+  box-shadow: none !important;
+}
+.records-app .lottery > li .lottery-name span,
+.records-app .lottery > li .lottery-name b,
+.records-app .lottery > li .lottery-meta label,
+.records-app .lottery > li .lottery-meta strong {
+  color: #000 !important;
+}
+.records-page-actions button {
+  margin-left: 29vw;
+}
+@media (min-width: 600px) {
+  .records-page-actions button {
+    margin-left: 10px;
+  }
+}
+
+
+/* 开奖记录移动端紧凑表格：与参考 H5 保持同一列顺序和密度。 */
+@media (max-width: 599px) {
+  :root { --h5-action-layout: footer; }
+  .draw-page {
+    min-height: 0;
+    padding: 0;
+    overflow: visible;
+    background: #fff;
+  }
+
+  .draw-table {
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 1px solid #333;
+    background: #fff;
+    font-size: 14px;
+  }
+
+  .draw-head,
+  .draw-row {
+    grid-template-columns: 34% 17% repeat(3, 16.3333%);
+  }
+
+  .draw-head {
+    height: 36px;
+    border-bottom: 1px solid #777;
+    background: #f4f4f4;
+    color: #222;
+    font-size: 14px;
+    font-weight: 400;
+  }
+
+  .draw-row {
+    height: 33px;
+    border-bottom: 1px solid #aaa;
+    background: #fff;
+  }
+
+  .draw-row:nth-child(odd) {
+    background: #fff;
+  }
+
+  .draw-head > span,
+  .draw-row > time,
+  .draw-row > strong,
+  .draw-row > .draw-ball {
+    min-width: 0;
+    border-right: 1px solid #aaa;
+    box-sizing: border-box;
+  }
+
+  .draw-row > time {
+    color: #111;
+    font-size: 14px;
+    font-weight: 400;
+    order: 1;
+    white-space: nowrap;
+  }
+
+  .draw-row > strong {
+    color: #111;
+    font-size: 14px;
+    font-weight: 400;
+    order: 2;
+  }
+
+  .draw-row > .draw-ball {
+    width: 25px;
+    height: 25px;
+    font-size: 14px;
+    order: 3;
+  }
+
+  .draw-row > .draw-ball.pending {
+    width: auto;
+    height: 100%;
+    border-radius: 0;
+    background: transparent;
+    color: transparent;
+  }
+
+  .draw-head > span:nth-child(n + 6),
+  .draw-row > .draw-sum,
+  .draw-row > .draw-span {
+    display: none;
+  }
+}
+
+/* Final H5 header parity: match the reference colors, row geometry, and status placement. */
+.site-navigation {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  overflow: visible !important;
+  background: transparent !important;
+}
+
+.site-navigation > a:nth-child(-n + 5),
+.site-navigation > .line {
+  display: flex !important;
+  flex: 1 1 auto !important;
+  width: 15% !important;
+  height: 10vw !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.site-navigation > .nav-arrow {
+  display: inline-block !important;
+  flex: 1 1 auto !important;
+  width: 9% !important;
+  height: 10vw !important;
+  line-height: 10vw !important;
+  text-align: center !important;
+  vertical-align: top !important;
+}
+
+.site-navigation > .exit {
+  display: grid !important;
+  flex: 1 1 auto !important;
+  width: 10% !important;
+  height: 10vw !important;
+  place-items: center !important;
+}
+
+.nav-arrow::before {
+  border-width: 2.4vw 2vw 0 !important;
+}
+
+.site-navigation > a:not(.selected),
+.site-navigation > .line {
+  background: #3053cf !important;
+}
+
+.site-navigation > a.selected {
+  background: #00008b !important;
+}
+
+.site-navigation::before {
+  content: none !important;
+  display: none !important;
+}
+
+.site-navigation .line {
+  border-radius: 0 0 2vw 0 !important;
+}
+
+.site-navigation .exit {
+  border-radius: 0 0 0 2vw !important;
+}
+
+.nav-arrow {
+  grid-column: 7 !important;
+  grid-row: 1 !important;
+  display: grid !important;
+  width: auto !important;
+  height: 10vw !important;
+  min-width: 0 !important;
+  place-items: center !important;
+  padding: 0 !important;
+  border-left: 0.1rem solid #fff !important;
+  background: #fffae7 !important;
+  color: #fff !important;
+  font-size: 4vw !important;
+  line-height: 10vw !important;
+  position: relative !important;
+}
+
+.nav-arrow::before {
+  content: "" !important;
+  display: inline-block !important;
+  width: 0 !important;
+  height: 0 !important;
+  border-width: 2.4vw 2vw 0 !important;
+  border-style: solid solid none !important;
+  border-color: #3053cf transparent #fff !important;
+  transition: transform 0.4s linear !important;
+}
+
+.account {
+  grid-template-rows: repeat(3, 8vw) !important;
+  gap: 2vw !important;
+}
+
+.account-field {
+  height: 8vw !important;
+  padding: 2vw 1vw 0 !important;
+  border-color: #4f4f4f !important;
+}
+
+.account-field input {
+  color: #00008b !important;
+}
+
+.lottery {
+  margin-top: 1.875vw !important;
+  height: calc(28vw + 1px) !important;
+}
+
+.lottery > li {
+  height: 14vw !important;
+  box-sizing: content-box !important;
+}
+
+.lottery-row {
+  position: relative !important;
+  display: grid !important;
+  grid-template-columns: 14vw 16vw 20vw !important;
+  column-gap: 6vw !important;
+  width: 100% !important;
+  height: 14vw !important;
+  margin: 0 !important;
+  padding: 0 4vw !important;
+  box-sizing: border-box !important;
+  align-items: center !important;
+  justify-content: start !important;
+}
+
+.lottery-name {
+  grid-column: 1 !important;
+  width: auto !important;
+  height: 14vw !important;
+  margin: 0 !important;
+  align-items: flex-start !important;
+  justify-content: center !important;
+}
+
+.lottery-name span {
+  font-size: 3.6vw !important;
+  line-height: normal !important;
+}
+
+.lottery-name b {
+  position: absolute !important;
+  left: 50.6vw !important;
+  top: 8.78vw !important;
+  margin: 0 !important;
+  color: #c36b00 !important;
+  font-size: 3.6vw !important;
+  line-height: normal !important;
+  white-space: nowrap !important;
+}
+
+.lottery-meta {
+  display: contents !important;
+}
+
+.lottery-meta label {
+  grid-column: 2 !important;
+  width: auto !important;
+  margin: 0 !important;
+  align-self: center !important;
+  color: #00008b !important;
+  font-size: 3.6vw !important;
+  line-height: normal !important;
+}
+
+.lottery-meta strong {
+  grid-column: 3 !important;
+  width: 20vw !important;
+  margin: 0 !important;
+  align-self: start !important;
+  justify-self: stretch !important;
+  font-size: 3.6vw !important;
+  line-height: 4.3vw !important;
+  white-space: nowrap !important;
+}
+
+.lottery > li + li {
+  border-top: 1px dashed #fff !important;
+}
+
+
+/* 开奖记录最终对齐：表头和内容共享列网格，球号单元格覆盖整列。 */
+@media (max-width: 599px) {
+  .draw-table {
+    border: 1px solid #777;
+  }
+
+  .draw-head,
+  .draw-row {
+    grid-template-columns: 33.65% 16.82% repeat(3, 16.51%);
+  }
+
+  .draw-head {
+    height: 34px;
+    border-bottom: 1px solid #888;
+    background: #f4f4f4;
+  }
+
+  .draw-row {
+    height: 33px;
+    border-bottom: 1px solid #888;
+  }
+
+  .draw-head > span,
+  .draw-row > time,
+  .draw-row > strong,
+  .draw-row > .draw-ball {
+    display: flex;
+    width: auto;
+    min-width: 0;
+    height: 100%;
+    align-items: center;
+    justify-content: center;
+    justify-self: stretch;
+    border-right: 1px solid #888;
+    box-sizing: border-box;
+  }
+
+  .draw-row > time {
+    font-size: 14px;
+    white-space: nowrap;
+  }
+
+  .draw-row > strong {
+    color: #111;
+    font-size: 14px;
+    font-weight: 400;
+  }
+
+  .draw-row > .draw-ball {
+    position: relative;
+    width: auto;
+    height: 100%;
+    border: 0;
+    border-right: 1px solid #888;
+    border-radius: 0;
+    background: transparent;
+    color: #fff;
+    font-size: 14px;
+    order: 3;
+  }
+
+  .draw-row > .draw-ball::before {
+    content: "";
+    position: absolute;
+    width: 25px;
+    height: 25px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 25%, #aaaaff 0, #8888ff 20%, #5555dd 40%, #000099 90%, #2222aa 95%, #5555dd 100%);
+  }
+
+  .draw-row > .draw-ball.pending::before {
+    background: radial-gradient(circle at 35% 25%, #f4f4f4 0, #d8d8d8 28%, #aaa 62%, #777 100%);
+  }
+
+  .draw-row > .draw-ball.pending {
+    color: transparent;
+  }
+
+  .draw-head > span:nth-child(n + 6),
+  .draw-row > .draw-sum,
+  .draw-row > .draw-span {
+    display: none;
+  }
+}
+
+
+@media (max-width: 599px) {
+  .draw-row > .draw-ball {
+    color: transparent;
+  }
+
+  .draw-row > .draw-ball::before {
+    content: attr(data-number);
+    color: #fff;
+    font-size: 14px;
+    line-height: 25px;
+  }
+
+  .draw-row > .draw-ball.pending::before {
+    content: "";
+  }
+}
+
+
+/* 期号按实际文字宽度自适应：时间列占2份，三列球号各占1份。 */
+@media (max-width: 599px) {
+  .draw-head,
+  .draw-row {
+    grid-template-columns: minmax(0, 2fr) max-content repeat(3, minmax(0, 1fr));
+  }
+
+  .draw-head {
+    border-bottom-color: #5f5f5f;
+  }
+
+  .draw-row {
+    border-bottom-color: #5f5f5f;
+  }
+
+  .draw-head > span,
+  .draw-row > time,
+  .draw-row > strong,
+  .draw-row > .draw-ball {
+    border-right-color: #5f5f5f;
+  }
+
+  .draw-row > strong {
+    white-space: nowrap;
+  }
+}
+
+
+@media (max-width: 599px) {
+  .draw-head,
+  .draw-row {
+    grid-template-columns: minmax(0, 2fr) var(--draw-issue-width, calc(7ch + 10px)) repeat(3, minmax(0, 1fr));
+  }
+}
+
+
+/* 选中彩种使用深蓝背景时，期号、倒计时和状态统一改为白色。 */
+@media (max-width: 599px) {
+  .lottery > li.selected .lottery-name span,
+  .lottery > li.selected .lottery-name b,
+  .lottery > li.selected .lottery-meta label,
+  .lottery > li.selected .lottery-meta strong {
+    color: #fff !important;
+  }
+}
+
+
+/* 选中彩种最终白色覆盖（必须位于所有通用期号规则之后）。 */
+@media (max-width: 599px) {
+  .lottery > li.selected .lottery-name span,
+  .lottery > li.selected .lottery-name b,
+  .lottery > li.selected .lottery-meta label,
+  .lottery > li.selected .lottery-meta strong {
+    color: #fff !important;
+  }
+}
+
+
+/* 选中彩种全局白色覆盖：避免后续通用规则在桌面宽度再次覆盖期号颜色。 */
+.lottery > li.selected .lottery-name span,
+.lottery > li.selected .lottery-name b,
+.lottery > li.selected .lottery-meta label,
+.lottery > li.selected .lottery-meta strong {
+  color: #fff !important;
+}
+
+/* Reference password page: responsive outlined fields and mobile typography. */
+.password-page {
+  min-height: calc(100dvh - 181px);
+  padding: 0 0 32px;
+  background: #fff;
+  color: #000;
+  overflow: visible;
+  display: flow-root;
+}
+.password-fields {
+  display: block;
+  width: 96vw;
+  max-width: none;
+  margin: 4vw 2vw 0;
+  background: #fff;
+}
+.password-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 96vw;
+  height: 14vw;
+  margin: 3vw 0;
+  box-sizing: border-box;
+  border: 1px solid #4f4f4f;
+  border-radius: 1vw;
+  background: #fff;
+}
+.password-field label {
+  position: absolute;
+  z-index: 1;
+  top: -2vw;
+  left: 1.4vw;
+  padding: 0 1.2vw;
+  background: #fff;
+  color: #000;
+  font-size: 3.4vw;
+  line-height: 5.2vw;
+  white-space: nowrap;
+}
+.password-fields input {
+  display: block;
+  width: 86vw;
+  height: 8vw;
+  margin-top: 2vw;
+  padding: .9vw 2.6vw;
+  border: 1px solid #d9d9d9;
+  border-radius: 1vw;
+  outline: 0;
+  color: rgba(0, 0, 0, .65);
+  font-size: 3.8vw;
+  line-height: 7.6vw;
+}
+.password-fields p {
+  width: 96vw;
+  min-height: 12vw;
+  margin: 0;
+  padding: 0 3vw;
+  color: #136f8f;
+  font-size: 3.4vw;
+  font-weight: 700;
+  line-height: 6vw;
+  overflow-wrap: break-word;
+}
+.password-save {
+  width: 16vw;
+  height: 7.2vw;
+  margin: 4vw auto 0;
+  padding: 0 1.6vw;
+  border: 0;
+  border-radius: 1vw;
+  background: #00008b;
+  color: #fff;
+  font-size: 3.3vw;
+  line-height: 5vw;
+}
+.password-save:hover,
+.password-save:focus,
+.password-save:active {
+  border: 0;
+  outline: 0;
+  background: #00008b;
+  color: #fff;
+  box-shadow: none;
+}
+.password-message {
+  width: calc(100% - 8vw);
+  margin: 3vw auto 0;
+  color: #b00000;
+  font-size: 3.4vw;
+  text-align: center;
+}
+
+/* H5 top-information collapse, matching the reference arrow interaction. */
+.site-header.header-collapsed {
+  grid-template-rows: 10vw 0 !important;
+  height: 10vw !important;
+  overflow: hidden !important;
+}
+
+.site-header.header-collapsed > .account,
+.site-header.header-collapsed > .lottery,
+.site-header.header-collapsed > .lottery-single {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  transform: translateY(-8px) !important;
+}
+
+/* Smoothly collapse the account/lottery panel while keeping the navigation row
+   anchored at the top. The arrow rotates with the same easing curve. */
+.site-header {
+  overflow: hidden !important;
+  transition: grid-template-rows 0.35s ease, height 0.35s ease !important;
+}
+
+.site-header > .account,
+.site-header > .lottery,
+.site-header > .lottery-single {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  transition: opacity 0.25s ease, transform 0.35s ease, visibility 0s linear 0s !important;
+}
+
+.site-header.header-collapsed > .account,
+.site-header.header-collapsed > .lottery,
+.site-header.header-collapsed > .lottery-single {
+  transition: opacity 0.2s ease, transform 0.35s ease, visibility 0s linear 0.35s !important;
+}
+
+.site-header.header-collapsed ~ .body {
+  min-height: calc(100dvh - 10vw) !important;
+}
+
+.site-header.header-collapsed ~ .body main,
+.site-header.header-collapsed ~ .body.full-page main {
+  min-height: calc(100dvh - 10vw) !important;
+}
+
+.site-header.header-collapsed ~ .body .entry {
+  min-height: calc(100dvh - 10vw) !important;
+}
+
+.nav-arrow[role="button"] {
+  cursor: pointer !important;
+  user-select: none !important;
+}
+
+.nav-arrow.v::before {
+  transform: rotate(0deg) !important;
+}
+
+.nav-arrow.rv::before {
+  transform: rotate(180deg) !important;
+}
+
+.site-header.header-collapsed ~ .body .entry > .text-entry {
+  height: calc(122.7vw + 32.2vw) !important;
+}
+
+.site-header.header-collapsed ~ .body .entry > .actions > button:nth-child(1),
+.site-header.header-collapsed ~ .body .entry > .actions > button:nth-child(2),
+.site-header.header-collapsed ~ .body .entry > .actions > .action-total {
+  top: calc(140.7vw + 32.2vw) !important;
+}
+
+/* H5 bills: use the reference site's 430px compact proportions. */
+.bill-page { min-height: calc(100dvh - 181px); background: #fff; }
+.bill-page .bill-toolbar { height: 130px; min-height: 130px; padding: 4px 0; }
+.bill-page .lottery-selector { height: 43px; padding: 4px 13px; }
+.bill-page .lottery-selector > span { height: 34px; padding: 0 17px; font-size: 17px; line-height: 33px; }
+.bill-page .bill-date-selectors { height: 39px; padding: 4px 13px; }
+.bill-page .bill-date-selectors select { width: 106px; height: 30px; font-size: 16px; line-height: 28px; }
+.bill-page .bill-date-selectors > span { margin: 0 10px; font-size: 16px; }
+.bill-page .bill-period-selector { height: 34px; margin: 3px auto; padding: 4px 13px; }
+.bill-page .bill-period-selector > .link-button { height: 26px; padding: 0 13px; font-size: 16px; line-height: 26px; }
+.bill-page .business-head { min-height: 37px; font-size: 15px; }
+.bill-page .business-row, .bill-page .bill-total { min-height: 33px; font-size: 15px; }
+.bill-page .business-head > span, .bill-page .business-row > span, .bill-page .bill-total > span { padding: 4px 2px; }
+
+/* Let the editor consume the remaining viewport so fixed bottom tools stay visible on short phones. */
+.site-header:not(.header-collapsed) ~ .body .entry > .text-entry {
+  height: calc(100dvh - 94vw) !important;
+}
+
+.site-header.header-collapsed ~ .body .entry > .text-entry {
+  height: calc(100dvh - 61.8vw) !important;
+}
+
+/* H5 speed-test dialog: match the reference custom overlay instead of the desktop modal. */
+.line-overlay {
+  position: fixed !important;
+  z-index: 20001 !important;
+  inset: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 100vw !important;
+  height: 100dvh !important;
+  background: transparent !important;
+  overflow: hidden !important;
+}
+
+.line-overlay::before {
+  content: "" !important;
+  position: absolute !important;
+  z-index: 1 !important;
+  inset: 0 !important;
+  display: block !important;
+  background: #2f2f2f !important;
+  opacity: .6 !important;
+  pointer-events: auto !important;
+}
+
+.line-container {
+  position: relative !important;
+  z-index: 2 !important;
+  display: block !important;
+  width: 90vw !important;
+  min-height: 40vh !important;
+  max-height: calc(100dvh - 24px) !important;
+  box-sizing: border-box !important;
+  padding: 4.8vw 2.4vw !important;
+  border-radius: 1vw !important;
+  background: #fff !important;
+  color: rgba(0, 0, 0, .65) !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+}
+
+.line-title {
+  display: flex !important;
+  width: 100% !important;
+  height: 7.2vw !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  margin: 0 0 4vw !important;
+  padding: 0 2vw !important;
+  border-bottom: 1px solid #8f8f8f !important;
+  box-sizing: border-box !important;
+}
+
+.line-title h5 {
+  margin: 0 !important;
+  color: rgba(0, 0, 0, .85) !important;
+  font-size: 4vw !important;
+  font-weight: 600 !important;
+  line-height: 7.2vw !important;
+}
+
+.line-title button {
+  display: inline-flex !important;
+  width: 4vw !important;
+  height: 4vw !important;
+  align-items: center !important;
+  justify-content: center !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: #5f5f5f !important;
+  font-size: 4vw !important;
+  font-weight: 400 !important;
+  line-height: 4vw !important;
+}
+
+.line-container > .line-tip {
+  width: 100% !important;
+  height: 8vw !important;
+  min-height: 8vw !important;
+  box-sizing: border-box !important;
+  margin: 0 0 1.2vw !important;
+  padding: 0 4.8vw !important;
+  border: 1px solid #000 !important;
+  color: #222 !important;
+  font-size: 3.2vw !important;
+  line-height: 8vw !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+}
+
+.line-container > .line-tip b {
+  margin: 0 1vw !important;
+  color: red !important;
+  font-size: 3.2vw !important;
+  font-weight: 400 !important;
+}
+
+.line-table {
+  width: 100% !important;
+  margin: 0 !important;
+  border: 0 !important;
+  color: #111 !important;
+}
+
+.line-table-row {
+  display: flex !important;
+  width: 100% !important;
+  height: 7.2vw !important;
+  min-height: 7.2vw !important;
+  box-sizing: border-box !important;
+  align-items: center !important;
+  border-width: 1px 1px 0 !important;
+  border-style: solid solid none !important;
+  border-color: #5f5f5f !important;
+  text-align: center !important;
+  font-size: 3.2vw !important;
+  line-height: 7vw !important;
+}
+
+.line-table-row:last-child {
+  border-bottom: 1px solid #5f5f5f !important;
+}
+
+.line-table-row > span,
+.line-table-row > strong {
+  display: block !important;
+  width: 65% !important;
+  height: 7vw !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  line-height: 7vw !important;
+  font-size: 3.2vw !important;
+  font-weight: 400 !important;
+  overflow: hidden !important;
+  white-space: nowrap !important;
+}
+
+.line-table-row > span {
+  width: 35% !important;
+}
+
+.line-table-row > strong {
+  border-left: 1px solid #5f5f5f !important;
+}
+
+.line-table-head {
+  border-top: 1px solid #5f5f5f !important;
+}
+
+.line-table-head > span {
+  background: #f0f0f0 !important;
+  color: rgba(0, 0, 0, .65) !important;
+}
+
+.line-table-head > span + span {
+  border-left: 1px solid #5f5f5f !important;
+}
+
+.line-table-row .line-name {
+  color: blue !important;
+}
+
+.line-table-row .line-name a {
+  color: blue !important;
+  font-size: 3.2vw !important;
+  line-height: 7vw !important;
+  text-decoration: none !important;
+}
+
+.line-table-row .line-name a:hover {
+  text-decoration: underline !important;
+}
+
+.line-delay-fast,
+.line-delay-medium,
+.line-delay-slow,
+.line-delay-failed {
+  font-size: 3.2vw !important;
+}
+
+.line-delay-fast {
+  color: darkgreen !important;
+  font-weight: 700 !important;
+}
+
+.line-delay-medium {
+  color: darkorange !important;
+  font-weight: 700 !important;
+}
+
+.line-delay-slow,
+.line-delay-failed {
+  color: #d90000 !important;
+  font-weight: 700 !important;
+}
+
+.line-table-row .line-delay-failed {
+  color: #8f8f8f !important;
+  font-weight: 400 !important;
+}
+
+.line-table-row .line-fastest {
+  margin-left: 1.2vw !important;
+  color: red !important;
+  font-size: 3.2vw !important;
+  font-weight: 700 !important;
+  font-style: normal !important;
+}
+
+.line-countdown {
+  padding: 3vw 0 0 !important;
+  color: #444 !important;
+  font-size: 3.2vw !important;
+  line-height: 5vw !important;
+  text-align: center !important;
+}
+
+.line-countdown b {
+  color: #d90000 !important;
+  font-size: 4vw !important;
+}
+
+/* Match the reference password submit text node and typography. */
+.password-save {
+  font-family: "Microsoft YaHei", Tahoma, Helvetica, Arial, sans-serif !important;
+  font-size: 0 !important;
+  line-height: 0 !important;
+}
+
+.password-save > span {
+  display: inline-block !important;
+  color: #fff !important;
+  font-size: 3.6vw !important;
+  line-height: 5.4vw !important;
+  white-space: nowrap !important;
+}
+
+/* Adaptive quick-entry result area. The editor owns the remaining viewport
+   when empty; once preview rows exist, their measured height is subtracted so
+   the input contracts and the result table remains directly below the tools. */
+.entry {
+  --quick-result-height: 0px;
+}
+
+.entry > .quick-result {
+  display: none !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  background: #fff !important;
+}
+
+.entry.has-results > .quick-result {
+  display: block !important;
+}
+
+.entry.has-results > .text-entry {
+  height: calc(100dvh - 94vw - var(--quick-result-height) + 22px) !important;
+  min-height: 0 !important;
+  transition: height 0.25s ease !important;
+}
+
+/* Override the fixed-height geometry pass above when result rows are present. */
+.site-header:not(.header-collapsed) ~ .body .entry.has-results > .text-entry {
+  height: calc(100dvh - 94vw - var(--quick-result-height) + 22px) !important;
+}
+
+/* Keep identify/submit/total in the text-entry footer. Their anchor moves
+   upward by the measured result height so they never cover the option cards
+   or the first result row. */
+.entry > .actions > button:nth-child(1),
+.entry > .actions > button:nth-child(2),
+.entry > .actions > .action-total {
+  top: auto !important;
+  bottom: calc(26.7vw + var(--quick-result-height) - 4.9vw) !important;
+}
+
+/* The default lottery control is a real Ant Design Switch, matching the
+   other option controls. Only its tone and short label vary by lottery. */
+.entry > .options .option-card-lottery .lottery-default-switch {
+  display: inline-flex !important;
+  flex: 0 0 11.9vw !important;
+  width: 11.9vw !important;
+  min-width: 11.9vw !important;
+  height: 6vw !important;
+  margin: .5vw auto 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 4vw !important;
+  align-items: center !important;
+  background: #777 !important;
+  color: #fff !important;
+  font-size: 3vw !important;
+  line-height: 6vw !important;
+}
+
+.entry > .options .option-card-lottery .lottery-default-switch.lottery-default-switch-fu,
+.entry > .options .option-card-lottery .lottery-default-switch.lottery-default-switch-fu:hover {
+  background: #56008b !important;
+}
+
+.entry > .options .option-card-lottery .lottery-default-switch.lottery-default-switch-ti,
+.entry > .options .option-card-lottery .lottery-default-switch.lottery-default-switch-ti:hover {
+  background: #00724d !important;
+}
+
+.entry > .options .option-card-lottery .lottery-default-switch .ant-switch-handle::before {
+  box-shadow: 0 .5vw 1vw rgba(0, 35, 11, .2) !important;
+}
+
+@supports (height: 100svh) {
+  .entry:not(.has-results) > .text-entry {
+    height: calc(100svh - 94vw) !important;
+  }
+  .entry.has-results > .text-entry,
+  .site-header:not(.header-collapsed) ~ .body .entry.has-results > .text-entry {
+    height: calc(100svh - 94vw - var(--quick-result-height) + 5.1vw) !important;
+  }
+}
+
+.entry.has-results > .text-entry textarea {
+  min-height: 0 !important;
+}
+
+@media (max-width: 599px) {
+  .entry > .actions .desktop-entry-action { display: none !important; visibility: hidden !important; }
+}
+
+/* Final mobile action placement: these controls belong to the text footer
+   row (beside 清空 and the character count), never to the absolute overlay. */
+@media (max-width: 599px) {
+  .entry > .actions > button:nth-child(1),
+  .entry > .actions > button:nth-child(2) { display: none !important; }
+  .entry > .text-entry .mobile-entry-actions { display: inline-flex !important; }
+  .entry > .actions > .desktop-entry-action,
+  .entry > .actions > .action-total { display: none !important; visibility: hidden !important; }
+  .entry > .options .option-card { align-items: center !important; justify-content: center !important; padding: 0 1vw !important; }
+  .entry > .options .option-card-lottery { height: 11vw !important; min-height: 11vw !important; }
+  .entry > .options .option-card .ant-switch,
+  .entry > .options .option-card-lottery .lottery-default-switch { align-self: center !important; margin: 0 auto !important; }
+  .entry.has-results > .text-entry,
+  .site-header:not(.header-collapsed) ~ .body .entry.has-results > .text-entry { height: max(40vw, calc(100svh - 94vw - min(var(--quick-result-height), 45svh) + 5.1vw)) !important; transition: height .25s ease !important; }
+  .entry.has-results > .quick-result { display: block !important; max-height: 45svh !important; overflow-y: auto !important; overflow-x: hidden !important; margin: 0 !important; padding: 0 1vw !important; }
+  .entry.has-results > .quick-result .quick-result-main { grid-template-columns: 5vw 9vw 5vw 26vw 10vw minmax(0, 1fr) !important; min-height: 7vw !important; height: auto !important; overflow: visible !important; }
+  .entry.has-results > .quick-result .quick-result-text { min-width: 0 !important; height: auto !important; min-height: 7vw !important; padding: 0 1vw !important; font-size: 3vw !important; line-height: 4.8vw !important; white-space: pre-wrap !important; overflow-wrap: anywhere !important; word-break: break-all !important; overflow: hidden !important; }
+  .entry.has-results > .quick-result .quick-result-detail,
+  .entry.has-results > .quick-result .quick-result-summary { min-height: 6vw !important; height: auto !important; padding-left: 25vw !important; font-size: 3vw !important; line-height: 6vw !important; }
+}
+
+/* Records with data: match reference badge/action layout and detail dialogs. */
+@media (max-width: 599px) {
+  .records-page-row-data {
+    height: 12vw !important;
+    min-height: 12vw !important;
+    align-items: center !important;
+    border-bottom: 1px solid #5f5f5f !important;
+    font-size: 3vw !important;
+  }
+  .records-page-row-data > span {
+    display: flex !important;
+    min-width: 0 !important;
+    height: 100% !important;
+    align-items: center !important;
+    justify-content: center !important;
+    box-sizing: border-box !important;
+    padding: 0 1vw !important;
+    border-left: 1px solid #5f5f5f !important;
+    overflow: hidden !important;
+    white-space: nowrap !important;
+  }
+  .records-page-row-data > span:first-child { border-left: 0 !important; }
+  .records-page-issues { flex-direction: column !important; gap: .4vw !important; }
+  .records-issue-badge { display: flex !important; height: 4.2vw !important; min-height: 4.2vw !important; align-items: center !important; padding: 0 !important; line-height: 4.2vw !important; }
+  .records-issue-badge b { display: inline-block !important; width: 5.2vw !important; height: 4.2vw !important; margin-right: 1vw !important; color: #fff !important; font-size: 3vw !important; font-weight: 400 !important; line-height: 4.2vw !important; text-align: center !important; }
+  .records-issue-badge em { color: inherit !important; font-size: 3vw !important; font-style: normal !important; font-weight: 700 !important; line-height: 4.2vw !important; }
+  .records-issue-fu b { background: #7a2bc3 !important; }
+  .records-issue-fu em { color: #7a2bc3 !important; }
+  .records-issue-ti b { background: #036564 !important; }
+  .records-issue-ti em { color: #036564 !important; }
+  .records-page-amount { display: grid !important; grid-template-columns: minmax(0, 1fr) auto !important; grid-template-rows: 1fr 1fr !important; gap: 0 1vw !important; align-items: center !important; }
+  .records-page-amount > b, .records-page-amount > em { display: block !important; padding: 0 !important; font-size: 3vw !important; line-height: 4vw !important; text-align: right !important; }
+  .records-page-amount > b { grid-column: 1 !important; grid-row: 1 !important; color: #d77600 !important; font-weight: 700 !important; }
+  .records-page-amount > em { grid-column: 1 !important; grid-row: 2 !important; color: #d77600 !important; font-style: normal !important; }
+  .records-row-detail, .records-row-more { display: inline-flex !important; width: 11.5vw !important; min-width: 11.5vw !important; height: 7.2vw !important; align-items: center !important; justify-content: center !important; margin: 0 !important; padding: 0 !important; border: 0 !important; border-radius: 1vw !important; background: #027f00 !important; color: #fff !important; font-size: 3.6vw !important; line-height: 7.2vw !important; white-space: nowrap !important; }
+  .records-page-amount > .records-row-detail { grid-column: 2 !important; grid-row: 1 / span 2 !important; }
+  .records-detail-modal .ant-modal-header { margin: 0 !important; padding: 3vw !important; border-bottom: 1px solid #aaa !important; }
+  .records-detail-modal .ant-modal-title { font-size: 4vw !important; font-weight: 600 !important; }
+  .records-detail-modal .ant-modal-body { max-height: 70vh !important; padding: 3vw !important; overflow-y: auto !important; }
+  .records-detail-modal .ant-modal-footer { padding: 2.5vw 3vw !important; }
+  .records-modal-close { height: 7.2vw !important; min-width: 14vw !important; padding: 0 2vw !important; border: 1px solid #d9d9d9 !important; border-radius: 1vw !important; background: #fff !important; color: #555 !important; font-size: 3.6vw !important; line-height: 7.2vw !important; }
+  .records-detail-modal .record-detail-tabs { margin-bottom: 3vw !important; }
+  .records-detail-modal .record-detail-tabs span { min-width: 20vw !important; padding: 1vw 3vw !important; background: #036564 !important; color: #fff !important; font-size: 3.4vw !important; }
+  .records-detail-modal .record-detail-lottery { margin-bottom: 4vw !important; padding-bottom: 2vw !important; }
+  .records-detail-modal .record-detail-lottery h2 { margin: 0 0 2vw !important; border-bottom: 1px solid #036564 !important; color: #036564 !important; font-size: 4.2vw !important; line-height: 7vw !important; }
+  .records-detail-modal .record-detail-lottery h3 { margin: 0 0 2vw !important; color: #036564 !important; font-size: 3.6vw !important; font-weight: 400 !important; }
+  .records-detail-modal .record-detail-card { width: 100% !important; max-width: 100% !important; grid-template-columns: 28% 22% 28% 22% !important; font-size: 3.2vw !important; }
+  .records-detail-modal .record-detail-card > div { min-height: 7vw !important; padding: 1vw !important; border-right: 1px dashed #777 !important; border-bottom: 1px dashed #777 !important; font-size: 3.2vw !important; line-height: 5vw !important; }
+  .records-detail-modal .record-detail-card > div:nth-child(2n) { border-right: 0 !important; }
+  .records-detail-modal .record-detail-card-label { background: #707070 !important; color: #fff !important; font-weight: 700 !important; }
+  .records-detail-modal .record-detail-card .amount { color: #060a92 !important; font-weight: 700 !important; }
+  .records-detail-modal .record-detail-card .odds { color: #f07800 !important; font-weight: 700 !important; }
+  .records-text-modal .ant-modal-header { display: none !important; }
+  .records-text-modal .ant-modal-body { padding: 3vw !important; }
+  .records-text-tabs { display: flex !important; width: 100% !important; height: 10vw !important; align-items: flex-end !important; margin-bottom: 2.5vw !important; border-bottom: 1px solid #036564 !important; }
+  .records-text-tabs span { display: inline-flex !important; height: 9.5vw !important; align-items: center !important; justify-content: center !important; padding: 0 3.8vw !important; border: 1px solid #036564 !important; border-bottom: 0 !important; color: #036564 !important; font-size: 3.6vw !important; line-height: 9.5vw !important; }
+  .records-text-tabs span + span { border-left: 0 !important; }
+  .records-text-tabs span.selected { background: #036564 !important; color: #fff !important; }
+  .records-text-modal pre { max-height: 55vh !important; margin: 0 !important; padding: 0 !important; color: #111 !important; font-family: "Microsoft YaHei", Tahoma, Helvetica, Arial, sans-serif !important; font-size: 3.6vw !important; line-height: 5.4vw !important; white-space: pre-wrap !important; overflow: auto !important; }
+}

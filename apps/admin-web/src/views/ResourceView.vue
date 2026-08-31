@@ -80,8 +80,7 @@ const form = reactive({
   used_balance: "0.00",
   credit_limit: 0,
   max_profit_share_rate: 100,
-  dark_water_rate: 0.085,
-  bright_water_rate: 0.012,
+  water_rate: 0.085,
   account_table: "admins",
 });
 const resource = computed(() => String(route.meta.resource || ""));
@@ -95,8 +94,7 @@ const fields: Record<string, string[]> = {
     "user_domain",
     "credit_limit",
     "max_profit_share_rate",
-    "dark_water_rate",
-    "bright_water_rate",
+    "water_rate",
     "status",
     "created_at",
   ],
@@ -157,8 +155,7 @@ const labels: Record<string, string> = {
   available_balance: "可用余额",
   credit_limit: "站点分数",
   max_profit_share_rate: "每级最高占成",
-  dark_water_rate: "离线反水（明水）比例",
-  bright_water_rate: "占成明水比例",
+  water_rate: "明水比例",
   last_login_at: "最后登录",
   last_seen_at: "最后活跃",
   last_login_device: "最后登录设备",
@@ -373,8 +370,7 @@ function resetForm() {
     used_balance: 0,
     credit_limit: 0,
     max_profit_share_rate: 100,
-    dark_water_rate: 0.085,
-    bright_water_rate: 0.012,
+    water_rate: 0.085,
   });
   agentDomains.value = [createDomainItem(true)];
   userDomains.value = [createDomainItem(true)];
@@ -408,8 +404,7 @@ function openEdit(row: Record<string, unknown>) {
     used_balance: Number(row.used_balance ?? 0),
     credit_limit: Number(row.credit_limit ?? 0),
     max_profit_share_rate: Number(row.max_profit_share_rate ?? 100),
-    dark_water_rate: Number(row.dark_water_rate ?? 0.085),
-    bright_water_rate: Number(row.bright_water_rate ?? 0.012),
+    water_rate: Number(row.water_rate ?? 0.085),
   });
   agentDomains.value = hydrateDomains(
     row,
@@ -454,8 +449,7 @@ function payload() {
       lottery_ids: [...selectedLotteryIds.value],
       credit_limit: form.credit_limit,
       max_profit_share_rate: form.max_profit_share_rate,
-      dark_water_rate: form.dark_water_rate,
-      bright_water_rate: form.bright_water_rate,
+      water_rate: form.water_rate,
       status: form.status,
       };
     }
@@ -921,10 +915,8 @@ onBeforeUnmount(() => {
           ><el-input-number v-model="form.credit_limit" :min="0" :precision="2" controls-position="right" style="width: 100%" /><div class="lottery-tip">平台预留给本站点的独立资金池。保存后进入组织架构，点击具体总监单独分配分数；不同总监之间不共享。</div></el-form-item
         ><el-form-item v-if="resource === 'agent-center'" label="每级最高占成"
           ><el-input-number v-model="form.max_profit_share_rate" :min="0" :max="100" :precision="4" controls-position="right" style="width: 100%" /><div class="lottery-tip">动态限制本站点每一级向直属下级分配的占成比例；逐级按上一级实际占成继续计算。</div></el-form-item
-        ><el-form-item v-if="resource === 'agent-center'" label="离线反水（明水）比例"
-          ><el-input-number v-model="form.dark_water_rate" :min="0" :max="1" :precision="4" :step="0.001" controls-position="right" style="width: 100%" /><div class="lottery-tip">离线反水 = 该代理线路全部用户总投 × 此比例；例如 0.085 表示每 100 分返 8.5 分。</div></el-form-item
-        ><el-form-item v-if="resource === 'agent-center'" label="占成明水比例"
-          ><el-input-number v-model="form.bright_water_rate" :min="0" :max="1" :precision="4" :step="0.001" controls-position="right" style="width: 100%" /><div class="lottery-tip">占成明水 = 占成金 × 此比例；例如 0.012 表示 1.2%。</div></el-form-item
+        ><el-form-item v-if="resource === 'agent-center'" label="明水比例"
+          ><el-input-number v-model="form.water_rate" :min="0" :max="1" :precision="4" :step="0.001" controls-position="right" style="width: 100%" /><div class="lottery-tip">明水 = 占成金额 × 此比例；默认 0.085（8.5%）。系统不再区分离线反水、暗水或其他明水。</div></el-form-item
         ><el-form-item
           v-if="resource === 'domains'"
           label="域名"

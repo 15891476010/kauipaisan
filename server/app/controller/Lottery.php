@@ -304,14 +304,14 @@ final class Lottery
     private function nullableOddsNumbers(array $data, bool $partial=false): array
     {
         $result=[];
-        foreach(['min_bet','odds_limit','single_bet_limit','single_item_limit','odds','offline_rebate'] as $field){
+        foreach(['min_bet','odds_limit','single_bet_limit','single_item_limit','odds'] as $field){
             if($partial&&!array_key_exists($field,$data)) continue;
             $value=$data[$field]??null;
             if($value===null||$value===''){ $result[$field]=null; continue; }
             if(!is_numeric($value)||(float)$value<0) throw new \InvalidArgumentException('赔率和限额必须为非负数字或留空');
-            if($field==='offline_rebate'&&(float)$value>0.1) throw new \InvalidArgumentException('离线赚水必须在0到0.1之间');
             $result[$field]=number_format((float)$value,in_array($field,['single_bet_limit','single_item_limit'],true)?2:4,'.','');
         }
+        $result['offline_rebate']='0.0000';
         return $result;
     }
     private function sourceType(mixed $value): string
@@ -352,10 +352,10 @@ final class Lottery
             }
             $now=date('Y-m-d H:i:s');
             foreach ($sourceCategories as $sourceCategory) {
-                $categoryData=['tenant_id'=>(int)$sourceCategory['tenant_id'],'lottery_id'=>$targetId,'name'=>(string)$sourceCategory['name'],'is_playable'=>(int)$sourceCategory['is_playable'],'min_bet'=>$sourceCategory['min_bet'],'odds_limit'=>$sourceCategory['odds_limit'],'single_bet_limit'=>$sourceCategory['single_bet_limit'],'single_item_limit'=>$sourceCategory['single_item_limit'],'odds'=>$sourceCategory['odds'],'offline_rebate'=>$sourceCategory['offline_rebate'],'status'=>(int)$sourceCategory['status'],'sort'=>(int)$sourceCategory['sort'],'created_at'=>$now,'updated_at'=>$now];
+                $categoryData=['tenant_id'=>(int)$sourceCategory['tenant_id'],'lottery_id'=>$targetId,'name'=>(string)$sourceCategory['name'],'is_playable'=>(int)$sourceCategory['is_playable'],'min_bet'=>$sourceCategory['min_bet'],'odds_limit'=>$sourceCategory['odds_limit'],'single_bet_limit'=>$sourceCategory['single_bet_limit'],'single_item_limit'=>$sourceCategory['single_item_limit'],'odds'=>$sourceCategory['odds'],'offline_rebate'=>'0.0000','status'=>(int)$sourceCategory['status'],'sort'=>(int)$sourceCategory['sort'],'created_at'=>$now,'updated_at'=>$now];
                 $newCategoryId=(int)Db::name('lottery_odds_categories')->insertGetId($categoryData);
                 $plays=Db::name('lottery_odds')->where('lottery_id',$sourceId)->where('category_id',(int)$sourceCategory['id'])->whereNull('deleted_at')->select()->toArray();
-                foreach ($plays as $play) Db::name('lottery_odds')->insert(['tenant_id'=>(int)$play['tenant_id'],'lottery_id'=>$targetId,'category_id'=>$newCategoryId,'category'=>(string)$sourceCategory['name'],'name'=>(string)$play['name'],'min_bet'=>$play['min_bet'],'odds_limit'=>$play['odds_limit'],'single_bet_limit'=>$play['single_bet_limit'],'single_item_limit'=>$play['single_item_limit'],'odds'=>$play['odds'],'offline_rebate'=>$play['offline_rebate'],'status'=>(int)$play['status'],'sort'=>(int)$play['sort'],'created_at'=>$now,'updated_at'=>$now]);
+                foreach ($plays as $play) Db::name('lottery_odds')->insert(['tenant_id'=>(int)$play['tenant_id'],'lottery_id'=>$targetId,'category_id'=>$newCategoryId,'category'=>(string)$sourceCategory['name'],'name'=>(string)$play['name'],'min_bet'=>$play['min_bet'],'odds_limit'=>$play['odds_limit'],'single_bet_limit'=>$play['single_bet_limit'],'single_item_limit'=>$play['single_item_limit'],'odds'=>$play['odds'],'offline_rebate'=>'0.0000','status'=>(int)$play['status'],'sort'=>(int)$play['sort'],'created_at'=>$now,'updated_at'=>$now]);
             }
         });
     }

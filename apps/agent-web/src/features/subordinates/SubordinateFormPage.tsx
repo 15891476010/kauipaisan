@@ -14,6 +14,7 @@ export function SubordinateFormPage() {
   const navigate = useNavigate();
   const [form, setForm] = useState<FormState>({ username: "", display_name: "", password: "", credit_limit: 0, share_rate: 0, max_share_rate: 100, status: 1 });
   const [organizationData, setOrganizationData] = useState<AgentOrganizationList | null>(null);
+  const [childLevel, setChildLevel] = useState("");
   const [routePermissionCodes, setRoutePermissionCodes] = useState<string[]>([]);
   const [permissions, setPermissions] = useState<MemberLotteryPermission[]>([]);
   const [loading, setLoading] = useState(true);
@@ -29,6 +30,10 @@ export function SubordinateFormPage() {
         if (!active) return;
         const value = organizationResponse.data.data;
         setOrganizationData(value);
+        if (value.current.level !== "agent") {
+          const available = value.catalog.child_levels || (value.current.next_level ? [{ value: value.current.next_level, label: "下级" }] : []);
+          setChildLevel(available[0]?.value || "");
+        }
         setRoutePermissionCodes(value.catalog.permissions.map((item) => item.code));
         setForm((current) => ({ ...current, max_share_rate: Number(value.site_max_share_rate || 100) }));
         if (value.current.level !== "agent") return null;
@@ -76,10 +81,10 @@ export function SubordinateFormPage() {
     setSaving(true);
     try {
       if (organizationData?.current.level !== "agent") {
-        const childLabel = organizationData?.catalog.levels.find((item) => item.value === organizationData.current.next_level)?.label || "下级";
+        const childLabel = organizationData?.catalog.levels.find((item) => item.value === childLevel)?.label || "下级";
         if (!form.display_name.trim()) return message.warning(`请输入${childLabel}名称`);
         if (form.share_rate > form.max_share_rate) return message.warning("实际占成不能超过最高占成");
-        const response = await createAgentOrganization({ username, display_name: form.display_name.trim(), name: form.display_name.trim(), password: form.password, credit_limit: form.credit_limit, share_rate: form.share_rate, max_share_rate: form.max_share_rate, permissions: routePermissionCodes, status: form.status });
+        const response = await createAgentOrganization({ username, display_name: form.display_name.trim(), name: form.display_name.trim(), level: childLevel, password: form.password, credit_limit: form.credit_limit, share_rate: form.share_rate, max_share_rate: form.max_share_rate, permissions: routePermissionCodes, status: form.status });
         modal.success({ title: `${childLabel}创建成功`, content: <InitialCredentials value={response.data.data} />, okText: "我已保存", centered: true, width: 480, onOk: () => navigate("/subordinates") });
       } else {
         const payload = { username, display_name: username, password: form.password, permissions: permissions.map(({ lottery_id, can_view, can_bet }) => ({ lottery_id, can_view, can_bet })) };
@@ -99,7 +104,7 @@ export function SubordinateFormPage() {
       </div>
       {loading ? <div className="subordinate-form-loading">正在加载...</div> : loadError ? <div className="subordinate-form-loading"><div className="subordinate-load-error"><span>{loadError}</span><button type="button" onClick={() => navigate("/subordinates")}>返 回</button></div></div> : <div className="subordinate-form-shell">
         <div className="subordinate-account-form">
-          <div className="account-level"><label>新建账号等级</label><strong>{organizationData?.current.level === "agent" ? "会员" : organizationData?.catalog.levels.find((item) => item.value === organizationData?.current.next_level)?.label || "下级"}</strong></div>
+          <div className="account-level"><label>新建账号等级</label>{organizationData?.current.level === "agent" ? <strong>会员</strong> : <select className="subordinate-input subordinate-select" aria-label="新建账号等级" value={childLevel} onChange={(event) => setChildLevel(event.target.value)}>{(organizationData?.catalog.child_levels || []).map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>}</div>
           <div className="account-name"><label htmlFor="subordinate-username">账号名</label><input className="ant-input subordinate-input" id="subordinate-username" maxLength={40} autoComplete="off" placeholder="请输入账号名" value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} /></div>
           {organizationData?.current.level !== "agent" && <div className="account-name"><label htmlFor="subordinate-display-name">名称</label><input className="ant-input subordinate-input" id="subordinate-display-name" maxLength={120} placeholder="请输入下级名称" value={form.display_name} onChange={(event) => setForm({ ...form, display_name: event.target.value })} /></div>}
           <div className="account-password"><label htmlFor="subordinate-password">密码</label><div><input className="ant-input subordinate-input" id="subordinate-password" type="password" maxLength={20} autoComplete="new-password" placeholder="可留空，系统将自动生成" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /><span className={`password-warning${invalidPassword ? " invalid" : ""}`}>密码可留空自动生成；填写时必须为数字和字母组合，至少 6 位，且不能跟账号相同。</span></div></div>

@@ -46,8 +46,19 @@ const menus = [
 const levelSystemNames: Record<string, string> = {
   shareholder: "股东系统",
   director: "总监系统",
+  small_shareholder: "小股东系统",
   general_agent: "总代理系统",
   agent: "代理系统",
+};
+
+// 代理端顶部只展示当前登录账号及其组织层级，避免把信用额度等
+// 业务数据误认为登录身份。后端返回的 level_label 优先用于兼容自定义层级名称。
+const levelDisplayNames: Record<string, string> = {
+  director: "总监",
+  shareholder: "大股东",
+  small_shareholder: "小股东",
+  general_agent: "总代理",
+  agent: "代理",
 };
 
 function clearAgentAuthQuery() {
@@ -340,6 +351,7 @@ function AgentMain({ name, onLogout, announcement, siteName }: { name: string; o
   const lineRun = useRef(0);
   const isSubaccount = localStorage.getItem("agent_is_subaccount") === "1";
   const currentLevel = organizationProfile?.organization?.level || localStorage.getItem("agent_organization_level") || "agent";
+  const currentLevelLabel = organizationProfile?.organization?.level_label || localStorage.getItem("agent_level_label") || levelDisplayNames[currentLevel] || "代理";
   const systemName = levelSystemNames[currentLevel] || "业务系统";
   const resolvedSiteName = organizationProfile?.site.name || siteName || "站点管理系统";
   const accessContext = { permissions, level: currentLevel, isSubaccount };
@@ -481,14 +493,23 @@ function AgentMain({ name, onLogout, announcement, siteName }: { name: string; o
         <span className="notice-track">{announcement.content || "暂无公告"}</span>
         <span className="notice-track" aria-hidden="true">{announcement.content || "暂无公告"}</span>
       </button>
-      <header className="site-header">
-        <img className="fish-logo" src={fishLogo} alt="快排" />
-        <div className="account">
-          <label className="account-field"><span>账号</span><input value={name} readOnly /></label>
-          <label className="account-field account-credit"><span>信用</span><input value={organizationProfile?.organization?.credit.total_credit || "0"} readOnly /></label>
-          <label className="account-field account-used"><span>已用</span><input value={organizationProfile?.organization?.credit.allocated_credit || "0"} readOnly /></label>
-          <label className="account-field account-available"><span>可用</span><input value={organizationProfile?.organization?.credit.available_credit || "0"} readOnly /></label>
+      <header className="site-header agent-header">
+        <div className="agent-identity">
+          <img className="fish-logo agent-logo" src={fishLogo} alt="快排" />
+          <div className="account agent-account-box">
+            <label className="account-field account-current agent-account-field">
+              <span className="agent-account-label">账号</span>
+              <input className="agent-account-value" value={`${currentLevelLabel}：${name}`} readOnly />
+            </label>
+          </div>
         </div>
+        <nav className="site-navigation agent-navigation">
+          {visibleMenus.map(({ path, title, icon: Icon }) => <NavLink key={path} to={`/${path}`} title={title} className={({ isActive }) => isActive ? "selected" : ""}><span className="nav-icon-shell"><Icon className="nav-icon" /></span>{path === "ledger" ? "贡献度" : title}</NavLink>)}
+          <button className="line" type="button" onClick={() => void checkLines()}><span className="nav-icon-shell"><SwapOutlined className="nav-icon" /></span><em>更换线路</em></button>
+          <button className="exit" type="button" onClick={onLogout}><span className="nav-icon-shell"><LogoutOutlined className="nav-icon" /></span><em>退出</em></button>
+        </nav>
+      </header>
+      <div className="agent-lottery-strip" aria-label="彩票列表">
         <ul className="lottery">
           {lotteriesLoading ? <li>正在加载彩票...</li> : lotteries.length === 0 ? <li>当前站点暂未分配彩票</li> : lotteries.map((item) => {
             const timing = lotteryTiming(item, now);
@@ -499,12 +520,7 @@ function AgentMain({ name, onLogout, announcement, siteName }: { name: string; o
             return <li key={item.id} className={selectedLotteryId === item.id ? "selected" : ""} role="button" tabIndex={0} onClick={() => { setSelectedLotteryId(item.id); sessionStorage.setItem("agent_selected_lottery_id", String(item.id)); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { setSelectedLotteryId(item.id); sessionStorage.setItem("agent_selected_lottery_id", String(item.id)); } }}><div className="lottery-row"><div className="lottery-name"><span>{item.name}</span><b>{timing.status}</b></div><div className="lottery-meta"><label>{issue || "--"}</label><strong>{timing.countdown}</strong></div></div></li>;
           })}
         </ul>
-        <nav className="site-navigation">
-          {visibleMenus.map(({ path, title, icon: Icon }) => <NavLink key={path} to={`/${path}`} title={title} className={({ isActive }) => isActive ? "selected" : ""}><span className="nav-icon-shell"><Icon className="nav-icon" /></span>{path === "ledger" ? "贡献度" : title}</NavLink>)}
-          <button className="line" type="button" onClick={() => void checkLines()}><span className="nav-icon-shell"><SwapOutlined className="nav-icon" /></span><em>更换线路</em></button>
-          <button className="exit" type="button" onClick={onLogout}><span className="nav-icon-shell"><LogoutOutlined className="nav-icon" /></span><em>退出</em></button>
-        </nav>
-      </header>
+      </div>
       <Modal title="切换线路" open={lineOpen} onCancel={closeLineModal} footer={null} width={460} destroyOnHidden>
         <div className="agent-line-tip">测速完成后将 <b>自动跳转</b> 至 <b>速度最快</b> 的线路</div>
         <div className="agent-line-tip">数字越 <b>小</b>，速度越 <b>快</b></div>

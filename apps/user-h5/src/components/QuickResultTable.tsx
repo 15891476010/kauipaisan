@@ -276,8 +276,13 @@ export function QuickResultTable({ lines, sourceText: _sourceText, onChange, onC
               <textarea
                 className="quick-result-text"
                 maxLength={5000}
-                rows={1}
+                rows={Math.max(1, Math.ceil((draftText || "").length / 14))}
                 value={draftText}
+                onInput={(event) => {
+                  const target = event.currentTarget;
+                  target.style.height = "auto";
+                  target.style.height = `${target.scrollHeight}px`;
+                }}
                 onFocus={() => setEditingGroupKey(groupKey)}
                 onChange={(event) => setDraftTexts((current) => ({ ...current, [groupKey]: event.target.value }))}
                 onBlur={() => {

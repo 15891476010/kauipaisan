@@ -50,7 +50,8 @@ final class BetSettlement
                     $payout=$this->detailPayout($numbers,$draw,(string)($detail['source_text']??''),(float)$detail['amount'],$odds);
                     $win=$payout['win'];$totalWin+=$win;$totalRebate+=(float)($detail['rebate']??0);
                     $totalMatched+=(int)$payout['matched'];$totalSelections+=count($numbers);
-                    $totalOffline+=WaterLedger::calculate((float)$detail['amount'],(float)($stop['drop_odds']??0))['amount'];$waterItems[]=['detail'=>$detail,'stop'=>$stop];
+                    // 统一口径：结算不再产生玩法级离线反水，明水只在
+                    // 代理占成报表中按站点 water_rate 计算。
                     // Persist the actual winning-combination count so the SaaS
                     // can distinguish a full multi-number hit from a partial hit.
                     $detailUpdate=['win_amount'=>number_format($win,2,'.',''),'status'=>$win>0?'won':'unwon','matched_count'=>(int)$payout['matched']];
@@ -82,7 +83,6 @@ final class BetSettlement
                     'updated_at' => date('Y-m-d H:i:s'),
                 ]);
                 CreditLedger::userSettlement(array_merge($lockedRecord, ['organization_id'=>$user['organization_id'] ?? null]), $totalWin, $availableBefore, $availableBefore + $totalWin);
-                foreach ($waterItems as $waterItem) WaterLedger::recordForDetail($lockedRecord, $user, $waterItem['detail'], $waterItem['stop']);
                 $houseProfit = $amount - $totalWin - $totalRebate;
                 $this->allocateOrganizationProfit($lockedRecord, $user, $houseProfit);
                 $billDate = substr((string)$lockedRecord['placed_at'], 0, 10);
@@ -91,14 +91,14 @@ final class BetSettlement
                     'bet_count' => (int)$bill['bet_count'] + (int)$lockedRecord['bet_count'],
                     'amount' => number_format((float)$bill['amount'] + $amount, 2, '.', ''),
                     'win_amount' => number_format((float)$bill['win_amount'] + $totalWin, 2, '.', ''),
-                    'offline_rebate' => number_format((float)$bill['offline_rebate'] + $totalOffline, 2, '.', ''),
-                    'profit' => number_format((float)$bill['profit'] + $totalWin - $amount + $totalOffline, 2, '.', ''),
+                    'offline_rebate' => '0.00',
+                    'profit' => number_format((float)$bill['profit'] + $totalWin - $amount, 2, '.', ''),
                 ]);
                 else Db::name('bills')->insert([
                     'tenant_id' => (int)$lockedRecord['tenant_id'], 'site_id' => $siteId, 'user_id' => $userId,
                     'bill_date' => $billDate, 'bet_count' => (int)$lockedRecord['bet_count'], 'amount' => number_format($amount, 2, '.', ''),
-                    'rebate' => '0.00', 'offline_rebate' => number_format($totalOffline, 2, '.', ''), 'win_amount' => number_format($totalWin, 2, '.', ''),
-                    'profit' => number_format($totalWin - $amount + $totalOffline, 2, '.', ''), 'created_at' => date('Y-m-d H:i:s'),
+                    'rebate' => '0.00', 'offline_rebate' => '0.00', 'win_amount' => number_format($totalWin, 2, '.', ''),
+                    'profit' => number_format($totalWin - $amount, 2, '.', ''), 'created_at' => date('Y-m-d H:i:s'),
                 ]);
                 return ['win'=>$totalWin];
             });
@@ -151,7 +151,7 @@ final class BetSettlement
         if(($stop['actual_odds']??null)!==null&&(float)$stop['actual_odds']>0)return [(float)$stop['actual_odds'],true];
         $row=$this->uniqueLegacyOddsRow($lotteryId,(string)($detail['source_text']??''));
         if($row===[])throw new \RuntimeException('历史注单明细 #'.(int)$detail['id'].' 缺少锁定赔率，且无法唯一匹配旧赔率，已停止整单结算');
-        $odds=(float)$row['odds']-(float)($stop['drop_odds']??0);
+        $odds=(float)$row['odds'];
         if($odds<=0)throw new \RuntimeException('历史注单明细 #'.(int)$detail['id'].' 回退赔率无效，已停止整单结算');
         return [$odds,true];
     }
@@ -194,7 +194,10 @@ final class BetSettlement
             $chain[]=$node;$nodeId=(int)$node['parent_id'];
         }
         if($chain===[])return;
-        foreach(SequentialProfitShare::allocateDirect($houseProfit,$chain,$siteCap) as $allocation){
+        // Apply each parent's rate to the remainder passed up from the child:
+        // e.g. 10,000 at 20% -> 2,000 to the agent, then 8,000 reaches the
+        // parent and its own percentage is applied to that 8,000.
+        foreach(SequentialProfitShare::allocate($houseProfit,$chain,$siteCap) as $allocation){
             $node=$allocation['node'];$amount=$allocation['amount'];
             if(abs($amount)<0.005)continue;
             $before=(float)$node['balance'];Db::name('organization_nodes')->where('id',(int)$node['id'])->update(['balance'=>Db::raw('balance + '.number_format($amount,2,'.','')),'updated_at'=>date('Y-m-d H:i:s')]);
@@ -202,7 +205,7 @@ final class BetSettlement
                 $record,(int)$node['id'],$amount,$before,$before+$amount,
                 $amount>=0?'本期投注盈利占成':'本期投注亏损承担',
                 [
-                    'allocation_method'=>'direct_member_profit_remainder',
+                    'allocation_method'=>'sequential_remainder',
                     'line_organization_id'=>(int)($user['organization_id']??0),
                     'organization_level'=>(string)($node['level']??''),
                     'incoming_amount'=>$allocation['incoming_amount'],

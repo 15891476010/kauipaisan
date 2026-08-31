@@ -41,8 +41,10 @@ $lineA=SequentialProfitShare::allocate(216,$chain);
 $lineB=SequentialProfitShare::allocate(300,$chain);
 $check($sum($lineA)===216.0&&$sum($lineB)===300.0,'不同直属线路必须分别守恒');
 
-$direct=SequentialProfitShare::allocateDirect(10000,$chain);
-$check($money($direct)===[1000.0,500.0,200.0,1000.0,7300.0],'按会员盈亏直算占成金额不正确');
-$check($sum($direct)===10000.0,'直算占成分配不守恒');
+$residual=SequentialProfitShare::allocate(10000,[
+    ['id'=>2,'parent_id'=>1,'level'=>'agent','share_rate'=>20],
+    ['id'=>1,'parent_id'=>0,'level'=>'director','share_rate'=>0],
+]);
+$check($money($residual)===[2000.0,8000.0],'代理20%后剩余金额未完整归上级');
 
 echo "Sequential profit share tests passed: {$assertions} assertions\n";

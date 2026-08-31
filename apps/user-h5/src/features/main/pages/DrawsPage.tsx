@@ -1,7 +1,15 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Empty } from "antd";
 import { getDraws, waitDraws, type Draw, type Lottery } from "../../../api/user";
 import { lotteryTiming } from "../shared";
+
+function formatDrawTime(value?: string | null) {
+  const raw = String(value || "");
+  if (!raw.trim()) return "---";
+  const match = raw.trim().match(/(?:\d{4}[-/]?)?(\d{1,2})[-/](\d{1,2})\s+(\d{1,2}:\d{2}(?::\d{2})?)/u);
+  if (!match) return raw.trim();
+  return match[1].padStart(2, "0") + "-" + match[2].padStart(2, "0") + " " + match[3];
+}
 
 export function DrawsPage({ selectedLottery }: { selectedLottery?: Lottery }) {
   const [rows, setRows] = useState<Draw[]>([]);
@@ -13,6 +21,13 @@ export function DrawsPage({ selectedLottery }: { selectedLottery?: Lottery }) {
   const visibleRows = showNextIssue
     ? rows
     : rows.filter((row) => row.pending !== 1 && row.numbers.trim() !== "");
+  const issueDigits = Math.max(
+    2,
+    ...rows.map((row) => String(row.issue_no || "").trim().length),
+  );
+  const drawTableStyle = {
+    "--draw-issue-width": "calc(" + issueDigits + "ch + 10px)",
+  } as CSSProperties;
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1_000);
     return () => window.clearInterval(timer);
@@ -67,10 +82,10 @@ export function DrawsPage({ selectedLottery }: { selectedLottery?: Lottery }) {
       {loading ? (
         <div className="draw-loading-only" role="status" aria-label="加载中" />
       ) : (
-        <div className="draw-table">
+        <div className="draw-table" style={drawTableStyle}>
           <div className="draw-head">
-            <span>期号</span>
             <span>开奖时间</span>
+            <span>期号</span>
             <span>佰</span>
             <span>拾</span>
             <span>个</span>
@@ -87,11 +102,12 @@ export function DrawsPage({ selectedLottery }: { selectedLottery?: Lottery }) {
                     className="draw-row"
                     key={`${row.lottery}-${row.issue_no}`}
                   >
+                    <time>{pending ? "---" : formatDrawTime(row.draw_time || row.draw_date)}</time>
                     <strong>{row.issue_no}</strong>
-                    <time>{row.draw_time || row.draw_date || "---"}</time>
                     {[0, 1, 2].map((index) => (
                       <span
                         className={`draw-ball${pending ? " pending" : ""}`}
+                        data-number={numbers[index] || ""}
                         key={index}
                       >
                         {numbers[index] || ""}

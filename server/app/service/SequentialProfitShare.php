@@ -6,8 +6,8 @@ namespace app\service;
 /**
  * Allocate one betting line from the member's nearest organization upwards.
  *
- * Every non-root organization keeps its configured percentage of the amount
- * that reached it. The remainder is passed to its parent. The root director
+     * Every non-root organization keeps its configured percentage of the amount
+     * that reached it. The remainder is passed to its parent. The root director
  * receives the final remainder so every individual betting line is conserved.
  */
 final class SequentialProfitShare
@@ -40,23 +40,6 @@ final class SequentialProfitShare
             ];
         }
 
-        return $allocations;
-    }
-
-    /**
-     * Allocate each non-root node against the original line P/L. The root
-     * receives the remainder so the organization balances remain conserved.
-     */
-    public static function allocateDirect(float $profit, array $leafToRoot, float $rateCap = 100.0): array
-    {
-        if ($leafToRoot === []) return [];
-        $rateCap=max(0.0,min(100.0,$rateCap)); $base=round($profit,2); $remaining=$base; $last=count($leafToRoot)-1; $allocations=[];
-        foreach ($leafToRoot as $index=>$node) {
-            $isRoot=$index===$last || (int)($node['parent_id']??0)===0;
-            $rate=$isRoot?100.0:max(0.0,min($rateCap,(float)($node['share_rate']??0.0)));
-            $amount=$isRoot?$remaining:round($base*$rate/100,2); $remaining=round($remaining-$amount,2);
-            $allocations[]=['node'=>$node,'incoming_amount'=>$isRoot?$remaining+$amount:$base,'share_rate'=>$rate,'amount'=>$amount,'remaining_amount'=>$remaining];
-        }
         return $allocations;
     }
 }

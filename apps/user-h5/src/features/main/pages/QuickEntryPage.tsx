@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { App as AntdApp, Input, Modal, Switch, Tooltip } from "antd";
 import {
   DeleteOutlined,
@@ -55,8 +55,23 @@ export function QuickEntryPage({
     codeCount: 0,
     amount: "0.00",
   });
+  const [resultHeight, setResultHeight] = useState(0);
   const [generating, setGenerating] = useState(false);
   const previewRequestId = useRef(0);
+  const quickSettingsLoaded = useRef(false);
+  useEffect(() => {
+    if (generatedLines.length === 0) {
+      setResultHeight(0);
+      return;
+    }
+    const result = document.querySelector<HTMLElement>('.entry > .quick-result');
+    if (!result) return;
+    const update = () => setResultHeight(result.getBoundingClientRect().height);
+    update();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(update);
+    observer?.observe(result);
+    return () => observer?.disconnect();
+  }, [generatedLines.length]);
   const splitTicketBlocks = (source: string) => {
     const blocks: string[] = []; let current: string[] = []; let blankRun = 0;
     const flush = () => { const value = current.join("\n").trim(); if (value) blocks.push(value); current = []; };
@@ -78,6 +93,7 @@ export function QuickEntryPage({
       .catch(() => setRuleSettings(undefined));
   }, []);
   useEffect(() => {
+    if (quickSettingsLoaded.current) return;
     getQuickSettings()
       .then((response) => {
         const data = response.data?.data;
@@ -93,8 +109,9 @@ export function QuickEntryPage({
           p.copyHeader === true,
           p.textMode === true,
         ]);
+        quickSettingsLoaded.current = true;
       })
-      .catch(() => undefined);
+      .catch(() => { quickSettingsLoaded.current = true; });
   }, [lotteries]);
   const [options, setOptions] = useState([true, false, false, false, false]);
   const optionTips = [
@@ -174,6 +191,14 @@ export function QuickEntryPage({
     }, 450);
     return () => window.clearTimeout(timer);
   }, [text, options[1], lottery]);
+  useEffect(() => {
+    if (text.trim()) return;
+    previewRequestId.current += 1;
+    setGeneratedLines((current) => current.length ? [] : current);
+    setGeneratedTotal((current) => current.count || current.codeCount || current.amount !== "0.00"
+      ? { count: 0, codeCount: 0, amount: "0.00" }
+      : current);
+  }, [text]);
   const copyTicket = async (
     sourceText: string,
     lines: QuickEntryLine[],
@@ -278,7 +303,10 @@ export function QuickEntryPage({
     });
   };
   return (
-    <div className={`entry${showMask ? " entry-locked" : ""}`}>
+    <div
+      className={`entry${showMask ? " entry-locked" : ""}${generatedLines.length ? " has-results" : ""}`}
+      style={{ "--quick-result-height": `${resultHeight}px` } as CSSProperties}
+    >
       {showMask && (
         <div className="entry-lock-overlay" aria-label="当前不可下注" />
       )}
@@ -313,7 +341,7 @@ export function QuickEntryPage({
                   setText((value) => value.split(replaceFrom).join(replaceTo));
               }}
             >
-              替换
+              <span>替换文本</span>
             </button>
             <button
               className="new"
@@ -384,6 +412,15 @@ export function QuickEntryPage({
                 <DeleteOutlined /> 清空
               </button>
               <span>{text.length.toLocaleString()}/10,000</span>
+              <div className="mobile-entry-actions" aria-label="录入操作">
+                <button type="button" className="mobile-identify" onClick={generate} disabled={generating}>
+                  {generating ? "识别中" : "识别"}
+                </button>
+                <button type="button" className="mobile-place" onClick={place} disabled={!timing.canBet}>
+                  {timing.canBet ? "下注" : "暂不可下注"}
+                </button>
+                <span className="mobile-entry-total">共 <b>{displayAmount(generatedTotal.amount)}</b></span>
+              </div>
             </div>
           </div>
           <div className="options">
@@ -410,34 +447,42 @@ export function QuickEntryPage({
             ))}
             <label className="option-card option-card-lottery">
               <span className="option-label">默认彩种</span>
-              {lotteries.map((item) => {
-                const tone = item.name === "排列三" ? "ti" : "fu";
+              {(() => {
+              const current = lotteries.find((item) => item.name === lottery) || lotteries[0];
+                if (!current) return null;
+                const tone = current.name === "排列三" ? "ti" : "fu";
+                const shortLabel = current.name === "排列三" ? "体" : "福";
+                const primary = lotteries[0] || current;
+                const next = lotteries.find((item) => item.id !== current.id) || current;
                 return (
-                  <b
-                    key={item.id}
-                    className={`lottery-choice lottery-choice-${tone}${lottery === item.name ? " selected" : ""}`}
-                    onClick={() => {
-                      setLottery(item.name);
-                      persistPreferences(options, item.name);
+                  <Switch
+                    checked={current.id === primary.id}
+                    checkedChildren={shortLabel}
+                    unCheckedChildren={shortLabel}
+                    aria-label={`默认彩种${shortLabel}`}
+                    className={`lottery-default-switch lottery-default-switch-${tone}`}
+                    onChange={(checked) => {
+                      const target = checked ? primary : next;
+                      if (target.id === current.id) return;
+                      setLottery(target.name);
+                      persistPreferences(options, target.name);
                     }}
-                  >
-                    {item.name}
-                  </b>
+                  />
                 );
-              })}
+              })()}
             </label>
           </div>
           <div className="actions">
-            <button type="button" onClick={place} disabled={!timing.canBet}>
+            <button type="button" className="desktop-entry-action" onClick={place} disabled={!timing.canBet}>
               {timing.canBet ? "下 注" : timing.status || "暂不可下注"}
             </button>
             <button
               type="button"
-              className="gold"
+              className="gold desktop-entry-action"
               onClick={generate}
               disabled={generating}
             >
-              {generating ? "生成中" : "生 成"}
+              {generating ? "识 别 中" : "识 别"}
             </button>
             <button
               type="button"

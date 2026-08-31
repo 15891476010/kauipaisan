@@ -86,8 +86,8 @@ final class AgentInterception
         $directIds = []; foreach ($rows as $row) if ((int)$row['lottery_odds_id'] >= 1000000000) $directIds[] = (int)$row['lottery_odds_id'] - 1000000000;
         $directNames = $directIds === [] ? [] : Db::name('lottery_odds_categories')->whereIn('id', array_values(array_unique($directIds)))->column('name', 'id');
         foreach ($rows as &$row) if ((int)$row['lottery_odds_id'] >= 1000000000) $row['odds_name'] = (string)($directNames[(int)$row['lottery_odds_id'] - 1000000000] ?? $row['odds_name']); unset($row);
-        [$darkRate,$brightRate]=$this->waterRates((int)$session['site_id']);
-        foreach ($rows as &$row) $row = $this->detailRow($row,$darkRate,$brightRate); unset($row);
+        $waterRate=$this->waterRate((int)$session['site_id']);
+        foreach ($rows as &$row) $row = $this->detailRow($row,$waterRate); unset($row);
         return $this->reply(['list' => $rows, 'total' => count($rows), 'summary' => $this->summary($rows)]);
     }
 
@@ -129,24 +129,24 @@ final class AgentInterception
         return array_values(array_unique(array_map('strval', Db::name('lottery_histories')->where('lottery_id', $lotteryId)->where('draw_day', '>=', $fromDate)->where('draw_day', '<=', $toDate)->column('code'))));
     }
 
-    private function detailRow(array $row,float $darkRate=0.085,float $brightRate=0.012): array
+    private function detailRow(array $row,float $waterRate=0.085): array
     {
         $detailAmount = max(0, (float)$row['detail_amount']); $intercepted = max(0, (float)$row['intercepted_amount']);
         $ratio = $detailAmount > 0 ? min(1, $intercepted / $detailAmount) : 0; $rebate = (float)$row['rebate'] * $ratio; $winning = (float)$row['win_amount'] * $ratio;
-        $memberProfit=(float)$row['win_amount']+(float)$row['rebate']-$detailAmount; $occupation=$memberProfit*max(0,min(100,(float)$row['share_rate']))/100; $dark=$detailAmount*max(0,min(1,$darkRate)); $bright=$occupation*max(0,min(1,$brightRate));
-        return ['id' => (int)$row['id'], 'order_no' => (string)$row['bet_record_id'], 'issue_no' => (string)$row['issue_no'], 'member' => (string)$row['username'], 'placed_at' => (string)$row['created_at'], 'number' => (string)$row['number_key'], 'category' => (string)($row['odds_name'] ?: $row['category'] ?: '未分类'), 'bet_amount' => $this->number((float)$row['bet_amount']), 'share_rate' => $this->number((float)$row['share_rate']).'%', 'intercepted_amount' => $this->number($intercepted), 'odds' => $this->number((float)$row['odds']), 'rebate' => $this->number($rebate), 'win_amount' => $this->number($winning), 'profit' => $this->number($occupation+$dark+$bright), 'dark_water' => $this->number($dark), 'bright_water' => $this->number($bright), 'occupation_amount' => $this->number($occupation), 'source' => '快录', 'device' => '网', 'status' => (string)$row['allocation_status']];
+        $memberProfit=(float)$row['win_amount']+(float)$row['rebate']-$detailAmount; $occupation=$memberProfit*max(0,min(100,(float)$row['share_rate']))/100; $water=abs($occupation)*max(0,min(1,$waterRate)); $profit=$occupation+($occupation>=0?$water:-$water);
+        return ['id' => (int)$row['id'], 'order_no' => (string)$row['bet_record_id'], 'issue_no' => (string)$row['issue_no'], 'member' => (string)$row['username'], 'placed_at' => (string)$row['created_at'], 'number' => (string)$row['number_key'], 'category' => (string)($row['odds_name'] ?: $row['category'] ?: '未分类'), 'bet_amount' => $this->number((float)$row['bet_amount']), 'share_rate' => $this->number((float)$row['share_rate']).'%', 'intercepted_amount' => $this->number($intercepted), 'odds' => $this->number((float)$row['odds']), 'rebate' => $this->number($rebate), 'win_amount' => $this->number($winning), 'profit' => $this->number($profit), 'water' => $this->number($water), 'occupation_amount' => $this->number(abs($occupation)), 'source' => '快录', 'device' => '网', 'status' => (string)$row['allocation_status']];
     }
 
-    private function waterRates(int $siteId): array
+    private function waterRate(int $siteId): float
     {
         $settings=Db::name('sites')->where('id',$siteId)->value('settings');
         $settings=is_string($settings)?json_decode($settings,true):(is_array($settings)?$settings:[]);
-        return [max(0,min(1,(float)($settings['dark_water_rate']??0.085))),max(0,min(1,(float)($settings['bright_water_rate']??0.012)))];
+        return max(0,min(1,(float)($settings['water_rate']??$settings['dark_water_rate']??0.085)));
     }
 
     private function summary(array $rows): array
     {
-        $total = ['bet_amount' => 0.0, 'intercepted_amount' => 0.0, 'rebate' => 0.0, 'win_amount' => 0.0, 'profit' => 0.0];
+        $total = ['bet_amount' => 0.0, 'intercepted_amount' => 0.0, 'rebate' => 0.0, 'water' => 0.0, 'win_amount' => 0.0, 'profit' => 0.0];
         foreach ($rows as $row) foreach ($total as $key => $value) $total[$key] += (float)($row[$key] ?? 0);
         foreach ($total as $key => $value) $total[$key] = $this->number($value); return $total;
     }

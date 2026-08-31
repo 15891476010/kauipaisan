@@ -221,6 +221,7 @@ export function StopDropPage() {
         >
           <SearchOutlined /> 搜索
         </button>
+        <button type="button" className="stop-back-button" onClick={() => { window.location.hash = "#/kb"; }}>返回</button>
       </div>
       <div className="stop-sort">
         <strong>停押和降水</strong>
@@ -250,6 +251,7 @@ export function StopDropPage() {
           正序
         </label>
       </div>
+      <div className="stop-pagination">第 <b>0</b> 页</div>
       <div className="stop-table">
         <div className="stop-head">
           <span>编号</span>
@@ -293,6 +295,7 @@ export function StopDropPage() {
           />
         )}
       </div>
+      <div className="stop-pagination stop-pagination-bottom">第 <b>0</b> 页</div>
     </div>
   );
 }

@@ -173,7 +173,6 @@ export function BillsPage() {
           <span>笔数</span>
           <span>金额</span>
           <span>总回水</span>
-          <span>离线回水</span>
           <span>中奖</span>
           <span>盈亏</span>
         </div>
@@ -184,7 +183,6 @@ export function BillsPage() {
               <span>{row.bet_count}</span>
               <span>{row.amount}</span>
               <span>{row.rebate}</span>
-              <span>{row.offline_rebate}</span>
               <span>{row.win_amount}</span>
               <span>{row.profit}</span>
             </div>
@@ -202,7 +200,6 @@ export function BillsPage() {
           <span>{total.bet_count}</span>
           <span>{total.amount}</span>
           <span>{total.rebate}</span>
-          <span>{total.offline_rebate}</span>
           <span>{total.win_amount}</span>
           <span>{total.profit}</span>
         </div>

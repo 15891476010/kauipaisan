@@ -95,7 +95,6 @@ export function MemberPage({
           <span>赔率上限</span>
           <span>单注上限</span>
           <span>单项上限</span>
-          <span>离线赚水</span>
           <span>赔率</span>
         </div>
         <div className="member-odds-body">
@@ -112,7 +111,6 @@ export function MemberPage({
                       <span>{displayNumber(row.odds_limit)}</span>
                       <span>{displayNumber(row.single_bet_limit)}</span>
                       <span>{displayNumber(row.single_item_limit)}</span>
-                      <span>{displayNumber(row.offline_rebate)}</span>
                       <span>{displayNumber(row.odds)}</span>
                     </div>
                   ))}

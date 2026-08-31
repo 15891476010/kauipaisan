@@ -1993,7 +1993,7 @@ body {
 }
 .bill-table .business-head,
 .bill-table .business-row {
-  grid-template-columns: 1.2fr 0.8fr 1fr 1fr 1fr 1fr 1fr;
+  grid-template-columns: 1.2fr 0.8fr 1fr 1fr 1fr 1fr;
 }
 .draw-table .business-head,
 .draw-table .business-row {
@@ -2175,7 +2175,7 @@ body {
 .bet-detail-head,
 .bet-detail-row {
   display: grid;
-  grid-template-columns: 1.15fr 1.42fr 1fr 0.66fr 0.66fr 0.66fr 0.66fr 0.82fr 0.66fr 0.78fr 0.78fr;
+  grid-template-columns: 1.15fr 1.42fr 1fr 0.66fr 0.66fr 0.66fr 0.66fr 0.82fr 0.78fr 0.78fr;
   align-items: center;
   text-align: center;
 }
@@ -2674,7 +2674,7 @@ body {
 .member-odds-head,
 .member-odds-row {
   display: grid;
-  grid-template-columns: 1.25fr 0.85fr 1fr 1fr 1fr 1fr 0.85fr;
+  grid-template-columns: 1.25fr 0.85fr 1fr 1fr 1fr 0.85fr;
   align-items: center;
   min-height: 40px;
   text-align: center;
@@ -2767,89 +2767,84 @@ body {
 .password-page {
   position: relative;
   min-height: calc(100vh - 147px);
-  padding: 0 28px;
-  background: #dcecff;
-  color: #111;
+  padding: 17px 0 40px;
+  background: #fff;
+  color: #000;
 }
 .password-fields {
-  display: grid;
-  height: 150px;
-  grid-template-columns: repeat(3, 1fr);
+  display: block;
+  width: min(960px, calc(100% - 32px));
+  margin: 0 auto;
   background: #fff;
 }
-.password-fields > label {
+.password-field {
+  position: relative;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  font-size: 16px;
+  height: 60px;
+  margin: 13px 0;
 }
-.password-fields > label + label {
-  border-left: 1px dashed #22206c;
-}
-.password-fields > label > span {
-  line-height: 20px;
-}
-.password-fields input {
-  width: 171px;
-  height: 32px;
-  padding: 0 12px;
-  border: 1px solid #8f8f8f;
-  border-radius: 4px;
-  outline: 0;
-  font-size: 14px;
-}
-.password-fields .password-new input {
-  width: 248px;
-}
-.password-fields small {
-  width: 248px;
-  color: #9b6200;
-  font-size: 13px;
-  line-height: 20px;
-}
-.password-forbidden {
-  display: inline-flex;
-  align-items: center;
-  height: 36px;
-  margin-top: 15px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: 15px;
-  background: #ffffa1;
+.password-field label {
+  position: absolute;
+  z-index: 1;
+  top: -9px;
+  left: calc(50% - 430px);
+  padding: 0 5px;
+  background: #fff;
   color: #000;
   font-size: 14px;
-  font-weight: 400;
+  line-height: 22px;
 }
-.password-forbidden::before {
-  content: "注：";
-  width: 32px;
-  margin-right: 8px;
-  color: #f00;
+.password-fields input {
+  display: block;
+  width: min(86vw, 740px);
+  height: 34px;
+  margin-top: 9px;
+  padding: 4px 11px;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  outline: 0;
+  color: rgba(0, 0, 0, 0.65);
   font-size: 16px;
-  font-weight: 700;
+  line-height: 32px;
 }
-.password-forbidden > span:first-child {
+.password-fields p {
   margin: 0;
-  font-weight: 400;
+  padding: 0 13px;
+  color: #136f8f;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 25px;
 }
 .password-save {
   display: block;
-  width: 82px;
-  height: 30px;
+  width: 69px;
+  height: 31px;
   margin: 15px auto 0;
-  border: 1px solid #4e4e4e;
-  background: #12188d;
-  box-shadow: inset 0 0 0 1px #7d85c6;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 4px;
+  background: #00008b;
   color: #fff;
-  font-size: 15px;
+  font-size: 14px;
+  line-height: 21px;
   cursor: pointer;
+}
+.password-save:hover,
+.password-save:focus,
+.password-save:active {
+  border: 0;
+  outline: 0;
+  background: #00008b;
+  color: #fff;
+  box-shadow: none;
 }
 .password-message {
   width: fit-content;
   margin: 10px auto 0;
   color: #b00000;
+  font-size: 14px;
 }
 .entry {
   background: #dcecff;
@@ -3973,3 +3968,156 @@ body {
   padding-bottom: 0;
   opacity: 0;
 }
+
+/* Bills page reference layout: compact filter area and six-column ledger. */
+.bill-page {
+  min-height: 100%;
+  background: #fff;
+  color: #000;
+  font-family: Arial, "Microsoft YaHei", Tahoma, sans-serif;
+}
+.bill-page .bill-toolbar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 130px;
+  min-height: 130px;
+  gap: 0;
+  padding: 4px 0;
+  background: #e7f9fc;
+}
+.bill-page .lottery-selector,
+.bill-page .bill-date-selectors,
+.bill-page .bill-period-selector {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+.bill-page .lottery-selector {
+  height: 43px;
+  padding: 4px 13px;
+}
+.bill-page .lottery-selector > span {
+  display: block;
+  height: 34px;
+  padding: 0 17px;
+  border: 1px dashed #00008b;
+  background: #fff;
+  color: #00008b;
+  font-size: 17px;
+  line-height: 33px;
+  cursor: pointer;
+  user-select: none;
+}
+.bill-page .lottery-selector > span:first-child { border-radius: 9px 0 0 9px; }
+.bill-page .lottery-selector > span:last-child { margin-left: 2px; border-radius: 0 9px 9px 0; }
+.bill-page .lottery-selector > span.selected { border: 1px solid #00008b; background: #00008b; color: #fff; }
+.bill-page .bill-date-selectors {
+  height: 39px;
+  padding: 4px 13px;
+}
+.bill-page .bill-date-selectors select {
+  width: 106px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid #c0c0c0;
+  border-radius: 3px;
+  background: #fff;
+  color: #000;
+  font-size: 16px;
+  line-height: 28px;
+}
+.bill-page .bill-date-selectors > span {
+  margin: 0 10px;
+  color: #000;
+  font-size: 16px;
+}
+.bill-page .bill-period-selector {
+  height: 34px;
+  margin: 3px auto;
+  padding: 4px 13px;
+}
+.bill-page .bill-period-selector > .link-button {
+  position: relative;
+  display: inline-flex;
+  height: 26px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 13px;
+  border-left: 1px solid #00008b;
+  color: #00008b;
+  font-size: 16px;
+  line-height: 26px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.bill-page .bill-period-selector > .link-button:first-child { border-left: 0; }
+.bill-page .bill-period-selector > .link-button.selected { color: #fff; }
+.bill-page .bill-period-selector > .link-button.selected::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  top: 0;
+  left: 5px;
+  width: calc(100% - 10px);
+  height: 100%;
+  border-radius: 4px;
+  background: #00008b;
+}
+.bill-page .bill-period-selector > .link-button > span { position: relative; z-index: 1; }
+.bill-page .bill-table {
+  min-height: 0;
+  padding: 0;
+  border-top: 1px solid #5f5f5f;
+  background: #fff;
+}
+.bill-page .business-head,
+.bill-page .business-row,
+.bill-page .bill-total {
+  grid-template-columns: 1.6fr repeat(5, 1fr);
+}
+.bill-page .business-head {
+  min-height: 37px;
+  border-bottom: 1px solid #5f5f5f;
+  background: #efefef;
+  color: #000;
+  font-size: 15px;
+  font-weight: 500;
+}
+.bill-page .business-row {
+  min-height: 33px;
+  border-top: 1px solid #5f5f5f;
+  border-bottom: 0;
+  background: #fff;
+  color: #000;
+  font-size: 15px;
+  font-weight: 400;
+}
+.bill-page .bill-total {
+  min-height: 33px;
+  border-top: 1px solid #5f5f5f;
+  border-bottom: 1px solid #5f5f5f;
+  background: #f5e4d8;
+  color: #000;
+  font-size: 15px;
+  font-weight: 400;
+}
+.bill-page .business-head > span,
+.bill-page .business-row > span,
+.bill-page .bill-total > span {
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 2px;
+  border-left: 1px solid #5f5f5f;
+  text-align: center;
+  overflow-wrap: break-word;
+}
+.bill-page .business-head > span:first-child,
+.bill-page .business-row > span:first-child,
+.bill-page .bill-total > span:first-child { border-left: 0; }
+.bill-page .page-local-loading { z-index: 2; }
