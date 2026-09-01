@@ -12,6 +12,10 @@ type QuickResultTableProps = {
 };
 
 const formatAmount = (value: string) => value.replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
+const isAmountMismatch = (line: QuickEntryLine) => line.status === "failed" && Boolean(
+  line.suggested_amount || /总金额|金额需确认|不一致|对不上/.test(line.reason || ""),
+);
+const categoryFromSource = (source: string): string | undefined => /福体/u.test(source) ? "福体" : (/^\s*体/u.test(source) ? "体" : (/^\s*福/u.test(source) ? "福" : undefined));
 const batchMetadataKeys = [
   "batch_id",
   "batch_index",
@@ -206,7 +210,8 @@ export function QuickResultTable({ lines, sourceText: _sourceText, onChange, onC
     const numbers = Array.from(new Set(occurrences.map((number) => isGroup ? normalizeGroupNumber(number) : number))).sort();
     const stakeCount = Number(line.stake_count ?? line.code_count ?? line.count ?? 0);
     const unitAmount = stakeCount > 0 ? Number(line.amount || 0) / stakeCount : 0;
-    const categorySections = line.category === "福体" ? ["体", "福"] : [line.category || "福"];
+    const detectedCategory = line.category || categoryFromSource(line.input_text || line.raw_text || "");
+    const categorySections = detectedCategory === "福体" ? ["体", "福"] : [detectedCategory || "福"];
     return categorySections.map((category) => ({ line, category, title: playLabel(line), numbers, frequency, unitAmount }));
   }).sort((left, right) => {
     const categoryRank = (category: string) => category === "体" ? 0 : category === "福" ? 1 : 2;
@@ -217,12 +222,28 @@ export function QuickResultTable({ lines, sourceText: _sourceText, onChange, onC
   const detailAmount = detailLines.reduce((sum, line) => sum + Number(line.batch_amount ?? line.amount ?? 0), 0);
   const openDetails = (group: DisplayLine[]) => {
     const details = group[group.length - 1]?.__detailLines;
+    const mismatch = group.some((item) => item.status === "failed" && item.suggested_amount);
+    if (mismatch) {
+      const source = group[0]?.input_text || group[0]?.raw_text || "";
+      const related = lines.filter((item) => {
+        const key = item.input_text || item.raw_text || "";
+        return key === source || key.includes(source) || source.includes(key);
+      }).filter((item) => item.status === "success");
+      setDetailLines(related.length ? related : (details?.length ? details : group));
+      return;
+    }
     setDetailLines(details?.length ? details : group);
   };
   const removeGroup = (group: DisplayLine[]) => {
     const ids = new Set(group.flatMap((item) => item.__sourceIds || [item.id]));
     onChange?.(renumber(lines.filter((item) => !ids.has(item.id)).map(clearBatchMetadata)), "structure");
   };
+  const mismatchSources = new Set(
+    lines
+      .filter((item) => isAmountMismatch(item))
+      .map((item) => item.input_text || item.raw_text || ""),
+  );
+  const mismatchTexts = Array.from(mismatchSources).filter(Boolean);
   const updateGroupText = (group: DisplayLine[], rawText: string) => {
     const ids = new Set(group.flatMap((item) => item.__sourceIds || [item.id]));
     const next = lines.map((item) => ids.has(item.id) ? { ...item, raw_text: rawText, input_text: rawText } : item).map(clearBatchMetadata);
@@ -232,7 +253,7 @@ export function QuickResultTable({ lines, sourceText: _sourceText, onChange, onC
   return (
     <>
       <div className="quick-result" aria-live="polite">
-      {displayGroups.map((group) => {
+      {displayGroups.map((group, groupIndex) => {
         const line = group[0];
         const groupKey = group.map((item) => item.id).join("-");
         const isEditing = editingGroupKey === groupKey;
@@ -242,18 +263,36 @@ export function QuickResultTable({ lines, sourceText: _sourceText, onChange, onC
         const isBlank = line.__blank === true;
         const groupCount = group.reduce((sum, item) => sum + Number(item.code_count ?? item.count ?? 0), 0);
         const groupAmount = group.reduce((sum, item) => sum + Number(item.amount || 0), 0);
-        const showDetailButton = group.some((item) => item.status === "success") && (!isBatch || isBatchEnd);
-        const categoryTone = line.category === "福" ? "fu" : line.category === "体" ? "ti" : line.category === "福体" ? "futi" : "";
-        const visualStatus = isBlank ? "blank" : isEditing ? "new" : line.status;
+        const sourceKey = line.input_text || line.raw_text || "";
+        // A single source sentence may expand into several successful rows
+        // plus one final mismatch row. Resolve the mismatch from the whole
+        // display group instead of looking only at its first row.
+        const mismatchLine = group.find((item) => isAmountMismatch(item));
+        const amountMismatch = Boolean(mismatchLine);
+        const mismatchGroup = amountMismatch || mismatchSources.has(sourceKey) || mismatchTexts.some((text) => text.includes(sourceKey) || sourceKey.includes(text));
+        const hasLaterRelatedGroup = mismatchGroup
+          ? displayGroups.slice(groupIndex + 1).some((candidate) => mismatchTexts.some((text) => {
+              const candidateSource = candidate[0]?.input_text || candidate[0]?.raw_text || "";
+              return candidateSource !== "" && text.includes(candidateSource);
+            }))
+          : displayGroups.slice(groupIndex + 1).some((candidate) => {
+              const candidateSource = candidate[0]?.input_text || candidate[0]?.raw_text || "";
+              return candidateSource === sourceKey || candidateSource.includes(sourceKey) || sourceKey.includes(candidateSource);
+            });
+        const isLastRelatedGroup = !hasLaterRelatedGroup;
+        const showDetailButton = isLastRelatedGroup && ((group.some((item) => item.status === "success") && (!isBatch || isBatchEnd)) || mismatchGroup);
+        const displayCategory = line.category || lines.find((item) => {
+          const itemSource = item.input_text || item.raw_text || "";
+          return item.category && (itemSource === sourceKey || itemSource.includes(sourceKey) || sourceKey.includes(itemSource));
+        })?.category || categoryFromSource(sourceKey) || "福";
+        const categoryTone = displayCategory === "福" ? "fu" : displayCategory === "体" ? "ti" : displayCategory === "福体" ? "futi" : "";
+        const visualStatus = isBlank ? "blank" : isEditing ? "new" : mismatchGroup ? "mismatch" : line.status;
         const visualTone = isEditing ? "" : categoryTone;
         return (
           <Fragment key={group.map((item) => item.id).join("-")}>
           <div className={`quick-result-row ${visualStatus}${isBatchEnd ? " batch-end" : ""}`}>
             <div className="quick-result-main">
               <button type="button" className="quick-result-remove" aria-label={`删除第${line.id}条`} onClick={() => removeGroup(group)} />
-              {line.status === "failed" && line.suggested_amount && onConfirmMismatch && (
-                <button type="button" className="quick-result-confirm" aria-label={`确认按${line.suggested_amount}元修正`} onClick={() => onConfirmMismatch(line)}>✓</button>
-              )}
               <span className="quick-result-index">{line.id}</span>
               <button type="button" className="quick-result-add" aria-label={`新增第${line.id}条`} onClick={() => addLine(line)} />
               <span className="quick-result-detail-slot">
@@ -267,11 +306,14 @@ export function QuickResultTable({ lines, sourceText: _sourceText, onChange, onC
                   >!
                   </span>
                 )}
-                {isBatchEnd && <button type="button" className="quick-result-combine" aria-label={`查看第${line.id}条合并文本`} onClick={() => setMergedLine(line)}>合</button>}
+                {isLastRelatedGroup && (isBatchEnd || mismatchGroup) && <button type="button" className="quick-result-combine" aria-label={`查看第${line.id}条合并文本`} onClick={() => setMergedLine(line)}>合</button>}
                 {showDetailButton && <button type="button" className="quick-result-more" aria-label={`查看第${line.id}条详情`} onClick={() => openDetails(group)} />}
+                {isLastRelatedGroup && amountMismatch && onConfirmMismatch && (
+                  <button type="button" className="quick-result-confirm" aria-label={mismatchLine?.suggested_amount ? `确认按${mismatchLine.suggested_amount}元修正` : "人工确认金额后修改"} onClick={() => onConfirmMismatch(mismatchLine || line)}>✓</button>
+                )}
               </span>
               <strong className={`quick-result-status ${visualStatus}${visualTone ? ` ${visualTone}` : ""}`}>
-                {isBlank ? "" : isEditing ? "新" : line.status === "success" ? line.category || "成功" : line.status === "new" ? "新" : "失败"}
+                {isBlank ? "" : isEditing ? "新" : mismatchGroup ? displayCategory : line.status === "success" ? line.category || "成功" : line.status === "new" ? "新" : "失败"}
               </strong>
               <textarea
                 className="quick-result-text"
@@ -299,6 +341,10 @@ export function QuickResultTable({ lines, sourceText: _sourceText, onChange, onC
                   <span>金额：</span><b>{formatAmount(groupAmount.toFixed(2))}</b>
                 </div>
               ) : null
+            ) : line.status === "failed" && amountMismatch ? (
+              <div className="quick-result-detail quick-result-mismatch-detail">
+                <span>金额需确认：</span><b>{line.suggested_amount ? `识别金额 ${formatAmount(line.suggested_amount)} 元` : "请点击对号人工确认"}</b>
+              </div>
             ) : line.status === "failed" ? (
               <div className="quick-result-detail quick-result-reason">
                 <span>原因：</span><b>{line.reason || "语句存在问题，无法识别"}</b>
@@ -324,7 +370,7 @@ export function QuickResultTable({ lines, sourceText: _sourceText, onChange, onC
         width={900}
         className="quick-merge-modal"
       >
-        <textarea className="quick-merge-text" readOnly rows={8} value={mergedLine?.batch_merged_text || ""} />
+        <textarea className="quick-merge-text" readOnly rows={8} value={mergedLine?.batch_merged_text || mergedLine?.input_text || mergedLine?.raw_text || ""} />
       </Modal>
       <Modal
         open={detailLines.length > 0}
@@ -339,6 +385,11 @@ export function QuickResultTable({ lines, sourceText: _sourceText, onChange, onC
         <div className="quick-detail-summary"><InfoCircleOutlined className="quick-detail-info" />详情：总笔数 {detailCount}，总金额 {formatAmount(detailAmount.toFixed(2))}</div>
         <div className="quick-detail-scroll">
           <div className="result-table">
+            <div className="result-category-tabs">
+              {Array.from(new Set(detailSections.map((section) => section.category))).map((category) => (
+                <div key={`category-tab-${category}`} className={`ltype-wrapper ${category === "体" ? "is-ti" : category === "福" ? "is-fu" : "is-futi"}`}>{category}</div>
+              ))}
+            </div>
             {detailSections.map((section, sectionIndex) => {
               const previousSection = detailSections[sectionIndex - 1];
               const isNewCategory = !previousSection || previousSection.category !== section.category;

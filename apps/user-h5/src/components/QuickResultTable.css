@@ -18,6 +18,11 @@
   border-color: #e07a7a;
 }
 
+.quick-result-row.mismatch {
+  border-color: #e6a23c;
+  background: #ffd18a;
+}
+
 .quick-result-main {
   display: grid;
   grid-template-columns: auto auto auto auto auto 1fr;
@@ -39,10 +44,13 @@
 .quick-result-confirm {
   width: 24px;
   height: 24px;
-  border: 1px solid #2f8f46;
-  border-radius: 50%;
-  color: #fff;
-  background: #2f8f46;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  color: #333;
+  background: #f2f2f2;
+  font-size: 16px;
+  line-height: 22px;
   cursor: pointer;
 }
 
@@ -66,6 +74,33 @@
 .quick-result-status.failed {
   color: #d90000;
 }
+
+.quick-result-status.mismatch,
+.quick-result-mismatch-detail {
+  color: #8a4b08;
+}
+
+.quick-result-status.fu,
+.quick-result-status.ti,
+.quick-result-status.futi {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  min-width: 40px;
+  padding: 2px 7px;
+  color: #fff;
+  line-height: 1.4;
+  border-radius: 2px;
+  white-space: nowrap;
+  word-break: keep-all;
+  writing-mode: horizontal-tb;
+}
+
+.quick-result-status.fu { background: #722ed1; }
+.quick-result-status.ti { background: #389e0d; }
+.quick-result-status.futi { background: #111; }
 
 .quick-result-text {
   width: 100%;

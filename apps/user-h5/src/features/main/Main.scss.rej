@@ -1,0 +1,11 @@
+--- apps/user-h5/src/features/main/Main.scss
++++ apps/user-h5/src/features/main/Main.scss
+@@ -4237,7 +4237,7 @@
+   .entry.has-results > .quick-result .quick-result-text {
+     min-width: 0 !important;
+     height: auto !important;
+     min-height: 7vw !important;
+     padding: 0 1vw !important;
+-    font-size: 3vw !important;
++    font-size: max(14px, 3.6vw) !important;
+     line-height: 4.2vw !important;

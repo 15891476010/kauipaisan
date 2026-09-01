@@ -2,38 +2,126 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Check, Refresh, View } from '@element-plus/icons-vue'
-import { applyMasterBetBatch, getMasterBetOptions, previewMasterBetBatch, type MasterBatchPreview, type MasterBetRecord } from '../api/admin'
+import { ArrowLeft, Check, Refresh } from '@element-plus/icons-vue'
+import { getBatchBetOptions, replaceBatchBetNumbers, type BatchBetLottery, type BatchBetNumber, type BatchBetUser } from '../api/admin'
 
-const router=useRouter()
-const loading=ref(false); const saving=ref(false); const records=ref<MasterBetRecord[]>([]); const selected=ref<number[]>([])
-const operation=ref<'replace_number'|'replace_play'|'set_amount'>('replace_number')
-const form=ref({from:'',to:'',amount:''}); const preview=ref<MasterBatchPreview|null>(null); const previewVisible=ref(false)
-const allSelected=computed(()=>records.value.length>0 && selected.value.length===records.value.length)
-async function load(){loading.value=true; try { const response=await getMasterBetOptions(); records.value=response.data.records||[]; selected.value=[]; preview.value=null } catch(error){ElMessage.error(error instanceof Error?error.message:'主单加载失败')} finally{loading.value=false} }
-function toggleAll(value:boolean){selected.value=value?records.value.map(record=>record.record_id):[]}
-function payload(){ if(operation.value==='set_amount') return {amount:form.value.amount}; return {from:form.value.from,to:form.value.to} }
-async function showPreview(){
-  if(!selected.value.length){ElMessage.warning('请先选择主单');return}
-  if(operation.value!=='set_amount' && (!form.value.from.trim()||!form.value.to.trim())){ElMessage.warning('请填写修改前后的内容');return}
-  if(operation.value==='set_amount' && (!form.value.amount.trim()||Number(form.value.amount)<0)){ElMessage.warning('请输入有效金额');return}
-  try { const response=await previewMasterBetBatch({record_ids:selected.value,operation:operation.value,payload:payload()}); preview.value=response.data; previewVisible.value=true } catch(error){ElMessage.error(error instanceof Error?error.message:'预览失败')}
+const router = useRouter()
+const loading = ref(false)
+const saving = ref(false)
+const lotteries = ref<BatchBetLottery[]>([])
+const lotteryId = ref<number>()
+const issueNo = ref('')
+const users = ref<BatchBetUser[]>([])
+const selectedUserKeys = ref<string[]>([])
+const selectedNumberKeys = ref<string[]>([])
+const replacements = ref({ hundreds: '', tens: '', units: '' })
+
+const selectedUsers = computed(() => users.value.filter(user => selectedUserKeys.value.includes(user.key)))
+const selectedNumbers = computed(() => selectedUsers.value.flatMap(user => user.numbers))
+const allUsersSelected = computed(() => users.value.length > 0 && selectedUserKeys.value.length === users.value.length)
+const allNumbersSelected = computed(() => selectedNumbers.value.length > 0 && selectedNumbers.value.every(number => selectedNumberKeys.value.includes(number.key)))
+const selectedCount = computed(() => selectedNumbers.value.filter(number => selectedNumberKeys.value.includes(number.key)).length)
+const canReplace = computed(() => selectedCount.value > 0 && Object.values(replacements.value).some(value => value.trim() !== ''))
+
+async function loadOptions(nextLotteryId?: number) {
+  loading.value = true
+  try {
+    const response = await getBatchBetOptions(nextLotteryId)
+    const data = response.data
+    lotteries.value = data.lotteries || []
+    lotteryId.value = data.lottery?.id
+    issueNo.value = data.issue_no || ''
+    users.value = data.users || []
+    selectedUserKeys.value = []
+    selectedNumberKeys.value = []
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '批量修改数据加载失败')
+  } finally {
+    loading.value = false
+  }
 }
-async function apply(){ if(!preview.value||preview.value.changed_count===0){ElMessage.warning('没有可修改的明细');return}; await ElMessageBox.confirm(`预览显示将修改 ${preview.value.changed_count} 条玩法明细，跳过 ${preview.value.skipped_count} 条。确定执行吗？`,'确认主单批量修改',{type:'warning',confirmButtonText:'确认执行',cancelButtonText:'取消'}); saving.value=true; try { const response=await applyMasterBetBatch({record_ids:selected.value,operation:operation.value,payload:payload()}); ElMessage.success(`批量修改完成，共修改 ${response.data.changed} 条明细`); previewVisible.value=false; await load() } catch(error){ElMessage.error(error instanceof Error?error.message:'批量修改失败')} finally{saving.value=false} }
-function opLabel(){return operation.value==='replace_number'?'替换号码':operation.value==='replace_play'?'替换玩法':'设置金额'}
-onMounted(load)
+
+function changeLottery(value: number) { void loadOptions(value) }
+function toggleAllUsers(checked: boolean) {
+  selectedUserKeys.value = checked ? users.value.map(user => user.key) : []
+  selectedNumberKeys.value = []
+}
+function toggleUser(user: BatchBetUser, checked: boolean) {
+  selectedUserKeys.value = checked ? [...selectedUserKeys.value, user.key] : selectedUserKeys.value.filter(key => key !== user.key)
+  selectedNumberKeys.value = selectedNumberKeys.value.filter(key => selectedNumbers.value.some(number => number.key === key))
+}
+function toggleAllNumbers(checked: boolean) { selectedNumberKeys.value = checked ? selectedNumbers.value.map(number => number.key) : [] }
+function toggleNumber(number: BatchBetNumber, checked: boolean) {
+  selectedNumberKeys.value = checked ? [...selectedNumberKeys.value, number.key] : selectedNumberKeys.value.filter(key => key !== number.key)
+}
+
+async function submit() {
+  if (!lotteryId.value || !issueNo.value) { ElMessage.warning('当前没有可修改的未开奖期号'); return }
+  if (!canReplace.value) { ElMessage.warning('请至少选择一条投注并填写需要替换的位数'); return }
+  if (Object.values(replacements.value).some(value => value.trim() !== '' && !/^\d$/.test(value.trim()))) {
+    ElMessage.warning('替换数字必须是0到9的单个数字'); return
+  }
+  await ElMessageBox.confirm(`将修改 ${selectedCount.value} 条号码，是否继续？`, '确认批量修改', { type: 'warning', confirmButtonText: '确认修改', cancelButtonText: '取消' })
+  saving.value = true
+  try {
+    const response = await replaceBatchBetNumbers({
+      lottery_id: lotteryId.value,
+      issue_no: issueNo.value,
+      selections: selectedNumbers.value.filter(number => selectedNumberKeys.value.includes(number.key)).map(number => ({ detail_id: number.detail_id, number_index: number.number_index })),
+      replacements: { hundreds: replacements.value.hundreds.trim(), tens: replacements.value.tens.trim(), units: replacements.value.units.trim() },
+    })
+    ElMessage.success(`批量修改完成，共修改 ${response.data.changed} 条`)
+    replacements.value = { hundreds: '', tens: '', units: '' }
+    await loadOptions(lotteryId.value)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '批量修改失败')
+  } finally {
+    saving.value = false
+  }
+}
+
+onMounted(() => loadOptions())
 </script>
 
 <template>
-  <div class="master-batch-page" v-loading="loading">
-    <section class="batch-head"><div><h1>主单批量修改</h1><p>以主单为选择单位，修改会同步到同一提交批次的彩种记录；仅允许未开奖且未封盘主单。</p></div><div class="head-actions"><el-button :icon="Refresh" @click="load">刷新</el-button><el-button :icon="ArrowLeft" @click="router.push('/bet-records')">返回下单记录</el-button></div></section>
-    <section class="batch-toolbar"><el-checkbox :model-value="allSelected" @change="toggleAll(Boolean($event))">全选当前主单</el-checkbox><span>已选择 <b>{{ selected.length }}</b> / {{ records.length }} 张主单</span><el-select v-model="operation" style="width:150px"><el-option label="替换号码" value="replace_number"/><el-option label="替换玩法" value="replace_play"/><el-option label="设置金额" value="set_amount"/></el-select><el-input v-if="operation!=='set_amount'" v-model="form.from" placeholder="原内容" style="width:180px"/><span v-if="operation!=='set_amount'">→</span><el-input v-if="operation!=='set_amount'" v-model="form.to" placeholder="新内容" style="width:180px"/><el-input-number v-else v-model="form.amount" :min="0" :precision="2" controls-position="right" placeholder="每条明细金额" style="width:180px"/><el-button type="primary" :icon="View" @click="showPreview">预览修改</el-button></section>
-    <section v-if="!records.length&&!loading" class="empty">当前没有可修改的未开奖主单</section>
-    <section v-else class="record-list"><article v-for="record in records" :key="record.record_id" :class="['record-card',{selected:selected.includes(record.record_id)}]"><header><el-checkbox :model-value="selected.includes(record.record_id)" @change="(value:boolean)=>{selected=value?[...selected,record.record_id]:selected.filter(id=>id!==record.record_id)}"/><div class="record-main"><b>主单 #{{ record.record_id }}</b><span>{{ record.username }}</span><span>{{ record.site_name||'本站点' }}</span><span>第 {{ record.issue_no }} 期</span><em>{{ record.bet_count }} 条玩法 / ¥{{ record.amount }}</em></div></header><div class="detail-list"><div v-for="detail in record.details" :key="detail.detail_id" class="detail-row"><span class="lottery">{{ detail.lottery||'-' }}</span><span class="number">{{ detail.number_text||'-' }}</span><span class="play">{{ detail.play_type||'未识别玩法' }}</span><span class="amount">¥{{ detail.amount }}</span></div></div></article></section>
-    <el-drawer v-model="previewVisible" title="主单批量修改预览" direction="rtl" size="min(900px,92vw)"><div v-if="preview" class="preview-panel"><div class="preview-summary"><b>{{ opLabel() }}</b><span>将修改 {{ preview.changed_count }} 条</span><span>跳过 {{ preview.skipped_count }} 条</span></div><el-table :data="preview.changes" border stripe><el-table-column prop="record_id" label="主单" width="80"/><el-table-column prop="issue_no" label="期号" width="100"/><el-table-column prop="old_number" label="原号码"/><el-table-column prop="new_number" label="修改后"/><el-table-column prop="old_play" label="原玩法"/><el-table-column prop="new_play" label="修改后玩法"/><el-table-column prop="old_amount" label="原金额" width="90"/><el-table-column prop="new_amount" label="修改后金额" width="100"/></el-table><div class="preview-footer"><el-button @click="previewVisible=false">取消</el-button><el-button type="primary" :loading="saving" :icon="Check" @click="apply">确认执行</el-button></div></div></el-drawer>
+  <div class="batch-page" v-loading="loading">
+    <section class="batch-head">
+      <div><h1>批量修改</h1><p>先选择彩种，系统自动匹配该彩种当前未开奖期；再选择用户和需要修改的投注号码。</p></div>
+      <div class="head-actions"><el-button :icon="Refresh" @click="loadOptions(lotteryId)">刷新</el-button><el-button :icon="ArrowLeft" @click="router.push('/bet-records')">返回下单记录</el-button></div>
+    </section>
+
+    <section class="filter-panel">
+      <div class="filter-item"><label>彩种</label><el-select v-model="lotteryId" placeholder="请选择彩种" @change="changeLottery" style="width:220px"><el-option v-for="lottery in lotteries" :key="lottery.id" :label="lottery.name" :value="lottery.id" /></el-select></div>
+      <div class="filter-item"><label>未开奖期号</label><span class="issue-value">{{ issueNo || '当前没有可修改的未开奖期' }}</span></div>
+      <div class="filter-item user-summary"><span>用户 {{ selectedUserKeys.length }} / {{ users.length }}</span><span>投注 {{ selectedCount }} 条已选</span></div>
+    </section>
+
+    <section v-if="!users.length && !loading" class="empty">该彩种当前未开奖期没有可修改的投注</section>
+    <template v-else>
+      <section class="users-panel">
+        <div class="section-title"><h2>选择用户</h2><el-checkbox :model-value="allUsersSelected" @change="toggleAllUsers(Boolean($event))">全选用户</el-checkbox></div>
+        <div class="user-grid">
+          <label v-for="user in users" :key="user.key" class="user-option" :class="{ selected: selectedUserKeys.includes(user.key) }">
+            <el-checkbox :model-value="selectedUserKeys.includes(user.key)" @change="toggleUser(user, Boolean($event))" />
+            <span><b>{{ user.display_name || user.username }}</b><small>{{ user.username }}<template v-if="user.site_name"> · {{ user.site_name }}</template></small></span><em>{{ user.numbers.length }} 条</em>
+          </label>
+        </div>
+      </section>
+
+      <section class="bets-panel">
+        <div class="section-title"><div><h2>投注列表</h2><span class="hint">默认不选，可逐条勾选需要修改的号码</span></div><el-checkbox :model-value="allNumbersSelected" :disabled="!selectedNumbers.length" @change="toggleAllNumbers(Boolean($event))">全选当前投注</el-checkbox></div>
+        <div v-if="!selectedUsers.length" class="select-tip">请先选择用户，下面将加载该用户在 {{ issueNo || '当前期' }} 的投注。</div>
+        <div v-else-if="!selectedNumbers.length" class="select-tip">所选用户暂无可修改的投注号码。</div>
+        <div v-else class="bet-table-wrap">
+          <table class="bet-table"><thead><tr><th class="check-col">选择</th><th>用户</th><th>号码</th><th>金额</th><th>来源</th></tr></thead><tbody><template v-for="user in selectedUsers" :key="user.key"><tr v-for="number in user.numbers" :key="number.key"><td class="check-col"><el-checkbox :model-value="selectedNumberKeys.includes(number.key)" @change="toggleNumber(number, Boolean($event))" /></td><td>{{ user.display_name || user.username }}</td><td class="number-value">{{ number.value }}</td><td>¥{{ number.amount }}</td><td class="source-value">{{ number.source_text || '-' }}</td></tr></template></tbody></table>
+        </div>
+      </section>
+
+      <section class="replace-panel"><div class="section-title"><div><h2>替换位数</h2><span class="hint">留空表示不替换该位</span></div><span class="selected-hint">已选择 {{ selectedCount }} 条</span></div><div class="replace-fields"><label>百位<el-input v-model="replacements.hundreds" maxlength="1" inputmode="numeric" placeholder="0-9" /></label><label>十位<el-input v-model="replacements.tens" maxlength="1" inputmode="numeric" placeholder="0-9" /></label><label>个位<el-input v-model="replacements.units" maxlength="1" inputmode="numeric" placeholder="0-9" /></label><el-button type="primary" :icon="Check" :loading="saving" :disabled="!canReplace" @click="submit">执行修改</el-button></div></section>
+    </template>
   </div>
 </template>
 
 <style scoped>
-.master-batch-page{min-height:100%;padding:22px;background:#f5f7fb;box-sizing:border-box}.batch-head{display:flex;align-items:center;justify-content:space-between;padding:18px 20px;background:#fff;border-radius:8px}.batch-head h1{margin:0;color:#26334b;font-size:22px}.batch-head p{margin:8px 0 0;color:#7d8799;font-size:13px}.head-actions{display:flex;gap:10px}.batch-toolbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:16px 0;padding:16px 20px;background:#fff;border:1px solid #e1e6ef;border-radius:8px;color:#68758b}.batch-toolbar b{color:#315fd3}.record-list{display:flex;flex-direction:column;gap:12px;padding-bottom:24px}.record-card{overflow:hidden;background:#fff;border:1px solid #e1e6ef;border-radius:8px;box-shadow:0 2px 8px #26344d0a}.record-card.selected{border-color:#356ee8;box-shadow:0 0 0 2px #356ee822}.record-card header{display:flex;align-items:center;gap:12px;padding:13px 16px;border-bottom:1px solid #edf0f5;background:#f9fbff}.record-main{display:flex;align-items:center;gap:16px;flex-wrap:wrap}.record-main b{color:#26334b}.record-main span{color:#68758b}.record-main em{padding:3px 8px;background:#eef3ff;color:#4269c6;font-style:normal;border-radius:3px;font-size:12px}.detail-list{display:flex;flex-direction:column}.detail-row{display:grid;grid-template-columns:110px minmax(200px,1fr) 180px 110px;gap:10px;padding:10px 16px;border-bottom:1px solid #f0f2f6;color:#344158;font-size:13px}.detail-row:last-child{border-bottom:0}.detail-row .lottery{color:#4269c6}.detail-row .number{font-weight:700}.detail-row .play{color:#65738a}.detail-row .amount{text-align:right;color:#283853}.empty{display:grid;min-height:240px;place-items:center;background:#fff;border-radius:8px;color:#9099aa}.preview-panel{padding:4px}.preview-summary{display:flex;gap:20px;padding:12px 0;color:#68758b}.preview-summary b{color:#315fd3}.preview-footer{display:flex;justify-content:flex-end;gap:10px;margin-top:16px}@media(max-width:900px){.detail-row{grid-template-columns:80px 1fr 120px 80px}.batch-head{align-items:flex-start;gap:16px;flex-direction:column}}
+.batch-page{min-height:100%;padding:22px;background:#f5f7fb;box-sizing:border-box}.batch-head{display:flex;align-items:center;justify-content:space-between;padding:18px 20px;background:#fff;border-radius:8px}.batch-head h1{margin:0;color:#26334b;font-size:22px}.batch-head p{margin:8px 0 0;color:#7d8799;font-size:13px}.head-actions{display:flex;gap:10px}.filter-panel,.users-panel,.bets-panel,.replace-panel{margin-top:16px;padding:18px 20px;background:#fff;border:1px solid #e1e6ef;border-radius:8px}.filter-panel{display:flex;align-items:center;gap:36px;flex-wrap:wrap}.filter-item{display:flex;align-items:center;gap:12px;color:#68758b}.filter-item label{color:#344158;font-weight:600}.issue-value{color:#315fd3;font-weight:700}.user-summary{margin-left:auto;gap:20px}.section-title{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}.section-title h2{display:inline;margin:0;color:#26334b;font-size:17px}.hint{margin-left:10px;color:#929bab;font-size:12px}.user-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}.user-option{display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid #e1e6ef;border-radius:6px;cursor:pointer}.user-option.selected{border-color:#356ee8;background:#f2f6ff}.user-option span{display:flex;min-width:0;flex:1;flex-direction:column}.user-option b{overflow:hidden;color:#26334b;text-overflow:ellipsis;white-space:nowrap}.user-option small{margin-top:3px;color:#9099aa}.user-option em{font-style:normal;color:#4269c6;font-size:12px}.select-tip,.empty{padding:30px 0;text-align:center;color:#9099aa}.empty{margin-top:16px;background:#fff;border-radius:8px}.bet-table-wrap{overflow:auto}.bet-table{width:100%;border-collapse:collapse;color:#344158;font-size:13px}.bet-table th,.bet-table td{padding:10px 12px;text-align:left;border-bottom:1px solid #edf0f5}.bet-table th{background:#f8faff;color:#68758b;font-weight:600}.bet-table tr:hover td{background:#fafcff}.check-col{width:70px;text-align:center!important}.number-value{font-weight:700;color:#26334b;letter-spacing:.08em}.source-value{max-width:360px;word-break:break-all;color:#7d8799}.selected-hint{color:#315fd3;font-weight:600}.replace-fields{display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap}.replace-fields label{display:flex;align-items:center;gap:8px;color:#344158;font-weight:600}.replace-fields .el-input{width:100px}.replace-fields .el-button{margin-left:auto;min-width:130px}@media(max-width:700px){.batch-page{padding:12px}.batch-head{align-items:flex-start;gap:14px;flex-direction:column}.head-actions{width:100%}.filter-panel{align-items:flex-start;flex-direction:column;gap:14px}.user-summary{margin-left:0}.replace-fields .el-button{margin-left:0}.bet-table{min-width:620px}}
 </style>

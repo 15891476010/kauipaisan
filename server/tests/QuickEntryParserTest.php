@@ -53,6 +53,73 @@ if (count($basicThreePositionOdds) !== 1
     fwrite(STDERR, "Failed: basic three-position odds identity\n" . json_encode($basicThreePositionOdds, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
     exit(1);
 }
+$repeatedPositionBlocks = $parser->parse("福\n百位0123468\n个位0875469\n福\n十位0123459\n个位0875469\n福\n百位0123468\n十位0123459\n各50合计7350", '福彩3D', 2.0);
+if (count($repeatedPositionBlocks) !== 3
+    || array_filter($repeatedPositionBlocks, static fn(array $row): bool => ($row['status'] ?? '') !== 'success')
+    || array_column($repeatedPositionBlocks, 'play_type') !== ['二码定位', '二码定位', '二码定位']
+    || array_column($repeatedPositionBlocks, 'amount') !== ['2450.00', '2450.00', '2450.00']
+    || abs(array_sum(array_map(static fn(array $row): float => (float)$row['amount'], $repeatedPositionBlocks)) - 7350.0) > 0.001) {
+    fwrite(STDERR, "Failed: repeated position blocks with shared amount\n" . json_encode($repeatedPositionBlocks, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+$repeatedPositionOne = $parser->parse("福\n百位0123468\n个位0875469\n福\n十位0123459\n个位0875469\n福\n百位0123468\n十位0123459\n各1米合计147", '福彩3D', 2.0);
+if (count($repeatedPositionOne) !== 3 || array_column($repeatedPositionOne, 'amount') !== ['49.00', '49.00', '49.00']) {
+    fwrite(STDERR, "repeated position each-1 amount failed\n" . json_encode($repeatedPositionOne, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+$repeatedPositionDecimal = $parser->parse("福\n百位0123468\n个位0875469\n福\n十位0123459\n个位0875469\n福\n百位0123468\n十位0123459\n各0.2米合计29.4", '福彩3D', 2.0);
+if (count($repeatedPositionDecimal) !== 3 || array_column($repeatedPositionDecimal, 'amount') !== ['9.80', '9.80', '9.80']) {
+    fwrite(STDERR, "repeated position decimal amount failed\n" . json_encode($repeatedPositionDecimal, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+$repeatedPositionNoTotal = $parser->parse("福\n百位0123468\n个位0875469\n福\n十位0123459\n个位0875469\n福\n百位0123468\n十位0123459\n各1米", '福彩3D', 2.0);
+if (count($repeatedPositionNoTotal) !== 3 || array_column($repeatedPositionNoTotal, 'amount') !== ['49.00', '49.00', '49.00']) {
+    fwrite(STDERR, "repeated position without total failed\n" . json_encode($repeatedPositionNoTotal, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+$singlePositionBlocks = $parser->parse("福体\n个位4\n个位3\n各300合计1200", '福彩3D', 2.0);
+if (count($singlePositionBlocks) !== 2
+    || array_filter($singlePositionBlocks, static fn(array $row): bool => ($row['status'] ?? '') !== 'success')
+    || array_column($singlePositionBlocks, 'play_type') !== ['一码定位', '一码定位']
+    || array_column($singlePositionBlocks, 'amount') !== ['600.00', '600.00']
+    || array_column($singlePositionBlocks, 'number_text') !== ['个位4', '个位3']
+    || abs(array_sum(array_map(static fn(array $row): float => (float)$row['amount'], $singlePositionBlocks)) - 1200.0) > 0.001) {
+    fwrite(STDERR, "Failed: repeated single-position digits\n" . json_encode($singlePositionBlocks, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+$explicitGroupTotal = $parser->parse('体1475829组6合计800', '排列三', 2.0);
+if (count($explicitGroupTotal) !== 1
+    || ($explicitGroupTotal[0]['status'] ?? '') !== 'success'
+    || ($explicitGroupTotal[0]['play_type'] ?? '') !== '组六七码'
+    || ($explicitGroupTotal[0]['number_text'] ?? '') !== '六1475829'
+    || ($explicitGroupTotal[0]['amount'] ?? '') !== '800.00') {
+    fwrite(STDERR, "Failed: explicit group-six total alias\n" . json_encode($explicitGroupTotal, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+$fuTiThreeDigitCompound = $parser->parse('福体485。复试各100合计200', '福彩3D', 2.0);
+if (count($fuTiThreeDigitCompound) !== 1
+    || ($fuTiThreeDigitCompound[0]['status'] ?? '') !== 'success'
+    || ($fuTiThreeDigitCompound[0]['play_type'] ?? '') !== '复式三码'
+    || ($fuTiThreeDigitCompound[0]['number_text'] ?? '') !== '复485'
+    || ($fuTiThreeDigitCompound[0]['amount'] ?? '') !== '200.00') {
+    fwrite(STDERR, "Failed: Fu/Ti three-digit compound cash total\n" . json_encode($fuTiThreeDigitCompound, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+$fuTi343Declaration = implode(' ', array_map(static fn(int $number): string => str_pad((string)$number, 3, '0', STR_PAD_LEFT), range(0, 342))) . '一共343注福体直各10合计6860';
+$fuTi343Rows = $parser->parse($fuTi343Declaration, '福彩3D', 2.0);
+if (count($fuTi343Rows) !== 1
+    || ($fuTi343Rows[0]['status'] ?? '') !== 'success'
+    || ($fuTi343Rows[0]['amount'] ?? '') !== '6860.00'
+    || ($fuTi343Rows[0]['count'] ?? 0) !== 686
+    || str_ends_with((string)($fuTi343Rows[0]['number_text'] ?? ''), '343直')) {
+    fwrite(STDERR, "Failed: Fu/Ti 343 direct declaration\n" . json_encode($fuTi343Rows, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+$fuTi343ReverseRows = $parser->parse(str_replace('福体直', '直福体', $fuTi343Declaration), '福彩3D', 2.0);
+if (count($fuTi343ReverseRows) !== 1 || ($fuTi343ReverseRows[0]['status'] ?? '') !== 'success' || ($fuTi343ReverseRows[0]['amount'] ?? '') !== '6860.00') {
+    fwrite(STDERR, "Failed: Fu/Ti 343 reverse suffix order\n" . json_encode($fuTi343ReverseRows, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
 
 $threePositionSets = $parser->parse('福体百1234567十7654321个567890各1米', '福彩3D');
 if (($threePositionSets[0]['status'] ?? null) !== 'success'
@@ -155,6 +222,98 @@ if (count($complete106) !== 5
     || abs(array_sum(array_map(static fn(array $row): float => (float)$row['amount'], $complete106)) - 106.0) > 0.001
     || ($complete106[array_key_last($complete106)]['amount'] ?? '') !== '36.00') {
     fwrite(STDERR, "Failed: complete 106 total sample\n" . json_encode($complete106, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+
+// Amount-before-play direct syntax must not turn “一米” into 001, nor a
+// declared “共N注” count into an extra three-digit selection.  Both attached
+// and spaced count markers are accepted, as is omitting the count entirely.
+$amountBeforeDirectNumbers = '106 108 115';
+foreach ([
+    $amountBeforeDirectNumbers.'福一米直',
+    $amountBeforeDirectNumbers.'共3注福一米直',
+    $amountBeforeDirectNumbers.'福一米直共3注',
+    $amountBeforeDirectNumbers.' 福 1米直',
+] as $amountBeforeDirectText) {
+    $rows = $parser->parse($amountBeforeDirectText, '福彩3D', 2.0);
+    if (count($rows) !== 1
+        || ($rows[0]['status'] ?? '') !== 'success'
+        || ($rows[0]['count'] ?? 0) !== 3
+        || ($rows[0]['amount'] ?? '') !== '3.00'
+        || ($rows[0]['display_number_text'] ?? '') !== '106 108 115') {
+        fwrite(STDERR, "Failed: amount-before-play direct syntax\n" . json_encode(['text'=>$amountBeforeDirectText,'rows'=>$rows], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+        exit(1);
+    }
+}
+
+$genericDirectGroup = $parser->parse('945福打二单一组6米', '福彩3D', 2.0);
+if (count($genericDirectGroup) !== 2
+    || array_filter($genericDirectGroup, static fn(array $row): bool => ($row['status'] ?? '') !== 'success')
+    || array_column($genericDirectGroup, 'amount') !== ['4.00', '2.00']
+    || array_column($genericDirectGroup, 'play_type') !== ['直', '组']) {
+    fwrite(STDERR, "Failed: generic group shorthand direct/group amount\n" . json_encode($genericDirectGroup, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+$genericDirectGroupBareTotal = $parser->parse('945福打二单一组6', '福彩3D', 2.0);
+if (count($genericDirectGroupBareTotal) !== 2
+    || array_filter($genericDirectGroupBareTotal, static fn(array $row): bool => ($row['status'] ?? '') !== 'success')
+    || array_column($genericDirectGroupBareTotal, 'amount') !== ['4.00', '2.00']
+    || abs(array_sum(array_map(static fn(array $row): float => (float)$row['amount'], $genericDirectGroupBareTotal)) - 6.0) > 0.001) {
+    fwrite(STDERR, "Failed: generic group shorthand bare total\n" . json_encode($genericDirectGroupBareTotal, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+
+$annotatedCountSuffix = $parser->parse('福体下午茶，249-932-634十单五组，180', '福彩3D', 2.0);
+if (count($annotatedCountSuffix) !== 2
+    || array_filter($annotatedCountSuffix, static fn(array $row): bool => ($row['status'] ?? '') !== 'success')
+    || array_column($annotatedCountSuffix, 'amount') !== ['120.00', '60.00']
+    || ($annotatedCountSuffix[1]['play_type'] ?? '') !== '组'
+    || abs(array_sum(array_map(static fn(array $row): float => (float)$row['amount'], $annotatedCountSuffix)) - 180.0) > 0.001) {
+    fwrite(STDERR, "Failed: annotated Fu/Ti direct-group count suffix\n" . json_encode($annotatedCountSuffix, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+$annotatedArithmeticBatch = $parser->parse("福体下午茶，249-932-634十单五组，180\n\n23469两倍组三一倍组六\n🈴180+60=240", '福彩3D', 2.0);
+if (array_column($annotatedArithmeticBatch, 'amount') !== ['120.00', '60.00', '40.00', '20.00']
+    || array_filter($annotatedArithmeticBatch, static fn(array $row): bool => ($row['status'] ?? '') !== 'success')
+    || abs(array_sum(array_map(static fn(array $row): float => (float)$row['amount'], $annotatedArithmeticBatch)) - 240.0) > 0.001) {
+    fwrite(STDERR, "Failed: Fu/Ti arithmetic batch total allocation\n" . json_encode($annotatedArithmeticBatch, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+
+$countedMultiplierNumbers = implode(' ', array_map(static fn(int $number): string => str_pad((string)$number, 3, '0', STR_PAD_LEFT), range(0, 101)));
+$countedMultiplier = $parser->parse($countedMultiplierNumbers."\n福102注一倍直\n合计204", '福彩3D', 2.0);
+if (count($countedMultiplier) !== 1
+    || ($countedMultiplier[0]['status'] ?? '') !== 'success'
+    || ($countedMultiplier[0]['count'] ?? 0) !== 102
+    || ($countedMultiplier[0]['amount'] ?? '') !== '204.00'
+    || str_contains((string)($countedMultiplier[0]['display_number_text'] ?? ''), '102')) {
+    fwrite(STDERR, "Failed: counted multiplier direct suffix\n" . json_encode($countedMultiplier, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+
+$countedMultiplierWithSuffixToken = $parser->parse($countedMultiplierNumbers.' 102' . "\n体102注一倍直\n合计204", '福彩3D', 2.0);
+if (count($countedMultiplierWithSuffixToken) !== 1
+    || ($countedMultiplierWithSuffixToken[0]['status'] ?? '') !== 'success'
+    || ($countedMultiplierWithSuffixToken[0]['count'] ?? 0) !== 102
+    || ($countedMultiplierWithSuffixToken[0]['amount'] ?? '') !== '204.00'
+    || str_contains((string)($countedMultiplierWithSuffixToken[0]['display_number_text'] ?? ''), '102')) {
+    fwrite(STDERR, "Failed: suffix declaration token must not become a number\n" . json_encode($countedMultiplierWithSuffixToken, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+
+foreach (['组六包10', '组三包10', '豹子包10', '对子包10'] as $packageAlias) {
+    $rows = $parser->parse($packageAlias, '福彩3D', 2.0);
+    if (count($rows) !== 1 || ($rows[0]['status'] ?? '') !== 'success' || ($rows[0]['amount'] ?? '') !== '10.00' || !str_contains((string)($rows[0]['play_type'] ?? ''), '全包')) {
+        fwrite(STDERR, "Failed: package alias {$packageAlias}\n" . json_encode($rows, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+        exit(1);
+    }
+}
+
+$compactMixedMultiplier = $parser->parse('福体23469两倍组三一倍组六', '福彩3D', 2.0);
+if (count($compactMixedMultiplier) !== 2
+    || array_filter($compactMixedMultiplier, static fn(array $row): bool => ($row['status'] ?? '') !== 'success')
+    || array_column($compactMixedMultiplier, 'amount') !== ['40.00', '20.00']) {
+    fwrite(STDERR, "Failed: compact mixed group multipliers\n" . json_encode($compactMixedMultiplier, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
     exit(1);
 }
 
@@ -288,10 +447,35 @@ if (count($validNineNumberDirectGroup) !== 3
     exit(1);
 }
 
+$threeCodeDirectGroup = $parser->parse('3码:934 932 942三直两组', '福彩3D', 2.0);
+if (count($threeCodeDirectGroup) !== 2
+    || ($threeCodeDirectGroup[0]['status'] ?? '') !== 'success'
+    || ($threeCodeDirectGroup[1]['status'] ?? '') !== 'success'
+    || ($threeCodeDirectGroup[0]['amount'] ?? '') !== '18.00'
+    || ($threeCodeDirectGroup[1]['amount'] ?? '') !== '12.00'
+    || ($threeCodeDirectGroup[0]['count'] ?? 0) !== 3
+    || ($threeCodeDirectGroup[1]['count'] ?? 0) !== 3) {
+    fwrite(STDERR, "Failed: annotated 3-code direct/group ticket\n" . json_encode($threeCodeDirectGroup, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+
+$manualConfirm = $parser->parse("934 932 942 629 634\n927 936 467 772 427一直两组\n共380米", '福彩3D', 2.0);
+if (count($manualConfirm) !== 3
+    || ($manualConfirm[0]['status'] ?? '') !== 'success'
+    || ($manualConfirm[1]['status'] ?? '') !== 'success'
+    || ($manualConfirm[2]['status'] ?? '') !== 'failed'
+    || ($manualConfirm[0]['amount'] ?? '') !== '20.00'
+    || ($manualConfirm[1]['amount'] ?? '') !== '40.00'
+    || ($manualConfirm[2]['suggested_amount'] ?? '') !== '60.00') {
+    fwrite(STDERR, "Failed: continuous two-group manual confirmation\n" . json_encode($manualConfirm, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+
 $multiplierAmountCases = [
+    ['福111 100倍', '200.00'], ['福111各100倍', '200.00'], ['福111共100倍', '200.00'], ['福111各100米', '100.00'],
     ['福123直1倍', '2.00'], ['福123组六1倍', '2.00'], ['福123复式1倍', '10.00'],
     ['福12345组六1倍', '10.00'], ['福跨度2 1倍', '10.00'], ['福和值15 1倍', '10.00'],
-    ['福和大1倍', '10.00'], ['福对子全包1倍', '10.00'], ['福豹子全包1倍', '20.00'],
+    ['福和大1倍', '10.00'], ['福对子全包1倍', '10.00'], ['福豹子全包1倍', '10.00'],
     ['福组六1胆234拖各1倍', '10.00'], ['福组六12胆345拖各1倍', '6.00'],
     ['福6拖01234单选全胆拖各1倍', '182.00'], ['福沾边赖012345组三1倍', '158.00'],
     ['福沾边赖0123456组六1倍', '238.00'], ['福单选组六复式01234567 1倍', '672.00'],
@@ -1053,6 +1237,44 @@ if (count($fourTicketArithmetic) !== 10
     || array_column($fourTicketArithmetic, 'amount') !== ['80.00', '32.00', '20.00', '20.00', '10.00', '10.00', '60.00', '30.00', '10.00', '10.00']) {
     fwrite(STDERR, "Failed: four-ticket arithmetic grand total sample\n" . json_encode($fourTicketArithmetic, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
     exit(1);
+}
+
+// A three-digit count declaration at the end of a number list is metadata,
+// not an additional selected number. This must also hold inside a multi-ticket
+// paste that takes the compatibility parsing path.
+$declaredNumbers = array_map(static fn(int $number): string => (string)$number, range(200, 301));
+$declaredCountPaste = $parser->parse(implode(' ', $declaredNumbers)." 福102注一倍直\n\n福组六包100倍", '福彩3D', 2.0);
+if (count($declaredCountPaste) !== 2
+    || array_column($declaredCountPaste, 'count') !== [102, 1]
+    || array_column($declaredCountPaste, 'amount') !== ['204.00', '1000.00']
+    || str_contains((string)($declaredCountPaste[0]['number_text'] ?? ''), '102直')) {
+    fwrite(STDERR, "Failed: declared count token leaked into selections\n" . json_encode($declaredCountPaste, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+$declaredDifferentCount = $parser->parse(implode(' ', $declaredNumbers)." 福500注一倍直 \n合计204。", '福彩3D', 2.0);
+if (count($declaredDifferentCount) !== 1
+    || ($declaredDifferentCount[0]['status'] ?? '') !== 'success'
+    || ($declaredDifferentCount[0]['count'] ?? 0) !== 102
+    || ($declaredDifferentCount[0]['amount'] ?? '') !== '204.00'
+    || str_contains((string)($declaredDifferentCount[0]['number_text'] ?? ''), '500直')) {
+    fwrite(STDERR, "Failed: declared count differing from selections\n" . json_encode($declaredDifferentCount, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+    exit(1);
+}
+$packageAliases = [
+    '福组六全包1倍' => '组六全包',
+    '福组六包1倍' => '组六全包',
+    '福组 六全 包1倍' => '组六全包',
+    '福全包组六1倍' => '组六全包',
+    '福组三全包1倍' => '组三全包',
+    '福全包豹子1倍' => '豹子全包',
+    '福全包对子1倍' => '对子全包',
+];
+foreach ($packageAliases as $packageText => $expectedPlay) {
+    $packageRow = $parser->parse($packageText, '福彩3D', 2.0)[0] ?? null;
+    if (!is_array($packageRow) || ($packageRow['status'] ?? '') !== 'success' || ($packageRow['play_type'] ?? '') !== $expectedPlay) {
+        fwrite(STDERR, "Failed: package alias {$packageText}\n" . json_encode($packageRow, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) . "\n");
+        exit(1);
+    }
 }
 
 echo "QuickEntryParser tests passed\n";

@@ -31,7 +31,7 @@ $fixed = [
     [BetMultiplierAmount::SUM,10],
     [BetMultiplierAmount::SIZE_PARITY,10],
     [BetMultiplierAmount::PAIR_PACKAGE,10],
-    [BetMultiplierAmount::LEOPARD_PACKAGE,20],
+    [BetMultiplierAmount::LEOPARD_PACKAGE,10],
     [BetMultiplierAmount::GROUP_DRAG,10],
     [BetMultiplierAmount::DOUBLE_FLY,10],
 ];

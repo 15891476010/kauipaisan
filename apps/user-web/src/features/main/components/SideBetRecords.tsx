@@ -116,7 +116,13 @@ export function SideBetRecords({
     const value = detail.number_text || "";
     return /^\d{3}$/.test(value) ? String(Number(value)) : value || "-";
   };
-  const groupedDetails = Array.from(details.reduce((lotteryMap, detail) => {
+  const orderedDetails = [...details].sort((left, right) => {
+    const leftNumber = Number(displayDetailNumber(left).replace(/\D/g, ""));
+    const rightNumber = Number(displayDetailNumber(right).replace(/\D/g, ""));
+    if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber) && leftNumber !== rightNumber) return leftNumber - rightNumber;
+    return displayDetailNumber(left).localeCompare(displayDetailNumber(right), "zh-CN");
+  });
+  const groupedDetails = Array.from(orderedDetails.reduce((lotteryMap, detail) => {
     const lottery = lotteryName(detail.lottery);
     if (!lotteryMap.has(lottery)) lotteryMap.set(lottery, new Map<string, BetDetail[]>());
     const play = playName(detail);
@@ -125,7 +131,7 @@ export function SideBetRecords({
     playMap.get(play)!.push(detail);
     return lotteryMap;
   }, new Map<string, Map<string, BetDetail[]>>()));
-  const numberGroups = Array.from(details.reduce((map, detail) => {
+  const numberGroups = Array.from(orderedDetails.reduce((map, detail) => {
     const key = `${lotteryName(detail.lottery)}|${detail.issue_no}`;
     if (!map.has(key)) map.set(key, []);
     map.get(key)!.push(detail);
@@ -160,7 +166,7 @@ export function SideBetRecords({
   };
   const copyNumbers = async () => {
     try {
-      await copyText(details.map((detail) => displayDetailNumber(detail)).join("\n"));
+      await copyText(orderedDetails.map((detail) => displayDetailNumber(detail)).join("\n"));
       message.success("号码已复制");
     } catch {
       message.error("复制号码失败，请长按号码手动复制");
@@ -234,7 +240,12 @@ export function SideBetRecords({
             className={`side-record-item${record.status === "refunded" ? " refunded" : ""}`}
             key={record.id}
           >
-            <time>{record.placed_at}</time>
+            <time>
+              <span className="side-record-board">
+                {record.board_name || `${record.board_code || "A"}盘`}
+              </span>
+              时间：{record.placed_at}
+            </time>
             <div className="side-record-text">
               <b className="side-record-issue">
                 {record.lottery ? `${record.lottery} ` : ""}第 {record.issue_no || "--"} 期
@@ -289,7 +300,7 @@ export function SideBetRecords({
         title={detailMode === "detail" ? "下注详情" : null}
         footer={detailMode === "detail" ? <Button onClick={() => setDetailRecord(undefined)}>关 闭</Button> : null}
         onCancel={() => setDetailRecord(undefined)}
-        width={detailMode === "numbers" ? 520 : 760}
+        width={detailMode === "numbers" ? 520 : 900}
       >
         {detailLoading ? <div className="record-detail-loading">加载中...</div> : details.length && detailMode === "detail" ? (
           <div className="record-detail-content">
@@ -302,14 +313,17 @@ export function SideBetRecords({
                 {Array.from(plays).map(([play, playDetails]) => (
                   <div className="record-detail-play" key={`${lottery}-${play}`}>
                     <h3>{play}</h3>
-                    {playDetails.map((detail, index) => (
-                      <div className="record-detail-card" key={`${detail.id}-${index}`}>
-                        <div className="record-detail-card-label">号码</div><div><span>{displayDetailNumber(detail)}</span><em className="record-detail-play-mark">{play}</em></div>
-                        <div className="record-detail-card-label">金额</div><div className="amount">{detail.amount}</div>
-                        <div className="record-detail-card-label">赔率</div><div className="odds">{detail.odds || "---"}</div>
-                        <div className="record-detail-card-label">中奖</div><div>{Number(detail.win_amount || 0) > 0 ? detail.win_amount : "---"}</div>
-                      </div>
-                    ))}
+                    <div className="record-detail-grid-list">
+                      {Array.from({ length: Math.ceil(playDetails.length / 5) }, (_, chunkIndex) => {
+                        const chunk = playDetails.slice(chunkIndex * 5, chunkIndex * 5 + 5);
+                        return <div className="record-detail-grid" key={`${lottery}-${play}-${chunkIndex}`} style={{ gridTemplateColumns: `120px repeat(${chunk.length}, minmax(112px, 1fr))` }}>
+                          <div className="record-detail-grid-label">号码</div>{chunk.map((detail, index) => <div className="record-detail-grid-value number" key={`number-${detail.id}-${index}`}><span>{displayDetailNumber(detail)}</span><em>{play}</em></div>)}
+                          <div className="record-detail-grid-label">金额</div>{chunk.map((detail, index) => <div className="record-detail-grid-value amount" key={`amount-${detail.id}-${index}`}>{detail.amount}</div>)}
+                          <div className="record-detail-grid-label">赔率</div>{chunk.map((detail, index) => <div className="record-detail-grid-value odds" key={`odds-${detail.id}-${index}`}>{detail.odds || "---"}</div>)}
+                          <div className="record-detail-grid-label">中奖</div>{chunk.map((detail, index) => <div className="record-detail-grid-value win" key={`win-${detail.id}-${index}`}>{Number(detail.win_amount || 0) > 0 ? detail.win_amount : "---"}</div>)}
+                        </div>;
+                      })}
+                    </div>
                   </div>
                 ))}
               </section>

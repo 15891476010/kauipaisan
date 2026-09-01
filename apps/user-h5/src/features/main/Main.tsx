@@ -27,7 +27,7 @@ function MainShell({ name, logout, forcePasswordChange = false, onPasswordChange
   const locked = forcePasswordChange;
   const [panelRight, setPanelRight] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
-  const [warmVisible, setWarmVisible] = useState(true);
+  const [warmVisible, setWarmVisible] = useState(false);
   const [warmOpen, setWarmOpen] = useState(true);
   const [balances, setBalances] = useState<Balances>({
     balance: "0",
@@ -59,21 +59,37 @@ function MainShell({ name, logout, forcePasswordChange = false, onPasswordChange
       return () => {
         active = false;
       };
+    const dismissedKey = "h5_announcement_dismissed:" + encodeURIComponent(name);
     getAnnouncement()
       .then((response) => {
-        if (active && response.data?.data)
-          setAnnouncement({
-            title: String(response.data.data.title || "公告"),
-            content: String(response.data.data.content || "暂无公告"),
-          });
+        if (!active) return;
+        if (!response.data?.data) {
+          setWarmVisible(false);
+          return;
+        }
+        const next = {
+          title: String(response.data.data.title || "公告"),
+          content: String(response.data.data.content || "暂无公告"),
+        };
+        setAnnouncement(next);
+        try {
+          const dismissed = localStorage.getItem(dismissedKey);
+          if (dismissed !== next.title + "\u0000" + next.content) {
+            setWarmOpen(true);
+            setWarmVisible(true);
+          }
+        } catch {
+          setWarmOpen(true);
+          setWarmVisible(true);
+        }
       })
       .catch(() => {
-        if (active) setAnnouncement({ title: "公告", content: "暂无公告" });
+        if (active) setWarmVisible(false);
       });
     return () => {
       active = false;
     };
-  }, []);
+  }, [name]);
   useEffect(() => {
     let active = true;
     const loadLotteries = () => {
@@ -137,6 +153,10 @@ function MainShell({ name, logout, forcePasswordChange = false, onPasswordChange
     window.addEventListener("profile-updated", refreshProfile);
     return () => window.removeEventListener("profile-updated", refreshProfile);
   }, []);
+  useEffect(() => {
+    const shouldOpen = location.pathname === "/rtl";
+    setMoreOpen((current) => (current === shouldOpen ? current : shouldOpen));
+  }, [location.pathname]);
   const selectedLottery = lotteries.find(
     (item) => item.id === selectedLotteryId,
   );
@@ -162,7 +182,13 @@ function MainShell({ name, logout, forcePasswordChange = false, onPasswordChange
         locked={locked}
       />
       {moreOpen ? (
-        <MorePanel lotteries={lotteries} onBack={() => setMoreOpen(false)} />
+        <MorePanel
+          lotteries={lotteries}
+          onBack={() => {
+            setMoreOpen(false);
+            window.history.back();
+          }}
+        />
       ) : (
         <div
           className={`body${panelRight ? " panel-right" : ""}${fullPage ? " full-page" : ""}`}
@@ -170,7 +196,10 @@ function MainShell({ name, logout, forcePasswordChange = false, onPasswordChange
           {!fullPage && (
             <aside>
               <SideBetRecords
-                onMore={() => setMoreOpen(true)}
+                onMore={() => {
+                  setMoreOpen(true);
+                  window.location.hash = "#/rtl";
+                }}
                 panelRight={panelRight}
                 onToggleSide={() => {
                   if (window.matchMedia("(max-width: 599px)").matches) {
@@ -234,7 +263,23 @@ function MainShell({ name, logout, forcePasswordChange = false, onPasswordChange
             <button type="button" title={warmOpen ? "收回温馨提示" : "弹出温馨提示"} aria-label={warmOpen ? "收回温馨提示" : "弹出温馨提示"} onClick={() => setWarmOpen((value) => !value)}>
               <span aria-hidden="true">{warmOpen ? "−" : "+"}</span>
             </button>
-            <button type="button" title="关闭温馨提示" aria-label="关闭温馨提示" onClick={() => setWarmVisible(false)}>
+            <button
+              type="button"
+              title="关闭温馨提示"
+              aria-label="关闭温馨提示"
+              onClick={() => {
+                try {
+                  localStorage.setItem(
+                    "h5_announcement_dismissed:" + encodeURIComponent(name),
+                    announcement.title + "\u0000" + announcement.content,
+                  );
+                } catch {
+                  // Storage can be unavailable in private browsing; closing
+                  // the current overlay still remains possible.
+                }
+                setWarmVisible(false);
+              }}
+            >
               <span aria-hidden="true">×</span>
             </button>
           </div>

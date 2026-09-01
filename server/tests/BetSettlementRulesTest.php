@@ -96,6 +96,17 @@ $assert(($positionPayout['matched'] ?? 0) === 1
     && abs((float)($positionPayout['stake'] ?? 0) - 10.00) < 0.001
     && abs((float)($positionPayout['win'] ?? 0) - 9000.00) < 0.001,
     '定位复式单号按组合数分摊赔付', $positionPayout);
+$positionPayoutWithMarkers = $detailPayout->invoke($settlement,
+    ['百位0425673 十位0135478 个位1435879'],
+    '319',
+    '百位0425673 十位0135478 个位1435879 三码定位各10元 体',
+    3430.00,
+    900.00
+);
+$assert(($positionPayoutWithMarkers['matched'] ?? 0) === 1
+    && abs((float)($positionPayoutWithMarkers['stake'] ?? 0) - 10.00) < 0.001
+    && abs((float)($positionPayoutWithMarkers['win'] ?? 0) - 9000.00) < 0.001,
+    '带“位”标记的定位复式按组合数分摊赔付', $positionPayoutWithMarkers);
 
 foreach ([
     ['沾边赖34组三1倍', '组三赖二码', '68.00'],

@@ -150,20 +150,42 @@ final class AdminBetBatch
 
     private function currentIssue(array $lottery, ?int $siteId): string
     {
-        $query=Db::name('bet_details')->alias('d')
-            ->join('bet_records r','r.id=d.bet_record_id')
-            ->join('user_stop_drops s','s.bet_detail_id=d.id')
-            ->where('s.lottery',(string)$lottery['name'])
-            ->where('r.status','pending')->where('d.status','pending');
-        if ($siteId!==null) $query->where('d.site_id',$siteId);
-        $rows=$query->field('r.issue_no,r.placed_at')->order('r.placed_at desc')->order('r.id desc')->limit(200)->select()->toArray();
-        $seen=[];
-        foreach ($rows as $row) {
-            $issue=trim((string)($row['issue_no']??''));
-            if ($issue==='' || isset($seen[$issue])) continue;
-            $seen[$issue]=true;
-            $numbers=(string)(Db::name('lottery_histories')->where('lottery_id',(int)$lottery['id'])->where('code',$issue)->value('numbers')??'');
-            if (count(array_filter(preg_split('/[,，\s]+/u',trim($numbers))?:[],static fn(string $value): bool=>$value!==''))<3) return $issue;
+        // The target issue is the lottery's current unopened issue, not the
+        // latest issue that happens to have a bet. This keeps the selector
+        // useful immediately after a draw, before any user has placed a bet.
+        $now=date('Y-m-d H:i:s');
+        $pendingQuery=Db::name('lottery_histories')
+            ->where('lottery_id',(int)$lottery['id'])
+            ->where('is_opened',0)
+            ->where('open_time','>=',$now)
+            ->order('open_time asc')->order('id asc');
+        $pending=$pendingQuery->field('code')->find();
+        if ($pending && trim((string)($pending['code']??''))!=='') return trim((string)$pending['code']);
+
+        // If the scheduler has not yet advanced open_time, still expose the
+        // first unopened row rather than incorrectly reporting no issue.
+        $fallback=Db::name('lottery_histories')
+            ->where('lottery_id',(int)$lottery['id'])
+            ->where('is_opened',0)
+            ->order('open_time asc')->order('id asc')
+            ->field('code')->find();
+        $fallbackCode=trim((string)($fallback['code']??''));
+        if ($fallbackCode!=='') return $fallbackCode;
+
+        // Last-resort fallback for the short window before the scheduler has
+        // inserted the next history row: use the previous row's next_code,
+        // or increment a numeric issue while preserving its width.
+        $latest=Db::name('lottery_histories')->where('lottery_id',(int)$lottery['id'])
+            ->where('is_opened',1)->order('open_time desc')->order('id desc')
+            ->field('code,next_code')->find();
+        $next=trim((string)($latest['next_code']??''));
+        if ($next!=='') return $next;
+        $lastCode=trim((string)($latest['code']??''));
+        if ($lastCode!=='' && ctype_digit($lastCode)) {
+            $incremented=(string)((int)$lastCode+1);
+            return strlen($incremented)<strlen($lastCode)
+                ? str_pad($incremented,strlen($lastCode),'0',STR_PAD_LEFT)
+                : $incremented;
         }
         return '';
     }

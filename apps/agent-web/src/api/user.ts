@@ -46,6 +46,8 @@ export type Lottery = {
   show_next_issue?: boolean;
   header_show_next_issue?: boolean;
   can_bet?: boolean;
+  board_code?: string;
+  boards?: AgentBoard[];
 };
 export type AgentLineOption = { url: string; line: number };
 export type InitialCredential = { id: number; username: string; initial_password: string; must_change_password: number };
@@ -64,7 +66,8 @@ export type AgentCreditSummary = {
   available_credit: string;
   allocated_credit: string;
 };
-export type AgentOrganizationProfile = { site: { id: number; name: string }; organization: { id: number; name: string; level: OrganizationLevel; level_label: string; next_level: OrganizationLevel | null; credit: AgentCreditSummary } | null; permissions: string[]; username: string };
+export type AgentBoard = { code: string; name: string; sort?: number };
+export type AgentOrganizationProfile = { site: { id: number; name: string }; organization: { id: number; name: string; level: OrganizationLevel; level_label: string; next_level: OrganizationLevel | null; credit: AgentCreditSummary; board_codes?: string[]; boards?: AgentBoard[] } | null; permissions: string[]; username: string };
 export type AgentOrganizationNode = { id: number; parent_id: number; name: string; code: string; level: OrganizationLevel; level_label: string; next_level: OrganizationLevel | null; credit_limit: string; balance?: string; permissions: string[]; status: number; account_id?: number | null; username?: string | null; display_name?: string | null; phone?: string | null; online?: number; last_login_at?: string | null; last_login_ip?: string | null; last_login_location?: string | null; last_login_device?: string | null; share_rate?: string; max_share_rate?: string; child_count?: number };
 export type AgentProfitShare = { child_organization_id: number; parent_organization_id: number; share_rate: string; max_share_rate: string };
 export type AgentOrganizationAccount = { id: number; organization_id: number; username: string; display_name: string; phone?: string; permissions: string[]; status: number; online?: number; last_login_at?: string; last_login_ip?: string; last_login_location?: string };

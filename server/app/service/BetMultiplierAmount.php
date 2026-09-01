@@ -39,7 +39,9 @@ enum BetMultiplierAmount: string
             self::GROUP_THREE_THREE_CODE, self::LEOPARD_SINGLE => 2.0,
             self::COMPOUND, self::GROUP_OTHER, self::SPAN, self::SUM,
             self::SIZE_PARITY, self::PAIR_PACKAGE, self::GROUP_DRAG, self::DOUBLE_FLY => 10.0,
-            self::LEOPARD_PACKAGE => 20.0,
+            // 豹子全包与其他全包玩法统一按每 1 倍 10 元计费。
+            // 福体下注时仍会按两个彩种分别计费，因此总额为 20 元。
+            self::LEOPARD_PACKAGE => 10.0,
             self::GROUP_SIX_SINGLE_COMPOUND => self::valueFor($count, [3=>12, 4=>48, 5=>120, 6=>240, 7=>420, 8=>672]),
             self::GROUP_THREE_SINGLE_COMPOUND => self::valueFor($count, [2=>12, 3=>36, 4=>72, 5=>120, 6=>180, 7=>252, 8=>336]),
             self::GROUP_SIX_DOUBLE_DRAG => self::valueFor($count, [2=>4, 3=>6, 4=>8, 5=>10, 6=>12, 7=>14, 8=>16]),

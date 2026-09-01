@@ -66,6 +66,7 @@ export function BetDetailsPage({ lotteries, selectedLotteryId }: { lotteries: Lo
   const [jumpPage, setJumpPage] = useState("");
   const [now, setNow] = useState(Date.now());
   const selectedLottery = lotteries.find((item) => item.id === selectedLotteryId) || lotteries[0];
+  const boardLabel = selectedLottery?.boards?.find((item) => item.code === selectedLottery.board_code)?.name || `${selectedLottery?.board_code || "A"}盘`;
   const showNextIssue = lotteryTiming(selectedLottery, now).showNextIssue;
 
   useEffect(() => {
@@ -127,7 +128,7 @@ export function BetDetailsPage({ lotteries, selectedLotteryId }: { lotteries: Lo
       </div>
       <div className="bet-detail-results">
         <div className="bet-detail-sort">
-          <strong>总货明细(红色为退码)</strong><span>按下注时间排序:</span>
+          <strong>总货明细(红色为退码)</strong><span className="detail-board-label">盘口：{boardLabel} - {selectedLottery?.board_code || "A"}</span><span>按下注时间排序:</span>
           <label><input type="radio" name="detail-sort" checked={sort === "desc"} onChange={() => { setSort("desc"); search({ sort: "desc" }); }} />倒序</label>
           <label><input type="radio" name="detail-sort" checked={sort === "asc"} onChange={() => { setSort("asc"); search({ sort: "asc" }); }} />正序</label>
           <select aria-label="期号" value={issue} onChange={(event) => { const next = event.target.value; setIssue(next); search({ issue_no: next }); }}>

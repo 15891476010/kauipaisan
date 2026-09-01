@@ -2,7 +2,11 @@
  * components are shared with the desktop application; these rules only
  * change their arrangement and touch targets. */
 :root { color-scheme: light; }
-html, body, #root { width: 100%; min-width: 0; max-width: 100%; overflow-x: hidden; }
+/* Keep the H5 shell from handing a vertical drag at the page edge to the
+ * browser (which otherwise appears as pull-to-refresh on mobile). This is
+ * deliberately limited to overscroll chaining; normal page, textarea and
+ * nested-panel scrolling remains available. */
+html, body, #root { width: 100%; min-width: 0; max-width: 100%; overflow-x: hidden; overscroll-behavior-y: none; }
 body { background: #f3f7fb; -webkit-tap-highlight-color: transparent; }
 
 .login { min-height: 100dvh; height: 100dvh; padding: 24px; }
@@ -13,7 +17,7 @@ body { background: #f3f7fb; -webkit-tap-highlight-color: transparent; }
 .login-submit { width: 44px; height: 44px; margin-top: 14px; }
 .login-submit .anticon { font-size: 26px; }
 
-.app { min-width: 0; width: 100%; min-height: 100dvh; overflow-x: hidden; background: #f3f7fb; }
+.app { min-width: 0; width: 100%; min-height: 100dvh; overflow-x: hidden; overscroll-behavior-y: none; background: #f3f7fb; }
 .notice { height: 34px; font-size: 12px; }
 .site-header { height: auto; min-height: 0; padding: 10px 12px 8px; gap: 10px; flex-direction: column; align-items: stretch; }
 .fish-logo { display: none; }
@@ -2274,6 +2278,42 @@ table { min-width: 620px; }
   border-bottom: 1px solid #eee;
   background: #fff;
 }
+
+
+/* Full-page H5 views (查看更多 / 停押降水) own their vertical scroll area so
+   their filters and long result lists remain reachable on short phones. */
+@media (max-width: 599px) {
+  .more-panel {
+    box-sizing: border-box !important;
+    height: calc(100dvh - 42.2vw) !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
+    overscroll-behavior-y: contain !important;
+  }
+
+  .body.full-page {
+    box-sizing: border-box !important;
+    height: calc(100dvh - 42.2vw) !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
+    overscroll-behavior-y: contain !important;
+  }
+
+  .body.full-page main {
+    min-height: 100% !important;
+    height: auto !important;
+  }
+
+  .stop-drop-panel {
+    min-height: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+}
 .records-page-table {
   width: 100%;
   color: #222;
@@ -3386,12 +3426,12 @@ table { min-width: 620px; }
   .entry > .options .option-card .ant-switch,
   .entry > .options .option-card-lottery .lottery-default-switch { align-self: center !important; margin: 0 auto !important; }
   .entry.has-results > .text-entry,
-  .site-header:not(.header-collapsed) ~ .body .entry.has-results > .text-entry { height: max(40vw, calc(100svh - 94vw - min(var(--quick-result-height), 45svh) + 5.1vw)) !important; transition: height .25s ease !important; }
+  .site-header:not(.header-collapsed) ~ .body .entry.has-results > .text-entry { height: max(40vw, calc(50svh - 47vw - min(var(--quick-result-height), 22.5svh) + 2.55vw)) !important; transition: height .25s ease !important; }
   .entry.has-results > .quick-result { display: block !important; max-height: 45svh !important; overflow-y: auto !important; overflow-x: hidden !important; margin: 0 !important; padding: 0 1vw !important; }
-  .entry.has-results > .quick-result .quick-result-main { grid-template-columns: 5vw 9vw 5vw 26vw 10vw minmax(0, 1fr) !important; min-height: 7vw !important; height: auto !important; overflow: visible !important; }
-  .entry.has-results > .quick-result .quick-result-text { min-width: 0 !important; height: auto !important; min-height: 7vw !important; padding: 0 1vw !important; font-size: 3vw !important; line-height: 4.8vw !important; white-space: pre-wrap !important; overflow-wrap: anywhere !important; word-break: break-all !important; overflow: hidden !important; }
+  .entry.has-results > .quick-result .quick-result-main { grid-template-columns: 5vw 9vw 5vw 26vw 10vw minmax(0, 1fr) !important; min-height: 0 !important; height: auto !important; overflow: visible !important; }
+  .entry.has-results > .quick-result .quick-result-text { min-width: 0 !important; height: auto !important; min-height: 0 !important; padding: 4px 1vw !important; font-size: 16px !important; white-space: pre-wrap !important; overflow-wrap: anywhere !important; word-break: break-all !important; overflow: hidden !important; }
   .entry.has-results > .quick-result .quick-result-detail,
-  .entry.has-results > .quick-result .quick-result-summary { min-height: 6vw !important; height: auto !important; padding-left: 25vw !important; font-size: 3vw !important; line-height: 6vw !important; }
+  .entry.has-results > .quick-result .quick-result-summary { min-height: 0 !important; height: auto !important; padding: 4px 0 4px 25vw !important; font-size: 16px !important; }
 }
 
 /* Records with data: match reference badge/action layout and detail dialogs. */
@@ -3453,4 +3493,916 @@ table { min-width: 620px; }
   .records-text-tabs span + span { border-left: 0 !important; }
   .records-text-tabs span.selected { background: #036564 !important; color: #fff !important; }
   .records-text-modal pre { max-height: 55vh !important; margin: 0 !important; padding: 0 !important; color: #111 !important; font-family: "Microsoft YaHei", Tahoma, Helvetica, Arial, sans-serif !important; font-size: 3.6vw !important; line-height: 5.4vw !important; white-space: pre-wrap !important; overflow: auto !important; }
+}
+
+/* Final records data alignment: mirror the reference table's compact cells. */
+@media (max-width: 599px) {
+  .records-page-head {
+    background: #efefef !important;
+    border-bottom-color: #5f5f5f !important;
+  }
+
+  .records-page-row-data {
+    height: 12.4vw !important;
+    min-height: 12.4vw !important;
+  }
+
+  .records-page-row-data > .records-page-amount {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 2vw !important;
+    padding: 0 1vw !important;
+    overflow: hidden !important;
+  }
+
+  .records-page-amount > b {
+    display: inline-block !important;
+    flex: 0 1 auto !important;
+    padding: 0 !important;
+    color: #d77600 !important;
+    font-size: 3.2vw !important;
+    font-weight: 700 !important;
+    line-height: 4.8vw !important;
+    text-align: center !important;
+  }
+
+  .records-page-amount > em {
+    display: none !important;
+  }
+
+  .records-page-amount > .records-row-detail {
+    flex: 0 0 auto !important;
+    width: 11.5vw !important;
+    min-width: 11.5vw !important;
+    height: 7.2vw !important;
+    margin: 0 !important;
+  }
+
+  .records-page-issues {
+    gap: .4vw !important;
+  }
+
+  .records-issue-badge {
+    display: flex !important;
+    width: auto !important;
+    height: 5vw !important;
+    min-height: 5vw !important;
+    align-items: center !important;
+    line-height: 5vw !important;
+  }
+
+  .records-issue-badge b {
+    width: auto !important;
+    height: 5vw !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+    margin-right: 1vw !important;
+    padding: .4vw 1vw !important;
+    font-size: 2.8vw !important;
+    font-weight: 400 !important;
+    line-height: 4.2vw !important;
+  }
+
+  .records-issue-badge em {
+    font-size: 2.8vw !important;
+    font-weight: 700 !important;
+    line-height: 4.2vw !important;
+  }
+
+  .records-page-total {
+    display: grid !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    width: 100% !important;
+    height: 8vw !important;
+    min-height: 31px !important;
+    align-items: center !important;
+    background: #f5e4d8 !important;
+    border-top: 1px solid #5f5f5f !important;
+    border-bottom: 1px solid #5f5f5f !important;
+    color: #000 !important;
+    text-align: center !important;
+    font-size: 3.6vw !important;
+    line-height: 5vw !important;
+  }
+
+  .records-page-total > span {
+    display: flex !important;
+    height: 100% !important;
+    align-items: center !important;
+    justify-content: center !important;
+    box-sizing: border-box !important;
+    border-left: 1px solid #5f5f5f !important;
+  }
+
+  .records-page-total > span:first-child {
+    border-left: 0 !important;
+  }
+
+  .records-page-total > span:nth-child(2) {
+    color: #d77600 !important;
+    font-weight: 700 !important;
+  }
+}
+
+
+/* Detail dialog geometry and grouped bet rows mirror the reference Ant Design layout. */
+@media (max-width: 599px) {
+  .records-detail-wrap {
+    display: flex;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 0 !important;
+    overflow: auto !important;
+  }
+
+  .records-detail-modal.ant-modal {
+    width: calc(100vw - 32px) !important;
+    max-width: calc(100vw - 32px) !important;
+    top: 0 !important;
+    margin: 0 !important;
+    padding: 0 0 24px !important;
+  }
+
+  .records-detail-modal .ant-modal-container {
+    padding: 0 !important;
+    border-radius: 4px !important;
+    background: #fff !important;
+  }
+
+  .records-detail-modal .ant-modal-header {
+    height: 55px !important;
+    margin: 0 !important;
+    padding: 16px 24px !important;
+    border-bottom: 1px solid #e8e8e8 !important;
+    border-radius: 4px 4px 0 0 !important;
+    background: #fff !important;
+  }
+
+  .records-detail-modal .ant-modal-title {
+    font-size: 16px !important;
+    line-height: 22px !important;
+  }
+
+  .records-detail-modal .ant-modal-body {
+    max-height: 60vh !important;
+    padding: 15.72px 11.79px !important;
+    overflow: auto !important;
+  }
+
+  .records-detail-modal .ant-modal-footer {
+    height: 49.28px !important;
+    margin: 0 !important;
+    padding: 10px 16px !important;
+    border-top: 1px solid #e8e8e8 !important;
+  }
+
+  .records-detail-modal .record-detail-content {
+    width: 100% !important;
+    overflow: visible !important;
+  }
+
+  .records-detail-modal .record-detail-tabs {
+    display: flex !important;
+    width: 100% !important;
+    height: 23.58px !important;
+    align-items: stretch !important;
+    gap: 0 !important;
+    margin: 0 0 3.93px !important;
+  }
+
+  .records-detail-modal .record-detail-tabs span {
+    display: inline-flex !important;
+    width: 21.5vw !important;
+    min-width: 21.5vw !important;
+    height: 23.58px !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 0 !important;
+    border: 1px solid #036564 !important;
+    background: #036564 !important;
+    color: #fff !important;
+    font-size: 3.2vw !important;
+    line-height: 22px !important;
+    text-align: center !important;
+  }
+
+  .records-detail-modal .record-detail-tabs span + span {
+    border-left: 0 !important;
+  }
+
+  .records-detail-modal .record-detail-code-body {
+    width: 100% !important;
+    color: rgba(0, 0, 0, .65) !important;
+    font-size: 2vw !important;
+    line-height: 3vw !important;
+  }
+
+  .records-detail-modal .record-detail-lottery {
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+  }
+
+  .records-detail-modal .record-detail-lottery > h5 {
+    height: 32.42px !important;
+    margin: 3.93px 0 !important;
+    padding: 3.93px 0 !important;
+    border-bottom: 1px solid #036564 !important;
+    color: #036564 !important;
+    font-size: 4vw !important;
+    font-weight: 700 !important;
+    line-height: 23.58px !important;
+  }
+
+  .records-detail-modal .record-detail-play-group > label {
+    display: block !important;
+    width: 100% !important;
+    height: 25.12px !important;
+    box-sizing: border-box !important;
+    margin: 0 0 3.93px !important;
+    padding: 3.93px 11.79px 0 !important;
+    color: #036564 !important;
+    font-size: 3.6vw !important;
+    line-height: 21.22px !important;
+  }
+
+  .records-detail-modal .record-detail-data {
+    display: flex !important;
+    width: 100% !important;
+    flex-direction: column !important;
+    border-left: 1px solid #6f6f6f !important;
+  }
+
+  .records-detail-modal .record-detail-sub-header,
+  .records-detail-modal .record-detail-data-row {
+    display: grid !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    width: 100% !important;
+    min-height: 36.14px !important;
+    height: 36.14px !important;
+    align-items: center !important;
+    box-sizing: border-box !important;
+  }
+
+  .records-detail-modal .record-detail-sub-header {
+    border-top: 1px solid #6f6f6f !important;
+    border-bottom: 1px solid #6f6f6f !important;
+    background: #6f6f6f !important;
+    color: #fff !important;
+  }
+
+  .records-detail-modal .record-detail-data-row {
+    border-bottom: 1px solid #6f6f6f !important;
+    color: #000 !important;
+    font-size: 3.2vw !important;
+    font-weight: 700 !important;
+  }
+
+  .records-detail-modal .record-detail-sub-header > span,
+  .records-detail-modal .record-detail-data-row > span {
+    display: flex !important;
+    width: auto !important;
+    height: 100% !important;
+    align-items: center !important;
+    justify-content: center !important;
+    box-sizing: border-box !important;
+    padding: 0 !important;
+    border-right: 1px solid #6f6f6f !important;
+    text-align: center !important;
+  }
+
+  .records-detail-modal .record-detail-sub-header > span {
+    font-size: 3.2vw !important;
+    font-weight: 400 !important;
+  }
+
+  .records-detail-modal .record-detail-data-row > span:last-child,
+  .records-detail-modal .record-detail-sub-header > span:last-child {
+    border-right: 0 !important;
+  }
+
+  .records-detail-modal .record-detail-number {
+    display: block !important;
+    font-size: 3.2vw !important;
+    font-weight: 700 !important;
+    line-height: 4.8vw !important;
+    white-space: nowrap !important;
+  }
+
+  .records-detail-modal .record-detail-number label,
+  .records-detail-modal .record-detail-number em {
+    display: inline !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    font-size: inherit !important;
+    font-style: normal !important;
+    line-height: inherit !important;
+  }
+
+  .records-detail-modal .record-detail-number em {
+    margin-left: .4vw !important;
+    color: red !important;
+  }
+}
+
+
+/* Text detail dialog follows the reference info-confirm layout. */
+@media (max-width: 599px) {
+  .records-text-wrap {
+    display: flex;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 0 !important;
+    overflow: auto !important;
+  }
+
+  .records-text-modal.ant-modal {
+    width: calc(100vw - 32px) !important;
+    max-width: calc(100vw - 32px) !important;
+    top: 0 !important;
+    margin: 0 !important;
+    padding: 0 0 24px !important;
+  }
+
+  .records-text-modal .ant-modal-container {
+    padding: 0 !important;
+    border-radius: 4px !important;
+    background: #fff !important;
+  }
+
+  .records-text-modal .ant-modal-header {
+    display: none !important;
+  }
+
+  .records-text-modal .ant-modal-body {
+    max-height: 70vh !important;
+    padding: 15.72px 11.79px !important;
+    overflow: auto !important;
+  }
+
+  .records-text-title {
+    display: flex !important;
+    min-height: 24.75px !important;
+    align-items: center !important;
+    margin: 0 !important;
+    color: rgba(0, 0, 0, .85) !important;
+    font-size: 17.68px !important;
+    line-height: 24.75px !important;
+  }
+
+  .records-text-title .anticon {
+    flex: 0 0 auto !important;
+    margin-right: 16px !important;
+    color: #1890ff !important;
+    font-size: 15.72px !important;
+  }
+
+  .records-text-tabs {
+    margin: 8px 0 10px !important;
+  }
+
+  .records-text-modal pre {
+    max-height: 45vh !important;
+    color: #000 !important;
+    font-size: 18.86px !important;
+    line-height: 28.3px !important;
+  }
+
+  .records-text-modal .ant-modal-footer {
+    height: auto !important;
+    margin: 0 !important;
+    padding: 10px 16px !important;
+    border-top: 0 !important;
+  }
+}
+
+
+@media (max-width: 599px) {
+  .records-detail-modal .record-detail-data-row > span {
+    overflow: hidden !important;
+    white-space: nowrap !important;
+    text-overflow: ellipsis !important;
+  }
+
+  .records-detail-modal .record-detail-data-row > span:nth-child(1) {
+    color: #000 !important;
+    font-weight: 700 !important;
+  }
+
+  .records-detail-modal .record-detail-data-row > span:nth-child(2) {
+    color: #00008b !important;
+    font-weight: 700 !important;
+  }
+
+  .records-detail-modal .record-detail-data-row > span:nth-child(3) {
+    color: #ff8c00 !important;
+    font-weight: 700 !important;
+  }
+
+  .records-detail-modal .record-detail-data-row > span:nth-child(4) {
+    color: #000 !important;
+    font-weight: 400 !important;
+  }
+}
+
+/* Let the records page use the same full-page touch scroll as the reference H5. */
+@media (max-width: 599px) {
+  .records-page-table-wrap {
+    max-height: none !important;
+    overflow: visible !important;
+    -webkit-overflow-scrolling: auto !important;
+    overscroll-behavior-y: auto !important;
+    touch-action: auto !important;
+  }
+}
+
+
+/* Final mobile safe-area pass: use the browser's small visual viewport so
+   dynamic address/tool bars cannot cover the bottom of the H5 content. */
+:root {
+  --h5-safe-top: env(safe-area-inset-top, 0px);
+  --h5-safe-right: env(safe-area-inset-right, 0px);
+  --h5-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --h5-safe-left: env(safe-area-inset-left, 0px);
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+@media (max-width: 599px) {
+  .app,
+  .login,
+  .agreement-page {
+    min-height: 100svh !important;
+  }
+
+  .login {
+    height: 100svh !important;
+    padding-bottom: max(24px, var(--h5-safe-bottom)) !important;
+  }
+
+  .agreement-page {
+    min-height: 100svh !important;
+    padding-bottom: max(52px, var(--h5-safe-bottom)) !important;
+  }
+
+  .agreement-card {
+    min-height: calc(100svh - 2px) !important;
+    padding-bottom: max(56px, calc(56px + var(--h5-safe-bottom))) !important;
+  }
+
+  .body,
+  .body main,
+  .body.full-page main,
+  .entry {
+    min-height: calc(100svh - 42.2vw - var(--h5-safe-bottom)) !important;
+  }
+
+  .body {
+    padding-bottom: max(8px, var(--h5-safe-bottom)) !important;
+  }
+
+  .site-header.header-collapsed ~ .body,
+  .site-header.header-collapsed ~ .body main,
+  .site-header.header-collapsed ~ .body.full-page main,
+  .site-header.header-collapsed ~ .body .entry {
+    min-height: calc(100svh - 10vw - var(--h5-safe-bottom)) !important;
+  }
+
+  .site-header:not(.header-collapsed) ~ .body .entry > .text-entry {
+    height: calc(100svh - 94vw - var(--h5-safe-bottom)) !important;
+  }
+
+  .site-header.header-collapsed ~ .body .entry > .text-entry {
+    height: calc(100svh - 61.8vw - var(--h5-safe-bottom)) !important;
+  }
+
+  .entry:not(.has-results) > .text-entry {
+    height: calc(100svh - 94vw - var(--h5-safe-bottom)) !important;
+  }
+
+  .entry.has-results > .text-entry,
+  .site-header:not(.header-collapsed) ~ .body .entry.has-results > .text-entry {
+    height: max(
+      40vw,
+      calc(50svh - 47vw - min(var(--quick-result-height), 22.5svh) + 2.55vw - var(--h5-safe-bottom))
+    ) !important;
+  }
+
+  .entry.has-results > .quick-result {
+    max-height: calc(45svh - var(--h5-safe-bottom)) !important;
+    padding-bottom: max(0px, var(--h5-safe-bottom)) !important;
+    scroll-padding-bottom: var(--h5-safe-bottom) !important;
+  }
+
+  .more-panel {
+    height: calc(100svh - 42.2vw - var(--h5-safe-bottom)) !important;
+    min-height: 0 !important;
+    padding-bottom: max(20px, var(--h5-safe-bottom)) !important;
+    scroll-padding-bottom: var(--h5-safe-bottom) !important;
+  }
+
+  .body.full-page {
+    height: calc(100svh - 42.2vw - var(--h5-safe-bottom)) !important;
+    min-height: 0 !important;
+    padding-bottom: max(8px, var(--h5-safe-bottom)) !important;
+    scroll-padding-bottom: var(--h5-safe-bottom) !important;
+  }
+
+  .stop-drop-panel {
+    min-height: calc(100svh - 42.2vw - var(--h5-safe-bottom)) !important;
+    padding-bottom: max(20px, var(--h5-safe-bottom)) !important;
+  }
+
+  .records-page {
+    min-height: calc(100svh - 42.2vw - var(--h5-safe-bottom)) !important;
+    padding-bottom: max(12px, var(--h5-safe-bottom)) !important;
+  }
+
+  .records-page-table-wrap {
+    padding-bottom: max(8px, var(--h5-safe-bottom)) !important;
+    scroll-padding-bottom: var(--h5-safe-bottom) !important;
+  }
+
+  .line-overlay {
+    height: 100svh !important;
+    min-height: 100svh !important;
+    padding-bottom: var(--h5-safe-bottom) !important;
+    box-sizing: border-box !important;
+  }
+
+  .line-container {
+    max-height: calc(100svh - 24px - var(--h5-safe-bottom)) !important;
+  }
+
+  .ant-modal-body {
+    max-height: calc(72svh - var(--h5-safe-bottom)) !important;
+  }
+
+  .warm {
+    bottom: var(--h5-safe-bottom) !important;
+    padding-bottom: var(--h5-safe-bottom) !important;
+  }
+}
+
+
+/* Records pagination: match the reference compact custom Ant Design scale. */
+@media (max-width: 599px) {
+  .records-page-pagination {
+    height: 8vw !important;
+    min-height: 8vw !important;
+    margin-top: 0 !important;
+    padding: 0 !important;
+    gap: 0 !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    font-size: 3.4vw !important;
+    line-height: 8vw !important;
+  }
+
+  .records-page-pagination > span:first-child,
+  .records-page-pagination > span:nth-child(3) {
+    height: auto !important;
+    margin: 0 2vw !important;
+    color: #000 !important;
+    font-size: 3.4vw !important;
+    line-height: 8vw !important;
+  }
+
+  .records-page-number {
+    width: 6.8vw !important;
+    min-width: 6.8vw !important;
+    height: 6.8vw !important;
+    min-height: 6.8vw !important;
+    margin: 0 .6vw !important;
+    padding: 0 1vw !important;
+    border: .2vw solid darkblue !important;
+    border-radius: .8vw !important;
+    background: #3e3eeb !important;
+    color: #fff !important;
+    font-size: 4vw !important;
+    line-height: 6.4vw !important;
+    text-align: center !important;
+  }
+
+  .records-page-nav {
+    display: inline-flex !important;
+    height: 6.8vw !important;
+    align-items: center !important;
+    gap: 0 !important;
+    margin-left: .6vw !important;
+  }
+
+  .records-page-nav button {
+    width: 6.8vw !important;
+    min-width: 6.8vw !important;
+    height: 6.8vw !important;
+    margin: 0 .6vw !important;
+    padding: 0 !important;
+    border: .2vw solid #d9d9d9 !important;
+    border-radius: .8vw !important;
+    background: #fff !important;
+    color: rgba(0, 0, 0, .65) !important;
+    font-size: 4vw !important;
+    line-height: 6.4vw !important;
+    text-align: center !important;
+  }
+
+  .records-page-nav button:disabled {
+    display: none !important;
+  }
+}
+
+
+/* Keep long recognition results inside the remaining viewport.  The result
+   panel is the only touch-scroll owner; the page itself must not reflow it
+   after a gesture ends. */
+@media (max-width: 599px) {
+  .entry.has-results {
+    display: flex !important;
+    height: calc(100svh - 42.2vw - var(--h5-safe-bottom)) !important;
+    min-height: calc(100svh - 42.2vw - var(--h5-safe-bottom)) !important;
+    max-height: calc(100svh - 42.2vw - var(--h5-safe-bottom)) !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+    overscroll-behavior-y: none !important;
+  }
+
+  .entry.has-results > .quick-result {
+    flex: 1 1 auto !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow-y: scroll !important;
+    overflow-x: hidden !important;
+    overscroll-behavior-y: contain !important;
+    -webkit-overflow-scrolling: touch !important;
+    touch-action: pan-y !important;
+    overflow-anchor: none !important;
+    scroll-padding-bottom: max(8px, var(--h5-safe-bottom)) !important;
+    padding-bottom: max(8px, var(--h5-safe-bottom)) !important;
+  }
+
+  .entry.has-results > .quick-result .quick-result-main {
+    flex: 0 0 auto !important;
+  }
+}
+
+
+/* Bind the H5 shell to the actual visual viewport reported by mobile
+   Chromium/Edge. This prevents address-bar expansion from covering content
+   and leaves scrolling to the page's intended inner hosts. */
+:root {
+  --h5-viewport-height: 100svh;
+}
+
+@media (max-width: 599px) {
+  html,
+  body,
+  #root {
+    height: var(--h5-viewport-height) !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+  }
+
+  .app {
+    height: var(--h5-viewport-height) !important;
+    min-height: var(--h5-viewport-height) !important;
+    max-height: var(--h5-viewport-height) !important;
+    overflow: hidden !important;
+  }
+
+  .body:not(.full-page) {
+    height: calc(var(--h5-viewport-height) - 42.2vw - var(--h5-safe-bottom)) !important;
+    min-height: 0 !important;
+    max-height: calc(var(--h5-viewport-height) - 42.2vw - var(--h5-safe-bottom)) !important;
+    overflow: hidden !important;
+  }
+
+  .site-header.header-collapsed ~ .body:not(.full-page) {
+    height: calc(var(--h5-viewport-height) - 10vw - var(--h5-safe-bottom)) !important;
+    max-height: calc(var(--h5-viewport-height) - 10vw - var(--h5-safe-bottom)) !important;
+  }
+
+  .body.full-page {
+    height: calc(var(--h5-viewport-height) - 42.2vw - var(--h5-safe-bottom)) !important;
+    min-height: 0 !important;
+    max-height: calc(var(--h5-viewport-height) - 42.2vw - var(--h5-safe-bottom)) !important;
+  }
+
+  .body.full-page main {
+    min-height: 100% !important;
+    height: auto !important;
+  }
+
+  .entry.has-results {
+    height: 100% !important;
+    min-height: 0 !important;
+    max-height: none !important;
+  }
+
+  .entry.has-results > .quick-result {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    padding-bottom: max(8px, var(--h5-safe-bottom)) !important;
+  }
+
+  .more-panel,
+  .records-page,
+  .stop-drop-panel {
+    max-height: 100% !important;
+  }
+}
+
+
+/* The result entry must retain the measured viewport height; percentage
+   heights resolve against an auto-sized main on long content. */
+@media (max-width: 599px) {
+  .entry.has-results {
+    height: calc(var(--h5-viewport-height) - 42.2vw - var(--h5-safe-bottom)) !important;
+    min-height: calc(var(--h5-viewport-height) - 42.2vw - var(--h5-safe-bottom)) !important;
+    max-height: calc(var(--h5-viewport-height) - 42.2vw - var(--h5-safe-bottom)) !important;
+  }
+}
+
+
+
+/* Android Chromium is more stable when a flex scroller has a zero content
+   basis; otherwise the long textarea can re-enter flex sizing on touch end. */
+@media (max-width: 599px) {
+  .entry.has-results > .quick-result {
+    flex: 1 1 0 !important;
+    height: 0 !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    position: relative !important;
+    contain: layout paint !important;
+    will-change: scroll-position !important;
+    transform: translateZ(0) !important;
+  }
+}
+
+
+/* Mobile home must keep the bet-records aside below the quick-entry area.
+   The previous H5 rule hid it entirely, removing 详/号/退 actions. */
+@media (max-width: 599px) {
+  .body:not(.full-page) {
+    display: flex !important;
+    flex-direction: column !important;
+    height: calc(var(--h5-viewport-height) - 42.2vw - var(--h5-safe-bottom)) !important;
+    min-height: 0 !important;
+    max-height: calc(var(--h5-viewport-height) - 42.2vw - var(--h5-safe-bottom)) !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    overscroll-behavior-y: contain !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+
+  .body:not(.full-page) main {
+    order: 1 !important;
+    flex: 0 0 auto !important;
+    width: 100% !important;
+    min-height: calc(var(--h5-viewport-height) - 42.2vw - var(--h5-safe-bottom)) !important;
+  }
+
+  .body:not(.full-page) aside {
+    display: block !important;
+    order: 2 !important;
+    width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    background: #fff !important;
+  }
+
+  .body:not(.full-page) aside .side-record-list {
+    max-height: 268px !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    overscroll-behavior-y: contain !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+
+  .body:not(.full-page) aside .side-record-item {
+    flex: 0 0 auto !important;
+  }
+}
+
+
+/* Override the legacy bottom-docked mobile aside: records must flow below
+   the quick-entry main instead of being clipped to the total bar. */
+@media (max-width: 599px) {
+  .body:not(.full-page) aside {
+    position: static !important;
+    display: block !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  .body:not(.full-page) aside .side-record-list {
+    display: block !important;
+    height: auto !important;
+    max-height: 268px !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    overscroll-behavior-y: contain !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+
+  .body:not(.full-page) aside .side-total {
+    position: static !important;
+    height: 42px !important;
+    min-height: 42px !important;
+  }
+}
+
+
+@media (max-width: 599px) {
+  .body:not(.full-page) aside {
+    flex: 0 0 auto !important;
+  }
+}
+
+
+/* Match the PC record palette on mobile: normal records stay gray/white;
+   only refunded records use the refunded pink background. */
+@media (max-width: 599px) {
+  .body:not(.full-page) aside .side-record-item {
+    border-bottom: 1px solid #3144a7 !important;
+    background: #d9d9d9 !important;
+    color: #080808 !important;
+  }
+
+  .body:not(.full-page) aside .side-record-item > time {
+    background: #fff !important;
+    color: #222 !important;
+  }
+
+  .body:not(.full-page) aside .side-record-item .side-record-text {
+    background: #d9d9d9 !important;
+    color: #080808 !important;
+  }
+
+  .body:not(.full-page) aside .side-record-item footer {
+    background: #fff !important;
+  }
+
+  .body:not(.full-page) aside .side-record-item.refunded {
+    background: #f5d3d7 !important;
+  }
+
+  .body:not(.full-page) aside .side-record-item.refunded > time,
+  .body:not(.full-page) aside .side-record-item.refunded .side-record-text,
+  .body:not(.full-page) aside .side-record-item.refunded footer {
+    background: #f5d3d7 !important;
+  }
+
+  .body:not(.full-page) aside .side-record-item .side-record-action.detail {
+    background: #087e0b !important;
+    color: #fff !important;
+  }
+
+  .body:not(.full-page) aside .side-record-item .side-record-action.numbers {
+    background: #ffe5cf !important;
+    color: #80502d !important;
+  }
+
+  .body:not(.full-page) aside .side-record-item .side-record-action.refund {
+    background: #c2212b !important;
+    color: #fff !important;
+  }
+}
+
+
+/* Align quick-entry side actions directly after the option cards, as in /kp. */
+@media (max-width: 599px) {
+  .body:not(.full-page) aside {
+    margin-top: -13vw !important;
+  }
+}
+
+
+/* The H5 quick-entry header already renders the A - A board box. Hide the
+   desktop-only duplicate text label from the mobile action row. */
+@media (max-width: 599px) {
+  .entry > .actions > .action-board-label {
+    display: none !important;
+  }
+}
+
+/* H5 already shows the A - A board box above the actions. Hide the
+   duplicate desktop action label at every H5 viewport width. */
+.entry > .actions > .action-board-label {
+  display: none !important;
 }

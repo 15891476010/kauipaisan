@@ -42,12 +42,15 @@ export function QuickEntryPage({
   const [rulesOpen, setRulesOpen] = useState(false);
   const [ruleSettings, setRuleSettings] = useState<RuleSettings>();
   const [lottery, setLottery] = useState("福彩3D");
+  const [boardCode, setBoardCode] = useState("A");
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1_000);
     return () => window.clearInterval(timer);
   }, []);
   const timing = lotteryTiming(selectedLottery, now);
+  const boardOptions = selectedLottery?.boards || [{ code: selectedLottery?.board_code || "A", name: `${selectedLottery?.board_code || "A"}盘` }];
+  useEffect(() => { if (selectedLottery?.board_code) setBoardCode(selectedLottery.board_code); else if (!boardOptions.some((item) => item.code === boardCode)) setBoardCode(boardOptions[0]?.code || "A"); }, [selectedLottery?.id, selectedLottery?.board_code, boardOptions.length]);
   const showMask = tab === "快速录入" && timing.mask;
   const [generatedLines, setGeneratedLines] = useState<QuickEntryLine[]>([]);
   const [generatedTotal, setGeneratedTotal] = useState({
@@ -84,7 +87,7 @@ export function QuickEntryPage({
         if (!data) return;
         setTags(data.tags || []);
         const p = data.preferences || {};
-        setLottery(String(p.lottery || lotteries[0]?.name || "福彩3D"));
+        setLottery(String(p.lottery || lotteries.find((item) => item.name === "福彩3D")?.name || lotteries[0]?.name || "福彩3D"));
         setWarningAmount(String(p.warningAmount || "0"));
         setOptions([
           p.autoBet !== false,
@@ -138,7 +141,7 @@ export function QuickEntryPage({
     setGenerating(true);
     const requestId = ++previewRequestId.current;
     try {
-      const response = await previewQuickEntry({ text: sourceText, lottery });
+      const response = await previewQuickEntry({ text: sourceText, lottery, board_code: boardCode });
       const data = response.data?.data || null;
       if (requestId !== previewRequestId.current) return data;
       setGeneratedLines(data?.lines || []);
@@ -173,7 +176,7 @@ export function QuickEntryPage({
       void generateText(text, false);
     }, 450);
     return () => window.clearTimeout(timer);
-  }, [text, options[1], lottery]);
+  }, [text, options[1], lottery, boardCode]);
   const copyTicket = async (
     sourceText: string,
     lines: QuickEntryLine[],
@@ -205,6 +208,13 @@ export function QuickEntryPage({
       message.warning(timing.status || "当前时间段不可下注");
       return false;
     }
+    const mismatched = preview.lines.some((line) => line.status === "failed" && Boolean(
+      line.suggested_amount || /总金额|金额需确认|不一致|对不上/.test(line.reason || ""),
+    ));
+    if (mismatched) {
+      if (showSuccess) message.warning("金额不一致，请先点击注单行中的对号进行人工确认");
+      return false;
+    }
     const valid = preview.lines.filter((line) => line.status === "success");
     if (!valid.length) {
       if (showSuccess) message.warning("请先生成有效投注内容");
@@ -214,6 +224,7 @@ export function QuickEntryPage({
       const response = await placeQuickEntry({
         text: sourceText,
         lottery,
+        board_code: boardCode,
         confirmed: true,
       });
       if (showSuccess)
@@ -265,6 +276,12 @@ export function QuickEntryPage({
       amount: generatedTotal.amount,
       formatted_text: text,
     };
+    if (preview.lines.some((line) => line.status === "failed" && Boolean(
+      line.suggested_amount || /总金额|金额需确认|不一致|对不上/.test(line.reason || ""),
+    ))) {
+      modal.warning({ title: "需要人工确认", content: "检测到整张注单金额与识别结果不一致，请先点击对应注单行的对号确认修正金额。", okText: "确认" });
+      return;
+    }
     if (!preview.lines.some((line) => line.status === "success")) {
       modal.warning({ title: "无法下注", content: "请先生成有效投注内容", okText: "确认" });
       return;
@@ -410,7 +427,7 @@ export function QuickEntryPage({
             ))}
             <label className="option-card option-card-lottery">
               <span className="option-label">默认彩种</span>
-              {lotteries.map((item) => {
+              {[...lotteries].sort((left, right) => (left.name === "福彩3D" ? -1 : right.name === "福彩3D" ? 1 : 0)).map((item) => {
                 const tone = item.name === "排列三" ? "ti" : "fu";
                 return (
                   <b
@@ -446,6 +463,7 @@ export function QuickEntryPage({
             >
               规则说明
             </button>
+            <label className="action-board-label">盘口<select aria-label="盘口" value={boardCode} onChange={(event) => { setBoardCode(event.target.value); setGeneratedLines([]); }} disabled={boardOptions.length <= 1}>{boardOptions.map((item) => <option key={item.code} value={item.code}>{item.name} - {item.code}</option>)}</select></label>
             <span className="action-separator" aria-hidden="true" />
             <span className="action-total">
               <span>
@@ -479,8 +497,21 @@ export function QuickEntryPage({
             lines={generatedLines}
             sourceText={text}
             onConfirmMismatch={(line) => {
-              const corrected = line.corrected_text;
-              if (!corrected) return;
+              const source = line.input_text || line.raw_text || text;
+              let corrected = line.corrected_text;
+              // Some parser branches provide the suggested total without a
+              // rewritten text. Build the replacement here so confirmation
+              // always performs a concrete correction.
+              if ((!corrected || corrected === source) && line.suggested_amount) {
+                corrected = source.replace(
+                  /((?:合计|共计|总计|合|共|计)\s*)\d+(?:\.\d+)?(?=\s*(?:元|米|块|角|毛|快)?\s*$)/u,
+                  `$1${line.suggested_amount}`,
+                );
+              }
+              if (!corrected || corrected === source) {
+                modal.warning({ title: "需要人工确认", content: "识别金额与原文不一致，请直接修改金额后重新生成。", okText: "确认" });
+                return;
+              }
               suppressResultRecognition.current = true;
               setText(corrected);
               void generateText(corrected);

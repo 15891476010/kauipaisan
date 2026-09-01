@@ -34,6 +34,7 @@ export function MorePanel({
   const [selectedDay, setSelectedDay] = useState(dateOptions[0]?.day || today);
   const [source, setSource] = useState("");
   const [board, setBoard] = useState("all");
+  const boardOptions = Array.from(new Map(lotteries.flatMap((lottery) => lottery.boards || []).map((item) => [item.code, item] as const)).values());
   const [onlyRefunded, setOnlyRefunded] = useState(false);
   const [records, setRecords] = useState<BetRecord[]>([]);
   const [amountTotal, setAmountTotal] = useState("0.00");
@@ -109,7 +110,7 @@ export function MorePanel({
         <label className="more-field more-board-field">
           <span>盘口</span>
           <select value={board} onChange={(event) => { setBoard(event.target.value); setPage(1); }}>
-            <option value="all">全部</option><option value="A">A盘 - A</option><option value="B">B盘 - B</option><option value="C">C盘 - C</option><option value="D">D盘 - D</option>
+            <option value="all">全部</option>{boardOptions.map((item) => <option key={item.code} value={item.code}>{item.name} - {item.code}</option>)}
           </select>
         </label>
         <label className="more-field more-text-field">

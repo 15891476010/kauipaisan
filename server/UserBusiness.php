@@ -158,42 +158,33 @@ final class UserBusiness
     {
         $s=$this->session($request); [$from,$to]=$this->range($request);
         if (!$this->betSubmissionsAvailable()) {
-            $query=Db::name('bet_records')->where('site_id',$s['site_id'])->where('user_id',$s['user_id'])->where('board_code',$this->resolveBoardCode($s,$request->param('board_code',$request->param('board','A'))));
+            $query=Db::name('bet_records')->where('site_id',$s['site_id'])->where('user_id',$s['user_id']);
             if ($from) $query->where('placed_at','>=',$from); if ($to) $query->where('placed_at','<=',$to);
             $status=(string)$request->param('status',''); if (in_array($status,['won','unwon'],true)) $query->where('status',$status);
             $source=trim((string)$request->param('source','')); if ($source !== '') $query->where(function($nested)use($source):void{$nested->whereLike('source_text','%'.$source.'%');});
             $total=(clone $query)->count(); $amountTotal=(float)(clone $query)->sum('amount'); $page=max(1,(int)$request->param('page',1)); $size=min(100,max(1,(int)$request->param('page_size',20)));
             $list=$query->order('placed_at','desc')->page($page,$size)->select()->toArray();
-            $boardNames=[];
-            foreach (Db::name('lottery_boards')->where('tenant_id',(int)$s['tenant_id'])->field('code,name')->select()->toArray() as $board) $boardNames[(string)$board['code']]=(string)($board['name']??'');
             foreach ($list as &$record) {
                 $refundState=$this->betSubmissionRefundState($record);
                 $record['lottery']=$refundState['lottery'];
                 $record['open_time']=$refundState['open_time'];
                 $record['can_refund']=$refundState['can_refund'];
-                $record['board_code']=(string)($record['board_code']??'A');
-                $record['board_name']=trim((string)($boardNames[$record['board_code']]??'')) ?: ($record['board_code'].'盘');
                 $record['amount']=number_format((float)$record['amount'],2,'.','');
                 $record['win_amount']=number_format((float)$record['win_amount'],2,'.','');
             }
             return $this->reply(['list'=>$list,'total'=>$total,'amount_total'=>number_format($amountTotal,2,'.',''),'page'=>$page,'page_size'=>$size]);
         }
-        $boardCode=$this->resolveBoardCode($s,$request->param('board_code',$request->param('board','A')));
-        $query=Db::name('bet_submissions')->where('site_id',$s['site_id'])->where('user_id',$s['user_id'])->where('board_code',$boardCode);
+        $query=Db::name('bet_submissions')->where('site_id',$s['site_id'])->where('user_id',$s['user_id']);
         if ($from) $query->where('placed_at','>=',$from); if ($to) $query->where('placed_at','<=',$to);
         $status=(string)$request->param('status',''); if (in_array($status,['won','unwon'],true)) $query->where('status',$status);
         $source=trim((string)$request->param('source','')); if ($source !== '') $query->where(function($nested)use($source):void{$nested->whereLike('source_text','%'.$source.'%');});
         $total=(clone $query)->count(); $amountTotal=(float)(clone $query)->sum('amount'); $page=max(1,(int)$request->param('page',1)); $size=min(100,max(1,(int)$request->param('page_size',20)));
         $list=$query->order('placed_at','desc')->page($page,$size)->select()->toArray();
-        $boardNames=[];
-        foreach (Db::name('lottery_boards')->where('tenant_id',(int)$s['tenant_id'])->field('code,name')->select()->toArray() as $board) $boardNames[(string)$board['code']]=(string)($board['name']??'');
         foreach ($list as &$record) {
             $refundState=$this->betSubmissionRefundState($record);
             $record['lottery']=$refundState['lottery'];
             $record['open_time']=$refundState['open_time'];
             $record['can_refund']=$refundState['can_refund'];
-            $record['board_code']=(string)($record['board_code']??$boardCode);
-            $record['board_name']=trim((string)($boardNames[$record['board_code']]??'')) ?: ($record['board_code'].'盘');
             $record['amount']=number_format((float)$record['amount'],2,'.','');
             $record['win_amount']=number_format((float)$record['win_amount'],2,'.','');
         }

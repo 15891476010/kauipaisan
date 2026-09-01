@@ -149,7 +149,7 @@ final class BetSettlement
             return [$odds,false];
         }
         if(($stop['actual_odds']??null)!==null&&(float)$stop['actual_odds']>0)return [(float)$stop['actual_odds'],true];
-        $row=$this->uniqueLegacyOddsRow($lotteryId,(string)($detail['source_text']??''));
+        $row=$this->uniqueLegacyOddsRow($lotteryId,(string)($detail['source_text']??''),(string)($detail['board_code']??'A'));
         if($row===[])throw new \RuntimeException('历史注单明细 #'.(int)$detail['id'].' 缺少锁定赔率，且无法唯一匹配旧赔率，已停止整单结算');
         $odds=(float)$row['odds'];
         if($odds<=0)throw new \RuntimeException('历史注单明细 #'.(int)$detail['id'].' 回退赔率无效，已停止整单结算');
@@ -157,16 +157,17 @@ final class BetSettlement
     }
 
     /** @return array<string,mixed> */
-    private function uniqueLegacyOddsRow(int $lotteryId,string $source): array
+    private function uniqueLegacyOddsRow(int $lotteryId,string $source,string $boardCode='A'): array
     {
+        $boardCode=$this->normalizeBoardCode($boardCode);
         $identity=(new QuickEntryRules())->oddsIdentity($source);
         if($identity===null)return [];
         if($identity['direct']){
-            $rows=Db::name('lottery_odds_categories')->where('lottery_id',$lotteryId)
+            $rows=Db::name('lottery_odds_categories')->where('lottery_id',$lotteryId)->where('board_code',$boardCode)
                 ->where('name',$identity['category'])->where('status',1)->where('is_playable',1)
                 ->whereNull('deleted_at')->select()->toArray();
         }else{
-            $rows=Db::name('lottery_odds')->where('lottery_id',$lotteryId)
+            $rows=Db::name('lottery_odds')->where('lottery_id',$lotteryId)->where('board_code',$boardCode)
                 ->where('category',$identity['category'])->where('name',$identity['name'])
                 ->where('status',1)->whereNull('deleted_at')->select()->toArray();
         }
@@ -244,6 +245,17 @@ final class BetSettlement
         // per-number stake before applying the odds; otherwise one hit would
         // incorrectly pay total_detail_amount × odds.
         $positionCount=$this->positionCombinationCount($source);
+        // Position selections are sometimes persisted as one token per
+        // position (e.g. “百位… 十位… 个位…”). They represent one compact
+        // expression with N generated combinations, not three independent
+        // bets. Merge those marker tokens before matching and payout.
+        if ($positionCount > 1 && $numberCount > 1) {
+            $markerTokens = array_filter($numbers, static fn(string $number): bool => preg_match('/[百十个]/u', $number) === 1);
+            if (count($markerTokens) === $numberCount) {
+                $numbers = [implode(' ', $numbers)];
+                $numberCount = 1;
+            }
+        }
         $stake=$positionCount>1&&$numberCount===1?$amount/$positionCount:$amount/$numberCount;
         $matched=0;
         foreach($numbers as $number)if($this->matches($number,$draw,$source))$matched++;
@@ -255,7 +267,7 @@ final class BetSettlement
     {
         $counts=[];
         foreach (['百','十','个'] as $marker) {
-            if (!preg_match('/'.$marker.'\s*([0-9]+)/u', $source, $match)) continue;
+            if (!preg_match('/'.$marker.'\s*(?:位)?\s*([0-9]+)/u', $source, $match)) continue;
             $digits=array_values(array_unique(str_split((string)$match[1])));
             if ($digits !== []) $counts[] = count($digits);
         }
@@ -516,19 +528,20 @@ final class BetSettlement
         return strlen($draw) === 3 && $this->matches($number, $draw, $source);
     }
 
-    public function oddsFor(int $lotteryId, string $source, int $count): float
+    public function oddsFor(int $lotteryId, string $source, int $count, string $boardCode='A'): float
     {
-        $row = $this->oddsRowFor($lotteryId, $source);
+        $row = $this->oddsRowFor($lotteryId, $source, $boardCode);
         return $row ? (float)$row['odds'] : 0.0;
     }
 
     /** @return array<string, mixed> */
-    public function oddsRowFor(int $lotteryId, string $source): array
+    public function oddsRowFor(int $lotteryId, string $source, string $boardCode='A'): array
     {
+        $boardCode=$this->normalizeBoardCode($boardCode);
         $identity = (new QuickEntryRules())->oddsIdentity($source);
         if ($identity === null) return [];
         if ($identity['direct']) {
-            $row = Db::name('lottery_odds_categories')->where('lottery_id', $lotteryId)
+            $row = Db::name('lottery_odds_categories')->where('lottery_id', $lotteryId)->where('board_code',$boardCode)
                 ->where('name', $identity['category'])->where('status', 1)->where('is_playable', 1)
                 ->whereNull('deleted_at')->find();
             if (!$row) return [];
@@ -537,8 +550,14 @@ final class BetSettlement
             $row['name'] = $identity['name'];
             return $row;
         }
-        return Db::name('lottery_odds')->where('lottery_id', $lotteryId)
+        return Db::name('lottery_odds')->where('lottery_id', $lotteryId)->where('board_code',$boardCode)
             ->where('category', $identity['category'])->where('name', $identity['name'])
             ->where('status', 1)->whereNull('deleted_at')->find() ?: [];
+    }
+
+    private function normalizeBoardCode(string $value): string
+    {
+        $value=strtoupper(trim($value));
+        return preg_match('/^[A-Z][A-Z0-9_-]{0,7}$/',$value)===1?$value:'A';
     }
 }

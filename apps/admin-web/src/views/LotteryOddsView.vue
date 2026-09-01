@@ -15,6 +15,8 @@ import {
   type LotteryOdds,
   type LotteryOddsCategory,
   type Lottery,
+  type LotteryBoard,
+  createLotteryBoard,
 } from "../api/admin";
 
 type TreeRow =
@@ -44,6 +46,8 @@ const pageSize = ref(10);
 const loading = ref(false);
 const sourceLotteries = ref<Lottery[]>([]);
 const sourceLotteryId = ref<number | null>(null);
+const boards = ref<LotteryBoard[]>([{ code: "A", name: "A盘" }]);
+const boardCode = ref("A");
 const drawer = ref(false);
 const drawerMode = ref<"category" | "play">("category");
 const editingCategory = ref<LotteryOddsCategory | null>(null);
@@ -114,10 +118,13 @@ async function load() {
     const result = await listLotteryOdds(id, {
       page: page.value,
       page_size: pageSize.value,
+      board_code: boardCode.value,
     });
     categories.value = result.data.categories;
     total.value = result.data.total;
     categoryTotal.value = result.data.category_total ?? categories.value.length;
+    boardCode.value = result.data.board_code || boardCode.value;
+    boards.value = result.data.boards?.length ? result.data.boards : boards.value;
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : "赔率加载失败");
   } finally {
@@ -129,7 +136,15 @@ async function loadSources() {
 }
 async function copyFromSource() {
   if (!sourceLotteryId.value) return ElMessage.warning("请选择赔率来源彩种");
-  try { await ElMessageBox.confirm("复制后会替换当前彩种现有赔率，确定继续吗？", "复制赔率", { type: "warning" }); await copyLotteryOdds(id, sourceLotteryId.value, true); ElMessage.success("赔率复制成功"); await load(); } catch (error) { if (error !== "cancel") ElMessage.error(error instanceof Error ? error.message : "复制失败"); }
+  try { await ElMessageBox.confirm("复制后会替换当前盘口现有赔率，确定继续吗？", "复制赔率", { type: "warning" }); await copyLotteryOdds(id, sourceLotteryId.value, true, boardCode.value); ElMessage.success("赔率复制成功"); await load(); } catch (error) { if (error !== "cancel") ElMessage.error(error instanceof Error ? error.message : "复制失败"); }
+}
+async function addBoard() {
+  try {
+    const result=await ElMessageBox.prompt("请输入盘口编码，例如 B", "新增盘口", { inputPlaceholder: "B", inputPattern: /^[A-Za-z][A-Za-z0-9_]{0,7}$/, inputErrorMessage: "编码只能使用字母、数字和下划线" });
+    const code=result.value.toUpperCase();
+    await createLotteryBoard({ code, name: `${code}盘`, status: 1, sort: boards.value.length + 1 });
+    ElMessage.success("盘口创建成功"); await load();
+  } catch (error) { if (error !== "cancel") ElMessage.error(error instanceof Error ? error.message : "盘口创建失败"); }
 }
 function openCreateCategory() {
   drawerMode.value = "category";
@@ -260,7 +275,7 @@ onMounted(() => { void load(); void loadSources(); });
         <p>按类别管理玩法赔率，未填写的数值保持为“未设置”。</p>
       </div>
       <div class="heading-actions">
-        <el-select v-model="sourceLotteryId" clearable placeholder="从其他彩种复制赔率" style="width:210px"><el-option v-for="item in sourceLotteries" :key="item.id" :label="item.name" :value="item.id" /></el-select><el-button @click="copyFromSource">复制赔率</el-button><el-button @click="router.back()">返回彩票列表</el-button
+        <el-select v-model="boardCode" placeholder="选择盘口" style="width:120px" @change="load"><el-option v-for="item in boards" :key="item.code" :label="item.name" :value="item.code" /></el-select><el-button @click="addBoard">新增盘口</el-button><el-select v-model="sourceLotteryId" clearable placeholder="从其他彩种复制赔率" style="width:210px"><el-option v-for="item in sourceLotteries" :key="item.id" :label="item.name" :value="item.id" /></el-select><el-button @click="copyFromSource">复制赔率</el-button><el-button @click="router.back()">返回彩票列表</el-button
         ><el-button type="primary" @click="openCreateCategory"
           >新增类别</el-button
         >

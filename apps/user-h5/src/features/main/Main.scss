@@ -1347,14 +1347,33 @@ body {
   color: #080808;
 
   > time {
-    display: block;
+    display: flex;
     min-height: 32px;
     box-sizing: border-box;
+    align-items: center;
+    gap: 5px;
     padding: 5px 7px;
     background: #fff;
     color: #222;
     font-size: 13px;
     line-height: 22px;
+  }
+
+  > time .side-record-board {
+    display: inline-flex;
+    min-width: 34px;
+    height: 22px;
+    align-items: center;
+    justify-content: center;
+    padding: 0 5px;
+    border: 0;
+    border-radius: 2px;
+    background: #07a8d4;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 22px;
+    white-space: nowrap;
   }
 
   .side-record-text {
@@ -1442,6 +1461,13 @@ body {
 
     > time {
       background: $side-refunded-bg;
+      color: #222;
+    }
+
+    > time .side-record-board {
+      min-width: 0;
+      padding: 0;
+      background: transparent;
       color: #222;
     }
 
@@ -1579,6 +1605,66 @@ body {
   color: #060a92;
   font-size: 18px;
   font-weight: 400;
+}
+.record-detail-grid-list {
+  width: 100%;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+.record-detail-grid {
+  display: grid;
+  min-width: max-content;
+  margin-bottom: 10px;
+  border: 1px solid #6f6f6f;
+  background: #f4f7fc;
+}
+.record-detail-grid > div {
+  display: flex;
+  min-height: 35px;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  border-right: 1px solid #777;
+  border-bottom: 1px dashed #777;
+  padding: 5px 8px;
+  font-size: 14px;
+  line-height: 22px;
+  text-align: center;
+  white-space: nowrap;
+}
+.record-detail-grid > div:nth-last-child(-n + 6) {
+  border-bottom: 0;
+}
+.record-detail-grid > div:nth-child(6n + 2),
+.record-detail-grid > div:nth-child(6n + 4),
+.record-detail-grid > div:nth-child(6n + 6) {
+  background: #dbe6fb;
+}
+.record-detail-grid-label {
+  background: #707070 !important;
+  color: #fff;
+  font-weight: 700;
+}
+.record-detail-grid-value.number {
+  color: #111;
+  font-weight: 700;
+}
+.record-detail-grid-value.number em {
+  margin-left: 4px;
+  color: #f00000;
+  font-style: normal;
+  font-weight: 700;
+}
+.record-detail-grid-value.amount {
+  color: #060a92;
+  font-weight: 700;
+}
+.record-detail-grid-value.odds {
+  color: #f07800;
+  font-weight: 700;
+}
+.record-detail-grid-value.win {
+  color: #111;
 }
 .record-detail-card {
   display: grid;
@@ -3505,6 +3591,7 @@ body {
 .quick-result-status {
   display: block;
   width: 40px;
+  min-width: 40px;
   height: 23px;
   padding: 0;
   background: #000;
@@ -3513,6 +3600,9 @@ body {
   font-weight: 400;
   line-height: 22px;
   text-align: center;
+  white-space: nowrap;
+  word-break: keep-all;
+  writing-mode: horizontal-tb;
 }
 .quick-result-status.new {
   background: #0095c3;
@@ -3551,7 +3641,6 @@ body {
   font-feature-settings: "tnum" 1;
   font-variant-numeric: tabular-nums;
   font-weight: 400;
-  line-height: 22px;
   white-space: nowrap;
 }
 .quick-result-detail,
@@ -3659,6 +3748,20 @@ body {
   margin: 6px 0;
 }
 .result-table > .ltype-wrapper {
+  // Category badges are rendered in the dedicated horizontal tab row below.
+  // Keep the legacy per-section badge in the DOM for compatibility, but hide it
+  // so it cannot force the detail content into a vertical layout.
+  display: none;
+}
+.result-category-tabs {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  margin: 2px 0 6px;
+}
+.result-category-tabs .ltype-wrapper {
   display: inline-block;
   width: 26px;
   height: 26px;
@@ -3675,6 +3778,15 @@ body {
 }
 .result-table > .ltype-wrapper.is-ti {
   background: #00724d;
+}
+.result-category-tabs .ltype-wrapper.is-fu {
+  background: #7a2bc3;
+}
+.result-category-tabs .ltype-wrapper.is-ti {
+  background: #00724d;
+}
+.result-category-tabs .ltype-wrapper.is-futi {
+  background: #111;
 }
 .result-table > .sep {
   width: 100%;
@@ -3975,6 +4087,9 @@ body {
   padding-bottom: 0;
   opacity: 0;
 }
+.action-board-label { display:inline-flex; align-items:center; gap:5px; margin-left:8px; color:#333; font-size:13px; white-space:nowrap; }
+.detail-board-label { border:1px solid #9aa8bd; border-radius:3px; background:#eef3fb; color:#172b4d; padding:4px 8px; font-weight:700; }
+.detail-board-label { display:inline-block; margin:0 12px; font-size:13px; }
 
 /* Bills page reference layout: compact filter area and six-column ledger. */
 .bill-page {
@@ -4140,7 +4255,7 @@ body {
   .side-record-item { margin: 0 8px 7px; border: 0; border-radius: 2px; background: #ffe0e0; }
   .side-record-item > time { min-height: 26px; padding: 3px 7px; background: transparent; font-size: 12px; line-height: 20px; }
   .side-record-item .side-record-text { padding: 5px 9px 7px; background: transparent; font-size: 13px; line-height: 18px; }
-  .side-record-item .side-record-issue { display: none; }
+  .side-record-item .side-record-issue { display: block; }
   .side-record-item footer { min-height: 28px; padding: 2px 8px 5px; background: transparent; }
   .side-record-item footer > strong { font-size: 14px; }
   .side-record-item .side-record-action { width: 27px; height: 25px; }
@@ -4216,11 +4331,12 @@ body {
   .entry > .actions > .action-total { display: none !important; visibility: hidden !important; }
   .entry.has-results > .text-entry,
   .site-header:not(.header-collapsed) ~ .body .entry.has-results > .text-entry {
-    height: max(40vw, calc(100svh - 94vw - min(var(--quick-result-height), 45svh) + 5.1vw)) !important;
+    height: max(40vw, calc(50svh - 47vw - min(var(--quick-result-height), 22.5svh) + 2.55vw)) !important;
     transition: height .25s ease !important;
   }
   .entry.has-results > .quick-result {
     display: block !important;
+    min-height: 0 !important;
     max-height: 45svh !important;
     overflow-y: auto !important;
     overflow-x: hidden !important;
@@ -4229,22 +4345,35 @@ body {
   }
   .entry.has-results > .quick-result .quick-result-main {
     grid-template-columns: 5vw 9vw 5vw 26vw 10vw minmax(0, 1fr) !important;
-    min-height: 7vw !important;
+    min-height: 0 !important;
     height: auto !important;
+    align-items: center !important;
   }
   .entry.has-results > .quick-result .quick-result-text {
     min-width: 0 !important;
-    height: 7vw !important;
-    padding: 0 1vw !important;
-    font-size: 3vw !important;
-    line-height: 7vw !important;
+    height: auto !important;
+    min-height: 0 !important;
+    padding: 4px 1vw !important;
+    font-size: 16px !important;
+    overflow: hidden !important;
+    overflow-wrap: anywhere !important;
+    white-space: pre-wrap !important;
+    align-self: stretch !important;
+  }
+  .entry.has-results > .quick-result .quick-result-remove,
+  .entry.has-results > .quick-result .quick-result-confirm,
+  .entry.has-results > .quick-result .quick-result-index,
+  .entry.has-results > .quick-result .quick-result-add,
+  .entry.has-results > .quick-result .quick-result-detail-slot,
+  .entry.has-results > .quick-result .quick-result-status {
+    align-self: center;
   }
   .entry.has-results > .quick-result .quick-result-detail,
   .entry.has-results > .quick-result .quick-result-summary {
-    min-height: 6vw !important;
+    min-height: 0 !important;
     height: auto !important;
+    align-items: center !important;
     padding-left: 25vw !important;
-    font-size: 3vw !important;
-    line-height: 6vw !important;
+    font-size: 16px !important;
   }
 }

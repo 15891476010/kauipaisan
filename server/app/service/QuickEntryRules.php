@@ -131,6 +131,18 @@ final class QuickEntryRules
         $text = preg_replace('/复\s*试/u', '复式', $text) ?? $text;
         $text = preg_replace('/(?<!组)三组/u', '组三', $text) ?? $text;
         $text = preg_replace('/(?<!组)六组/u', '组六', $text) ?? $text;
+        // “包” is the common shorthand for a full package when a group
+        // family is already present (e.g. “组六包10” = “组六全包10”).
+        $text = preg_replace('/(组三|组六|豹子|对子)\s*包(?!选)/u', '$1全包', $text) ?? $text;
+        // Accept spacing and reverse-order variants used in pasted tickets.
+        // All of these are canonicalized before the parser selects a rule.
+        $text = preg_replace('/组\s*三/u', '组三', $text) ?? $text;
+        $text = preg_replace('/组\s*六/u', '组六', $text) ?? $text;
+        $text = preg_replace('/豹\s*子/u', '豹子', $text) ?? $text;
+        $text = preg_replace('/对\s*子/u', '对子', $text) ?? $text;
+        $text = preg_replace('/全\s*包/u', '全包', $text) ?? $text;
+        $text = preg_replace('/全包\s*(组三|组六|豹子|对子)/u', '$1全包', $text) ?? $text;
+        $text = preg_replace('/(组三|组六|豹子|对子)\s*全包/u', '$1全包', $text) ?? $text;
         $text = preg_replace('/(?<![A-Za-z])F(?![A-Za-z])/iu', '福', $text) ?? $text;
         $text = preg_replace('/(?<![A-Za-z])T(?![A-Za-z])/iu', '体', $text) ?? $text;
         $text = preg_replace('/Z\s*6/iu', '组六', $text) ?? $text;

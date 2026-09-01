@@ -33,6 +33,8 @@ export function MorePanel({
   ).slice(0, 30);
   const [selectedDay, setSelectedDay] = useState(dateOptions[0]?.day || today);
   const [source, setSource] = useState("");
+  const [board, setBoard] = useState("all");
+  const boardOptions = Array.from(new Map(lotteries.flatMap((lottery) => lottery.boards || []).map((item) => [item.code, item] as const)).values());
   const [records, setRecords] = useState<BetRecord[]>([]);
   const [amountTotal, setAmountTotal] = useState("0.00");
   const [loading, setLoading] = useState(false);
@@ -51,6 +53,7 @@ export function MorePanel({
       source: source.trim() || undefined,
       page: 1,
       page_size: 100,
+      board: board === "all" ? undefined : board,
     })
       .then((response) => {
         const data = response.data?.data;
@@ -66,7 +69,7 @@ export function MorePanel({
   };
   useEffect(() => {
     if (dateOptions.length) search();
-  }, [selectedDay]);
+  }, [selectedDay, board]);
   return (
     <section className="more-panel">
       <div className="more-search">
@@ -94,6 +97,7 @@ export function MorePanel({
             )}
           </select>
         </label>
+        <label className="more-field more-board-field"><span>盘口</span><select value={board} onChange={(event) => setBoard(event.target.value)}><option value="all">全部</option>{boardOptions.map((item) => <option key={item.code} value={item.code}>{item.name} - {item.code}</option>)}</select></label>
         <label className="more-field more-text-field">
           <span>原始文本搜索：</span>
           <input

@@ -20,7 +20,7 @@ export const getProfile = (params?: Record<string, unknown>) => request.get<ApiE
 export const heartbeat = () => request.post<ApiEnvelope<{ online: boolean; server_time: string }>>("/user/auth/heartbeat");
 export const logoutSession = () => request.post<ApiEnvelope<null>>("/user/auth/logout");
 export const getRules = (params?: Record<string, unknown>) => request.get<ApiEnvelope<RuleSettings>>("/user/rules", { params });
-export type BetRecord = { id: number; issue_no: string; source_text?: string; formatted_text?: string; submission_fingerprint?: string | null; submission_id?: number | null; bet_count: number; amount: string; win_amount: string; status: string; sealed: number; placed_at: string; refunded_at?: string | null; lottery?: string; open_time?: string | null; can_refund?: boolean };
+export type BetRecord = { id: number; board_code?: string; board_name?: string; issue_no: string; source_text?: string; formatted_text?: string; submission_fingerprint?: string | null; submission_id?: number | null; bet_count: number; amount: string; win_amount: string; status: string; sealed: number; placed_at: string; refunded_at?: string | null; lottery?: string; open_time?: string | null; can_refund?: boolean };
 export type StopDrop = { id: number; lottery: string; issue_no: string; number_text: string; play_type: string; stop_type: string; original_amount: string; actual_amount: string; stop_amount: string; original_odds?: string | null; actual_odds?: string | null; drop_odds?: string | null; source_text?: string; placed_at: string };
 export type BetDetail = {
   id: number;
@@ -49,7 +49,8 @@ export type BetDetail = {
 export type Bill = { bill_date: string; bet_count: number; amount: string; rebate: string; offline_rebate: string; win_amount: string; profit: string };
 export type Draw = { lottery: string; issue_no: string; draw_date: string; draw_time?: string | null; numbers: string; sum_value?: number | null; size?: string | null; parity?: string | null; span_value?: number | null; pending?: number };
 export type SiteTimingRule = { start_time: string; end_time: string; allow_bet: number; mask_enabled: number; show_next_issue: number; header_show_next_issue?: number; display_text: string };
-export type Lottery = { id: number; name: string; code: string; sort: number; latest_code: string; latest_numbers: string; next_code: string; next_open_time: string | null; header_next_code?: string; header_next_open_time?: string | null; cutoff_enabled?: number; cutoff_time?: string | null; mask_enabled?: number; refund_enabled?: number; timing_rules?: SiteTimingRule[]; timing_text?: string; timing_can_bet?: boolean; timing_mask?: boolean; show_next_issue?: boolean; header_show_next_issue?: boolean; recent_issues?: Array<{ code: string; draw_day: string | null }>; can_bet?: boolean };
+export type LotteryBoard = { code: string; name: string; sort?: number };
+export type Lottery = { id: number; name: string; code: string; sort: number; latest_code: string; latest_numbers: string; next_code: string; next_open_time: string | null; header_next_code?: string; header_next_open_time?: string | null; cutoff_enabled?: number; cutoff_time?: string | null; mask_enabled?: number; refund_enabled?: number; timing_rules?: SiteTimingRule[]; timing_text?: string; timing_can_bet?: boolean; timing_mask?: boolean; show_next_issue?: boolean; header_show_next_issue?: boolean; recent_issues?: Array<{ code: string; draw_day: string | null }>; can_bet?: boolean; board_code?: string; boards?: LotteryBoard[] };
 export const getLotteries = () => request.get<ApiEnvelope<{ list: Lottery[] }>>("/user/lotteries");
 export type LineOption = { line: number; url: string };
 export const getLineOptions = () => request.get<ApiEnvelope<{ list: LineOption[] }>>("/user/line-options", { headers: { "X-Skip-Global-Loading": "1" } });
@@ -82,8 +83,8 @@ export type QuickEntryLine = { id: number; raw_text: string; input_text?: string
 export type QuickPreview = { lines: QuickEntryLine[]; count: number; code_count?: number; amount: string; formatted_text: string };
 export type QuickTag = { id: number; name: string };
 export type QuickSettings = { preferences: Record<string, unknown>; tags: QuickTag[] };
-export const previewQuickEntry = (payload: { text: string; lottery: string }) => request.post<ApiEnvelope<QuickPreview>>("/user/quick-entry/preview", payload);
-export const placeQuickEntry = (payload: { text: string; lottery: string; confirmed: boolean }) => request.post<ApiEnvelope<{ record_id: number; count: number; amount: string }>>("/user/quick-entry/place", payload);
+export const previewQuickEntry = (payload: { text: string; lottery: string; board_code?: string }) => request.post<ApiEnvelope<QuickPreview>>("/user/quick-entry/preview", payload);
+export const placeQuickEntry = (payload: { text: string; lottery: string; confirmed: boolean; board_code?: string }) => request.post<ApiEnvelope<{ record_id: number; count: number; amount: string }>>("/user/quick-entry/place", payload);
 export const getQuickSettings = () => request.get<ApiEnvelope<QuickSettings>>("/user/quick-entry/settings");
 export const saveQuickSettings = (preferences: Record<string, unknown>) => request.put<ApiEnvelope<{ preferences: Record<string, unknown> }>>("/user/quick-entry/settings", { preferences });
 export const createQuickTag = (name: string) => request.post<ApiEnvelope<{ id: number; name: string }>>("/user/quick-entry/tags", { name });

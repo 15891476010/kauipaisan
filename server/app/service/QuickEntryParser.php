@@ -35,6 +35,7 @@ final class QuickEntryParser
                 $result = [];
                 $lineId = 1;
                 foreach ($prefixedCompiled->rows as $row) {
+                    $row = $this->repairDeclaredCountToken($row, (string)($row['raw_text'] ?? $text));
                     $row['id'] = $lineId++;
                     if (($row['status'] ?? '') === 'success') $row['ast'] = $this->astFor($row, $lottery);
                     $result[] = $row;
@@ -42,7 +43,9 @@ final class QuickEntryParser
                 return $result;
             }
             if ($prefixedCompiled->matchedInput() && !$prefixedSuccess
-                && preg_match('/(?:直组|组直|单组|组单|组三|组六).*?(?:合计|共计|总计|合|共|计)\s*[0-9零〇一二两三四五六七八九十百]/u', $this->rules->normalize($text)) === 1) {
+                && (preg_match('/(?:直组|组直|单组|组单|组三|组六).*?(?:合计|共计|总计|合|共|计)\s*[0-9零〇一二两三四五六七八九十百]/u', $this->rules->normalize($text)) === 1
+                    || count($prefixedCompiled->rows) === 1
+                    && preg_match('/不一致|对不上|玩法必须|选号数量/u', (string)($prefixedCompiled->rows[0]['reason'] ?? '')) === 1)) {
                 $failed = [];
                 foreach ($prefixedCompiled->rows as $row) { $row['id'] = count($failed) + 1; $failed[] = $row; }
                 return $failed;
@@ -72,6 +75,26 @@ final class QuickEntryParser
         // number line: the play and amount belong to the following numbers.
         if ($depth === 0) {
             $compiled = $this->compiler->compile($text, $lottery, $unitStake);
+            // A trailing “N注一倍直/单” count is metadata, not a selection.
+            // If a declared count differs from the actual list, the compiler's
+            // whole-ticket amount check can fail before the normal row repair
+            // runs. Retry once with only that metadata removed; the original
+            // input is still retained in the returned row text.
+            if (count(array_filter($compiled->rows, static fn(array $row): bool => ($row['status'] ?? '') === 'success')) === 0
+                && preg_match('/(?:福体|福|体)\s*\d+\s*注\s*(?:[一1](?:\.0+)?)\s*倍\s*(?:直|单)/u', $text) === 1) {
+                $retryText = preg_replace('/((?:福体|福|体))\s*\d+\s*注\s*((?:[一1](?:\.0+)?)\s*倍\s*(?:直|单))/u', '$1$2', $text) ?? $text;
+                if ($retryText !== $text) {
+                    // Use the compatibility parser for the sanitized text:
+                    // the strict compiler expects a number/play structure and
+                    // cannot handle a long pasted number list by itself.
+                    $retryRows = $this->parse($retryText, $lottery, $unitStake, 1);
+                    if (count(array_filter($retryRows, static fn(array $row): bool => ($row['status'] ?? '') === 'success')) > 0) {
+                        foreach ($retryRows as &$retryRow) $retryRow['raw_text'] = $text;
+                        unset($retryRow);
+                        return $retryRows;
+                    }
+                }
+            }
             $hasSuccessfulCompilation = count(array_filter(
                 $compiled->rows,
                 static fn(array $row): bool => ($row['status'] ?? '') === 'success'
@@ -81,6 +104,7 @@ final class QuickEntryParser
                 $result = [];
                 $lineId = 1;
                 foreach ($compiled->rows as $row) {
+                    $row = $this->repairDeclaredCountToken($row, $text);
                     $row['id'] = $lineId++;
                     if (($row['status'] ?? '') === 'success') $row['ast'] = $this->astFor($row, $lottery);
                     $result[] = $row;
@@ -243,7 +267,7 @@ final class QuickEntryParser
                 if($numbers!==[]){$prefix=preg_match('/^\s*\.?\s*(福体|福|体)/u',(string)$lines[$start],$pm)?$pm[1]:'';$lines=array_merge(array_slice($lines,0,$start),[$prefix.implode(' ',$numbers).'直各1元',$prefix.implode(' ',$numbers).'组六各1元'],array_slice($lines,$i+1));$i=$start+1;}
             }
         }
-        $lines=array_values(array_filter($lines,static fn(string $line):bool=>preg_match('/^\s*(?:福体|福|体)?\s*(?:🈴|合|合计|共计|共)\s*[:：]?\s*[\d+*×.]+\s*(?:元|米)?\s*$/u',trim($line))!==1));
+        $lines=array_values(array_filter($lines,static fn(string $line):bool=>preg_match('/^\s*(?:福体|福|体)?\s*(?:🈴|合|合计|共计|共)\s*[:：]?\s*[\d+*×.]+\s*(?:元|米)?\s*[。.!！]?\s*$/u',trim($line))!==1));
         $result = [];
         $lineId = 1;
         $lineCount = count($lines);
@@ -334,11 +358,13 @@ final class QuickEntryParser
                     if (str_contains((string)($row['raw_text']??''), '直各1元') || str_contains((string)($row['raw_text']??''), '组六各1元')) {
                         $tokens=preg_split('/\s+/',trim((string)($row['number_text']??'')))?:[];$tokens=array_values(array_unique($tokens));$row['number_text']=implode(' ',$tokens);$row['display_number_text']=implode(' ',array_map(static fn(string $v):string=>preg_replace('/(?:直|组)$/u','',$v)??$v,$tokens));$row['count']=count($tokens);$row['stake_count']=count($tokens);$row['code_count']=count($tokens);$row['amount']=number_format(count($tokens)*(str_contains((string)($row['play_type']??''),'直')?1:1),2,'.','');
                     }
+                    $row = $this->repairDeclaredCountToken($row, (string)($row['raw_text'] ?? $rawOriginal));
                     $row['id'] = $lineId++;
                     if (($row['status']??'')==='success') $row['ast']=$this->astFor($row,$lottery);
                     $result[] = $row;
                 }
             } else {
+                $parsed = $this->repairDeclaredCountToken($parsed, (string)($parsed['raw_text'] ?? $rawOriginal));
                 $parsed['id'] = $lineId++;
                 if (($parsed['status']??'')==='success') $parsed['ast']=$this->astFor($parsed,$lottery);
                 $result[] = $parsed;
@@ -783,6 +809,15 @@ final class QuickEntryParser
         [$numberSource, $unitAmount, $perUnit] = $this->extractUnitAmount($working, $unitStake);
         $categoryCount = $category === '福体' ? 2 : 1;
 
+        // Position tickets are often pasted as “百位0.打200米” or with
+        // Chinese punctuation.  The punctuation is not part of the
+        // selection, and “位” is only a readability suffix.  Strip both
+        // before the position parsers so a marker-first single position is
+        // not mistaken for a bare 000 direct ticket.
+        $numberSource = preg_replace('/([百十个])位/u', '$1', $numberSource) ?? $numberSource;
+        $numberSource = preg_replace('/[，,。．、:：]+/u', ' ', $numberSource) ?? $numberSource;
+        $numberSource = trim(preg_replace('/\s+/u', ' ', $numberSource) ?? $numberSource);
+
         $position = $this->parsePosition($numberSource);
         if ($position !== null) {
             $numbers = $position['numbers'];
@@ -797,22 +832,25 @@ final class QuickEntryParser
                 $perUnit,
                 $declaredTotal
             );
-            $positionText=$this->positionExpression($numberSource);
+            $positionText=$this->positionMask($numberSource);
             $row['number_text']=$positionText;
             $markerCount=count(array_unique(preg_match_all('/[百十个]/u',$numberSource,$markerMatches)?($markerMatches[0]??[]):[]));
             $row['play_type']=$markerCount>=3?'三码定位':($markerCount===2?'二码定位':'一码定位');
-            $row['settlement_text']=$positionText.'各'.number_format($unitAmount,2,'.','').'元 '.$category;
+            // Keep the explicit marker expression in settlement_text for the
+            // AST (1D/2D/ZX) while exposing the compact 0xx/x0x/xx0 mask in
+            // number_text for the detail table.
+            $row['settlement_text']=$this->positionExpression($numberSource).'各'.number_format($unitAmount,2,'.','').'元 '.$category;
             return $row;
         }
 
         $partialPosition = $this->parsePartialPosition($numberSource);
         if ($partialPosition !== null) {
             $row=$this->successOrAmountFailure($lineId,$rawOriginal,$partialPosition['numbers'],$category,$partialPosition['count']*$categoryCount,$unitAmount,$perUnit,$declaredTotal);
-            $positionText=$this->positionExpression($numberSource);
+            $positionText=$this->positionMask($numberSource);
             $row['number_text']=$positionText;
             $markerCount=count(array_unique(preg_match_all('/[百十个]/u',$numberSource,$markerMatches)?($markerMatches[0]??[]):[]));
             $row['play_type']=$markerCount>=3?'三码定位':($markerCount===2?'二码定位':'一码定位');
-            $row['settlement_text']=$positionText.'各'.number_format($unitAmount,2,'.','').'元 '.$category;
+            $row['settlement_text']=$this->positionExpression($numberSource).'各'.number_format($unitAmount,2,'.','').'元 '.$category;
             return $row;
         }
 
@@ -828,14 +866,48 @@ final class QuickEntryParser
                 $perUnit,
                 $declaredTotal
             );
-            $positionText=$this->positionExpression($numberSource);
+            $positionText=$this->positionMask($numberSource);
             $row['number_text']=$positionText;
             $row['play_type']='一码定位';
-            $row['settlement_text']=$positionText.'各'.number_format($unitAmount,2,'.','').'元 '.$category;
+            $row['settlement_text']=$this->positionExpression($numberSource).'各'.number_format($unitAmount,2,'.','').'元 '.$category;
             return $row;
         }
 
         $numbers = $this->standaloneNumbers($numberSource);
+        // A bare three-digit number is a direct bet when its amount is
+        // written without an explicit “直” marker.  This notation is common
+        // in pasted tickets: “福111 100倍”, “福111各100倍”,
+        // “福111共100倍” and “福111各100米”.  The legacy branch used to
+        // leave the amount in the source while parsing the number, so these
+        // valid forms fell through as “未识别到玩法”.
+        $implicitNumbers=[];
+        preg_match_all('/(?<!\d)(\d{3})(?!\d)/u', $rawOriginal, $implicitNumberMatches);
+        $implicitNumbers=array_values(array_unique($implicitNumberMatches[1]??[]));
+        if ($implicitNumbers !== [] && preg_match('/^\s*(?:福体|福|体)?\s*\d{3}(?:\s+\d{3})*\s*(?:(各|每|共|合计)\s*)?(\d+(?:\.\d+)?)\s*(倍|注|元|米|块|角|毛)\s*$/u', $rawOriginal, $implicitDirect)) {
+            $marker=(string)($implicitDirect[1]??'');
+            $value=(float)$implicitDirect[2];
+            $unit=(string)($implicitDirect[3]??'');
+            $categoryCount=$category==='福体'?2:1;
+            $perAmount=$unit==='倍'
+                ? BetMultiplierAmount::DIRECT->oneMultiplier()*$value
+                : $this->rules->amountWithUnit($value,$unit,$unitStake);
+            $perNumber=$marker!=='共'&&$marker!=='合计';
+            $total=$perAmount*($perNumber?count($implicitNumbers):1)*$categoryCount;
+            $row=[
+                'id'=>$lineId,'raw_text'=>$rawOriginal,'status'=>'success','reason'=>null,
+                'number_text'=>implode('直 ', $implicitNumbers).'直','display_number_text'=>implode(' ',$implicitNumbers),
+                'category'=>$category,'amount'=>number_format($total,2,'.',''),
+                'count'=>count($implicitNumbers)*$categoryCount,'stake_count'=>count($implicitNumbers)*$categoryCount,
+                'code_count'=>count($implicitNumbers)*$categoryCount,'play_type'=>'直',
+                'settlement_text'=>implode(' ', $implicitNumbers).' 直'.($perNumber?'各':'合计').number_format($perAmount,2,'.','').'元 '.$category,
+                'amount_type'=>$unit==='倍'?'multiplier':'money',
+                'multiplier'=>$unit==='倍'?$value:0.0,
+            ];
+            if ($declaredTotal!==null && abs($total-($declaredTotal*$categoryCount))>0.001) {
+                return [$this->failure($lineId,$rawOriginal,'句末总金额与识别金额不一致')];
+            }
+            return [$row];
+        }
         if (preg_match($this->rules->pattern('leopard_all'), $raw) === 1 && $unitAmount > 0) {
             $numbers = array_map(static fn(int $digit): string => (string)$digit.$digit.$digit, range(0, 9));
             return $this->successOrAmountFailure($lineId, $rawOriginal, $numbers, $category, count($numbers), $unitAmount, false, $declaredTotal);
@@ -2329,6 +2401,31 @@ final class QuickEntryParser
         return $parts!==[]?implode('',$parts).'定位':trim($raw).'定位';
     }
 
+    /**
+     * Render定位 selections in the same three-column form used by the
+     * details panel: 百位 is 0XX, 十位 is X0X, 个位 is XX0.  For a two- or
+     * three-position selection the known digits are substituted in place and
+     * the remaining positions stay as X.
+     */
+    private function positionMask(string $raw): string
+    {
+        $mask = ['X', 'X', 'X'];
+        $indexes = ['百' => 0, '十' => 1, '个' => 2];
+        if (preg_match_all('/(百|十|个)\s*([0-9]+)/u', $raw, $matches, PREG_SET_ORDER)) {
+            foreach ($matches as $match) {
+                $index = $indexes[(string)$match[1]] ?? null;
+                if ($index === null) continue;
+                $digits = implode('', $this->uniqueDigits((string)$match[2]));
+                // A position can contain a digit set. Keep all selected
+                // digits visible while retaining the mask form for the
+                // unspecified positions (e.g. 012XX).
+                $mask[$index] = $digits !== '' ? $digits : 'X';
+            }
+            return implode('', $mask);
+        }
+        return $this->positionExpression($raw);
+    }
+
     /** @return ?array{numbers: array<int,string>, count:int} */
     private function parsePartialPosition(string $raw): ?array
     {
@@ -2425,6 +2522,49 @@ final class QuickEntryParser
             'amount' => '0.00',
             'count' => 0,
         ];
+    }
+
+    /**
+     * A counted direct suffix can be parsed as part of a composite paste by
+     * the generic compiler, causing the declaration number (e.g. 102 in
+     * “福102注一倍直”) to become one extra three-digit selection. Remove only
+     * that unambiguous trailing token and recalculate the row amount.
+     *
+     * @param array<string, mixed> $row
+     * @return array<string, mixed>
+     */
+    private function repairDeclaredCountToken(array $row, string $source): array
+    {
+        if (($row['status'] ?? '') !== 'success' || !in_array((string)($row['play_type'] ?? ''), ['直', '单'], true)) return $row;
+        if (!preg_match('/(?:福体|福|体)\s*(\d+)\s*注\s*(?:[一1](?:\.0+)?)\s*倍\s*(?:直|单)/u', $source, $match)) return $row;
+        $declared = (int)$match[1];
+        $current = (int)($row['count'] ?? 0);
+        if ($declared < 1 || $current < 1) return $row;
+        $token = (string)$declared;
+        $removed = false;
+        foreach (['number_text', 'display_number_text', 'expanded_number_text'] as $field) {
+            if (isset($row[$field]) && is_string($row[$field])) {
+                $updated = preg_replace('/\s*'.preg_quote($token, '/').'(?:直|单)?\s*$/u', '', $row[$field]);
+                if ($updated !== null && $updated !== $row[$field]) $removed = true;
+                $row[$field] = $updated ?? $row[$field];
+            }
+        }
+        if (!$removed) return $row;
+        // The declaration may intentionally differ from the number list
+        // (e.g. “福500注一倍直” pasted with 102 actual selections). The
+        // selections determine the payable count; the declaration is never a
+        // number itself and must not replace the actual count.
+        $actual = null;
+        if (isset($row['number_text']) && is_string($row['number_text'])) {
+            $tokens = preg_split('/\s+/u', trim($row['number_text'])) ?: [];
+            $actual = count(array_filter($tokens, static fn(string $v): bool => $v !== ''));
+        }
+        $actual = $actual !== null && $actual > 0 ? $actual : max(0, $current - 1);
+        $row['count'] = $actual;
+        if (array_key_exists('code_count', $row)) $row['code_count'] = $actual;
+        if (array_key_exists('stake_count', $row)) $row['stake_count'] = $actual;
+        if (isset($row['amount']) && is_numeric($row['amount']) && $current > 0) $row['amount'] = number_format((float)$row['amount'] * $actual / $current, 2, '.', '');
+        return $row;
     }
 
 }

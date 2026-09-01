@@ -42,25 +42,13 @@ final class Organization
     private function nodeBoards(?array $node, int $tenantId, mixed $input=null): array
     {
         $available=array_map(static fn(array $row): string=>(string)$row['code'],$this->activeBoards($tenantId));
-        // Depending on the database driver/settings cast, `settings` may
-        // already be decoded to an array.  Avoid casting an array to string
-        // (which raises an ErrorException) while resolving board access.
-        $rawSettings=$node['settings']??null;
-        $parentCodes=$node?(is_array($rawSettings)?$rawSettings:json_decode((string)($rawSettings??''),true)):null;
+        $parentCodes=$node?json_decode((string)($node['settings']??''),true):null;
         $parentCodes=is_array($parentCodes)&&is_array($parentCodes['board_codes']??null)?array_map('strval',$parentCodes['board_codes']):$available;
         $codes=$input===null ? ($node && is_array($parentCodes)?$parentCodes:['A']) : (is_array($input)?$input:preg_split('/[,，\s]+/u',trim((string)$input),-1,PREG_SPLIT_NO_EMPTY));
         $codes=array_values(array_unique(array_map(static fn($v): string=>strtoupper(trim((string)$v)),$codes)));
         $codes=array_values(array_intersect($codes,$available,$parentCodes));
         if($codes===[]) $codes=['A'];
         return $codes;
-    }
-
-    private function nodeSettings(?array $node): array
-    {
-        if (!$node) return [];
-        $raw=$node['settings']??null;
-        $settings=is_array($raw)?$raw:json_decode((string)($raw??''),true);
-        return is_array($settings)?$settings:[];
     }
 
     private function agentSession(Request $request): array
@@ -124,7 +112,7 @@ final class Organization
             $used=(string)$level==='agent'?(float)Db::name('site_users')->where('organization_id',(int)$current['id'])->whereNull('deleted_at')->sum('credit_balance'):(float)Db::name('organization_nodes')->where('parent_id',(int)$current['id'])->whereNull('deleted_at')->sum('credit_limit');
             if($credit<$used-0.000001)throw new \InvalidArgumentException($level==='agent'?'新额度低于该代理已分配给会员的额度':'新额度低于已分配给直属下级的额度');
         }
-        $settings=$this->nodeSettings($current);
+        $settings=$current?json_decode((string)($current['settings']??''),true):[];$settings=is_array($settings)?$settings:[];
         $settings['board_codes']=$this->nodeBoards($parent,(int)$site['tenant_id'],$request->post('board_codes',$settings['board_codes']??null));
         return ['tenant_id'=>(int)$site['tenant_id'],'site_id'=>(int)$site['id'],'parent_id'=>$parentId,'level'=>$level,'name'=>$name,'code'=>$code,'credit_limit'=>number_format($credit,2,'.',''),'permissions'=>json_encode($permissions,JSON_UNESCAPED_UNICODE),'settings'=>json_encode($settings,JSON_UNESCAPED_UNICODE),'status'=>(int)$request->post('status',$current['status']??1)===0?0:1,'updated_at'=>date('Y-m-d H:i:s')];
     }
@@ -193,7 +181,7 @@ final class Organization
         $shareRows=$nodeIds?Db::name('organization_profit_shares')->whereIn('child_organization_id',$nodeIds)->where('status',1)->select()->toArray():[];
         $shares=[];foreach($shareRows as $share)$shares[(int)$share['child_organization_id']]=$share;
         foreach($nodes as &$node){
-            $node['permissions']=AgentAuthorization::sitePermissions((int)$siteId,(string)$node['level']);$node['settings']=$this->nodeSettings($node);$node['board_codes']=$this->nodeBoards($node,(int)$site['tenant_id'],($node['settings']['board_codes']??null));$node['boards']=array_values(array_filter($this->activeBoards((int)$site['tenant_id']),static fn(array $board): bool=>in_array((string)$board['code'],$node['board_codes'],true)));$node['level_label']=OrganizationHierarchy::LABELS[(string)$node['level']]??$node['level'];$node['next_level']=OrganizationHierarchy::nextLevel((string)$node['level']);$node['balance']=number_format((float)($node['balance']??0),2,'.','');
+            $node['permissions']=AgentAuthorization::sitePermissions((int)$siteId,(string)$node['level']);$node['settings']=json_decode((string)($node['settings']??''),true)?:[];$node['board_codes']=$this->nodeBoards($node,(int)$site['tenant_id'],($node['settings']['board_codes']??null));$node['boards']=array_values(array_filter($this->activeBoards((int)$site['tenant_id']),static fn(array $board): bool=>in_array((string)$board['code'],$node['board_codes'],true)));$node['level_label']=OrganizationHierarchy::LABELS[(string)$node['level']]??$node['level'];$node['next_level']=OrganizationHierarchy::nextLevel((string)$node['level']);$node['balance']=number_format((float)($node['balance']??0),2,'.','');
             $account=$primaryAccounts[(int)$node['id']]??[];$share=$shares[(int)$node['id']]??[];
             foreach(['id'=>'account_id','username'=>'username','display_name'=>'display_name','phone'=>'phone','online'=>'online','last_login_at'=>'last_login_at','last_login_ip'=>'last_login_ip','last_login_location'=>'last_login_location','last_login_device'=>'last_login_device']as$source=>$target)$node[$target]=$account[$source]??null;
             $node['share_rate']=number_format((float)($share['share_rate']??0),4,'.','');$node['max_share_rate']=number_format((float)($share['max_share_rate']??$siteCap),4,'.','');
@@ -328,17 +316,12 @@ final class Organization
     public function profile(Request $request): \think\response\Json
     {
         $session=$this->agentSession($request);$site=$this->site((int)$session['site_id']);$organizationId=(int)($session['organization_id']??0);$node=$organizationId>0?Db::name('organization_nodes')->where('id',$organizationId)->whereNull('deleted_at')->find():OrganizationHierarchy::rootForSite((int)$site['id']);
-        $level=(string)($node['level']??'director');$permissions=$node?AgentAuthorization::sitePermissions((int)$site['id'],$level):[];$nodeSettings=$this->nodeSettings($node);$boardCodes=$node?($this->nodeBoards($node,(int)$site['tenant_id'],$nodeSettings['board_codes']??null)):['A'];$boards=array_values(array_filter($this->activeBoards((int)$site['tenant_id']),static fn(array $board): bool=>in_array((string)$board['code'],$boardCodes,true)));return $this->reply(['site'=>['id'=>(int)$site['id'],'name'=>$site['name']],'organization'=>$node?['id'=>(int)$node['id'],'name'=>(string)($session['username']??$node['name']),'level'=>$level,'level_label'=>OrganizationHierarchy::LABELS[$level]??$level,'next_level'=>OrganizationHierarchy::nextLevel($level),'credit'=>OrganizationHierarchy::nodeCreditSummary((int)$node['id']),'board_codes'=>$boardCodes,'boards'=>$boards]:null,'permissions'=>$permissions,'username'=>(string)($session['username']??'')]);
+        $level=(string)($node['level']??'director');$permissions=$node?AgentAuthorization::sitePermissions((int)$site['id'],$level):[];return $this->reply(['site'=>['id'=>(int)$site['id'],'name'=>$site['name']],'organization'=>$node?['id'=>(int)$node['id'],'name'=>(string)($session['username']??$node['name']),'level'=>$level,'level_label'=>OrganizationHierarchy::LABELS[$level]??$level,'next_level'=>OrganizationHierarchy::nextLevel($level),'credit'=>OrganizationHierarchy::nodeCreditSummary((int)$node['id'])]:null,'permissions'=>$permissions,'username'=>(string)($session['username']??'')]);
     }
 
     public function agentIndex(Request $request): \think\response\Json
     {
-        $session=$this->agentSession($request);
-        // Resolve the current site once before building board data.  The
-        // endpoint previously referenced $site without initializing it,
-        // causing every agent subordinate request to fail with a 500 error.
-        $site=$this->site((int)$session['site_id']);
-        $rootId=(int)($session['organization_id']??0);if($rootId<1)throw new \RuntimeException('当前账号尚未绑定层级数据');
+        $session=$this->agentSession($request);$rootId=(int)($session['organization_id']??0);if($rootId<1)throw new \RuntimeException('当前账号尚未绑定层级数据');
         $requestedId=(int)$request->param('organization_id',0);$organizationId=$requestedId>0?$requestedId:$rootId;
         $current=Db::name('organization_nodes')->where('id',$organizationId)->where('site_id',(int)$session['site_id'])->whereNull('deleted_at')->find();
         $root=Db::name('organization_nodes')->where('id',$rootId)->where('site_id',(int)$session['site_id'])->whereNull('deleted_at')->find();
@@ -346,9 +329,7 @@ final class Organization
         $visibleIds=OrganizationHierarchy::descendantIds($rootId);
         if(!in_array($organizationId,$visibleIds,true))throw new \InvalidArgumentException('无权查看该组织及其下级');
         $currentPermissions=AgentAuthorization::sitePermissions((int)$session['site_id'],(string)$current['level']);
-        $currentSettings=$this->nodeSettings($current);
-        $currentBoards=$this->nodeBoards($current,(int)$site['tenant_id'],is_array($currentSettings)?($currentSettings['board_codes']??null):null);
-        $currentPayload=['id'=>(int)$current['id'],'parent_id'=>(int)$current['parent_id'],'name'=>$organizationId===$rootId?(string)($session['username']??$current['name']):(string)$current['name'],'node_name'=>(string)$current['name'],'level'=>$current['level'],'level_label'=>OrganizationHierarchy::LABELS[(string)$current['level']]??$current['level'],'next_level'=>OrganizationHierarchy::nextLevel((string)$current['level']),'permissions'=>$currentPermissions,'credit'=>OrganizationHierarchy::nodeCreditSummary((int)$current['id']),'board_codes'=>$currentBoards,'boards'=>array_values(array_filter($this->activeBoards((int)$site['tenant_id']),static fn(array $board): bool=>in_array((string)$board['code'],$currentBoards,true))),'can_manage'=>$organizationId===$rootId];
+        $currentPayload=['id'=>(int)$current['id'],'parent_id'=>(int)$current['parent_id'],'name'=>$organizationId===$rootId?(string)($session['username']??$current['name']):(string)$current['name'],'node_name'=>(string)$current['name'],'level'=>$current['level'],'level_label'=>OrganizationHierarchy::LABELS[(string)$current['level']]??$current['level'],'next_level'=>OrganizationHierarchy::nextLevel((string)$current['level']),'permissions'=>$currentPermissions,'credit'=>OrganizationHierarchy::nodeCreditSummary((int)$current['id']),'can_manage'=>$organizationId===$rootId];
         return $this->reply(array_merge(['current'=>$currentPayload,'root_organization_id'=>$rootId,'breadcrumbs'=>$this->breadcrumbs((int)$session['site_id'],$organizationId,$rootId)],$this->responseForSite((int)$session['site_id'],$organizationId)));
     }
     public function agentProfitShare(Request $request): \think\response\Json

@@ -57,6 +57,12 @@ final class AgentBusiness
         return number_format((float)$value,2,'.','');
     }
 
+    private function boardCode(Request $request): string
+    {
+        $value=strtoupper(trim((string)$request->param('board_code',$request->param('board','A'))));
+        return preg_match('/^[A-Z][A-Z0-9_-]{0,7}$/',$value)===1?$value:'A';
+    }
+
     /** Main order number: YYMMDDHHMMSS plus the two-digit submission suffix. */
     private function orderNumber(array $row): string
     {
@@ -90,6 +96,7 @@ final class AgentBusiness
             ->where('d.status','<>','refunded')
             ->whereNull('u.deleted_at');
         OrganizationHierarchy::applyUserScope($query,$session,'d.user_id');
+        $query->where('d.board_code',$this->boardCode($request));
 
         $account=trim((string)$request->param('account',''));
         if ($account !== '') $query->whereLike('u.username','%'.$account.'%');
@@ -144,6 +151,7 @@ final class AgentBusiness
             ->whereNull('u.deleted_at');
         if ((int)$request->param('include_refunded',0)!==1) $query->where('d.status','<>','refunded');
         OrganizationHierarchy::applyUserScope($query,$session,'d.user_id');
+        $query->where('d.board_code',$this->boardCode($request));
 
         $lotteryId=(int)$request->param('lottery_id',0);
         if ($lotteryId > 0) $query->join('lottery_histories lh','lh.code=d.issue_no AND lh.lottery_id='.$lotteryId);
@@ -180,9 +188,10 @@ final class AgentBusiness
         $waterRate=max(0,min(1,(float)($siteSettings['water_rate']??$siteSettings['dark_water_rate']??0.085)));
         $query=$this->detailQuery($request,$session,$winningOnly);
         $summary=(clone $query)->field('COALESCE(SUM(d.amount),0) total_amount,COALESCE(SUM(d.win_amount),0) win_amount,COUNT(d.id) total')->find() ?: [];
+        $total=(int)($summary['total']??0);
         [$page,$size]=$this->page($request);
         $sort=(string)$request->param('sort','desc')==='asc'?'asc':'desc';
-        $rows=$query->field('d.id,d.bet_record_id,r.submission_id,d.issue_no,d.number_text,d.category,d.amount,d.odds,d.win_amount,d.rebate,d.status,d.placed_at,d.source_text,u.username,COALESCE(s.play_type,d.category) play_type,s.lottery,r.source_text record_source')
+        $rows=$query->field('d.id,d.bet_record_id,r.submission_id,d.board_code,d.issue_no,d.number_text,d.category,d.amount,d.odds,d.win_amount,d.rebate,d.status,d.placed_at,d.source_text,u.username,COALESCE(s.play_type,d.category) play_type,s.lottery,r.source_text record_source')
             ->order('d.placed_at',$sort)->order('d.id',$sort)->page($page,$size)->select()->toArray();
         foreach ($rows as &$row) {
             $amount=(float)$row['amount']; $rebate=(float)$row['rebate']; $win=(float)$row['win_amount'];
@@ -259,13 +268,14 @@ final class AgentBusiness
         elseif ($status === 'unwon') $query->where('r.status','unwon');
         $this->issueRange($query,$request,'r.issue_no');
         $this->timeRange($query,$request,'r.placed_at');
+        $query->where('r.board_code',$this->boardCode($request));
         $total=(clone $query)->count();
         [$page,$size]=$this->page($request);
-        $rows=$query->field('r.id,r.submission_id,r.issue_no,r.source_text,r.formatted_text,r.bet_count,r.amount,r.win_amount,r.status,r.sealed,r.placed_at,u.username')
+        $rows=$query->field('r.id,r.submission_id,r.board_code,r.issue_no,r.source_text,r.formatted_text,r.bet_count,r.amount,r.win_amount,r.status,r.sealed,r.placed_at,u.username')
             ->order('r.placed_at','desc')->order('r.id','desc')->page($page,$size)->select()->toArray();
         $ids=array_map('intval',array_column($rows,'id')); $wins=[];
         if ($ids) {
-            foreach (Db::name('bet_details')->whereIn('bet_record_id',$ids)->where('status','won')->field('bet_record_id,COUNT(*) win_count')->group('bet_record_id')->select()->toArray() as $row) $wins[(int)$row['bet_record_id']]=(int)$row['win_count'];
+            foreach (Db::name('bet_details')->whereIn('bet_record_id',$ids)->where('board_code',$this->boardCode($request))->where('status','won')->field('bet_record_id,COUNT(*) win_count')->group('bet_record_id')->select()->toArray() as $row) $wins[(int)$row['bet_record_id']]=(int)$row['win_count'];
         }
         foreach ($rows as &$row) {
             $row['order_no']=$this->orderNumber($row);
@@ -281,7 +291,7 @@ final class AgentBusiness
     {
         $session=$this->session($request); $siteId=(int)$session['site_id'];
         $query=Db::name('bet_records')->alias('r')->join('site_users u','u.id=r.user_id')
-            ->where('r.site_id',$siteId)->where('r.status','refunded')->whereNull('u.deleted_at');
+            ->where('r.site_id',$siteId)->where('r.status','refunded')->where('r.board_code',$this->boardCode($request))->whereNull('u.deleted_at');
         OrganizationHierarchy::applyUserScope($query,$session,'r.user_id');
         $lotteryId=(int)$request->param('lottery_id',0);
         if ($lotteryId > 0) $query->join('lottery_histories lh','lh.code=r.issue_no AND lh.lottery_id='.$lotteryId);
@@ -289,7 +299,7 @@ final class AgentBusiness
         if ($account !== '') $query->whereLike('u.username','%'.$account.'%');
         $this->issueRange($query,$request,'r.issue_no');
         $total=(clone $query)->count(); [$page,$size]=$this->page($request);
-        $rows=$query->field('r.id,r.issue_no,r.bet_count,r.amount,r.placed_at,r.refunded_at,u.username')
+        $rows=$query->field('r.id,r.submission_id,r.board_code,r.issue_no,r.bet_count,r.amount,r.placed_at,r.refunded_at,u.username')
             ->order('r.refunded_at','desc')->order('r.id','desc')->page($page,$size)->select()->toArray();
         foreach ($rows as &$row) {
             $row['amount']=number_format((float)$row['amount'],2,'.','');
