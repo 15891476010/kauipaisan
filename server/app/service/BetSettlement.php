@@ -74,11 +74,30 @@ final class BetSettlement
                 $user = Db::name('site_users')->where('id', $userId)->where('site_id', $siteId)->lock(true)->find();
                 if (!$user) throw new \RuntimeException('结算用户不存在');
                 $before = (float)$user['balance'];
-                $availableBefore = $before + (float)$user['credit_balance'] - (float)$user['used_balance'];
+                $creditBefore = (float)$user['credit_balance'];
+                $availableBefore = $before + $creditBefore - (float)$user['used_balance'];
                 $balanceChange = $totalWin - $amount;
-                $balanceExpression = 'balance '.($balanceChange >= 0 ? '+ ' : '- ').number_format(abs($balanceChange), 2, '.', '');
+                // Keep both account fields non-negative. A loss is applied to
+                // cash first, then to the credit balance; a win is added to
+                // cash. This preserves the account total while preventing the
+                // negative balances that made score edits impossible.
+                $balanceAfter = $before;
+                $creditAfter = $creditBefore;
+                if ($balanceChange >= 0) {
+                    $balanceAfter = round($before + $balanceChange, 2);
+                } else {
+                    $loss = abs($balanceChange);
+                    $cashReduction = min(max(0, $before), $loss);
+                    $balanceAfter = round($before - $cashReduction, 2);
+                    $creditAfter = round($creditBefore - ($loss - $cashReduction), 2);
+                    if ($creditAfter < -0.000001) {
+                        throw new \RuntimeException('结算后账户信用余额不足');
+                    }
+                    $creditAfter = max(0, $creditAfter);
+                }
                 Db::name('site_users')->where('id', $userId)->where('site_id', $siteId)->update([
-                    'balance' => Db::raw($balanceExpression),
+                    'balance' => number_format($balanceAfter, 2, '.', ''),
+                    'credit_balance' => number_format($creditAfter, 2, '.', ''),
                     'used_balance' => Db::raw('GREATEST(used_balance - '.number_format($amount, 2, '.', '').', 0)'),
                     'updated_at' => date('Y-m-d H:i:s'),
                 ]);
@@ -146,6 +165,11 @@ final class BetSettlement
         if($detail['odds']!==null){
             $odds=(float)$detail['odds'];
             if($odds<=0)throw new \RuntimeException('注单明细 #'.(int)$detail['id'].' 的锁定赔率无效，已停止整单结算');
+            // Older pending rows may have locked the catalog's 80 quote
+            // before concrete leopard handling was added. Correct those
+            // rows at settlement time; explicit 豹子全包 packages remain 80.
+            $source=(string)($detail['source_text']??'');
+            if(str_contains($source,'豹子')&&!str_contains($source,'豹子全包')&&$odds<800)$odds*=10;
             return [$odds,false];
         }
         if(($stop['actual_odds']??null)!==null&&(float)$stop['actual_odds']>0)return [(float)$stop['actual_odds'],true];
@@ -171,7 +195,7 @@ final class BetSettlement
                 ->where('category',$identity['category'])->where('name',$identity['name'])
                 ->where('status',1)->whereNull('deleted_at')->select()->toArray();
         }
-        return count($rows)===1?$rows[0]:[];
+        return count($rows)===1?$this->adjustOddsRowForSource($rows[0],$source):[];
     }
 
     /** Distribute this user's net house profit through the organization chain. */
@@ -550,9 +574,24 @@ final class BetSettlement
             $row['name'] = $identity['name'];
             return $row;
         }
-        return Db::name('lottery_odds')->where('lottery_id', $lotteryId)->where('board_code',$boardCode)
+        $row = Db::name('lottery_odds')->where('lottery_id', $lotteryId)->where('board_code',$boardCode)
             ->where('category', $identity['category'])->where('name', $identity['name'])
             ->where('status', 1)->whereNull('deleted_at')->find() ?: [];
+        return $this->adjustOddsRowForSource($row, $source);
+    }
+
+    /**
+     * The odds catalog stores 豹子全包 as an 80-per-10元 package quote. A
+     * concrete leopard number in a mixed 直/组选 ticket is one 2元 selection,
+     * so its effective payout odds are 80 × 10 = 800. Explicit 豹子全包
+     * package bets keep the catalog value unchanged.
+     */
+    private function adjustOddsRowForSource(array $row, string $source): array
+    {
+        if ($row !== [] && str_contains($source, '豹子') && !str_contains($source, '豹子全包')) {
+            $row['odds'] = number_format((float)($row['odds'] ?? 0) * 10, 4, '.', '');
+        }
+        return $row;
     }
 
     private function normalizeBoardCode(string $value): string

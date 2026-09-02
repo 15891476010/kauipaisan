@@ -4,7 +4,7 @@ import { HashRouter, Route, Routes } from "react-router-dom";
 import { Agreement, defaultAgreement, type AgreementData } from "./features/agreement/Agreement";
 import { Login } from "./features/auth/Login";
 import { Main } from "./features/main/Main";
-import { getAgreement, logoutSession } from "./api/user";
+import { getAgreement, getBranding, logoutSession } from "./api/user";
 
 function clearUserAuthQuery() {
   const url = new URL(window.location.href);
@@ -15,7 +15,8 @@ function clearUserAuthQuery() {
 
 export default function App() {
   const { modal } = AntdApp.useApp();
-  const siteName = localStorage.getItem("site_name") || "站点会员中心";
+  const [siteName, setSiteName] = useState(() => localStorage.getItem("site_name") || "站点会员中心");
+  const [appLoading, setAppLoading] = useState(true);
   const [name, setName] = useState(() => localStorage.getItem("user_token") ? localStorage.getItem("user_name") || "" : "");
   const [mustChangePassword, setMustChangePassword] = useState(() => localStorage.getItem("user_must_change_password") === "1");
   const [agreementVisible, setAgreementVisible] = useState(() => {
@@ -23,6 +24,30 @@ export default function App() {
     return Boolean(token && localStorage.getItem("user_name") && localStorage.getItem("user_must_change_password") !== "1" && sessionStorage.getItem("agreement_accepted_token") !== token);
   });
   const [agreement, setAgreement] = useState<AgreementData>(defaultAgreement);
+
+  useEffect(() => {
+    let active = true;
+    const timeout = window.setTimeout(() => {
+      if (active) setAppLoading(false);
+    }, 1500);
+    void getBranding()
+      .then((response) => {
+        const brandingName = String(response.data?.data?.site_name || "").trim();
+        if (active && brandingName) {
+          setSiteName(brandingName);
+          localStorage.setItem("site_name", brandingName);
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        window.clearTimeout(timeout);
+        if (active) setAppLoading(false);
+      });
+    return () => {
+      active = false;
+      window.clearTimeout(timeout);
+    };
+  }, []);
 
   const clearSession = () => {
     clearUserAuthQuery();
@@ -84,6 +109,10 @@ export default function App() {
   }, []);
 
   const logout = () => { void logoutSession().catch(() => undefined).finally(clearSession); };
+
+  if (appLoading) {
+    return <div className="api-loading" role="status" aria-label="加载中" />;
+  }
 
   return (
     <HashRouter>

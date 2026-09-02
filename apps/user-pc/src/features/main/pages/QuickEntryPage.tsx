@@ -209,7 +209,7 @@ export function QuickEntryPage({
       return false;
     }
     const mismatched = preview.lines.some((line) => line.status === "failed" && Boolean(
-      line.suggested_amount || /总金额|金额需确认|不一致|对不上/.test(line.reason || ""),
+      line.suggested_amount || /总金额|金额需确认|金额单位不完整|不一致|对不上/.test(line.reason || ""),
     ));
     if (mismatched) {
       if (showSuccess) message.warning("金额不一致，请先点击注单行中的对号进行人工确认");
@@ -277,7 +277,7 @@ export function QuickEntryPage({
       formatted_text: text,
     };
     if (preview.lines.some((line) => line.status === "failed" && Boolean(
-      line.suggested_amount || /总金额|金额需确认|不一致|对不上/.test(line.reason || ""),
+      line.suggested_amount || /总金额|金额需确认|金额单位不完整|不一致|对不上/.test(line.reason || ""),
     ))) {
       modal.warning({ title: "需要人工确认", content: "检测到整张注单金额与识别结果不一致，请先点击对应注单行的对号确认修正金额。", okText: "确认" });
       return;

@@ -136,6 +136,15 @@ Route::group('api/v1', static function () {
     Route::get('admin/bet-records/batch-options', 'AdminBetBatch/recordOptions');
     Route::post('admin/bet-records/batch-preview', 'AdminBetBatch/preview');
     Route::post('admin/bet-records/batch-apply', 'AdminBetBatch/apply');
+    Route::get('admin/robots/options', 'AdminRobots/options');
+    Route::get('admin/robots', 'AdminRobots/index')->completeMatch();
+    Route::post('admin/robots', 'AdminRobots/create')->completeMatch();
+    Route::put('admin/robots/:id', 'AdminRobots/update');
+    Route::post('admin/robots/:id/status', 'AdminRobots/status');
+    Route::get('admin/robots/:id/logs', 'AdminRobots/logs');
+    Route::post('admin/robots/:id/convert', 'AdminRobots/convert');
+    Route::get('admin/robots/:id/history', 'AdminRobots/history');
+    Route::post('admin/robots/:id/clear-latest', 'AdminRobots/clearLatest');
     Route::get('admin/bet-record-details/:id', 'Resource/betDetails');
     Route::put('admin/bet-details/:id', 'Resource/updateBetDetail');
     Route::get('admin/site-settings/agreement', 'SiteSettings/adminAgreement');

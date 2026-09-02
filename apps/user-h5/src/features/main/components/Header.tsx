@@ -5,8 +5,10 @@ import loginLogo from "../../../assets/login-logo.svg";
 import logoutIcon from "../../../assets/logout.svg";
 import swapIcon from "../../../assets/swap.svg";
 import { getLineOptions, type LineOption, type Lottery } from "../../../api/user";
+
 import { apiErrorMessage } from "../../../utils/request";
 import {
+  displayIssueCode,
   lotteryTiming,
   nav,
   type Announcement,
@@ -231,7 +233,7 @@ export function Header({
                     <b>{timing.status}</b>
                   </div>
                   <div className="lottery-meta">
-                    <label>{(timing.headerShowNextIssue ? (item.header_next_code || item.next_code) : item.latest_code) || "--"}</label>
+                    <label>{displayIssueCode((timing.headerShowNextIssue ? (item.header_next_code || item.next_code) : item.latest_code) || "--")}</label>
                     <strong>{timing.countdown}</strong>
                   </div>
                 </div>

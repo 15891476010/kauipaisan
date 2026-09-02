@@ -5,7 +5,6 @@ namespace app\controller;
 use think\Request;
 use think\facade\Db;
 use think\facade\Cache;
-use app\service\LotteryHistorySync;
 use app\service\BetSettlement;
 use app\service\AccountPresence;
 use app\service\CreditLedger;
@@ -193,10 +192,65 @@ final class Resource
         $ids=array_values(array_unique(array_filter(array_map('intval',$lotteryIds),static fn(int $id): bool => $id > 0)));
         $valid=$ids ? Db::name('lotteries')->whereIn('id',$ids)->where('tenant_id',$tenantId)->where('status',1)->whereNull('deleted_at')->column('id') : [];
         Db::name('site_lotteries')->where('site_id',$siteId)->delete();
-        if (!$valid) return;
+        if (!$valid) {
+            $this->syncSiteLotteryPermissions($siteId,$tenantId,[]);
+            return;
+        }
         $now=date('Y-m-d H:i:s'); $rows=[];
         foreach ($valid as $lotteryId) $rows[]=['tenant_id'=>$tenantId,'site_id'=>$siteId,'lottery_id'=>(int)$lotteryId,'created_at'=>$now];
         Db::name('site_lotteries')->insertAll($rows);
+        $this->syncSiteLotteryPermissions($siteId,$tenantId,array_map('intval',$valid));
+    }
+
+    /**
+     * Keep member lottery permissions aligned with the site's active lotteries.
+     * Historical databases may contain permissions for an older duplicate lottery
+     * id, so permissions are migrated by code/name before defaulting new entries.
+     */
+    private function syncSiteLotteryPermissions(int $siteId, int $tenantId, array $activeIds): void
+    {
+        $users=Db::name('site_users')->where('site_id',$siteId)->whereNull('deleted_at')->column('id');
+        if (!$users) return;
+        $activeIds=array_values(array_unique(array_map('intval',$activeIds)));
+        $lotteries=Db::name('lotteries')->where('tenant_id',$tenantId)->whereNull('deleted_at')->field('id,name,code')->select()->toArray();
+        $meta=[]; foreach ($lotteries as $lottery) $meta[(int)$lottery['id']]=$lottery;
+        $activeMeta=[]; foreach ($activeIds as $lotteryId) if (isset($meta[$lotteryId])) $activeMeta[]=$meta[$lotteryId];
+        $now=date('Y-m-d H:i:s');
+        foreach (array_map('intval',$users) as $userId) {
+            $saved=Db::name('user_lottery_permissions')->where('site_id',$siteId)->where('user_id',$userId)->select()->toArray();
+            $byId=[]; $byKey=[]; $byName=[];
+            foreach ($saved as $permission) {
+                $permissionId=(int)$permission['lottery_id'];
+                $byId[$permissionId]=$permission;
+                if (isset($meta[$permissionId])) {
+                    $key=(string)$meta[$permissionId]['code'].'\u0000'.(string)$meta[$permissionId]['name'];
+                    $byKey[$key]=$permission;
+                    $byName[(string)$meta[$permissionId]['name']]=$permission;
+                }
+            }
+            Db::name('user_lottery_permissions')->where('site_id',$siteId)->where('user_id',$userId)->delete();
+            if (!$activeMeta) continue;
+            $rows=[]; $used=[];
+            foreach ($activeMeta as $lottery) {
+                $lotteryId=(int)$lottery['id']; $key=(string)$lottery['code'].'\u0000'.(string)$lottery['name'];
+                $permission=$byId[$lotteryId]??null;
+                if (!$permission) {
+                    $candidate=$byKey[$key]??($byName[(string)$lottery['name']]??null);
+                    if ($candidate) {
+                        $legacyId=(int)$candidate['lottery_id'];
+                        if (!isset($used[$legacyId])) $permission=$candidate;
+                    }
+                }
+                $rows[]=[
+                    'tenant_id'=>$tenantId,'site_id'=>$siteId,'user_id'=>$userId,'lottery_id'=>$lotteryId,
+                    'can_view'=>$permission ? ((int)$permission['can_view']===1?1:0) : 1,
+                    'can_bet'=>$permission ? ((int)$permission['can_bet']===1?1:0) : 1,
+                    'offline_rebate'=>$permission['offline_rebate']??'0.0000','created_at'=>$permission['created_at']??$now,'updated_at'=>$now,
+                ];
+                if ($permission) $used[(int)$permission['lottery_id']]=true;
+            }
+            Db::name('user_lottery_permissions')->insertAll($rows);
+        }
     }
 
     private function query(string $resource): \think\db\Query
@@ -207,6 +261,100 @@ final class Resource
         if (in_array($resource, ['sub-agents','sub_agents'], true)) $query->where('level', 2);
         if (in_array($resource,['admins','site-admins','site-users','agent-center'],true)) $query->whereNull('deleted_at');
         return $query;
+    }
+
+    private function alertThreshold(mixed $value): float
+    {
+        if ($value === null || $value === '') return 0.0;
+        $text = trim((string)$value);
+        $multiplier = 1.0;
+        if (str_ends_with($text, '万')) { $multiplier = 10000.0; $text = trim(substr($text, 0, -3)); }
+        elseif (str_ends_with($text, '千')) { $multiplier = 1000.0; $text = trim(substr($text, 0, -3)); }
+        if (!is_numeric($text) || (float)$text < 0) throw new \InvalidArgumentException('预警金额必须是非负数字');
+        return (float)$text * $multiplier;
+    }
+
+    private function potentialWinAmount(array $detail): float
+    {
+        $amount = max(0.0, (float)($detail['amount'] ?? 0));
+        $odds = max(0.0, (float)($detail['odds'] ?? 0));
+        if ($amount <= 0 || $odds <= 0) return 0.0;
+        $selectionCount = $this->detailSelectionCount($detail);
+        $source = (string)($detail['source_text'] ?? '');
+        $isPackage = $selectionCount > 1
+            && preg_match('/(?<!\d)[0-9]{1,10}\s*(组三|组六)[一二两三四五六七八九1-9]码/u', $source) === 1;
+        return $amount * $odds * ($isPackage ? $selectionCount : 1);
+    }
+
+    /** @param array<int,array<string,mixed>> $detailsByRecord */
+    private function appendBetAlerts(array &$list, array $detailsByRecord, float $betThreshold, float $winThreshold): void
+    {
+        foreach ($list as &$record) {
+            $recordId = (int)($record['id'] ?? 0);
+            $pending = strtolower((string)($record['status'] ?? '')) === 'pending';
+            $potential = 0.0;
+            $editable = false;
+            foreach ($detailsByRecord[$recordId] ?? [] as $detail) {
+                $potential += $this->potentialWinAmount($detail);
+                $editable = $editable || preg_match('/(?:^|\s)\d{3}(?:\s|$)/', (string)($detail['number_text'] ?? '')) === 1;
+            }
+            $record['potential_win_amount'] = number_format($potential, 2, '.', '');
+            $record['batch_editable'] = $editable;
+            $reasons = [];
+            if ($pending && $betThreshold > 0 && (float)($record['amount'] ?? 0) >= $betThreshold) $reasons[] = 'bet_amount';
+            if ($pending && $winThreshold > 0 && $potential >= $winThreshold) $reasons[] = 'potential_win';
+            $record['alert_reasons'] = $reasons;
+            $record['alert_level'] = $reasons === [] ? '' : (count($reasons) > 1 ? 'danger' : $reasons[0]);
+        }
+        unset($record);
+    }
+
+    /**
+     * Simulate one exact three-digit draw against the filtered pending records.
+     * Probabilities are ratios of pending order count and order amount, not a
+     * claim about the lottery's own draw probability.
+     * @return array<string,mixed>
+     */
+    private function simulateBetNumber(\think\db\Query $baseQuery, string $lottery, string $number): array
+    {
+        $pendingQuery = clone $baseQuery;
+        $pendingQuery->where('status', 'pending');
+        $pendingRows = $pendingQuery->field('id,amount')->select()->toArray();
+        $ids = array_values(array_map('intval', array_column($pendingRows, 'id')));
+        if ($ids === []) return ['number' => $number, 'total' => 0, 'win_count' => 0, 'lose_count' => 0, 'win_probability' => '0.00', 'lose_probability' => '0.00', 'total_amount' => '0.00', 'win_amount' => '0.00', 'lose_amount' => '0.00', 'win_amount_probability' => '0.00', 'lose_amount_probability' => '0.00'];
+        $details = Db::name('bet_details')->alias('d')->leftJoin('user_stop_drops s', 's.bet_detail_id=d.id')
+            ->whereIn('d.bet_record_id', $ids)->where('s.lottery', $lottery)
+            ->field('d.bet_record_id,d.number_text,d.source_text,d.amount,d.odds')->select()->toArray();
+        $byRecord = [];
+        foreach ($details as $detail) $byRecord[(int)$detail['bet_record_id']][] = $detail;
+        $winIds = [];
+        foreach ($ids as $recordId) {
+            foreach ($byRecord[$recordId] ?? [] as $detail) {
+                $tokens = preg_split('/\s+/', trim((string)($detail['number_text'] ?? ''))) ?: [];
+                $tokens = array_values(array_filter($tokens, static fn(string $token): bool => trim($token) !== ''));
+                if ($tokens === []) $tokens = [(string)($detail['source_text'] ?? '')];
+                $source = (string)($detail['source_text'] ?? '');
+                if (array_filter($tokens, fn(string $token): bool => $this->numberWon($token, $number, $source)) !== []) {
+                    $winIds[$recordId] = true;
+                    break;
+                }
+            }
+        }
+        $totalAmount = 0.0; $winAmount = 0.0;
+        foreach ($pendingRows as $row) {
+            $amount = max(0.0, (float)($row['amount'] ?? 0));
+            $totalAmount += $amount;
+            if (isset($winIds[(int)$row['id']])) $winAmount += $amount;
+        }
+        $total = count($pendingRows); $winCount = count($winIds); $loseCount = $total - $winCount; $loseAmount = $totalAmount - $winAmount;
+        return [
+            'number' => $number, 'total' => $total, 'win_count' => $winCount, 'lose_count' => $loseCount,
+            'win_probability' => number_format($total > 0 ? $winCount * 100 / $total : 0, 2, '.', ''),
+            'lose_probability' => number_format($total > 0 ? $loseCount * 100 / $total : 0, 2, '.', ''),
+            'total_amount' => number_format($totalAmount, 2, '.', ''), 'win_amount' => number_format($winAmount, 2, '.', ''), 'lose_amount' => number_format(max(0, $loseAmount), 2, '.', ''),
+            'win_amount_probability' => number_format($totalAmount > 0 ? $winAmount * 100 / $totalAmount : 0, 2, '.', ''),
+            'lose_amount_probability' => number_format($totalAmount > 0 ? max(0, $loseAmount) * 100 / $totalAmount : 0, 2, '.', ''),
+        ];
     }
 
     public function index(Request $request, string $resource): \think\response\Json
@@ -239,13 +387,6 @@ final class Resource
             foreach($list as &$row)unset($row['password']);unset($row);
             return $this->reply(['list'=>$list,'total'=>$total]);
         }
-        if ($resource === 'bet-records') {
-            // Keep the management list current even when no CLI sync worker is running.
-            $activeLotteries = Db::name('lotteries')->where('status', 1)->whereNull('deleted_at')->select()->toArray();
-            foreach ($activeLotteries as $lottery) {
-                try { (new LotteryHistorySync())->syncLottery($lottery); } catch (\Throwable $e) { /* stale data is preferable to failing the list */ }
-            }
-        }
         $query = $this->query($resource);
         $scopedSiteId=$this->scopedSiteId($request);
         $this->authorizeResource($resource,$scopedSiteId);
@@ -264,6 +405,17 @@ final class Resource
                 $query->whereIn('id', $recordIds ?: [0]);
             }
         }
+        $betAlertThreshold = 0.0; $winAlertThreshold = 0.0; $checkNumber = ''; $numberSimulation = null;
+        if ($resource === 'bet-records') {
+            $betAlertThreshold = $this->alertThreshold($request->param('bet_alert_threshold'));
+            $winAlertThreshold = $this->alertThreshold($request->param('win_alert_threshold'));
+            $candidateNumber = preg_replace('/\D/', '', (string)$request->param('check_number', '')) ?? '';
+            if ($candidateNumber !== '') {
+                if (strlen($candidateNumber) !== 3) throw new \InvalidArgumentException('试算号码必须是三位数字');
+                $checkNumber = $candidateNumber;
+            }
+        }
+        $simulationQuery = clone $query;
         $total = (clone $query)->count();
         $list = $query->page(max(1,(int)$request->param('page',1)),min(100,max(1,(int)$request->param('page_size',20))))->order('id desc')->select()->toArray();
         if ($resource === 'audit-logs') {
@@ -362,9 +514,13 @@ final class Resource
                     $betRecord['win_status']=$this->classifyWinStatus($detailsByRecord[$recordId]??[],(float)($betRecord['win_amount']??0));
                 }
             }
+            $this->appendBetAlerts($list, $detailsByRecord, $betAlertThreshold, $winAlertThreshold);
+            if ($checkNumber !== '' && $lottery !== '') $numberSimulation = $this->simulateBetNumber($simulationQuery, $lottery, $checkNumber);
         }
         foreach ($list as &$row) { unset($row['password'], $row['manager_password']); }
-        return $this->reply(['list'=>$list,'total'=>$total]);
+        $payload = ['list'=>$list,'total'=>$total];
+        if ($resource === 'bet-records') $payload['number_simulation'] = $numberSimulation;
+        return $this->reply($payload);
     }
 
     private function detailSelectionCount(array $detail): int
@@ -465,15 +621,6 @@ final class Resource
         $stops=$detailIds ? Db::name('user_stop_drops')->whereIn('bet_detail_id',$detailIds)->column('lottery,number_text,play_type,original_amount,actual_amount,stop_amount,original_odds,actual_odds,drop_odds','bet_detail_id') : [];
         $lotteries = [];
         foreach ($stops as $stop) { $name = trim((string)($stop['lottery'] ?? '')); if ($name !== '') $lotteries[$name] = true; }
-        // Refresh pending records before presenting them so the drawer reflects the latest draw.
-        if (in_array((string)($record['status'] ?? ''), ['pending','sealed'], true)) {
-            foreach (array_keys($lotteries) as $name) {
-                $lottery = Db::name('lotteries')->where('name', $name)->where('status', 1)->whereNull('deleted_at')->find();
-                if ($lottery) { try { (new LotteryHistorySync())->syncLottery($lottery); } catch (\Throwable $e) { /* detail remains pending when provider is unavailable */ } }
-            }
-            $record = $recordQuery->find() ?: $record;
-            $details = Db::name('bet_details')->whereIn('bet_record_id',$recordIds)->order('id asc')->select()->toArray();
-        }
         $recordRows=Db::name('bet_records')->whereIn('id',$recordIds)->select()->toArray();
         if ($recordRows!==[]) {
             $record['bet_count']=array_sum(array_map(static fn(array $row): int=>(int)($row['bet_count']??0),$recordRows));

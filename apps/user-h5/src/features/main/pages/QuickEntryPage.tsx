@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { App as AntdApp, Input, Modal, Switch, Tooltip } from "antd";
 import {
-  DeleteOutlined,
+  QuestionCircleOutlined,
+  RestOutlined,
 } from "@ant-design/icons";
 import {
   createQuickTag,
@@ -35,9 +36,12 @@ export function QuickEntryPage({
   const [text, setText] = useState("");
   const [replaceFrom, setReplaceFrom] = useState("");
   const [replaceTo, setReplaceTo] = useState("");
+  const [replaceOpen, setReplaceOpen] = useState(false);
+  const [replaceUndoText, setReplaceUndoText] = useState<string | null>(null);
   const [tagOpen, setTagOpen] = useState(false);
   const [tagName, setTagName] = useState("");
   const [tags, setTags] = useState<QuickTag[]>([]);
+  const [tagDeleting, setTagDeleting] = useState(false);
   const [tab, setTab] = useState("快速录入");
   const [rulesOpen, setRulesOpen] = useState(false);
   const [ruleSettings, setRuleSettings] = useState<RuleSettings>();
@@ -48,8 +52,10 @@ export function QuickEntryPage({
     const timer = window.setInterval(() => setNow(Date.now()), 1_000);
     return () => window.clearInterval(timer);
   }, []);
-  const timing = lotteryTiming(selectedLottery, now);
-  const boardOptions = selectedLottery?.boards || [{ code: selectedLottery?.board_code || "A", name: `${selectedLottery?.board_code || "A"}盘` }];
+  const currentQuickLottery =
+    lotteries.find((item) => item.name === lottery) || selectedLottery;
+  const timing = lotteryTiming(currentQuickLottery, now);
+  const boardOptions = currentQuickLottery?.boards || [{ code: currentQuickLottery?.board_code || "A", name: `${currentQuickLottery?.board_code || "A"}盘` }];
   const activeBoard = boardOptions.find((item) => item.code === boardCode) || boardOptions[0];
   useEffect(() => { if (selectedLottery?.board_code) setBoardCode(selectedLottery.board_code); else if (!boardOptions.some((item) => item.code === boardCode)) setBoardCode(boardOptions[0]?.code || "A"); }, [selectedLottery?.id, selectedLottery?.board_code, boardOptions.length]);
   const showMask = tab === "快速录入" && timing.mask;
@@ -63,6 +69,7 @@ export function QuickEntryPage({
   const [generating, setGenerating] = useState(false);
   const previewRequestId = useRef(0);
   const quickSettingsLoaded = useRef(false);
+  const defaultLotteryFallbackNotice = useRef("");
   useEffect(() => {
     if (generatedLines.length === 0) {
       setResultHeight(0);
@@ -87,7 +94,7 @@ export function QuickEntryPage({
     }
     flush(); return blocks;
   };
-  const [warningAmount, setWarningAmount] = useState("0");
+  const [warningAmount, setWarningAmount] = useState("");
   const suppressResultRecognition = useRef(false);
   useEffect(() => {
     getRules()
@@ -105,7 +112,8 @@ export function QuickEntryPage({
         setTags(data.tags || []);
         const p = data.preferences || {};
         setLottery(String(p.lottery || lotteries.find((item) => item.name === "福彩3D")?.name || lotteries[0]?.name || "福彩3D"));
-        setWarningAmount(String(p.warningAmount || "0"));
+        const savedWarning = String(p.warningAmount ?? "").trim();
+        setWarningAmount(savedWarning === "0" ? "" : savedWarning);
         setOptions([
           p.autoBet !== false,
           p.recognize === true,
@@ -148,6 +156,40 @@ export function QuickEntryPage({
       warningAmount: nextWarning,
     }).catch((error) => message.error(apiErrorMessage(error, "设置保存失败")));
   };
+
+  useEffect(() => {
+    if (!quickSettingsLoaded.current || !lotteries.length) return;
+    const current = lotteries.find((item) => item.name === lottery);
+    if (!current) return;
+
+    const currentTiming = lotteryTiming(current, now);
+    if (currentTiming.canBet) {
+      defaultLotteryFallbackNotice.current = "";
+      return;
+    }
+
+    // The reference only falls back from 福彩3D to 体彩. Once体彩 is
+    // selected, keep it selected even while it is about to open so the
+    // locked state and status remain visible instead of oscillating back.
+    if (current.name !== "福彩3D") return;
+    const fallback =
+      lotteries.find((item) => item.name === "排列三") ||
+      lotteries.find((item) => item.id !== current.id);
+    if (!fallback) return;
+
+    const noticeKey = String(current.id) + ":" + String(fallback.id);
+    if (defaultLotteryFallbackNotice.current === noticeKey) return;
+    defaultLotteryFallbackNotice.current = noticeKey;
+
+    const shortName = (item: Lottery) =>
+      item.name === "排列三" ? "体彩" : item.name === "福彩3D" ? "福彩" : item.name;
+    setLottery(fallback.name);
+    persistPreferences(options, fallback.name, warningAmount);
+    message.info(
+      shortName(current) + "已经关盘，默认彩种变更为" + shortName(fallback),
+    );
+  }, [lotteries, lottery, now, options, warningAmount]);
+
   const generateText = async (
     sourceText: string,
     showMessage = true,
@@ -235,7 +277,7 @@ export function QuickEntryPage({
       return false;
     }
     const mismatched = preview.lines.some((line) => line.status === "failed" && Boolean(
-      line.suggested_amount || /总金额|金额需确认|不一致|对不上/.test(line.reason || ""),
+      line.suggested_amount || /总金额|金额需确认|金额单位不完整|不一致|对不上/.test(line.reason || ""),
     ));
     if (mismatched) {
       if (showSuccess) message.warning("金额不一致，请先点击注单行中的对号进行人工确认");
@@ -303,7 +345,7 @@ export function QuickEntryPage({
       formatted_text: text,
     };
     if (preview.lines.some((line) => line.status === "failed" && Boolean(
-      line.suggested_amount || /总金额|金额需确认|不一致|对不上/.test(line.reason || ""),
+      line.suggested_amount || /总金额|金额需确认|金额单位不完整|不一致|对不上/.test(line.reason || ""),
     ))) {
       modal.warning({ title: "需要人工确认", content: "检测到整张注单金额与识别结果不一致，请先点击对应注单行的对号确认修正金额。", okText: "确认" });
       return;
@@ -341,26 +383,37 @@ export function QuickEntryPage({
       </div>
       {tab === "快速录入" ? (
         <>
+          <div className="quick-board-indicator">
+            <span>{activeBoard?.code || boardCode} - {activeBoard?.code || boardCode}</span>
+          </div>
           <div className="replace">
-            将：
-            <input
-              value={replaceFrom}
-              onChange={(event) => setReplaceFrom(event.target.value)}
-            />
-            替换为：
-            <input
-              value={replaceTo}
-              onChange={(event) => setReplaceTo(event.target.value)}
-            />
             <button
               type="button"
-              onClick={() => {
-                if (replaceFrom)
-                  setText((value) => value.split(replaceFrom).join(replaceTo));
-              }}
+              onClick={() => setReplaceOpen(true)}
             >
               <span>替换文本</span>
             </button>
+            <b className="replace-separator" aria-hidden="true" />
+            {replaceUndoText !== null && (
+              <button
+                className="undo"
+                type="button"
+                onClick={() => {
+                  modal.confirm({
+                    title: "确定要撤销至最近一次替换操作之前的文本吗？",
+                    icon: <QuestionCircleOutlined />,
+                    okText: "确 定",
+                    cancelText: "取 消",
+                    onOk: () => {
+                      setText(replaceUndoText);
+                      setReplaceUndoText(null);
+                    },
+                  });
+                }}
+              >
+                <span>撤 销</span>
+              </button>
+            )}
             <button
               className="new"
               type="button"
@@ -368,30 +421,80 @@ export function QuickEntryPage({
             >
               ＋ 新标签
             </button>
+            <b className="replace-separator" aria-hidden="true" />
+            <button
+              type="button"
+              className="rule-action"
+              onClick={() => setRulesOpen(true)}
+            >
+              规则
+            </button>
+            <b className="replace-separator" aria-hidden="true" />
+            <div className="warning-label">
+              <label htmlFor="warning-amount">大金额预警</label>
+              <input
+                id="warning-amount"
+                className="warning-input"
+                value={warningAmount}
+                onFocus={(event) => event.currentTarget.select()}
+                onChange={(event) => {
+                  const value = event.target.value.replace(/[^\d.]/g, "");
+                  setWarningAmount(value);
+                  persistPreferences(options, lottery, value);
+                }}
+                inputMode="decimal"
+              />
+            </div>
             {tags.length > 0 && (
-              <div className="tag-list">
+              <div className={`tag-list${tagDeleting ? " deleting" : ""}`}>
+                <button
+                  type="button"
+                  className="tag-delete-toggle"
+                  onClick={() => setTagDeleting((value) => !value)}
+                >
+                  {tagDeleting ? "取 消" : "删 除"}
+                </button>
                 {tags.map((tag) => (
-                  <span key={tag.id}>
-                    <button type="button" onClick={() => setText(tag.name)}>
-                      {tag.name}
-                    </button>
+                  <div className="tag-item" key={tag.id}>
                     <button
                       type="button"
-                      aria-label={`删除标签 ${tag.name}`}
-                      onClick={async () => {
-                        try {
-                          await deleteQuickTag(tag.id);
-                          setTags((current) =>
-                            current.filter((item) => item.id !== tag.id),
-                          );
-                        } catch (error) {
-                          message.error(apiErrorMessage(error, "标签删除失败"));
-                        }
+                      className="tag-name"
+                      onClick={() => {
+                        if (!tagDeleting) setText(tag.name);
                       }}
                     >
-                      ×
+                      {tag.name}
                     </button>
-                  </span>
+                    {tagDeleting && (
+                      <button
+                        type="button"
+                        className="tag-item-delete"
+                        aria-label={`删除标签 ${tag.name}`}
+                        onClick={() => {
+                          modal.confirm({
+                            title: "确定要删除吗？",
+                            icon: <QuestionCircleOutlined />,
+                            okText: "确 定",
+                            cancelText: "取 消",
+                            onOk: async () => {
+                              try {
+                                await deleteQuickTag(tag.id);
+                                setTags((current) =>
+                                  current.filter((item) => item.id !== tag.id),
+                                );
+                                setTagDeleting(false);
+                                message.success("删除成功");
+                              } catch (error) {
+                                message.error(apiErrorMessage(error, "标签删除失败"));
+                              }
+                            },
+                          });
+                        }}
+                      >
+                        X
+                      </button>
+                    )}
+                  </div>
                 ))}
               </div>
             )}
@@ -401,7 +504,10 @@ export function QuickEntryPage({
           >
             <textarea
               value={text}
-              onChange={(e) => setText(e.target.value.slice(0, 10000))}
+              onChange={(e) => {
+                setReplaceUndoText(null);
+                setText(e.target.value.slice(0, 10000));
+              }}
               onPaste={(event) => {
                 const pasted = event.clipboardData
                   .getData("text")
@@ -429,17 +535,17 @@ export function QuickEntryPage({
                 disabled={!text}
                 onClick={() => setText("")}
               >
-                <DeleteOutlined /> 清空
+                <RestOutlined /><span>清空</span>
               </button>
               <span>{text.length.toLocaleString()}/10,000</span>
               <div className="mobile-entry-actions" aria-label="录入操作">
                 <button type="button" className="mobile-identify" onClick={generate} disabled={generating}>
-                  {generating ? "识别中" : "识别"}
+                  {generating ? "识别中" : "识 别"}
                 </button>
                 <button type="button" className="mobile-place" onClick={place} disabled={!timing.canBet}>
-                  {timing.canBet ? "下注" : "暂不可下注"}
+                  下 注
                 </button>
-                <span className="mobile-entry-total">共 <b>{displayAmount(generatedTotal.amount)}</b></span>
+                <span className="mobile-entry-total">共 ¥ <b>{displayAmount(generatedTotal.amount)}</b></span>
               </div>
             </div>
           </div>
@@ -484,6 +590,10 @@ export function QuickEntryPage({
                     onChange={(checked) => {
                       const target = checked ? primary : next;
                       if (target.id === current.id) return;
+                      if (!lotteryTiming(target, now).canBet) {
+                        message.error(target.name + "当前已封盘");
+                        return;
+                      }
                       setLottery(target.name);
                       persistPreferences(options, target.name);
                     }}
@@ -504,14 +614,7 @@ export function QuickEntryPage({
             >
               {generating ? "识 别 中" : "识 别"}
             </button>
-            <button
-              type="button"
-              className="rule-action"
-              onClick={() => setRulesOpen(true)}
-            >
-              规则说明
-            </button>
-            <span className="action-board-label">盘口：{activeBoard?.name || `${boardCode}盘`} - {boardCode}</span>
+            
             <span className="action-separator" aria-hidden="true" />
             <span className="action-total">
               <span>
@@ -525,21 +628,6 @@ export function QuickEntryPage({
               </span>
             </span>
             <span className="action-separator" aria-hidden="true" />
-            <div className="warning-label">
-              <label htmlFor="warning-amount">大金额预警：</label>
-            </div>
-            <input
-              id="warning-amount"
-              className="warning-input"
-              value={warningAmount}
-              onFocus={(event) => event.currentTarget.select()}
-              onChange={(event) => {
-                const value = event.target.value.replace(/[^\d.]/g, "") || "0";
-                setWarningAmount(value);
-                persistPreferences(options, lottery, value);
-              }}
-              inputMode="decimal"
-            />
           </div>
           <QuickResultTable
             lines={generatedLines}
@@ -613,7 +701,57 @@ export function QuickEntryPage({
             rules={ruleSettings}
           />
           <Modal
+            open={replaceOpen}
+            wrapClassName="replace-modal-wrap"
+            title="替换文本"
+            okText="确认替换"
+            cancelText="关 闭"
+            onCancel={() => {
+              setReplaceOpen(false);
+            }}
+            onOk={() => {
+              if (!text.trim()) {
+                message.warning("空文本无可替换");
+                return;
+              }
+              if (replaceFrom) {
+                const nextText = text.split(replaceFrom).join(replaceTo);
+                if (nextText !== text) {
+                  setReplaceUndoText(text);
+                  setText(nextText);
+                }
+              }
+              setReplaceOpen(false);
+              setReplaceFrom("");
+              setReplaceTo("");
+            }}
+            width={500}
+            className="replace-modal"
+          >
+            <div className="replace-form">
+              <div className="replace-form-row">
+                <label htmlFor="replace-from">将：</label>
+                <Input
+                  id="replace-from"
+                  value={replaceFrom}
+                  onChange={(event) => setReplaceFrom(event.target.value)}
+                  maxLength={20}
+                />
+              </div>
+              <div className="replace-form-row">
+                <label htmlFor="replace-to">替换为：</label>
+                <Input
+                  id="replace-to"
+                  value={replaceTo}
+                  onChange={(event) => setReplaceTo(event.target.value)}
+                  maxLength={20}
+                />
+              </div>
+            </div>
+          </Modal>
+          <Modal
             open={tagOpen}
+            wrapClassName="tag-modal-wrap"
             title="添加新标签"
             okText="确认"
             cancelText="关闭"
@@ -623,7 +761,10 @@ export function QuickEntryPage({
             }}
             onOk={async () => {
               const value = tagName.trim();
-              if (!value) return;
+              if (!value) {
+                message.warning("请输入标签名称");
+                return;
+              }
               try {
                 const response = await createQuickTag(value);
                 const created = response.data?.data;
@@ -633,6 +774,8 @@ export function QuickEntryPage({
                 ]);
                 setTagOpen(false);
                 setTagName("");
+                setTagDeleting(false);
+                message.success("标签添加成功");
               } catch (error) {
                 message.error(apiErrorMessage(error, "标签添加失败"));
               }
@@ -644,6 +787,7 @@ export function QuickEntryPage({
               value={tagName}
               onChange={(event) => setTagName(event.target.value)}
               maxLength={30}
+              placeholder="请输入新标签"
               autoFocus
             />
           </Modal>

@@ -1645,6 +1645,25 @@ body {
   color: #fff;
   font-weight: 700;
 }
+.record-detail-grid-spacer {
+  background: #f4f7fc !important;
+  border-right: 1px solid #777;
+  border-bottom: 1px dashed #777;
+}
+.record-detail-grid-value.placeholder {
+  background: #f4f7fc !important;
+  color: transparent !important;
+}
+.record-detail-grid.continuation > div:nth-child(5n + 2),
+.record-detail-grid.continuation > div:nth-child(5n + 4) {
+  background: #dbe6fb;
+}
+.record-detail-grid.continuation > div:nth-last-child(-n + 5) {
+  border-bottom: 0;
+}
+.record-detail-grid.continuation > div:nth-last-child(6) {
+  border-bottom: 1px dashed #777;
+}
 .record-detail-grid-value.number {
   color: #111;
   font-weight: 700;
@@ -2767,7 +2786,7 @@ body {
 .member-odds-head,
 .member-odds-row {
   display: grid;
-  grid-template-columns: 1.25fr 0.85fr 1fr 1fr 1fr 0.85fr;
+  grid-template-columns: 1.25fr 0.82fr 1fr 1fr 1fr 0.85fr 0.85fr;
   align-items: center;
   min-height: 40px;
   text-align: center;
@@ -3883,6 +3902,7 @@ body {
   display: flex;
   flex-direction: column;
   height: min(786px, calc(100vh - 16px));
+  padding-top: 30px;
   border-radius: 4px;
 }
 .rule-modal .ant-modal-header {
@@ -4377,3 +4397,210 @@ body {
     font-size: 16px !important;
   }
 }
+
+
+/* Mobile rule dialog: keep the scrollable content close to the viewport
+   edges so the footer remains at the bottom on real phones. */
+@media (max-width: 599px) {
+  .rule-modal .ant-modal-container {
+    height: min(900px, calc(100dvh - 32px));
+    max-height: calc(100dvh - 32px);
+    padding: 24px 16px 10px;
+  }
+  .rule-modal .ant-modal-header {
+    margin-bottom: 8px;
+  }
+  .rule-modal .ant-modal-body {
+    max-height: none !important;
+  }
+  .rule-modal .ant-modal-footer {
+    margin-top: 8px;
+    padding-bottom: 0;
+  }
+}
+
+/* Match the reference H5 quick-entry result rows: a full-width 3rem action
+   rail, a separate 3rem editable text line, and independent summary/error
+   rows. */
+.quick-result {
+  min-height: 0;
+  margin: 2rem 0;
+  background: #fff;
+  color: #000;
+}
+.quick-result-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  min-height: 3rem;
+  margin: 0 0 .2rem;
+  padding: 0;
+  background: #f7f7f7;
+  color: #000;
+}
+.quick-result-row.success { background: #a7e1ce; }
+.quick-result-row.success.batch-end { background: #a8a7e1; }
+.quick-result-row.failed,
+.quick-result-row.mismatch { background: #ffd3d3; }
+.quick-result-row.new { background: #afecff; }
+.quick-result-row.blank { background: #f7f7f7; }
+.quick-result-row .quick-result-main {
+  display: inline-flex;
+  width: 100%;
+  height: 3rem;
+  min-height: 3rem;
+  align-items: center;
+  justify-content: flex-start;
+  border-bottom: .2rem dashed #fff;
+  background: transparent;
+  overflow: visible;
+}
+.quick-result-remove,
+.quick-result-add,
+.quick-result-combine,
+.quick-result-more,
+.quick-result-confirm {
+  display: inline-flex;
+  width: 2.6rem;
+  min-width: 2.6rem;
+  height: 2.6rem;
+  min-height: 2.6rem;
+  align-items: center;
+  justify-content: center;
+  margin-left: .4rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.quick-result-remove::before,
+.quick-result-add::before {
+  display: inline-block;
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 50%;
+  background: #fff;
+  font-size: 1.6rem;
+  line-height: 2.4rem;
+  text-align: center;
+}
+.quick-result-remove::before {
+  content: "−";
+  border: .1rem solid #c94e4e;
+  color: #c94e4e;
+}
+.quick-result-add::before {
+  content: "+";
+  border: .1rem solid #005f03;
+  color: #005f03;
+}
+.quick-result-index {
+  display: inline-block;
+  width: 5rem;
+  min-width: 5rem;
+  height: 2.9rem;
+  margin: 0;
+  background: transparent;
+  color: #000;
+  font-size: 1.6rem;
+  line-height: 2.9rem;
+  text-align: center;
+}
+.quick-result-detail-slot {
+  display: inline-flex;
+  width: auto;
+  min-width: 0;
+  height: 2.6rem;
+  align-items: center;
+  justify-content: flex-start;
+  margin-left: .4rem;
+}
+.quick-result-status {
+  display: inline-block;
+  width: 4rem;
+  min-width: 4rem;
+  height: 2.9rem;
+  margin-left: .5rem;
+  padding: 0;
+  background: #000;
+  color: #fff;
+  font-size: 1.6rem;
+  font-weight: 400;
+  line-height: 2.9rem;
+  text-align: center;
+  white-space: nowrap;
+}
+.quick-result-status.new { background: #0095c3; }
+.quick-result-status.blank { background: #7f7f7f; color: transparent; }
+.quick-result-status.success.fu { background: #7a2bc3; }
+.quick-result-status.success.ti { background: #00724d; }
+.quick-result-status.success.futi { background: #000; }
+.quick-result-text {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  height: 3rem;
+  min-height: 3rem;
+  margin: 0;
+  padding: 0 .6rem;
+  border: .1rem solid transparent;
+  outline: none;
+  background: transparent;
+  color: #000;
+  font-family: "Microsoft YaHei", Tahoma, Helvetica, Arial, sans-serif;
+  font-size: 1.6rem;
+  line-height: 2.8rem;
+  resize: none;
+  overflow-y: hidden;
+  white-space: nowrap;
+}
+.quick-result-text:focus {
+  height: auto;
+  max-height: 30rem;
+  overflow-y: auto;
+  background: #ffffb6;
+  border-color: #5f5f5f;
+}
+.quick-result-detail,
+.quick-result-summary {
+  display: flex;
+  width: 100%;
+  min-height: 3rem;
+  height: 3rem;
+  align-items: center;
+  gap: 0;
+  margin: 0;
+  padding: 0 1rem;
+  border-top: 0;
+  background: transparent;
+  color: #000;
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 3rem;
+}
+.quick-result-detail b,
+.quick-result-summary b {
+  margin-right: 1.5rem;
+  color: darkgreen;
+  font-weight: 700;
+}
+.quick-result-reason {
+  color: #c90000;
+}
+.quick-result-reason b {
+  color: #c90000;
+}
+.quick-result-confirm::before {
+  content: "✓";
+  display: inline-block;
+  width: 2.6rem;
+  height: 2.6rem;
+  border: .1rem solid #036564;
+  border-radius: .3rem;
+  color: #036564;
+  font-size: 1.6rem;
+  line-height: 2.4rem;
+  text-align: center;
+}
+

@@ -90,6 +90,10 @@ final class QuickEntryRules
         '托' => '拖', '拖拉' => '拖', '旦' => '胆', '担' => '胆', '粘' => '沾', '賴' => '赖', '癞' => '赖',
         '黏边' => '沾边', '粘边' => '沾边', '黏邊' => '沾边', '粘邊' => '沾边', '沾邊' => '沾边',
         '对孑' => '对子', '对字' => '对子', '对仔' => '对子',
+        // “对飞” is a common shorthand for the two-digit fly play.  Keep
+        // it equivalent to “双飞” so listed pairs can still be classified
+        // as 对子 when both digits are equal.
+        '对飞' => '双飞',
         '双非' => '双飞', '双蜚' => '双飞', '全包豹子' => '豹子全包', '包豹子' => '豹子全包',
         '黏' => '沾', '俩' => '两', '买' => ' ', '快' => '块', '🈴' => '合',
         // “复式”和“复试”是现场录入中常见的两种写法，统一到同一玩法。
@@ -316,9 +320,16 @@ final class QuickEntryRules
     /** @return ?array{category: string, name: string, direct: bool} */
     public function oddsIdentity(string $source): ?array
     {
-        if (preg_match('/(?<!\d)(\d{3})\s*组/u', $source, $genericGroup)) {
+        // Only a bare “组” is the inferred generic group play. Do not let
+        // this prefix match explicit “组三/组六”, otherwise a sentence such
+        // as “456组三三码” is incorrectly priced with the direct 组六 odds
+        // (often 900) before the explicit catalog branch is reached.
+        if (preg_match('/(?<!\d)(\d{3})\s*组(?!三|六)/u', $source, $genericGroup)) {
             $unique = count(array_unique(str_split($genericGroup[1])));
-            if ($unique === 1) return ['category'=>'三码定位','name'=>'三码定位','direct'=>true];
+            // A three-of-a-kind entered in a generic 组 ticket is a leopard,
+            // not a position bet. Resolve it against the existing 豹子全包
+            // odds row so it can coexist with normal 组三/组六 selections.
+            if ($unique === 1) return ['category'=>'和值','name'=>'豹子全包','direct'=>false];
             $play = $unique === 2 ? '组三' : '组六';
             return ['category'=>$play, 'name'=>$play, 'direct'=>true];
         }
@@ -333,6 +344,11 @@ final class QuickEntryRules
         // must use the 对子 odds row for pricing and settlement.
         if (preg_match('/(?<!\d)(\d)(\d)\s*(?:双飞|飞)/u', $source, $pair) && $pair[1] === $pair[2]) return ['category'=>'对子','name'=>'对子','direct'=>true];
         if (str_contains($source, '豹子全包')) return ['category' => '和值', 'name' => '豹子全包', 'direct' => false];
+        // Internal rows generated from a mixed 直/组选 ticket carry the
+        // concrete number followed by 豹子 (for example “888直豹子” or
+        // “888组豹子”). They use the single-number leopard odds, which are
+        // derived from the 豹子全包 line below.
+        if (str_contains($source, '豹子')) return ['category' => '和值', 'name' => '豹子全包', 'direct' => false];
         if (str_contains($source, '对子全包')) return ['category' => '组六赖', 'name' => '对子全包', 'direct' => false];
         if (str_contains($source, '组三全包')) return ['category' => '组三多码', 'name' => '组三全包', 'direct' => false];
         if (str_contains($source, '组六全包')) return ['category' => '组六多码', 'name' => '组六全包', 'direct' => false];

@@ -35,8 +35,10 @@ enum BetMultiplierAmount: string
     public function oneMultiplier(int $count = 0): float
     {
         return match ($this) {
-            self::LOTTERY_SINGLE, self::DIRECT, self::GROUP_SIX_THREE_CODE,
-            self::GROUP_THREE_THREE_CODE, self::LEOPARD_SINGLE => 2.0,
+            self::LOTTERY_SINGLE, self::DIRECT, self::LEOPARD_SINGLE => 2.0,
+            // Explicit code-count group plays (e.g. “三码组六” or
+            // “组三三码”) use the standard 10-yuan one-multiplier stake.
+            self::GROUP_SIX_THREE_CODE, self::GROUP_THREE_THREE_CODE => 10.0,
             self::COMPOUND, self::GROUP_OTHER, self::SPAN, self::SUM,
             self::SIZE_PARITY, self::PAIR_PACKAGE, self::GROUP_DRAG, self::DOUBLE_FLY => 10.0,
             // 豹子全包与其他全包玩法统一按每 1 倍 10 元计费。
@@ -47,7 +49,7 @@ enum BetMultiplierAmount: string
             self::GROUP_SIX_DOUBLE_DRAG => self::valueFor($count, [2=>4, 3=>6, 4=>8, 5=>10, 6=>12, 7=>14, 8=>16]),
             self::SINGLE_FULL_DRAG => self::valueFor($count, [2=>38, 3=>74, 4=>122, 5=>182, 6=>254, 7=>338, 8=>434, 9=>542]),
             self::STICKY_GROUP_SIX => self::valueFor($count, [1=>72, 2=>128, 3=>170, 4=>200, 5=>220, 6=>232, 7=>238]),
-            self::STICKY_GROUP_THREE => self::valueFor($count, [1=>36, 2=>68, 3=>96, 4=>120, 5=>140, 6=>158, 7=>168]),
+            self::STICKY_GROUP_THREE => self::valueFor($count, [1=>36, 2=>68, 3=>96, 4=>120, 5=>140, 6=>156, 7=>168]),
         };
     }
 

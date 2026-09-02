@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>user-web</title>
   </head>
   <body>
@@ -11,12 +11,19 @@
     <script>
       (() => {
         const updateViewportHeight = () => {
-          const height = window.visualViewport?.height || window.innerHeight;
+          // Keep the full visual viewport while an iOS input is focused. If the
+          // keyboard height is written into the app shell, the centered login
+          // form can be clipped into a mostly blank white region.
+          const active = document.activeElement;
+          const editing = active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.tagName === "SELECT");
+          const height = editing ? window.innerHeight : (window.visualViewport?.height || window.innerHeight);
           document.documentElement.style.setProperty("--h5-viewport-height", height + "px");
         };
         updateViewportHeight();
         window.addEventListener("resize", updateViewportHeight, { passive: true });
         window.visualViewport?.addEventListener("resize", updateViewportHeight, { passive: true });
+        document.addEventListener("focusin", updateViewportHeight, { passive: true });
+        document.addEventListener("focusout", () => window.setTimeout(updateViewportHeight, 50), { passive: true });
       })();
     </script>
     <script type="module" src="/src/main.tsx"></script>

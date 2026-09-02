@@ -1639,6 +1639,25 @@ body {
   color: #fff;
   font-weight: 700;
 }
+.record-detail-grid-spacer {
+  background: #f4f7fc !important;
+  border-right: 1px solid #777;
+  border-bottom: 1px dashed #777;
+}
+.record-detail-grid-value.placeholder {
+  background: #f4f7fc !important;
+  color: transparent !important;
+}
+.record-detail-grid.continuation > div:nth-child(5n + 2),
+.record-detail-grid.continuation > div:nth-child(5n + 4) {
+  background: #dbe6fb;
+}
+.record-detail-grid.continuation > div:nth-last-child(-n + 5) {
+  border-bottom: 0;
+}
+.record-detail-grid.continuation > div:nth-last-child(6) {
+  border-bottom: 1px dashed #777;
+}
 .record-detail-grid-value.number {
   color: #111;
   font-weight: 700;
@@ -2760,7 +2779,7 @@ body {
 .member-odds-head,
 .member-odds-row {
   display: grid;
-  grid-template-columns: 1.25fr 0.85fr 1fr 1fr 1fr 0.85fr;
+  grid-template-columns: 1.25fr 0.82fr 1fr 1fr 1fr 0.85fr 0.85fr;
   align-items: center;
   min-height: 40px;
   text-align: center;

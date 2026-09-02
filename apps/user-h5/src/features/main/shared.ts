@@ -32,6 +32,11 @@ export function displayAmount(value: unknown) {
   return text.replace(/0+$/, "").replace(/\.$/, "") || "0";
 }
 
+export function displayIssueCode(value: unknown) {
+  const code = String(value ?? "");
+  return /^26\d{3}$/.test(code) ? `20${code}` : code;
+}
+
 export function lotteryTiming(lottery: Lottery | undefined, now: number) {
   const permissionCanBet = lottery?.can_bet !== false;
   const serverCanBet = lottery?.timing_can_bet;

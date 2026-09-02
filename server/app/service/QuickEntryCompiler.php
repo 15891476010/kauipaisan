@@ -18,6 +18,41 @@ final class QuickEntryCompiler
     {
         $source = trim(mb_substr($source, 0, QuickEntryRules::MAX_TEXT_LENGTH));
         if ($source === '') return QuickEntryCompileResult::noMatch();
+        // A blank line separates independent tickets. When there is no
+        // declared whole-ticket total, compile each block independently so a
+        // leading bare number line cannot be swallowed by a later multiline
+        // parser and duplicated across every row. Complex batches that rely
+        // on a shared total continue through the specialized branches below.
+        if (preg_match("/\n\s*\n/u", $source) === 1
+            && !preg_match('/(?:合计|共计|总计|总合|合共|小计|结算|🈴)/u', $source)) {
+            $blocks = preg_split("/\n\s*\n/u", $source) ?: [];
+            $rows = [];
+            foreach ($blocks as $block) {
+                $block = trim((string)$block);
+                if ($block === '') continue;
+                $compiled = $this->compile($block, $lottery, $unitStake);
+                if (!$compiled->matchedInput() || $compiled->rows === []) return QuickEntryCompileResult::noMatch();
+                $rows = array_merge($rows, $compiled->rows);
+            }
+            return $rows === [] ? QuickEntryCompileResult::noMatch() : QuickEntryCompileResult::matched($rows);
+        }
+        // A pasted quick-entry block may contain several independent simple
+        // sentences separated by blank lines (or just line breaks). Try each
+        // bet sentence on its own before the legacy multiline batch parsers;
+        // those parsers otherwise flatten all numbers into one ticket and
+        // inflate/duplicate the preview amount. Header-only lines such as
+        // “福彩第2026236期” are ignored as context.
+        if (str_contains($source, "\n")) {
+            $independent = $this->compileIndependentSimpleLines($source, $lottery, $unitStake);
+            if ($independent !== null) return QuickEntryCompileResult::matched($independent);
+        }
+        // Explicit 组六多码 requires at least four distinct digits.  Several
+        // legacy branches accept a three-digit (or duplicate-heavy) token as
+        // a compatibility shorthand; reject it centrally so direct compiler
+        // callers cannot submit an invalid 组六 ticket.
+        if ($this->containsInvalidGroupSixSelection($source)) {
+            return QuickEntryCompileResult::matched([$this->failure($source, '组六至少需要4个不同数字，当前选号不足4个不同数字')]);
+        }
 
         // “打二单一组6” uses the trailing 6 as the whole-ticket amount;
         // normalizing “组6” too early would turn the generic 组 into 组六.
@@ -44,6 +79,8 @@ final class QuickEntryCompiler
         if ($arithmeticDirectGroup !== null) return QuickEntryCompileResult::matched($arithmeticDirectGroup);
 
         if (str_contains($source, "\n") && preg_match("/\n\s*\n/u", $source) === 1) {
+            $machineNumberBatches = $this->compileMachineNumberBatches($source, $lottery, $unitStake);
+            if ($machineNumberBatches !== null) return QuickEntryCompileResult::matched($machineNumberBatches);
             $separatedTotal = $this->compileSeparatedTicketsWithTotal($source, $lottery, $unitStake);
             if ($separatedTotal !== null) return QuickEntryCompileResult::matched($separatedTotal);
             $arithmeticTickets = $this->compileArithmeticTickets($source, $lottery, $unitStake);
@@ -131,6 +168,9 @@ final class QuickEntryCompiler
         }
 
         $normalized = $this->surface($source);
+        // 统计量词（各/计/共/合）放在“组三/组六”和倍数之间时，
+        // 仍表示倍率而不是现金金额，例如“123组三各1倍”。
+        $normalized = preg_replace('/(组三|组六)\s*(?:共|计|合|合计)\s*(\d+(?:\.\d+)?)\s*倍$/u', '$1$2倍', $normalized) ?? $normalized;
         $compoundTotal = $this->compileCompoundWithDeclaredTotal($source, $normalized, $lottery, $unitStake);
         if ($compoundTotal !== null) return QuickEntryCompileResult::matched($compoundTotal);
         $fuTiCompoundCash = $this->compileFuTiCompoundCash($source, $normalized, $unitStake);
@@ -141,6 +181,170 @@ final class QuickEntryCompiler
         $category = $this->category($normalized, $lottery);
         $body = trim(str_replace(['福体', '福', '体'], ' ', $normalized));
         $body = preg_replace('/\s+/u', ' ', $body) ?? $body;
+        // Handle the compact, free-order spellings of a generic 直+组 ticket
+        // before the legacy parsers get a chance to reinterpret the Chinese
+        // count characters as numbers (which used to create duplicate rows
+        // or silently turn generic 组 into 组六).
+        $compactDirectGroup = $this->compileCompactDirectGroupShorthand($source, $body, $category, $unitStake);
+        if ($compactDirectGroup !== null) return QuickEntryCompileResult::matched($compactDirectGroup);
+        if (preg_match('/^(\d{4,9})\s*复式\s*(\d+(?:\.\d+)?)\s*倍\s*组三\s*(\d+(?:\.\d+)?)\s*倍$/u', $body, $compoundGroup)) {
+            $selection = implode('', $this->unique(str_split($compoundGroup[1]))); $count = strlen($selection);
+            if ($count < 4) return QuickEntryCompileResult::matched([$this->failure($source, '复式与组三多码至少需要4个不同数字')]);
+            $categoryCount = $category === '福体' ? 2 : 1; $rows = [];
+            $fushiAmount = BetMultiplierAmount::COMPOUND->oneMultiplier() * (float)$compoundGroup[2] * $categoryCount;
+            $groupAmount = BetMultiplierAmount::GROUP_OTHER->oneMultiplier() * (float)$compoundGroup[3] * $categoryCount;
+            $rows[] = $this->row($source, $body, [$selection], $category, '复式'.$this->countWord($count), $fushiAmount, $categoryCount, $categoryCount, '', 1);
+            $rows[] = $this->row($source, $body, $this->groupThreeCombinations(str_split($selection)), $category, '组三'.$this->countWord($count), $groupAmount, $categoryCount, $categoryCount, '', 1);
+            return QuickEntryCompileResult::matched($rows);
+        }
+        if (preg_match('/^(\d{4,9})\s*组六\s*组三\s*(\d+(?:\.\d+)?)\s*倍$/u', $body, $unqualifiedBothGroup)) {
+            return QuickEntryCompileResult::matched([$this->failure($source, '检测到金额没有单位（多个玩法金额无法区分单注金额还是总金额），请加上【各】或【共】字（例如：各5元），请进行人工确认')]);
+        }
+        if (preg_match('/^(\d{4,9})\s*组六\s*组三\s*(?:各|每)\s*(\d+(?:\.\d+)?)\s*倍$/u', $body, $bothGroup)) {
+            $selection = implode('', $this->unique(str_split($bothGroup[1]))); $count = strlen($selection);
+            if ($count < 4) return QuickEntryCompileResult::matched([$this->failure($source, '组三组六多码至少需要4个不同数字')]);
+            $categoryCount = $category === '福体' ? 2 : 1; $amount = $this->rules->multiplierAmount(BetMultiplierAmount::GROUP_OTHER, (float)$bothGroup[2]) * $categoryCount;
+            $rows = [];
+            foreach (['组六','组三'] as $family) {
+                $numbers = $family === '组六' ? $this->groupSixCombinations(str_split($selection)) : $this->groupThreeCombinations(str_split($selection));
+                $rows[] = $this->row($source, $body, $numbers, $category, $family.$this->countWord($count), $amount, $categoryCount, $categoryCount, '', 1);
+            }
+            return QuickEntryCompileResult::matched($rows);
+        }
+
+        // Bare three-digit 组三/组六 is the ordinary group play (2元 per
+        // multiplier). It must remain distinct from the explicit “三码”
+        // code-count variant (10元).
+        if (preg_match('/^(\d{3})\s*(组三|组六)(?!码)\s*(?:一|1)倍$/u', $body, $bareGroup)) {
+            $family = (string)$bareGroup[2];
+            $distinct = count(array_unique(str_split((string)$bareGroup[1]))) === 3;
+            if ($family === '组六' && !$distinct) return QuickEntryCompileResult::matched([$this->failure($source, '组六必须由三个不同数字组成')]);
+            $play = $family === '组三' && $distinct ? '组三三码' : $family;
+            $base = $play === '组三三码' ? BetMultiplierAmount::GROUP_THREE_THREE_CODE : BetMultiplierAmount::LOTTERY_SINGLE;
+            $numbers = $play === '组三三码' ? $this->groupThreeCombinations(str_split((string)$bareGroup[1])) : [(string)$bareGroup[1].'组'];
+            $row = $this->row($source, $body, $numbers, $category, $play, $base->oneMultiplier() * ($category === '福体' ? 2 : 1), $category === '福体' ? 2 : 1, $category === '福体' ? 2 : 1, $play === '组三' ? '组' : '', 1);
+            $row['amount_type'] = 'multiplier'; $row['multiplier'] = 1.0;
+            return QuickEntryCompileResult::matched([$row]);
+        }
+        if (preg_match('/^(\d{3})\s*(组三|组六)\s*三码\s*(?:一|1)倍$/u', $body, $explicitThreeCode)) {
+            $family = (string)$explicitThreeCode[2];
+            if (count(array_unique(str_split((string)$explicitThreeCode[1]))) !== 3) return QuickEntryCompileResult::matched([$this->failure($source, '组三三码必须由三个不同数字组成')]);
+            $play = $family.'三码';
+            $row = $this->row($source, $body, [(string)$explicitThreeCode[1]], $category, $play, BetMultiplierAmount::GROUP_THREE_THREE_CODE->oneMultiplier() * ($category === '福体' ? 2 : 1), $category === '福体' ? 2 : 1, $category === '福体' ? 2 : 1, '', 1);
+            $row['amount_type'] = 'multiplier'; $row['multiplier'] = 1.0;
+            return QuickEntryCompileResult::matched([$row]);
+        }
+        if (preg_match('/^三码\s*(组三|组六)\s*(\d{3})\s*(?:一|1)倍$/u', $body, $reverseThreeCode)) {
+            $family = (string)$reverseThreeCode[1];
+            if (count(array_unique(str_split((string)$reverseThreeCode[2]))) !== 3) return QuickEntryCompileResult::matched([$this->failure($source, '组三三码必须由三个不同数字组成')]);
+            $row = $this->row($source, $body, [(string)$reverseThreeCode[2]], $category, $family.'三码', BetMultiplierAmount::GROUP_THREE_THREE_CODE->oneMultiplier() * ($category === '福体' ? 2 : 1), $category === '福体' ? 2 : 1, $category === '福体' ? 2 : 1, '', 1);
+            $row['amount_type'] = 'multiplier'; $row['multiplier'] = 1.0;
+            return QuickEntryCompileResult::matched([$row]);
+        }
+
+        // Ticket shorthand “090.打20倍组” (also written “090打20倍组”)
+        // uses “打” as a verb before the multiplier. Canonicalize it to the
+        // ordinary group amount grammar before dispatching the existing
+        // number-list compiler. The dot after the number is punctuation, not
+        // a decimal point; a 20倍 group stake is 20 × the configured unit.
+        $body = preg_replace(
+            '/^(\d{3}(?:\s+\d{3})*)\s*\.?\s*打\s*(\d+(?:\.\d+)?)\s*倍\s*(组三|组六|组选|组)$/u',
+            '$1 $3各$2倍',
+            $body
+        ) ?? $body;
+
+        // “456组20元三码组三20元” describes two plays on the same code:
+        // the ordinary 组六 stake and an explicit 组三三码 stake.  Parse the
+        // two clauses independently so the trailing amount 20 is never read
+        // as a two-digit 组三 selection.
+        if (preg_match(
+            '/^(\d{3}(?:[.\s,，、]+\d{3})*)\s*(?:组选|组)\s*(\d+(?:\.\d+)?)\s*(元|米|块|角|毛|倍|注)\s*(?:[一二三四五六七八九1-9]\s*码)?\s*组三\s*(\d+(?:\.\d+)?)\s*(元|米|块|角|毛|倍|注)$/u',
+            $body,
+            $sameCodeGroup
+        ) === 1) {
+            preg_match_all('/\d{3}/', (string)$sameCodeGroup[1], $numberMatches);
+            $numbers = implode(' ', $numberMatches[0] ?? []);
+            if ($numbers !== '') {
+                $head = '';
+                if (preg_match('/^\s*(福体|福|体)/u', $normalized, $headMatch) === 1) {
+                    $head = $headMatch[1];
+                }
+                $z6 = $this->compile(
+                    $head.$numbers.'组六'.$sameCodeGroup[2].$sameCodeGroup[3],
+                    $lottery,
+                    $unitStake
+                );
+                $z3 = $this->compile(
+                    $head.$numbers.'组三'.$sameCodeGroup[4].$sameCodeGroup[5],
+                    $lottery,
+                    $unitStake
+                );
+                if ($z6->matchedInput() && $z3->matchedInput()) {
+                    // Keep the multi-code 组三 ticket compact in persisted
+                    // details (三456), while retaining its package amount
+                    // and 组三三码 odds.  The settlement service understands
+                    // this compact expression and expands it only for win
+                    // matching; the UI therefore shows “456组3” instead of
+                    // six separate 445/446/... entries.
+                    $z3Rows = $z3->rows;
+                    $compactSelection = preg_replace('/\s+/', '', $numbers) ?? $numbers;
+                    foreach ($z3Rows as &$z3Row) {
+                        $z3Row['number_text'] = '三'.$compactSelection;
+                        $z3Row['display_number_text'] = $compactSelection;
+                        $z3Row['settlement_text'] = $compactSelection.' '.($z3Row['play_type'] ?? '组三三码').'各'.number_format((float)$sameCodeGroup[4], 2, '.', '').'元 '.$z3Row['category'];
+                    }
+                    unset($z3Row);
+                    $sameCodeRows = array_merge($z3Rows, $z6->rows);
+                    foreach ($sameCodeRows as &$sameCodeRow) {
+                        $sameCodeRow['raw_text'] = $source;
+                        $sameCodeRow['input_text'] = $source;
+                        $sameCodeRow['parse_text'] = $source;
+                    }
+                    unset($sameCodeRow);
+                    return QuickEntryCompileResult::matched($sameCodeRows);
+                }
+            }
+        }
+
+        // When a ticket contains several play/amount clauses, every amount
+        // must use the same unit convention.  A bare number is allowed when
+        // all clauses are bare (the legacy shorthand), but mixing a unit and
+        // a bare number is ambiguous: “直20元组20” would otherwise interpret
+        // the final 20 as twenty multipliers and inflate the total.  Ask the
+        // user to add the missing unit instead of guessing.
+        preg_match_all(
+            '/(?:直选|直|单|组选|组三|组六|组|复式|定位|和值|跨度)\s*(?:各|每)?\s*(\d+(?:\.\d+)?)\s*(元|米|块|角|毛|倍|注)?/u',
+            $body,
+            $amountClauses,
+            PREG_SET_ORDER
+        );
+        if (count($amountClauses) > 1) {
+            $hasExplicitUnit = false;
+            $hasBareAmount = false;
+            foreach ($amountClauses as $amountClause) {
+                if (($amountClause[2] ?? '') === '') $hasBareAmount = true;
+                else $hasExplicitUnit = true;
+            }
+            // In the legacy “两倍组三 一倍组六 60” form, the final bare
+            // number is the declared whole-ticket total, not a third play
+            // amount.  Do not classify that total as a missing unit.
+            $amountBeforePlay = preg_match(
+                '/(?:^|\s)\d+(?:\.\d+)?\s*(?:元|米|块|角|毛|倍|注)\s*(?:直选|直|单|组选|组三|组六|组|复式|定位|和值|跨度)/u',
+                $body
+            ) === 1;
+            if ($amountBeforePlay && preg_match(
+                '/(?:直选|直|单|组选|组三|组六|组|复式|定位|和值|跨度)\s*(?:各|每)?\s*\d+(?:\.\d+)?\s*$/u',
+                $body
+            ) === 1) {
+                $hasBareAmount = false;
+            }
+            if ($hasExplicitUnit && $hasBareAmount) {
+                return QuickEntryCompileResult::matched([$this->failure(
+                    $source,
+                    '同一行金额单位不完整，请为每个金额补充“元”或“倍”；若省略单位请全部保持一致'
+                )]);
+            }
+        }
 
         // Long direct-number pastes commonly put the per-number amount
         // before the play marker (for example “...999福一米直”), and may
@@ -272,6 +476,24 @@ final class QuickEntryCompiler
         return QuickEntryCompileResult::noMatch();
     }
 
+    private function containsInvalidGroupSixSelection(string $source): bool
+    {
+        // 沾边赖/组六赖 uses a dedicated 1–7码 table; 1–3 selections are
+        // valid there and must not trigger the ordinary 组六最低4码 guard.
+        if (preg_match('/沾边赖|沾边|粘边赖|粘边|占边赖|占边|组六赖|组三三码|组六三码|三码组三|三码组六/u', $source) === 1) return false;
+        // Shared multi-play lines such as “组六30组三20” contain numeric
+        // amounts immediately after 组六; those amounts are not selections.
+        if (preg_match('/组六\s*\d+(?:\.\d+)?\s*组三|组三\s*\d+(?:\.\d+)?\s*组六/u', $source) === 1
+            || preg_match('/\d+\s*拖\s*\d+\s*组六/u', $source) === 1
+            || str_contains($source, '全托')) return false;
+        preg_match_all('/(?<!\d)(\d{2,10})(?!\d)\s*组六/u', $source, $before);
+        preg_match_all('/组六\s*(\d{2,10})(?!\d)/u', $source, $after);
+        foreach (array_merge($before[1] ?? [], $after[1] ?? []) as $selection) {
+            if (count(array_unique(str_split((string)$selection))) < 3) return true;
+        }
+        return false;
+    }
+
     /** Parse “四码组六3倍0479” / “五码组六三倍03479”. */
     private function compilePrefixCatalogMultiplier(string $source, string $body, string $category, float $unitStake): ?array
     {
@@ -280,7 +502,7 @@ final class QuickEntryCompiler
         $multiplier = $this->numericToken((string)$m[3]);
         $selection = implode('', $this->unique(str_split((string)$m[4])));
         if ($requested === null || $multiplier === null || strlen($selection) !== $requested) return [$this->failure($source, '所选数字数量与玩法不一致')];
-        if ($m[2] === '组六' && $requested < 3) return [$this->failure($source, '组六选号数量不足')];
+        if ($m[2] === '组六' && $requested < 3) return [$this->groupSixMultiCodeFailure($source)];
         if ($m[2] === '组三' && $requested < 2) return [$this->failure($source, '组三选号数量不足')];
         $categoryCount = $category === '福体' ? 2 : 1;
         $numbers = $m[2] === '组六' && $requested >= 4 ? $this->groupSixCombinations(str_split($selection)) : ($m[2] === '组三' && $requested >= 3 ? $this->groupThreeCombinations(str_split($selection)) : [$selection]);
@@ -349,6 +571,81 @@ final class QuickEntryCompiler
         return $rows;
     }
 
+    /**
+     * Compile pasted 试机号/开机号 batches. Each block contains number-only
+     * lines followed by “体福试机号单组1米，总共40元”; the final line may be
+     * an overall total. “单组” means one 组选 leg; each number is priced by
+     * its shape (组三/组六/豹子), never as an additional 直选 leg.
+     */
+    private function compileMachineNumberBatches(string $source, string $lottery, float $unitStake): ?array
+    {
+        $blocks = preg_split("/\n\s*\n/u", trim($source)) ?: [];
+        if (count($blocks) < 1) return null;
+        // The grand total is often placed immediately after the last batch
+        // suffix instead of in its own blank-separated block.
+        $lastBlockLines = array_values(array_filter(array_map('trim', preg_split('/\r?\n/u', (string)$blocks[array_key_last($blocks)]) ?: []), static fn(string $line): bool => $line !== ''));
+        $overallLine = $this->surface((string)($lastBlockLines[array_key_last($lastBlockLines)] ?? ''));
+        // Each machine-number block already carries its own “总共” amount.
+        // The final grand total is useful for cross-checking, but it is not
+        // required: users often paste only the two complete blocks (for
+        // example the 40元 试机号 block and the 32元 开机号 block).  In that
+        // case keep the last block intact and derive the grand total below.
+        $declaredOverall = null;
+        if (preg_match('/^(?:总共|合计|共计|总计|共|合|计)\s*(\d+(?:\.\d+)?)\s*(元|米|块|角|毛|快)?$/u', $overallLine, $overall)) {
+            array_pop($lastBlockLines);
+            if ($lastBlockLines === []) array_pop($blocks);
+            else $blocks[array_key_last($blocks)] = implode("\n", $lastBlockLines);
+            $declaredOverall = $this->rules->amountWithUnit((float)$overall[1], (string)($overall[2] ?? ''), $unitStake);
+        }
+        if ($blocks === []) return null;
+        $rows = [];
+        foreach ($blocks as $block) {
+            $lines = array_values(array_filter(array_map('trim', preg_split('/\r?\n/u', (string)$block) ?: []), static fn(string $line): bool => $line !== ''));
+            if (count($lines) < 2) return null;
+            $tail = $this->surface((string)array_pop($lines));
+            if (!preg_match('/^(福体|体福|福|体)?\s*(?:试机号|开机号)\s*单组\s*(\d+(?:\.\d+)?)\s*(元|米|块|角|毛|快|倍)\s*(?:[,，]\s*)?(?:总共|合计|共计|总计|共|合|计)\s*(\d+(?:\.\d+)?)\s*(元|米|块|角|毛|快)?$/u', $tail, $match)) return null;
+            // Normalize both “福体” and “体福” to the canonical 福体 category
+            // so the two-lottery multiplier is applied consistently.
+            $category = $this->category($tail, $lottery);
+            $numbers = [];
+            foreach ($lines as $line) {
+                $normalized = preg_replace('/(?<=\d)[-—－](?=\d)/u', ' ', $this->surface($line)) ?? $line;
+                if (!preg_match('/^\d{3}(?:\s+\d{3})*$/u', $normalized)) return null;
+                preg_match_all('/\d{3}/u', $normalized, $found);
+                $numbers = array_merge($numbers, $found[0] ?? []);
+            }
+            if ($numbers === []) return null;
+            $categoryCount = $category === '福体' ? 2 : 1;
+            $unitAmount = $this->rules->amountWithUnit((float)$match[2], (string)$match[3], $unitStake);
+            $ticketDeclared = $this->rules->amountWithUnit((float)$match[4], (string)($match[5] ?? ''), $unitStake);
+            $ticketAmount = count($numbers) * $unitAmount * 2 * $categoryCount;
+            if (abs($ticketAmount - $ticketDeclared) > 0.001) return [$this->failure($source, '试机号/开机号明细金额与总额不一致')];
+            // Keep the complete batch as parse_text.  The placement endpoint
+            // reparses each logical row per lottery to resolve its odds; a
+            // tail-only value (just “体福试机号…”) has no numbers and would
+            // therefore be rejected as an ambiguous 福体 row.
+            // Generic “组” must be separated by number shape so mixed input
+            // gets the correct 组三/组六/豹子 odds row. Do not create a
+            // direct row: “单组” is not “直+组”.
+            $groupBuckets = [];
+            foreach ($numbers as $number) {
+                $shape = count(array_unique(str_split($number)));
+                if ($shape >= 1 && $shape <= 3) $groupBuckets[$shape][] = $number;
+            }
+            foreach ($groupBuckets as $shape => $groupNumbers) {
+                $groupPlay = $shape === 1 ? '豹子' : ($shape === 2 ? '组三' : '组六');
+                $amount = count($groupNumbers) * $unitAmount * 2 * $categoryCount;
+                $rows[] = $this->row($source, $source, $groupNumbers, $category, $groupPlay, $amount, count($groupNumbers) * $categoryCount, count($groupNumbers) * $categoryCount, '组', 1);
+                $rows[array_key_last($rows)]['settlement_text'] = implode(' ', $groupNumbers).' '.$groupPlay.'各'.number_format($unitAmount * 2, 2, '.', '').'元 '.$category;
+            }
+        }
+        $actualOverall = array_sum(array_map(static fn(array $row): float => (float)($row['amount'] ?? 0), $rows));
+        if ($declaredOverall !== null && abs($actualOverall - $declaredOverall) > 0.001) return [$this->failure($source, '整张总金额与识别金额不一致')];
+        foreach ($rows as &$row) { $row['raw_text'] = $source; $row['input_text'] = $source; }
+        unset($row);
+        return $rows;
+    }
+
     /** Parse “一单444 777” and “一单一组309 241 …”. */
     private function compileCountPrefixList(string $source, string $body, string $category, float $unitStake): ?array
     {
@@ -363,13 +660,14 @@ final class QuickEntryCompiler
         $numbers = preg_split('/\s+/u', trim($numbersText), -1, PREG_SPLIT_NO_EMPTY) ?: [];
         if ($numbers === []) return [$this->failure($source, '未识别到有效号码')];
         $categoryCount = $category === '福体' ? 2 : 1;
-        $rows = [$this->row($source, $body, $this->unique($numbers), $category, '直', count($numbers) * $direct * $unitStake * $categoryCount, count($numbers) * $categoryCount, count($numbers) * $direct * $categoryCount, '直', $direct)];
+        // Each entered code is an individual stake. Preserve the original
+        // list (including permutations such as 849 and 948) in both direct
+        // and group details; only the group family is inferred from shape.
+        $rows = [$this->row($source, $body, $numbers, $category, '直', count($numbers) * $direct * $unitStake * $categoryCount, count($numbers) * $categoryCount, count($numbers) * $direct * $categoryCount, '直', $direct)];
         if ($group > 0) {
             foreach ($this->groupedNumbers($numbers, '组') as $groupPlay => $groupNumbers) {
-                $expected = $groupPlay === '组三' ? 2 : 3;
-                $occurrences = count(array_filter($numbers, static fn(string $number): bool => count(array_unique(str_split($number))) === $expected));
-                $display = $this->uniqueUnordered($groupNumbers);
-                $rows[] = $this->row($source, $body, $display, $category, $groupPlay, $occurrences * $group * $unitStake * $categoryCount, count($display) * $categoryCount, $occurrences * $group * $categoryCount, '组', $group);
+                $occurrences = count($groupNumbers);
+                $rows[] = $this->row($source, $body, $groupNumbers, $category, $groupPlay, $occurrences * $group * $unitStake * $categoryCount, $occurrences * $categoryCount, $occurrences * $group * $categoryCount, '组', $group);
             }
         }
         return $rows;
@@ -987,7 +1285,7 @@ final class QuickEntryCompiler
             foreach ($selections as $selection) {
                 $digits = str_split($selection['digits']);
                 foreach ($plays as $family => $amount) {
-                    if ($family === '组六' && count($digits) < 3) return [$this->failure($source, '组六选号数量不足')];
+                    if ($family === '组六' && count($digits) < 3) return [$this->groupSixMultiCodeFailure($source)];
                     if ($family === '组三' && count($digits) < 2) return [$this->failure($source, '组三选号数量不足')];
                     $numbers = $family === '组六' ? $this->groupSixCombinations($digits) : $this->groupThreeCombinations($digits);
                     $play = $family.'六码';
@@ -1562,7 +1860,18 @@ final class QuickEntryCompiler
         if (count($lines) < 2) return null;
         $first = $this->surface($lines[0]);
         $prefix = '';
-        if (preg_match('/^(福体|福|体)$/u', $first) === 1) { $prefix = $first; array_shift($lines); }
+        // The category marker may share the first physical line with its
+        // first multi-code selection (for example “福 012345678”), while
+        // subsequent selections are pasted one per line.  Keep the marker
+        // as the ticket scope and move only the selection into the number
+        // list before joining the lines for the normal compiler.
+        if (preg_match('/^(福体|福|体)\s*(\d{2,10})$/u', $first, $inlinePrefix) === 1) {
+            $prefix = (string)$inlinePrefix[1];
+            $lines[0] = (string)$inlinePrefix[2];
+        } elseif (preg_match('/^(福体|福|体)$/u', $first) === 1) {
+            $prefix = $first;
+            array_shift($lines);
+        }
         if (count($lines) < 2) return null;
         $last = $this->surface($lines[array_key_last($lines)]);
         if (!preg_match('/(?:直|单|组|组三|组六|复式|胆拖|飞|定位|和值|跨度)/u', $last)) return null;
@@ -1627,7 +1936,7 @@ final class QuickEntryCompiler
         $family = (string)$match[1];
         $selection = implode('', $this->unique(str_split((string)$match[2])));
         $count = strlen($selection);
-        if ($family === '组六' && $count < 3) return [$this->failure($source, '组六选号数量不足')];
+        if ($family === '组六' && $count < 3) return [$this->groupSixMultiCodeFailure($source)];
         if ($family === '组三' && $count < 2) return [$this->failure($source, '组三选号数量不足')];
         $identity = $family === '组六' && $count === 3 ? ['name'=>'组六'] : $this->rules->inferredCatalogPlay($family, $count);
         if ($identity === null) return [$this->failure($source, '所选数字数量与玩法不一致')];
@@ -1649,7 +1958,7 @@ final class QuickEntryCompiler
         $selection = implode('', $this->unique(str_split($m[1])));
         $family = in_array($m[2], ['组六','组6'], true) ? '组六' : '组三';
         $count = strlen($selection);
-        if ($family === '组六' && $count < 3) return [$this->failure($source, '组六选号数量不足')];
+        if ($family === '组六' && $count < 3) return [$this->groupSixMultiCodeFailure($source)];
         if ($family === '组三' && $count < 2) return [$this->failure($source, '组三选号数量不足')];
         $identity = $family === '组六' && $count === 3 ? ['name'=>'组六'] : $this->rules->inferredCatalogPlay($family, $count);
         if ($identity === null) return [$this->failure($source, '所选数字数量与玩法不一致')];
@@ -1768,7 +2077,7 @@ final class QuickEntryCompiler
             $digits = implode('', $this->unique(str_split($selection)));
             foreach ($specs as $family => $unitAmount) {
                 $count = strlen($digits);
-                if ($family === '组六' && $count < 3) return [$this->failure($source, '组六选号数量不足')];
+                if ($family === '组六' && $count < 3) return [$this->groupSixMultiCodeFailure($source)];
                 if ($family === '组三' && $count < 2) return [$this->failure($source, '组三选号数量不足')];
                 $play = ($count === 3 && in_array($family, ['组三', '组六'], true)) ? $family : $family.$this->countWord($count);
                 $numbers = [$digits];
@@ -1813,11 +2122,12 @@ final class QuickEntryCompiler
             $requested = 3;
         }
         if ($requested === null || strlen($selection) !== $requested) return [$this->failure($source, '所选数字数量与玩法不一致')];
-        if ($family === '组六' && $requested < 3) return [$this->failure($source, '组六选号数量不足')];
+        if (!$isCompact && $requested === 3 && count(array_unique(str_split($selectionRaw))) !== 3) return [$this->failure($source, '三码组选必须由三个不同数字组成')];
+        if ($family === '组六' && $requested < 3) return [$this->groupSixMultiCodeFailure($source)];
         if ($family === '组三' && $requested < 2) return [$this->failure($source, '组三选号数量不足')];
         $amount = (string)($m[5] ?? '') === '倍'
             ? $this->rules->multiplierAmount(
-                $family === '复式' ? BetMultiplierAmount::COMPOUND : ($requested === 3 ? BetMultiplierAmount::LOTTERY_SINGLE : BetMultiplierAmount::GROUP_OTHER),
+                $family === '复式' ? BetMultiplierAmount::COMPOUND : ($requested === 3 ? (($family === '组三' && count(array_unique(str_split($selectionRaw))) === 3) ? BetMultiplierAmount::GROUP_THREE_THREE_CODE : ($family === '组六' ? BetMultiplierAmount::GROUP_SIX_THREE_CODE : BetMultiplierAmount::LOTTERY_SINGLE)) : BetMultiplierAmount::GROUP_OTHER),
                 (float)$m[4]
             )
             : $this->rules->amountWithUnit((float)$m[4], (string)($m[5] ?? ''), $unitStake);
@@ -1955,7 +2265,7 @@ final class QuickEntryCompiler
                 : $this->rules->amountWithUnit((float)$match['value'], (string)$match['unit'], $unitStake);
             if ($family === '复式') $play = '复式'.($this->countWord(strlen($digits)));
             else {
-                if ($family === '组六' && strlen($digits) < 3) return [$this->failure($source, '组六选号数量不足')];
+                if ($family === '组六' && strlen($digits) < 3) return [$this->groupSixMultiCodeFailure($source)];
                 if ($family === '组三' && strlen($digits) < 2) return [$this->failure($source, '组三选号数量不足')];
                 $play = $family.$this->countWord(strlen($digits));
             }
@@ -1976,6 +2286,35 @@ final class QuickEntryCompiler
     /** Parse 组三赖/组六赖 and the common “沾边赖/连” aliases. */
     private function compileLian(string $source, string $body, string $category, float $unitStake): ?array
     {
+        // “沾边赖01234组六组三各1倍” applies the same stake to two
+        // separate lian families.  The single-family grammar below must not
+        // consume this as an ordinary 组六/组三 multi-code ticket (which
+        // would fall back to the 2-yuan group stake).  Compile each family
+        // with its own code-count table and return both rows.
+        $lianMarker = '/(?:沾边赖|粘边赖|占边赖|粘边|占边|連|连)/u';
+        if (preg_match($lianMarker, $body) === 1
+            && preg_match_all('/(组三|组六)/u', $body, $familyMatches) >= 2
+            && preg_match('/(?<!\d)(\d{1,10})(?!\d)/u', $body, $selectionMatch) === 1
+            && preg_match('/(?:各|每)?\s*(\d+(?:\.\d+)?)\s*(倍|注|元|米|块|角|毛)?\s*$/u', $body, $amountMatch) === 1) {
+            $families = array_values(array_unique($familyMatches[1] ?? []));
+            if (count($families) >= 2) {
+                $rows = [];
+                foreach ($families as $family) {
+                    $compiled = $this->compileLianRows(
+                        $source,
+                        (string)$selectionMatch[1],
+                        (string)$family,
+                        (float)$amountMatch[1],
+                        (string)($amountMatch[2] ?? ''),
+                        $category,
+                        $unitStake
+                    );
+                    if ($compiled === null) return null;
+                    $rows = array_merge($rows, $compiled);
+                }
+                return $rows === [] ? null : $rows;
+            }
+        }
         $body = preg_replace('/(?:沾边赖|粘边赖|占边赖|粘边|占边|連|连)/u', '', $body) ?? $body;
         $surface = $this->surface($source);
         if (!preg_match('/赖|连|連|沾边|粘边|占边/u', $surface)) return null;
@@ -2134,24 +2473,42 @@ final class QuickEntryCompiler
             return [$row];
         }
         if (preg_match('/^(?:独胆|胆)\s*([0-9])(?:\s*(?:各|每))?\s*(\d+(?:\.\d+)?)\s*(元|米|块|角|毛|倍)?(?:\s*合计\s*(\d+(?:\.\d+)?)\s*(元|米|块|角|毛|倍)?)?$/u', $body, $m)) {
-            $amount = $this->rules->amountWithUnit((float)$m[2], (string)($m[3] ?? ''), $unitStake) * $categoryCount;
+            // “倍” is a multiplier of the play's configured one-multiplier
+            // stake.  It is not a generic money unit (whose fallback would
+            // use the site's 2-yuan unit stake).
+            $amount = (string)($m[3] ?? '') === '倍'
+                ? $this->rules->multiplierAmount(BetMultiplierAmount::GROUP_OTHER, (float)$m[2])
+                : $this->rules->amountWithUnit((float)$m[2], (string)($m[3] ?? ''), $unitStake);
+            $amount *= $categoryCount;
             if (isset($m[4]) && $m[4] !== '') {
-                $declared = $this->rules->amountWithUnit((float)$m[4], (string)($m[5] ?? ''), $unitStake);
+                $declared = (string)($m[5] ?? '') === '倍'
+                    ? $this->rules->multiplierAmount(BetMultiplierAmount::GROUP_OTHER, (float)$m[4])
+                    : $this->rules->amountWithUnit((float)$m[4], (string)($m[5] ?? ''), $unitStake);
                 if (abs($declared - $amount) > 0.001) return [$this->failure($source, '整张总金额与识别金额不一致')];
             }
-            return [$this->row($source, $body, [$m[1]], $category, '独胆', $amount, $categoryCount, $categoryCount, '')];
+            $row = $this->row($source, $body, [$m[1]], $category, '独胆', $amount, $categoryCount, $categoryCount, '');
+            $row['amount_type'] = (string)($m[3] ?? '') === '倍' ? 'multiplier' : 'money';
+            $row['multiplier'] = (string)($m[3] ?? '') === '倍' ? (float)$m[2] : 0.0;
+            return [$row];
         }
         if (preg_match('/^(?:独胆|胆)\s*([0-9])\s*[-~～]\s*([0-9])(?:\s*(?:各|每))?\s*(\d+(?:\.\d+)?)\s*(元|米|块|角|毛|倍)?(?:\s*合计\s*(\d+(?:\.\d+)?)\s*(元|米|块|角|毛|倍)?)?$/u', $body, $m)) {
             // In shop notation “独胆2-8” lists two selected endpoint digits;
             // it does not mean every digit from 2 through 8.
             $digits = $this->unique([(string)$m[1], (string)$m[2]]);
-            $unitAmount = $this->rules->amountWithUnit((float)$m[3], (string)($m[4] ?? ''), $unitStake);
+            $unitAmount = (string)($m[4] ?? '') === '倍'
+                ? $this->rules->multiplierAmount(BetMultiplierAmount::GROUP_OTHER, (float)$m[3])
+                : $this->rules->amountWithUnit((float)$m[3], (string)($m[4] ?? ''), $unitStake);
             $amount = $unitAmount * count($digits) * $categoryCount;
             if (isset($m[5]) && $m[5] !== '') {
-                $declared = $this->rules->amountWithUnit((float)$m[5], (string)($m[6] ?? ''), $unitStake);
+                $declared = (string)($m[6] ?? '') === '倍'
+                    ? $this->rules->multiplierAmount(BetMultiplierAmount::GROUP_OTHER, (float)$m[5])
+                    : $this->rules->amountWithUnit((float)$m[5], (string)($m[6] ?? ''), $unitStake);
                 if (abs($declared - $amount) > 0.001) return [$this->failure($source, '整张总金额与识别金额不一致')];
             }
-            return [$this->row($source, $body, $digits, $category, '独胆', $amount, count($digits) * $categoryCount, count($digits) * $categoryCount, '')];
+            $row = $this->row($source, $body, $digits, $category, '独胆', $amount, count($digits) * $categoryCount, count($digits) * $categoryCount, '');
+            $row['amount_type'] = (string)($m[4] ?? '') === '倍' ? 'multiplier' : 'money';
+            $row['multiplier'] = (string)($m[4] ?? '') === '倍' ? (float)$m[3] : 0.0;
+            return [$row];
         }
         if (preg_match('/^(和大|和小|和单|和双|大|小|单|双)\s*(?:各|每)?\s*(\d+(?:\.\d+)?)\s*(元|米|块|角|毛|注|倍)?$/u', $body, $m)) {
             $amount = ((string)($m[3] ?? '') === '倍' ? $this->rules->multiplierAmount(BetMultiplierAmount::SIZE_PARITY, (float)$m[2]) : $this->rules->amountWithUnit((float)$m[2], (string)($m[3] ?? ''), $unitStake)) * $categoryCount;
@@ -2171,10 +2528,16 @@ final class QuickEntryCompiler
             return [$this->simpleRow($source, $body, $category, (string)$m[1], $amount, $categoryCount)];
         }
         if (preg_match('/^(\d{2})\s*(双飞|飞|对子|对)\s*(?:各|每|值|各值|注值)?\s*(\d+(?:\.\d+)?)\s*(元|米|块|角|毛|倍|注)?$/u', $body, $m)) {
-            $amount = $this->rules->amountWithUnit((float)$m[3], (string)($m[4] ?? ''), $unitStake) * $categoryCount;
             $play = in_array($m[2], ['对子', '对'], true) ? '对子' : '双飞';
+            $base = $play === '对子' ? BetMultiplierAmount::PAIR_PACKAGE : BetMultiplierAmount::DOUBLE_FLY;
+            $unitAmount = (string)($m[4] ?? '') === '倍'
+                ? $this->rules->multiplierAmount($base, (float)$m[3])
+                : $this->rules->amountWithUnit((float)$m[3], (string)($m[4] ?? ''), $unitStake);
+            $amount = $unitAmount * $categoryCount;
             $row = $this->row($source, $body, [$m[1]], $category, $play, $amount, $categoryCount, $categoryCount, $play === '对子' ? '对' : '飞');
             $row['settlement_text'] = $m[1].' '.$play.' '.$category;
+            $row['amount_type'] = (string)($m[4] ?? '') === '倍' ? 'multiplier' : 'money';
+            $row['multiplier'] = (string)($m[4] ?? '') === '倍' ? (float)$m[3] : 0.0;
             return [$row];
         }
         if (preg_match('/^(组三|组六)?\s*(\d{1,2})\s*胆\s*(\d{2,9})\s*拖\s*(?:各|每)?\s*(\d+(?:\.\d+)?)\s*(元|米|块|角|毛|倍)?$/u', $body, $m)) {
@@ -2261,7 +2624,7 @@ final class QuickEntryCompiler
 
     private function countWord(int $count): string
     {
-        return match ($count) { 2=>'两码', 3=>'三码', 4=>'四码', 5=>'五码', 6=>'六码', 7=>'七码', 8=>'八码', 9=>'八码', 10=>'全包', default=>$count.'码' };
+        return match ($count) { 2=>'两码', 3=>'三码', 4=>'四码', 5=>'五码', 6=>'六码', 7=>'七码', 8=>'八码', 9=>'九码', 10=>'全包', default=>$count.'码' };
     }
 
     /** Parse wrapped number lines with a shared “50倍单50组共计2200元” suffix. */
@@ -2344,34 +2707,48 @@ final class QuickEntryCompiler
             }
         }
 
-        $unique = $this->unique($numbers);
-        $rows = [$this->row(
-            $source,
-            $body,
-            $unique,
-            $category,
-            '直',
-            $directAmount,
-            count($unique) * $categoryCount,
-            count($numbers) * $directStakes * $categoryCount,
-            '直',
-            $directStakes
-        )];
+        // Preserve each entered code.  A listed counted ticket charges every
+        // occurrence, and permutations (for example 849/948) are distinct
+        // selectable codes even though they share an unordered group set.
+        // A three-of-a-kind (豹子) is still a direct selection, but it has
+        // its own odds. Keep it in a separate internal row so the direct
+        // numbers continue to use the normal 直选 odds while the leopard
+        // number resolves to the 豹子 odds row.
+        $directGroups = $this->groupedNumbers($numbers, '直');
+        $rows = [];
+        foreach ($directGroups as $directPlay => $directNumbers) {
+            $isLeopard = $directPlay === '豹子';
+            $rows[] = $this->row(
+                $source,
+                $body,
+                $directNumbers,
+                $category,
+                '直',
+                count($directNumbers) * $directStakes * $unitStake * $categoryCount,
+                count($directNumbers) * $categoryCount,
+                count($directNumbers) * $directStakes * $categoryCount,
+                '直',
+                $directStakes,
+                $isLeopard ? '豹子' : null
+            );
+        }
         foreach ($this->groupedNumbers($numbers, '组') as $groupPlay => $groupNumbers) {
-            $expectedUniqueDigits = $groupPlay === '组三' ? 2 : 3;
-            $occurrenceCount = count(array_filter($numbers, static fn(string $number): bool => count(array_unique(str_split($number))) === $expectedUniqueDigits));
-            $displayGroupNumbers = $this->uniqueUnordered($groupNumbers);
+            $occurrenceCount = count($groupNumbers);
+            $displayGroupNumbers = $groupNumbers;
+            $isLeopard = $groupPlay === '豹子';
+            $rowPlay = $isLeopard ? '组' : $groupPlay;
             $rows[] = $this->row(
                 $source,
                 $body,
                 $displayGroupNumbers,
                 $category,
-                $groupPlay,
+                $rowPlay,
                 $occurrenceCount * $groupStakes * $unitStake * $categoryCount,
                 count($displayGroupNumbers) * $categoryCount,
                 $occurrenceCount * $groupStakes * $categoryCount,
                 '组',
-                $groupStakes
+                $groupStakes,
+                $isLeopard ? '豹子' : null
             );
         }
         return $rows;
@@ -2467,10 +2844,40 @@ final class QuickEntryCompiler
                 );
                 continue;
             }
+            // A generic “组” marker must remain generic.  Do not infer and
+            // display 组三/组六 (or split the ticket into multiple rows)
+            // unless the user explicitly wrote one of those play names.
+            // This is especially important for the common “直组各N倍”
+            // shorthand: it represents exactly two rows, 直 and 组.
+            if ($selectedPlay === '组') {
+                // Keep one generic row when all selections share one odds
+                // family. If a pasted list mixes 组三/组六/豹子 shapes,
+                // split internally so each row can resolve the right odds;
+                // the visible play label remains the generic “组选”.
+                $families = $this->groupedNumbers($numbers, '组');
+                foreach ($families as $familyNumbers) {
+                    if ($familyNumbers === []) continue;
+                    $displayNumbers = $this->uniqueUnordered($familyNumbers);
+                    $groupRow = $this->row(
+                        $source,
+                        $body,
+                        $displayNumbers,
+                        $category,
+                        '组',
+                        count($familyNumbers) * $unitAmount * $categoryCount,
+                        count($displayNumbers) * $categoryCount,
+                        count($familyNumbers) * $categoryCount,
+                        '组'
+                    );
+                    $groupRow['occurrence_number_text'] = implode(' ', $familyNumbers);
+                    $rows[] = $groupRow;
+                }
+                continue;
+            }
             foreach ($this->groupedNumbers($numbers, $selectedPlay) as $groupPlay => $groupNumbers) {
                 $occurrences = count($groupNumbers);
                 $displayNumbers = $this->uniqueUnordered($groupNumbers);
-                $rows[] = $this->row(
+                $groupRow = $this->row(
                     $source,
                     $body,
                     $displayNumbers,
@@ -2481,6 +2888,13 @@ final class QuickEntryCompiler
                     $occurrences * $categoryCount,
                     '组'
                 );
+                // Keep the original occurrences for the detail view. The
+                // stored/display number list is intentionally de-duplicated
+                // by unordered group, but each entered permutation still
+                // contributes its own stake. The UI uses this field only to
+                // calculate the merged amount (e.g. 189 + 198 = 4元).
+                $groupRow['occurrence_number_text'] = implode(' ', $groupNumbers);
+                $rows[] = $groupRow;
             }
         }
         if ($rows === []) return [$this->failure($source, '号码形态与玩法不一致')];
@@ -2495,6 +2909,95 @@ final class QuickEntryCompiler
             }
         }
         return $rows;
+    }
+
+    /**
+     * Parse compact generic direct+group spellings such as:
+     *   123 456 789直组各一倍
+     *   123 456 789直一组一
+     *   123 456 789直各一倍组各一倍
+     *   123 456 789各一倍直组
+     * The generic 组 label is intentional; only an explicit 组三/组六
+     * should select a concrete group family.
+     */
+    private function compileCompactDirectGroupShorthand(string $source, string $body, string $category, float $unitStake): ?array
+    {
+        [$working, $declaredTotal] = $this->takeDeclaredTotal($body, $unitStake);
+        $numbersExpr = '\\d{3}(?:\\s+\\d{3})*';
+        $numberPattern = '('.$numbersExpr.')';
+        $token = '[零〇一二两三四五六七八九十百\\d]+(?:\\.\\d+)?';
+        $direct = $group = null;
+        $unit = '';
+        $numbersText = '';
+        if (preg_match('/^直\\s*(?:各|每)?\\s*('.$token.')\\s*(倍|元|米|块|角|毛)?\\s*组\\s*(?:各|每)?\\s*('.$token.')\\s*(倍|元|米|块|角|毛)?\\s*('.$numbersExpr.')$/u', $working, $m) === 1) {
+            $direct = $this->numericToken((string)$m[1]);
+            $group = $this->numericToken((string)$m[3]);
+            $unit = (string)($m[2] ?? '') !== '' ? (string)$m[2] : (string)($m[4] ?? '');
+            $numbersText = (string)$m[5];
+        } elseif (preg_match('/^各\\s*('.$token.')\\s*(倍|元|米|块|角|毛)?\\s*直组\\s*('.$numbersExpr.')$/u', $working, $m) === 1) {
+            $direct = $group = $this->numericToken((string)$m[1]);
+            $unit = (string)($m[2] ?? '');
+            $numbersText = (string)$m[3];
+        } elseif (preg_match('/^'.$numberPattern.'\\s*直组\\s*(?:各|每)?\\s*('.$token.')\\s*(倍|元|米|块|角|毛)?$/u', $working, $m) === 1) {
+            $direct = $group = $this->numericToken((string)$m[2]);
+            $unit = (string)($m[3] ?? '');
+            $numbersText = (string)$m[1];
+        } elseif (preg_match('/^'.$numberPattern.'\\s*直\\s*(?:各|每)?\\s*('.$token.')\\s*(?:倍)?\\s*组\\s*(?:各|每)?\\s*('.$token.')\\s*(倍|元|米|块|角|毛)?$/u', $working, $m) === 1) {
+            $direct = $this->numericToken((string)$m[2]);
+            $group = $this->numericToken((string)$m[3]);
+            $unit = (string)($m[4] ?? '');
+            $numbersText = (string)$m[1];
+        } elseif (preg_match('/^'.$numberPattern.'\\s*各\\s*('.$token.')\\s*(倍|元|米|块|角|毛)?\\s*直组$/u', $working, $m) === 1) {
+            $direct = $group = $this->numericToken((string)$m[2]);
+            $unit = (string)($m[3] ?? '');
+            $numbersText = (string)$m[1];
+        } else {
+            return null;
+        }
+        if ($direct === null || $group === null || $direct < 1 || $group < 1) {
+            return [$this->failure($source, '单双组倍数格式不明确')];
+        }
+        preg_match_all('/\\d{3}/u', $numbersText !== '' ? $numbersText : $working, $found);
+        $numbers = $found[0] ?? [];
+        if ($numbers === []) return [$this->failure($source, '未识别到有效号码')];
+        $categoryCount = $category === '福体' ? 2 : 1;
+        $per = $this->rules->playAmount(1.0, $unit, $unitStake);
+        // A bare/倍 count is one unit stake; an explicit cash unit retains
+        // the cash amount entered by the user.
+        $directAmount = count($numbers) * $per * $direct * $categoryCount;
+        $groupAmount = count($numbers) * $per * $group * $categoryCount;
+        if ($declaredTotal !== null && abs($declaredTotal - $directAmount - $groupAmount) > 0.001) {
+            return [$this->failure($source, '整张总金额与识别金额不一致')];
+        }
+        $unique = $this->unique($numbers);
+        return [
+            $this->row($source, $body, $unique, $category, '直', $directAmount, (int)(count($unique) * $categoryCount), (int)(count($numbers) * $direct * $categoryCount), '直', (int)$direct),
+            $this->row($source, $body, $this->uniqueUnordered($numbers), $category, '组', $groupAmount, (int)(count($unique) * $categoryCount), (int)(count($numbers) * $group * $categoryCount), '组', (int)$group),
+        ];
+    }
+
+    /** Compile a multiline paste made of independent simple bet sentences. */
+    private function compileIndependentSimpleLines(string $source, string $lottery, float $unitStake): ?array
+    {
+        $lines = preg_split('/\r?\n/u', $source) ?: [];
+        if (count($lines) < 2) return null;
+        $rows = [];
+        $betLines = 0;
+        foreach ($lines as $line) {
+            $line = trim((string)$line);
+            if ($line === '') continue;
+            // Skip issue/category headers that carry no standalone 3-digit
+            // selection and no play marker.
+            if (!preg_match('/(?<!\d)\d{3}(?!\d)/u', $line) && !preg_match('/直|单|组|复式|定位|和值|跨度|胆拖|飞/u', $line)) continue;
+            $compiled = $this->compile($line, $lottery, $unitStake);
+            if (!$compiled->matchedInput() || $compiled->rows === []) return null;
+            foreach ($compiled->rows as $row) {
+                if (($row['status'] ?? '') !== 'success') return null;
+                $rows[] = $row;
+            }
+            $betLines++;
+        }
+        return $betLines >= 2 && $rows !== [] ? $rows : null;
     }
 
     /** @return array{0:string,1:?float} */
@@ -2515,7 +3018,12 @@ final class QuickEntryCompiler
         foreach ($numbers as $number) {
             $uniqueDigits = count(array_unique(str_split($number)));
             $actual = $requestedPlay;
-            if ($requestedPlay === '组') $actual = $uniqueDigits === 2 ? '组三' : ($uniqueDigits === 3 ? '组六' : '');
+            if ($requestedPlay === '组') {
+                $actual = $uniqueDigits === 1 ? '豹子' : ($uniqueDigits === 2 ? '组三' : ($uniqueDigits === 3 ? '组六' : ''));
+            }
+            if ($requestedPlay === '直') {
+                $actual = $uniqueDigits === 1 ? '豹子' : '直';
+            }
             if ($requestedPlay === '组三' && $uniqueDigits !== 2) continue;
             if ($requestedPlay === '组六' && $uniqueDigits !== 3) continue;
             if ($actual === '') continue;
@@ -2539,6 +3047,7 @@ final class QuickEntryCompiler
         int $stakeCount,
         string $suffix,
         ?int $betCount = null,
+        ?string $oddsLabel = null,
     ): array {
         $display = implode(' ', $numbers);
         $numberText = implode(' ', array_map(static fn(string $number): string => $number.$suffix, $numbers));
@@ -2559,15 +3068,25 @@ final class QuickEntryCompiler
             'stake_count'=>$stakeCount,
             'code_count'=>$count,
             'play_type'=>$play,
-            'settlement_text'=>$display.' '.$play.'各'.number_format($unitAmount, 2, '.', '').'元 '.$category,
+            'settlement_text'=>$display.' '.$play.($oddsLabel !== null ? $oddsLabel : '').'各'.number_format($unitAmount, 2, '.', '').'元 '.$category,
             'amount_type'=>'money',
         ];
         if ($betCount !== null) $row['bet_count'] = $betCount;
         return $row;
     }
 
-    private function failure(string $source, string $reason): array
+    private function groupSixMultiCodeFailure(string $source): array
     {
+        return $this->failure($source, [
+            '检测到组六多码的数字数量没有在规定范围内（四码 ~ 九码）',
+            '未检测到可识别的号码，请检查语句',
+        ]);
+    }
+
+    private function failure(string $source, string|array $reason): array
+    {
+        $reasons = is_array($reason) ? array_values(array_filter(array_map(static fn(mixed $value): string => trim((string)$value), $reason), static fn(string $value): bool => $value !== '')) : [trim($reason)];
+        if ($reasons === []) $reasons = ['语句存在问题，无法识别'];
         return [
             'id'=>0,
             'raw_text'=>$source,
@@ -2575,7 +3094,8 @@ final class QuickEntryCompiler
             'parse_text'=>$this->surface($source),
             'parser_version'=>'v2',
             'status'=>'failed',
-            'reason'=>$reason,
+            'reason'=>implode('；', $reasons),
+            'reasons'=>$reasons,
             'number_text'=>'',
             'category'=>null,
             'amount'=>'0.00',

@@ -47,6 +47,9 @@
 
 .login-fields .ant-input,
 .login-fields .ant-input-password {
+  /* iOS Safari zooms controls below 16px and may repaint the modal as a
+     blank layer while the keyboard is opening. Keep native-size text. */
+  font-size: 16px;
   color: #22206c;
 }
 

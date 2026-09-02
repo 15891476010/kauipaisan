@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { Route, Routes, useLocation } from "react-router-dom";
 import {
   getAnnouncement,
@@ -157,6 +157,27 @@ function MainShell({ name, logout, forcePasswordChange = false, onPasswordChange
     const shouldOpen = location.pathname === "/rtl";
     setMoreOpen((current) => (current === shouldOpen ? current : shouldOpen));
   }, [location.pathname]);
+  useLayoutEffect(() => {
+    const resetScroll = () => {
+      const scroller = document.querySelector<HTMLElement>(".app");
+      scroller?.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    };
+    resetScroll();
+    const frame = window.requestAnimationFrame(() => {
+      resetScroll();
+      window.requestAnimationFrame(resetScroll);
+    });
+    // Header/lottery data arrives asynchronously. Repeat the initial reset
+    // after those nodes mount so browser scroll restoration cannot reopen the
+    // wide H5 page at its previous bottom position.
+    const timers = [60, 250, 700, 1200].map((delay) =>
+      window.setTimeout(resetScroll, delay),
+    );
+    return () => {
+      window.cancelAnimationFrame(frame);
+      timers.forEach((timer) => window.clearTimeout(timer));
+    };
+  }, [location.pathname]);
   const selectedLottery = lotteries.find(
     (item) => item.id === selectedLotteryId,
   );
@@ -186,7 +207,7 @@ function MainShell({ name, logout, forcePasswordChange = false, onPasswordChange
           lotteries={lotteries}
           onBack={() => {
             setMoreOpen(false);
-            window.history.back();
+            window.location.hash = "#/kb";
           }}
         />
       ) : (
@@ -243,7 +264,7 @@ function MainShell({ name, logout, forcePasswordChange = false, onPasswordChange
               <Route path="/zh" element={<RecordsPage />} />
               <Route path="/zd" element={<BillsPage />} />
               <Route path="/dbl" element={<StopDropPage />} />
-              <Route path="/rtl" element={<MorePanel lotteries={lotteries} onBack={() => window.history.back()} />} />
+              <Route path="/rtl" element={<MorePanel lotteries={lotteries} onBack={() => { window.location.hash = "#/kb"; }} />} />
               <Route
                 path="/hyxx"
                 element={<MemberPage name={name} selectedLottery={selectedLottery} />}

@@ -1,14 +1,16 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Check, Refresh } from '@element-plus/icons-vue'
 import { getBatchBetOptions, replaceBatchBetNumbers, type BatchBetLottery, type BatchBetNumber, type BatchBetUser } from '../api/admin'
 
 const router = useRouter()
+const route = useRoute()
 const loading = ref(false)
 const saving = ref(false)
 const lotteries = ref<BatchBetLottery[]>([])
+const issueOptions = ref<string[]>([])
 const lotteryId = ref<number>()
 const issueNo = ref('')
 const users = ref<BatchBetUser[]>([])
@@ -18,22 +20,35 @@ const replacements = ref({ hundreds: '', tens: '', units: '' })
 
 const selectedUsers = computed(() => users.value.filter(user => selectedUserKeys.value.includes(user.key)))
 const selectedNumbers = computed(() => selectedUsers.value.flatMap(user => user.numbers))
-const allUsersSelected = computed(() => users.value.length > 0 && selectedUserKeys.value.length === users.value.length)
 const allNumbersSelected = computed(() => selectedNumbers.value.length > 0 && selectedNumbers.value.every(number => selectedNumberKeys.value.includes(number.key)))
 const selectedCount = computed(() => selectedNumbers.value.filter(number => selectedNumberKeys.value.includes(number.key)).length)
 const canReplace = computed(() => selectedCount.value > 0 && Object.values(replacements.value).some(value => value.trim() !== ''))
 
-async function loadOptions(nextLotteryId?: number) {
+const initialRecordIds = computed(() => {
+  const raw = String(route.query.record_ids || '')
+  return raw.split(',').map(Number).filter(id => Number.isInteger(id) && id > 0)
+})
+
+async function loadOptions(params: { lotteryId?: number; issue?: string; userIds?: number[]; recordIds?: number[]; preserveSelection?: boolean } = {}) {
   loading.value = true
   try {
-    const response = await getBatchBetOptions(nextLotteryId)
+    const response = await getBatchBetOptions({ lottery_id: params.lotteryId, lottery: String(route.query.lottery || ''), issue_no: params.issue, user_ids: params.userIds, record_ids: params.recordIds ?? initialRecordIds.value })
     const data = response.data
     lotteries.value = data.lotteries || []
     lotteryId.value = data.lottery?.id
     issueNo.value = data.issue_no || ''
-    users.value = data.users || []
-    selectedUserKeys.value = []
-    selectedNumberKeys.value = []
+    issueOptions.value = data.issues || (issueNo.value ? [issueNo.value] : [])
+    if (params.preserveSelection) {
+      const incoming = data.users || []
+      const incomingByKey = new Map(incoming.map(user => [user.key, user]))
+      users.value = users.value.map(user => incomingByKey.get(user.key) || user)
+    } else {
+      users.value = data.users || []
+      const selectedIds = data.selected_user_ids || []
+      selectedUserKeys.value = selectedIds.length ? users.value.filter(user => selectedIds.includes(user.user_id)).map(user => user.key) : []
+      const selectedRecords = data.selected_record_ids || initialRecordIds.value
+      selectedNumberKeys.value = selectedRecords.length ? users.value.flatMap(user => user.numbers).filter(number => selectedRecords.includes(number.record_id)).map(number => number.key) : []
+    }
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '批量修改数据加载失败')
   } finally {
@@ -41,14 +56,13 @@ async function loadOptions(nextLotteryId?: number) {
   }
 }
 
-function changeLottery(value: number) { void loadOptions(value) }
-function toggleAllUsers(checked: boolean) {
-  selectedUserKeys.value = checked ? users.value.map(user => user.key) : []
-  selectedNumberKeys.value = []
-}
-function toggleUser(user: BatchBetUser, checked: boolean) {
-  selectedUserKeys.value = checked ? [...selectedUserKeys.value, user.key] : selectedUserKeys.value.filter(key => key !== user.key)
+function changeLottery(value: number) { selectedUserKeys.value = []; selectedNumberKeys.value = []; void loadOptions({ lotteryId: value, recordIds: [] }) }
+function changeIssue(value: string) { selectedUserKeys.value = []; selectedNumberKeys.value = []; void loadOptions({ lotteryId: lotteryId.value, issue: value, recordIds: [] }) }
+function changeUsers(values: string[]) {
+  selectedUserKeys.value = values
   selectedNumberKeys.value = selectedNumberKeys.value.filter(key => selectedNumbers.value.some(number => number.key === key))
+  const userIds = selectedUsers.value.map(user => user.user_id)
+  void loadOptions({ lotteryId: lotteryId.value, issue: issueNo.value, userIds, recordIds: [], preserveSelection: true })
 }
 function toggleAllNumbers(checked: boolean) { selectedNumberKeys.value = checked ? selectedNumbers.value.map(number => number.key) : [] }
 function toggleNumber(number: BatchBetNumber, checked: boolean) {
@@ -72,7 +86,7 @@ async function submit() {
     })
     ElMessage.success(`批量修改完成，共修改 ${response.data.changed} 条`)
     replacements.value = { hundreds: '', tens: '', units: '' }
-    await loadOptions(lotteryId.value)
+    await loadOptions({ lotteryId: lotteryId.value, issue: issueNo.value, userIds: selectedUsers.value.map(user => user.user_id), recordIds: [], preserveSelection: false })
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '批量修改失败')
   } finally {
@@ -80,32 +94,27 @@ async function submit() {
   }
 }
 
-onMounted(() => loadOptions())
+onMounted(() => loadOptions({ issue: String(route.query.issue_no || ''), recordIds: initialRecordIds.value }))
 </script>
 
 <template>
   <div class="batch-page" v-loading="loading">
     <section class="batch-head">
       <div><h1>批量修改</h1><p>先选择彩种，系统自动匹配该彩种当前未开奖期；再选择用户和需要修改的投注号码。</p></div>
-      <div class="head-actions"><el-button :icon="Refresh" @click="loadOptions(lotteryId)">刷新</el-button><el-button :icon="ArrowLeft" @click="router.push('/bet-records')">返回下单记录</el-button></div>
+      <div class="head-actions"><el-button :icon="Refresh" @click="loadOptions({ lotteryId, issue: issueNo, userIds: selectedUsers.map(user => user.user_id), recordIds: [], preserveSelection: false })">刷新</el-button><el-button :icon="ArrowLeft" @click="router.push('/bet-records')">返回下单记录</el-button></div>
     </section>
 
     <section class="filter-panel">
       <div class="filter-item"><label>彩种</label><el-select v-model="lotteryId" placeholder="请选择彩种" @change="changeLottery" style="width:220px"><el-option v-for="lottery in lotteries" :key="lottery.id" :label="lottery.name" :value="lottery.id" /></el-select></div>
-      <div class="filter-item"><label>未开奖期号</label><span class="issue-value">{{ issueNo || '当前没有可修改的未开奖期' }}</span></div>
+      <div class="filter-item"><label>未开奖期号</label><el-select v-model="issueNo" placeholder="请选择期号" :disabled="!issueOptions.length" style="width:220px" @change="changeIssue"><el-option v-for="issue in issueOptions" :key="issue" :label="issue" :value="issue" /></el-select></div>
       <div class="filter-item user-summary"><span>用户 {{ selectedUserKeys.length }} / {{ users.length }}</span><span>投注 {{ selectedCount }} 条已选</span></div>
     </section>
 
     <section v-if="!users.length && !loading" class="empty">该彩种当前未开奖期没有可修改的投注</section>
     <template v-else>
       <section class="users-panel">
-        <div class="section-title"><h2>选择用户</h2><el-checkbox :model-value="allUsersSelected" @change="toggleAllUsers(Boolean($event))">全选用户</el-checkbox></div>
-        <div class="user-grid">
-          <label v-for="user in users" :key="user.key" class="user-option" :class="{ selected: selectedUserKeys.includes(user.key) }">
-            <el-checkbox :model-value="selectedUserKeys.includes(user.key)" @change="toggleUser(user, Boolean($event))" />
-            <span><b>{{ user.display_name || user.username }}</b><small>{{ user.username }}<template v-if="user.site_name"> · {{ user.site_name }}</template></small></span><em>{{ user.numbers.length }} 条</em>
-          </label>
-        </div>
+        <div class="section-title"><div><h2>选择用户</h2><span class="hint">仅显示 {{ issueNo || '当前期' }} 已下注且未开奖的用户，可多选</span></div><span class="selected-hint">已选 {{ selectedUserKeys.length }} 人</span></div>
+        <el-select v-model="selectedUserKeys" multiple collapse-tags collapse-tags-tooltip filterable placeholder="请选择用户（可多选）" style="width:100%" :disabled="!users.length" @change="changeUsers"><el-option v-for="user in users" :key="user.key" :label="`${user.display_name || user.username}（${user.username}，${user.number_count ?? user.numbers.length}条）`" :value="user.key" /></el-select>
       </section>
 
       <section class="bets-panel">

@@ -137,11 +137,15 @@ export function SubordinateEditPage({ agentName }: { agentName: string }) {
     if (odds.some((row) => numericFields.some((field) => !Number.isFinite(Number(row[field])) || Number(row[field]) < 0))) return message.warning("赔率和限额必须为非负数字");
     setSaving(true);
     try {
-      await updateAgentMember(memberId, {
+      const payload: Record<string, unknown> = {
         ...form,
         permissions: permissions.map(({ lottery_id, can_view, can_bet, offline_rebate }) => ({ lottery_id, can_view, can_bet, offline_rebate })),
         odds: odds.map((row) => ({ lottery_odds_id: row.id, ...Object.fromEntries(numericFields.map((field) => [field, row[field]])) })),
-      });
+      };
+      // Permissions/odds saves must not carry a stale score value back to the
+      // server. The API treats an omitted credit_balance as "leave unchanged".
+      if (Math.abs(Number(form.credit_balance) - Number(member?.credit_balance || 0)) < 0.005) delete payload.credit_balance;
+      await updateAgentMember(memberId, payload);
       message.success("账号资料已保存");
       navigate("/subordinates");
     } catch (reason) {

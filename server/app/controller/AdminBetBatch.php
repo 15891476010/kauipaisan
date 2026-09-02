@@ -195,12 +195,35 @@ final class AdminBetBatch
         $siteId=$this->scopedSiteId($request);
         $lotteries=$this->lotteries($siteId);
         $lotteryId=(int)$request->param('lottery_id',0);
+        $lotteryName=trim((string)$request->param('lottery',''));
         $lottery=null;
         foreach ($lotteries as $item) if ((int)$item['id']===$lotteryId) { $lottery=$item; break; }
+        if (!$lottery && $lotteryName!=='') foreach ($lotteries as $item) if ((string)$item['name']===$lotteryName) { $lottery=$item; break; }
         if (!$lottery) $lottery=$lotteries[0]??null;
-        if (!$lottery) return $this->reply(['lotteries'=>[],'lottery'=>null,'issue_no'=>'','users'=>[]]);
-        $issue=$this->currentIssue($lottery,$siteId);
-        if ($issue==='') return $this->reply(['lotteries'=>$lotteries,'lottery'=>$lottery,'issue_no'=>'','users'=>[]]);
+        if (!$lottery) return $this->reply(['lotteries'=>[],'lottery'=>null,'issue_no'=>'','issues'=>[],'users'=>[]]);
+        $issues=array_values(array_map('strval',Db::name('lottery_histories')->where('lottery_id',(int)$lottery['id'])->where('is_opened',0)->order('open_time asc')->order('id asc')->limit(100)->column('code')));
+        $betIssueQuery=Db::name('bet_records')->alias('r')->join('bet_details d','d.bet_record_id=r.id')->join('user_stop_drops s','s.bet_detail_id=d.id')
+            ->where('s.lottery',(string)$lottery['name'])->where('r.status','pending')->where('r.sealed',0)->where('d.status','pending');
+        if ($siteId!==null) $betIssueQuery->where('r.site_id',$siteId);
+        foreach ($betIssueQuery->distinct(true)->column('r.issue_no') as $betIssue) {
+            $betIssue=(string)$betIssue; if ($betIssue!=='' && !in_array($betIssue,$issues,true)) $issues[]=$betIssue;
+        }
+        $selectedRecordIds=array_values(array_unique(array_filter(array_map('intval',explode(',',(string)$request->param('record_ids',''))),static fn(int $id): bool=>$id>0)));
+        $selectedUserIds=[];
+        if ($selectedRecordIds!==[]) {
+            $selectedRows=Db::name('bet_records')->whereIn('id',$selectedRecordIds)->where('status','pending')->where('sealed',0);
+            if ($siteId!==null) $selectedRows->where('site_id',$siteId);
+            $selectedRows=$selectedRows->field('id,user_id,issue_no')->select()->toArray();
+            $selectedRecordIds=array_values(array_map('intval',array_column($selectedRows,'id')));
+            $selectedUserIds=array_values(array_unique(array_map('intval',array_column($selectedRows,'user_id'))));
+            $selectedIssues=array_values(array_unique(array_map('strval',array_column($selectedRows,'issue_no'))));
+            if (count($selectedIssues)===1) $requestIssue=trim((string)$selectedIssues[0]); else $requestIssue='';
+        } else $requestIssue=trim((string)$request->param('issue_no',''));
+        $issue=$requestIssue!=='' ? $requestIssue : $this->currentIssue($lottery,$siteId);
+        if ($issue!=='' && !in_array($issue,$issues,true)) array_unshift($issues,$issue);
+        if ($issue==='') return $this->reply(['lotteries'=>$lotteries,'lottery'=>$lottery,'issue_no'=>'','issues'=>$issues,'users'=>[],'selected_record_ids'=>$selectedRecordIds,'selected_user_ids'=>$selectedUserIds]);
+        $requestedUsers=array_values(array_unique(array_filter(array_map('intval',explode(',',(string)$request->param('user_ids',''))),static fn(int $id): bool=>$id>0)));
+        if ($requestedUsers===[] && $selectedUserIds!==[]) $requestedUsers=$selectedUserIds;
 
         $query=Db::name('bet_details')->alias('d')
             ->join('bet_records r','r.id=d.bet_record_id')
@@ -210,6 +233,7 @@ final class AdminBetBatch
             ->where('s.lottery',(string)$lottery['name'])->where('r.issue_no',$issue)
             ->where('r.status','pending')->where('d.status','pending');
         if ($siteId!==null) $query->where('d.site_id',$siteId);
+        if ($requestedUsers!==[]) $query->whereIn('d.user_id',$requestedUsers);
         $rows=$query->field('d.id,d.user_id,d.site_id,d.number_text,d.amount,d.source_text,r.id AS record_id,u.username,u.display_name,st.name AS site_name')
             ->order('d.site_id asc')->order('d.user_id asc')->order('d.id asc')->select()->toArray();
         $users=[];
@@ -218,17 +242,19 @@ final class AdminBetBatch
             if (!isset($users[$userKey])) $users[$userKey]=[
                 'key'=>$userKey,'user_id'=>(int)$row['user_id'],'site_id'=>(int)$row['site_id'],
                 'username'=>(string)($row['username']??'未知用户'),'display_name'=>(string)($row['display_name']??''),
-                'site_name'=>(string)($row['site_name']??''),'numbers'=>[],
+                'site_name'=>(string)($row['site_name']??''),'number_count'=>0,'numbers'=>[],
             ];
             $numbers=preg_split('/\s+/',trim((string)($row['number_text']??'')))?:[];
             $numbers=array_values(array_filter($numbers,static fn(string $number): bool=>preg_match('/^\d{3}$/',$number)===1));
             $unitAmount=(float)($row['amount']??0)/max(1,count($numbers));
+            $users[$userKey]['number_count'] += count($numbers);
+            if ($requestedUsers===[]) continue;
             foreach ($numbers as $index=>$number) $users[$userKey]['numbers'][]=[
-                'key'=>(int)$row['id'].'-'.$index,'detail_id'=>(int)$row['id'],'number_index'=>$index,
+                'key'=>(int)$row['id'].'-'.$index,'record_id'=>(int)$row['record_id'],'detail_id'=>(int)$row['id'],'number_index'=>$index,
                 'value'=>$number,'amount'=>number_format($unitAmount,2,'.',''),'source_text'=>(string)($row['source_text']??''),
             ];
         }
-        return $this->reply(['lotteries'=>$lotteries,'lottery'=>$lottery,'issue_no'=>$issue,'users'=>array_values($users)]);
+        return $this->reply(['lotteries'=>$lotteries,'lottery'=>$lottery,'issue_no'=>$issue,'issues'=>$issues,'selected_record_ids'=>$selectedRecordIds,'selected_user_ids'=>$selectedUserIds,'users'=>array_values($users)]);
     }
 
     public function replace(Request $request): \think\response\Json

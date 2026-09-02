@@ -188,7 +188,8 @@ final class AgentMember
         $data=$request->put(); $update=['updated_at'=>date('Y-m-d H:i:s')];
         if (array_key_exists('display_name',$data)) { $value=trim((string)$data['display_name']); if ($value==='') throw new \InvalidArgumentException('请输入代号'); $update['display_name']=$value; }
         if (array_key_exists('phone',$data)) $update['phone']=trim((string)$data['phone'])?:null;
-        if (array_key_exists('credit_balance',$data)) { if (!is_numeric($data['credit_balance']) || (float)$data['credit_balance']<0) throw new \InvalidArgumentException('信用额度必须为非负数字'); $credit=(float)$data['credit_balance']; $ownerId=(int)($current['organization_id']??0); if($ownerId<1)throw new \InvalidArgumentException('历史会员尚未归属代理，请先在总平台完成归属设置'); $summary=OrganizationHierarchy::agentCreditSummary($ownerId,$id); $delta=$credit-(float)$current['credit_balance']; if($delta>(float)$summary['available_credit']+0.000001)throw new \InvalidArgumentException('所属代理可用分数不足，无法分配给用户'); $update['credit_balance']=number_format($credit,2,'.',''); }
+        $creditChanged=false;
+        if (array_key_exists('credit_balance',$data)) { if (!is_numeric($data['credit_balance']) || (float)$data['credit_balance']<0) throw new \InvalidArgumentException('信用额度必须为非负数字'); $credit=(float)$data['credit_balance']; $ownerId=(int)($current['organization_id']??0); if($ownerId<1)throw new \InvalidArgumentException('历史会员尚未归属代理，请先在总平台完成归属设置'); $summary=OrganizationHierarchy::agentCreditSummary($ownerId,$id); $delta=$credit-(float)$current['credit_balance']; $creditChanged=abs($delta)>=0.005; if($delta>(float)$summary['available_credit']+0.000001)throw new \InvalidArgumentException('所属代理可用分数不足，无法分配给用户'); $update['credit_balance']=number_format($credit,2,'.',''); }
         if (array_key_exists('status',$data)) $update['status']=(int)$data['status']===0?0:1;
         if (array_key_exists('remark',$data)) $update['remark']=mb_substr(trim((string)$data['remark']),0,255);
         if (array_key_exists('account_state',$data)) { $state=(string)$data['account_state']; if(!in_array($state,['enabled','disabled','bet_paused'],true)) throw new \InvalidArgumentException('账号状态无效'); $update['account_state']=$state; $update['status']=$state==='disabled'?0:1; }
@@ -197,9 +198,17 @@ final class AgentMember
         $tenantId=(int)($session['tenant_id']??1); $agentId=(int)($session['agent_id']??0); $permissions=array_key_exists('permissions',$data) ? $this->normalizePermissions($data['permissions'],$siteId,$tenantId) : null;
         $odds=$data['odds']??null; $boardCode=$this->boardCode($request,$session);
         $operator=['type'=>'organization_admin','id'=>(int)($session['user_id']??0),'name'=>(string)($session['username']??'')];
-        Db::transaction(function () use ($id,$siteId,$tenantId,$agentId,$current,$update,$permissions,$odds,$operator,$boardCode): void {
+        Db::transaction(function () use ($id,$siteId,$tenantId,$agentId,$current,$update,$permissions,$odds,$operator,$boardCode,$creditChanged): void {
             if(array_key_exists('credit_balance',$update)) {
-                ScoreTransfer::setUserBalances($current,(float)$current['balance'],(float)$update['credit_balance'],$operator);
+                // A permissions-only save commonly posts the value that was
+                // loaded when the form opened. Do not rewrite balances in that
+                // case, and when changing credit use the latest cash balance so
+                // concurrent balance updates cannot be rolled back.
+                if ($creditChanged) {
+                    $fresh=Db::name('site_users')->where('id',$id)->where('site_id',$siteId)->whereNull('deleted_at')->lock(true)->find();
+                    if (!$fresh) throw new \RuntimeException('会员不存在或已停用');
+                    ScoreTransfer::setUserBalances($fresh,(float)$fresh['balance'],(float)$update['credit_balance'],$operator);
+                }
                 unset($update['credit_balance']);
             }
             Db::name('site_users')->where('id',$id)->where('site_id',$siteId)->update($update);

@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from "react";
-import { App as AntdApp, Button, Empty, Modal } from "antd";
+import { App as AntdApp, Empty, Modal } from "antd";
 import dayjs from "dayjs";
 import arrowRightIcon from "../../../assets/arrow-right.svg";
 import {
@@ -96,13 +96,18 @@ export function SideBetRecords({
     if (value === "体") return "排列三";
     return value || "福彩3D";
   };
-  const playName = (detail: BetDetail) => detail.play_label || detail.play_type || detail.category || "投注";
+  const playName = (detail: BetDetail) => {
+    const raw = String(detail.play_label || detail.play_type || detail.category || "投注");
+    if (raw === "直" || raw.startsWith("直")) return "直";
+    if (raw === "组" || raw === "组选") return "组选";
+    return raw;
+  };
   const displayDetailNumber = (detail: BetDetail) => {
     const source = detail.source_text || "";
     const play = playName(detail);
     const sticky = source.match(/(\d{4,10})\s*(组三|组六)六码/u);
     if (sticky) return `${sticky[2] === "组三" ? "三" : "六"}${sticky[1]}`;
-    if (play.includes("组3") || play.includes("组6")) {
+    if (play.includes("组3") || play.includes("组6") || play.includes("组选")) {
       return (detail.number_text || "").replace(/^[三六]/u, "");
     }
     if (play.includes("双飞") || source.includes("对子")) {
@@ -164,6 +169,13 @@ export function SideBetRecords({
     }
     throw new Error("copy failed");
   };
+
+  const copyRecordText = (record: BetRecord) => {
+    if (record.status === "refunded" || !record.source_text) return;
+    void copyText(record.source_text)
+      .then(() => message.success("原始文本已复制"))
+      .catch(() => message.error("复制原始文本失败"));
+  };
   const copyNumbers = async () => {
     try {
       await copyText(orderedDetails.map((detail) => displayDetailNumber(detail)).join("\n"));
@@ -221,7 +233,7 @@ export function SideBetRecords({
         </span>
         <div className="side-actions">
           <button type="button" disabled={disabled} onClick={onMore}>
-            更多
+            <span className="side-action-label">更多</span>
           </button>
           <button className="side-right" type="button" disabled={disabled} onClick={onToggleSide}>
             <img
@@ -230,7 +242,7 @@ export function SideBetRecords({
               alt=""
               aria-hidden="true"
             />
-            {panelRight ? "居左" : "居右"}
+            <span className="side-action-label">{panelRight ? "居左" : "居右"}</span>
           </button>
         </div>
       </div>
@@ -241,17 +253,22 @@ export function SideBetRecords({
             key={record.id}
           >
             <time>
-              <span className="side-record-board">
-                {record.board_name || `${record.board_code || "A"}盘`}
+              <span className={"side-record-board pk-" + (record.board_code || "1")}>
+                {record.board_name || (record.board_code || "A") + "盘"}
               </span>
               时间：{record.placed_at}
             </time>
             <div className="side-record-text">
               <b className="side-record-issue">
-                {record.lottery ? `${record.lottery} ` : ""}第 {record.issue_no || "--"} 期
+                {record.lottery ? record.lottery + " " : ""}第 {record.issue_no || "--"} 期
               </b>
-              <p title={record.source_text || "-"}>{record.source_text || "-"}</p>
-            </div>
+              <p
+                className={record.lottery === "排列三" || record.lottery === "体" ? "pl3" : record.lottery && record.lottery !== "福彩3D" && record.lottery !== "福" ? "all" : "fc3"}
+                title={record.source_text || "-"}
+                onClick={record.status === "refunded" ? undefined : () => copyRecordText(record)}
+              >
+                {record.source_text || "-"}
+              </p>            </div>
             <footer>
               <strong>
                 {record.status === "refunded" ? "0.00" : record.amount}
@@ -295,44 +312,61 @@ export function SideBetRecords({
         ))}
       </div>
       <Modal
-        className={detailMode === "numbers" ? "record-number-modal" : "record-detail-modal"}
+        className={detailMode === "numbers" ? "record-number-modal" : "records-detail-modal"}
+        wrapClassName={detailMode === "detail" ? "records-detail-wrap" : "record-number-wrap"}
         open={Boolean(detailRecord)}
         title={detailMode === "detail" ? "下注详情" : null}
-        footer={detailMode === "detail" ? <Button onClick={() => setDetailRecord(undefined)}>关 闭</Button> : null}
+        footer={detailMode === "detail" ? (
+          <button type="button" className="records-modal-close" onClick={() => setDetailRecord(undefined)}>
+            关 闭
+          </button>
+        ) : null}
         onCancel={() => setDetailRecord(undefined)}
-        width={detailMode === "numbers" ? 520 : 900}
+        width={detailMode === "numbers" ? 520 : 760}
       >
         {detailLoading ? <div className="record-detail-loading">加载中...</div> : details.length && detailMode === "detail" ? (
           <div className="record-detail-content">
             <div className="record-detail-tabs">
-              {groupedDetails.map(([lottery]) => <span key={lottery}>{lottery}</span>)}
+              {groupedDetails.map(([lottery]) => <span className="selected" key={lottery}>{lottery}</span>)}
             </div>
-            {groupedDetails.map(([lottery, plays]) => (
-              <section className="record-detail-lottery" key={lottery}>
-                <h2>{lottery}</h2>
-                {Array.from(plays).map(([play, playDetails]) => (
-                  <div className="record-detail-play" key={`${lottery}-${play}`}>
-                    <h3>{play}</h3>
-                    <div className="record-detail-grid-list">
-                      {Array.from({ length: Math.ceil(playDetails.length / 5) }, (_, chunkIndex) => {
-                        const chunk = playDetails.slice(chunkIndex * 5, chunkIndex * 5 + 5);
-                        return <div className="record-detail-grid" key={`${lottery}-${play}-${chunkIndex}`} style={{ gridTemplateColumns: `120px repeat(${chunk.length}, minmax(112px, 1fr))` }}>
-                          <div className="record-detail-grid-label">号码</div>{chunk.map((detail, index) => <div className="record-detail-grid-value number" key={`number-${detail.id}-${index}`}><span>{displayDetailNumber(detail)}</span><em>{play}</em></div>)}
-                          <div className="record-detail-grid-label">金额</div>{chunk.map((detail, index) => <div className="record-detail-grid-value amount" key={`amount-${detail.id}-${index}`}>{detail.amount}</div>)}
-                          <div className="record-detail-grid-label">赔率</div>{chunk.map((detail, index) => <div className="record-detail-grid-value odds" key={`odds-${detail.id}-${index}`}>{detail.odds || "---"}</div>)}
-                          <div className="record-detail-grid-label">中奖</div>{chunk.map((detail, index) => <div className="record-detail-grid-value win" key={`win-${detail.id}-${index}`}>{Number(detail.win_amount || 0) > 0 ? detail.win_amount : "---"}</div>)}
-                        </div>;
-                      })}
+            <div className="record-detail-code-body">
+              {groupedDetails.map(([lottery, plays]) => (
+                <section className="record-detail-lottery" key={lottery}>
+                  <h5 className={lottery === "福彩3D" ? "lt-4" : "lt-3"}>{lottery}</h5>
+                  {Array.from(plays).map(([play, playDetails]) => (
+                    <div className="record-detail-play-group" key={lottery + "-" + play}>
+                      <label>{play}</label>
+                      <div className="record-detail-data">
+                        <div className="record-detail-sub-header">
+                          <span>号码</span>
+                          <span>金额</span>
+                          <span>赔率</span>
+                          <span>中奖</span>
+                        </div>
+                        {playDetails.map((detail, index) => (
+                          <div className="record-detail-data-row" key={detail.id + "-" + index}>
+                            <span>
+                              <span className="record-detail-number">
+                                <label>{displayDetailNumber(detail)}</label>
+                                {detail.play_type ? <em>{detail.play_type.replace(/\d+/g, "")}</em> : null}
+                              </span>
+                            </span>
+                            <span>{detail.amount || "0"}</span>
+                            <span>{detail.odds || "---"}</span>
+                            <span>{Number(detail.win_amount || 0) > 0 ? detail.win_amount : "---"}</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </section>
-            ))}
+                  ))}
+                </section>
+              ))}
+            </div>
           </div>
         ) : details.length ? (
           <div className="record-number-content">
             <div className="record-number-toolbar"><button type="button" onClick={() => setDetailRecord(undefined)}>←</button><span>第1/1页</span><button type="button" disabled>上页</button><button type="button" disabled>下页</button><button type="button" className="download" onClick={printNumbers}>下载PDF</button><button type="button" className="copy" onClick={() => void copyNumbers()}>复制号码</button></div>
-            <div className="record-number-paper"><p>时间:{detailRecord?.placed_at || ""}</p><p>会员:-</p><table><thead><tr><th>号码</th><th>全额</th></tr></thead><tbody>{numberGroups.map(([key, group]) => <Fragment key={key}><tr className="group"><th colSpan={2}>{key.replace("|", " 第 ")} 期，共 {group.reduce((sum, item) => sum + Number(item.amount || 0), 0).toFixed(2)}</th></tr>{group.map((detail, index) => <tr key={`${detail.id}-${index}`}><td>{displayDetailNumber(detail)}</td><td>{detail.amount}</td></tr>)}</Fragment>)}</tbody></table><p>请核对一切以小票为准<br />总笔数:{details.length} 总金额:{details.reduce((sum, item) => sum + Number(item.amount || 0), 0).toFixed(2)}</p></div>
+            <div className="record-number-paper"><p>时间:{detailRecord?.placed_at || ""}</p><p>会员:-</p><table><thead><tr><th>号码</th><th>全额</th></tr></thead><tbody>{numberGroups.map(([key, group]) => <Fragment key={key}><tr className="group"><th colSpan={2}>{key.replace("|", " 第 ")} 期，共 {group.reduce((sum, item) => sum + Number(item.amount || 0), 0).toFixed(2)}</th></tr>{group.map((detail, index) => <tr key={detail.id + "-" + index}><td>{displayDetailNumber(detail)}</td><td>{detail.amount}</td></tr>)}</Fragment>)}</tbody></table><p>请核对一切以小票为准<br />总笔数:{details.length} 总金额:{details.reduce((sum, item) => sum + Number(item.amount || 0), 0).toFixed(2)}</p></div>
           </div>
         ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" />}
       </Modal>

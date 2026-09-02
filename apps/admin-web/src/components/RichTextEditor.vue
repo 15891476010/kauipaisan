@@ -46,4 +46,40 @@ onBeforeUnmount(() => { editor?.destroy(); editor = null })
 .rich-editor-content { min-height: 240px; flex: 1; overflow-y: auto; }
 .rich-editor-content :deep(.w-e-text-container) { min-height: 240px; height: 100% !important; }
 .rich-editor-content :deep(.w-e-text-placeholder) { color: #a8abb2; }
+/* Keep the SaaS editing surface visually identical to the user rule modal.
+   WangEditor renders the loaded HTML inside .w-e-text, so the editor needs
+   explicit typography/spacing rules instead of relying on browser defaults. */
+.rich-editor-content :deep(.w-e-text-container [data-slate-editor]) {
+  color: #111;
+  font-family: Arial, "Microsoft YaHei", sans-serif;
+  font-size: 14px;
+  line-height: 1.7;
+  padding: 12px;
+}
+.rich-editor-content :deep(.w-e-text-container [data-slate-editor] h4) {
+  margin: 12px 0 6px;
+  color: #080c93;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+.rich-editor-content :deep(.w-e-text-container [data-slate-editor] p) {
+  margin: 0 0 5px;
+  color: #111;
+  font-size: 14px;
+  line-height: 1.7;
+}
+.rich-editor-content :deep(.w-e-text-container [data-slate-editor] span[style*="background-color"]) {
+  display: inline-block;
+  padding: 3px 12px;
+  border: 1px solid #f0a900;
+  border-radius: 16px;
+  background: #fff500 !important;
+  color: #111;
+  line-height: 20px;
+}
+.rich-editor-content :deep(.w-e-text-container [data-slate-editor] div[style*="background-color:rgb(255,219,219)"]) {
+  padding: 4px 6px;
+  background: #ffdbdb !important;
+}
 </style>

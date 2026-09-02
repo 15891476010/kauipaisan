@@ -11,7 +11,7 @@ $tables = [
     [BetMultiplierAmount::GROUP_SIX_DOUBLE_DRAG, [2=>4,3=>6,4=>8,5=>10,6=>12,7=>14,8=>16]],
     [BetMultiplierAmount::SINGLE_FULL_DRAG, [2=>38,3=>74,4=>122,5=>182,6=>254,7=>338,8=>434,9=>542]],
     [BetMultiplierAmount::STICKY_GROUP_SIX, [1=>72,2=>128,3=>170,4=>200,5=>220,6=>232,7=>238]],
-    [BetMultiplierAmount::STICKY_GROUP_THREE, [1=>36,2=>68,3=>96,4=>120,5=>140,6=>158,7=>168]],
+    [BetMultiplierAmount::STICKY_GROUP_THREE, [1=>36,2=>68,3=>96,4=>120,5=>140,6=>156,7=>168]],
 ];
 foreach ($tables as [$play, $values]) foreach ($values as $count => $expected) {
     if ($play->oneMultiplier($count) !== (float)$expected) {
@@ -22,8 +22,8 @@ foreach ($tables as [$play, $values]) foreach ($values as $count => $expected) {
 $fixed = [
     [BetMultiplierAmount::LOTTERY_SINGLE,2],
     [BetMultiplierAmount::DIRECT,2],
-    [BetMultiplierAmount::GROUP_SIX_THREE_CODE,2],
-    [BetMultiplierAmount::GROUP_THREE_THREE_CODE,2],
+    [BetMultiplierAmount::GROUP_SIX_THREE_CODE,10],
+    [BetMultiplierAmount::GROUP_THREE_THREE_CODE,10],
     [BetMultiplierAmount::LEOPARD_SINGLE,2],
     [BetMultiplierAmount::COMPOUND,10],
     [BetMultiplierAmount::GROUP_OTHER,10],

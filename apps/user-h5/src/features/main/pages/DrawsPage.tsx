@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Empty } from "antd";
 import { getDraws, waitDraws, type Draw, type Lottery } from "../../../api/user";
-import { lotteryTiming } from "../shared";
+import { displayIssueCode, lotteryTiming } from "../shared";
 
 function formatDrawTime(value?: string | null) {
   const raw = String(value || "");
@@ -18,12 +18,23 @@ export function DrawsPage({ selectedLottery }: { selectedLottery?: Lottery }) {
   const drawRequestId = useRef(0);
   const drawSignature = useRef("");
   const showNextIssue = lotteryTiming(selectedLottery, now).showNextIssue;
-  const visibleRows = showNextIssue
-    ? rows
-    : rows.filter((row) => row.pending !== 1 && row.numbers.trim() !== "");
+  const nextIssue = selectedLottery?.header_next_code || selectedLottery?.next_code;
+  const rowsWithPending = nextIssue && !rows.some((row) => String(row.issue_no) === String(nextIssue))
+    ? [{
+        lottery: selectedLottery?.name || "",
+        issue_no: nextIssue,
+        draw_date: "",
+        draw_time: null,
+        numbers: "",
+        pending: 1,
+      } as Draw, ...rows]
+    : rows;
+  // The reference always reserves the first row for the next issue while it is
+  // waiting for the draw, even when the API only returns historical rows.
+  const visibleRows = rowsWithPending.slice(0, 64);
   const issueDigits = Math.max(
     2,
-    ...rows.map((row) => String(row.issue_no || "").trim().length),
+    ...rows.map((row) => displayIssueCode(row.issue_no).trim().length),
   );
   const drawTableStyle = {
     "--draw-issue-width": "calc(" + issueDigits + "ch + 10px)",
@@ -89,8 +100,6 @@ export function DrawsPage({ selectedLottery }: { selectedLottery?: Lottery }) {
             <span>佰</span>
             <span>拾</span>
             <span>个</span>
-            <span>和值</span>
-            <span>跨度</span>
           </div>
           <div className="draw-body">
             {visibleRows.length ? (
@@ -103,7 +112,7 @@ export function DrawsPage({ selectedLottery }: { selectedLottery?: Lottery }) {
                     key={`${row.lottery}-${row.issue_no}`}
                   >
                     <time>{pending ? "---" : formatDrawTime(row.draw_time || row.draw_date)}</time>
-                    <strong>{row.issue_no}</strong>
+                    <strong>{displayIssueCode(row.issue_no)}</strong>
                     {[0, 1, 2].map((index) => (
                       <span
                         className={`draw-ball${pending ? " pending" : ""}`}
@@ -113,14 +122,7 @@ export function DrawsPage({ selectedLottery }: { selectedLottery?: Lottery }) {
                         {numbers[index] || ""}
                       </span>
                     ))}
-                    <span className="draw-sum">
-                      {pending || row.sum_value == null
-                        ? "---"
-                        : `${row.sum_value} / ${row.size} / ${row.parity}`}
-                    </span>
-                    <b className={`draw-span${pending ? " pending" : ""}`}>
-                      {pending || row.span_value == null ? "---" : row.span_value}
-                    </b>
+
                   </div>
                 );
               })

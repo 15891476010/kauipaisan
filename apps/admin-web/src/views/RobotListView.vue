@@ -1,0 +1,1144 @@
+<script setup lang="ts">
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";
+import { ElMessage, ElMessageBox } from "element-plus";
+import {
+  Plus,
+  Refresh,
+  Edit,
+  VideoPlay,
+  VideoPause,
+  User,
+  Document,
+} from "@element-plus/icons-vue";
+import {
+  clearRobotLatest,
+  convertRobot,
+  createRobot,
+  getRobotHistory,
+  getRobotOptions,
+  getRobotLogs,
+  listRobots,
+  setRobotStatus,
+  updateRobot,
+  type Robot,
+  type RobotConfig,
+  type RobotHistory,
+  type RobotMonthlyRule,
+  type RobotHourlyWeight,
+  type RobotOptions,
+  type RobotRunLog,
+} from "../api/admin";
+
+const loading = ref(false);
+const saving = ref(false);
+const rows = ref<Robot[]>([]);
+const options = ref<RobotOptions>({
+  sites: [],
+  site_id: 0,
+  nodes: [],
+  lotteries: [],
+});
+const siteId = ref<number>();
+const drawer = ref(false);
+const editing = ref<Robot | null>(null);
+const copySourceId = ref<number | null>(null);
+const originalScore = ref(0);
+const historyVisible = ref(false);
+const historyRows = ref<RobotHistory[]>([]);
+const historyRobot = ref<Robot | null>(null);
+const historyLottery = ref("");
+const historyPage = ref(1);
+const historyPageSize = ref(20);
+const historyTotal = ref(0);
+const historyLoading = ref(false);
+const logsVisible = ref(false);
+const logsRobot = ref<Robot | null>(null);
+const logs = ref<RobotRunLog[]>([]);
+const logsContainer = ref<HTMLElement | null>(null);
+const logsLastId = ref(0);
+const logsLoading = ref(false);
+let logsTimer: number | undefined;
+type SkipWindow = { start: string; end: string };
+const form = reactive({
+  name: "",
+  username: "",
+  password: "",
+  organization_id: 0,
+  score: 0,
+  min_amount: 1,
+  max_amount: 100,
+  amount_precision: 0,
+  start_at: "",
+  interval_min: 3,
+  interval_max: 5,
+  weight_fu: 1,
+  weight_ti: 1,
+  weight_futi: 1,
+  win_weight: 50,
+  monthly_rules: [] as RobotMonthlyRule[],
+  hourly_weights: [] as RobotHourlyWeight[],
+  lottery_configs: [] as RobotConfig[],
+  skip_windows: [] as SkipWindow[],
+});
+const orgTree = computed(() => {
+  const nodes = options.value.nodes;
+  const byParent = new Map<number, any[]>();
+  for (const node of nodes) {
+    const list = byParent.get(node.parent_id) || [];
+    list.push({
+      ...node,
+      label: `${node.level === "agent" ? "代理" : "组织"} · ${node.name}`,
+      value: node.id,
+      children: [],
+    });
+    byParent.set(node.parent_id, list);
+  }
+  function build(parent: number): any[] {
+    return (byParent.get(parent) || []).map((node) => {
+      const children = build(node.value);
+      if (children.length) node.children = children;
+      else delete node.children;
+      return node;
+    });
+  }
+  return build(0);
+});
+const selectedLotteryIds = computed(() =>
+  form.lottery_configs
+    .filter((item) => Number(item.enabled) === 1)
+    .map((item) => item.lottery_id),
+);
+function monthsBetween(startAt: string): string[] {
+  const start = new Date((startAt || "").replace(" ", "T"));
+  if (Number.isNaN(start.getTime())) return [];
+  const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+  const today = new Date();
+  const end = new Date(today.getFullYear(), today.getMonth(), 1);
+  const result: string[] = [];
+  for (let guard = 0; cursor <= end && guard < 120; guard += 1) {
+    result.push(
+      `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`,
+    );
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+  return result;
+}
+function syncMonthlyRules() {
+  const old = new Map(form.monthly_rules.map((item) => [item.month, item]));
+  const defaultWeeks = [
+    { win_weight: 80, max_amount: 100000 },
+    { win_weight: 70, max_amount: 50000 },
+    { win_weight: 50, max_amount: 30000 },
+    { win_weight: 20, max_amount: 150000 },
+    { win_weight: 10, max_amount: 200000 },
+  ];
+  form.monthly_rules = monthsBetween(form.start_at).map((month) => {
+    const previous = old.get(month);
+    const previousWeeks = Array.isArray(previous?.weeks) ? previous.weeks : [];
+    const legacyWeight = previous && previousWeeks.length === 0 && previous.win_weight != null
+      ? Number(previous.win_weight)
+      : null;
+    const legacyCap = previous && previousWeeks.length === 0 && previous.max_amount != null
+      ? Number(previous.max_amount)
+      : null;
+    return {
+      month,
+      weeks: Array.from({ length: 5 }, (_, index) => {
+        const week = index + 1;
+        const defaults = defaultWeeks[index];
+        return (
+          previousWeeks.find((item) => Number(item.week) === week) || {
+            week,
+            win_weight: legacyWeight ?? defaults.win_weight,
+            max_amount: legacyCap ?? defaults.max_amount,
+          }
+        );
+      }),
+    };
+  });
+}
+function syncHourlyWeights() {
+  form.hourly_weights = Array.from({ length: 21 }, (_, hour) => {
+    const start = `${String(hour).padStart(2, "0")}:00`;
+    const end = `${String(hour + 1).padStart(2, "0")}:00`;
+    return (
+      form.hourly_weights.find((item) => item.start === start) || {
+        start,
+        end,
+        weight: Number((100 / 21).toFixed(2)),
+      }
+    );
+  });
+  const total = form.hourly_weights.reduce(
+    (sum, item) => sum + Number(item.weight || 0),
+    0,
+  );
+  if (total !== 100)
+    form.hourly_weights[form.hourly_weights.length - 1].weight = Number(
+      (
+        Number(form.hourly_weights[form.hourly_weights.length - 1].weight) +
+        100 -
+        total
+      ).toFixed(2),
+    );
+}
+function normalizeHourlyWeight(index: number) {
+  const value = Math.max(
+    0,
+    Math.min(100, Number(form.hourly_weights[index].weight || 0)),
+  );
+  form.hourly_weights[index].weight = value;
+  const others = form.hourly_weights.filter(
+    (_, itemIndex) => itemIndex !== index,
+  );
+  const oldTotal = others.reduce(
+    (sum, item) => sum + Number(item.weight || 0),
+    0,
+  );
+  const remaining = 100 - value;
+  if (oldTotal <= 0)
+    others.forEach((item) => {
+      item.weight = Number((remaining / others.length).toFixed(2));
+    });
+  else
+    others.forEach((item) => {
+      item.weight = Number(
+        ((Number(item.weight || 0) * remaining) / oldTotal).toFixed(2),
+      );
+    });
+  const total = form.hourly_weights.reduce(
+    (sum, item) => sum + Number(item.weight || 0),
+    0,
+  );
+  form.hourly_weights[form.hourly_weights.length - 1].weight = Number(
+    (
+      Number(form.hourly_weights[form.hourly_weights.length - 1].weight) +
+      100 -
+      total
+    ).toFixed(2),
+  );
+}
+function resetForm() {
+  originalScore.value = 0;
+  copySourceId.value = null;
+  Object.assign(form, {
+    name: "",
+    username: "",
+    password: "",
+    organization_id: 0,
+    score: 0,
+    min_amount: 1,
+    max_amount: 100,
+    amount_precision: 0,
+    start_at: new Date().toISOString().slice(0, 16),
+    interval_min: 3,
+    interval_max: 5,
+    weight_fu: 1,
+    weight_ti: 1,
+    weight_futi: 1,
+    win_weight: 50,
+    monthly_rules: [],
+    hourly_weights: [],
+    lottery_configs: [],
+    skip_windows: [],
+  });
+}
+/** Copy scheduling and play settings only; never copy identity, money or history. */
+function copyRobotConfig(sourceId: number | null) {
+  if (!sourceId) return;
+  const source = rows.value.find((row) => row.id === sourceId);
+  if (!source) return;
+  Object.assign(form, {
+    min_amount: Number(source.min_amount),
+    max_amount: Number(source.max_amount),
+    amount_precision: source.amount_precision,
+    start_at: source.start_at?.replace(" ", "T").slice(0, 16) || form.start_at,
+    interval_min: source.interval_min,
+    interval_max: source.interval_max,
+    weight_fu: Number(source.weight_fu),
+    weight_ti: Number(source.weight_ti),
+    weight_futi: Number(source.weight_futi),
+    win_weight: Number(source.win_weight ?? 50),
+    monthly_rules: (source.monthly_rules || []).map((item) => ({ ...item })),
+    hourly_weights: (source.hourly_weights || []).map((item) => ({ ...item })),
+    skip_windows: (source.skip_windows || []).map((item) => ({ ...item })),
+    lottery_configs: (source.lottery_configs || []).map((item) => ({ ...item })),
+  });
+  syncMonthlyRules();
+  syncHourlyWeights();
+  ElMessage.success(`已填入“${source.name}”的打单配置，请检查后保存`);
+}
+async function loadOptions(nextSiteId?: number) {
+  const response = await getRobotOptions(nextSiteId);
+  options.value = response.data;
+  siteId.value = response.data.site_id || nextSiteId;
+}
+async function load() {
+  loading.value = true;
+  try {
+    await loadOptions(siteId.value);
+    const response = await listRobots(siteId.value);
+    rows.value = response.data.list || [];
+  } catch (error) {
+    ElMessage.error(
+      error instanceof Error ? error.message : "机器人列表加载失败",
+    );
+  } finally {
+    loading.value = false;
+  }
+}
+function toggleLottery(id: number, checked: boolean) {
+  const existing = form.lottery_configs.find((item) => item.lottery_id === id);
+  if (existing) existing.enabled = checked ? 1 : 0;
+  else form.lottery_configs.push({ lottery_id: id, enabled: checked ? 1 : 0 });
+}
+function openCreate() {
+  editing.value = null;
+  resetForm();
+  syncMonthlyRules();
+  syncHourlyWeights();
+  drawer.value = true;
+}
+function openEdit(row: Robot) {
+  editing.value = row;
+  copySourceId.value = null;
+  originalScore.value = Number(row.available_score || 0);
+  Object.assign(form, {
+    name: row.name,
+    username: row.username,
+    password: "",
+    organization_id: row.organization_id,
+    score: originalScore.value,
+    min_amount: Number(row.min_amount),
+    max_amount: Number(row.max_amount),
+    amount_precision: row.amount_precision,
+    start_at: row.start_at?.replace(" ", "T").slice(0, 16),
+    interval_min: row.interval_min,
+    interval_max: row.interval_max,
+    weight_fu: Number(row.weight_fu),
+    weight_ti: Number(row.weight_ti),
+    weight_futi: Number(row.weight_futi),
+    win_weight: Number(row.win_weight ?? 50),
+    monthly_rules: (row.monthly_rules || []).map((item) => ({ ...item })),
+    hourly_weights: (row.hourly_weights || []).map((item) => ({ ...item })),
+    lottery_configs: (row.lottery_configs || []).map((item) => ({ ...item })),
+    skip_windows: (row.skip_windows || []).map((item) => ({ ...item })),
+  });
+  syncMonthlyRules();
+  syncHourlyWeights();
+  drawer.value = true;
+}
+function payload() {
+  const data: Record<string, unknown> = {
+    ...form,
+    site_id: siteId.value,
+    organization_id: Number(form.organization_id),
+    start_at: form.start_at.replace("T", " "),
+    lottery_configs: form.lottery_configs.filter(
+      (item) => Number(item.enabled) === 1,
+    ),
+    monthly_rules: form.monthly_rules,
+    hourly_weights: form.hourly_weights,
+  };
+  if (editing.value) {
+    if (Math.abs(Number(form.score) - originalScore.value) >= 0.005)
+      data.adjust_score = 1;
+    else delete data.score;
+  }
+  return data;
+}
+async function save() {
+  if (
+    !form.name.trim() ||
+    !form.organization_id ||
+    !selectedLotteryIds.value.length
+  ) {
+    ElMessage.warning("请填写名称、选择代理并至少选择一个彩种");
+    return;
+  }
+  if (!editing.value && !form.password) {
+    ElMessage.warning("请输入登录密码");
+    return;
+  }
+  saving.value = true;
+  try {
+    if (editing.value) await updateRobot(editing.value.id, payload());
+    else await createRobot(payload());
+    ElMessage.success(editing.value ? "机器人已更新" : "机器人创建成功");
+    drawer.value = false;
+    await load();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : "保存失败");
+  } finally {
+    saving.value = false;
+  }
+}
+async function toggle(row: Robot) {
+  try {
+    await setRobotStatus(
+      row.id,
+      row.status === "running" ? "stopped" : "running",
+    );
+    ElMessage.success(
+      row.status === "running" ? "机器人已停止" : "机器人已启动",
+    );
+    await load();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : "状态修改失败");
+  }
+}
+async function convert(row: Robot) {
+  await ElMessageBox.confirm(
+    `转为普通会员后“${row.name}”将停止自动打单，是否继续？`,
+    "确认转用户",
+    { type: "warning" },
+  );
+  try {
+    await convertRobot(row.id);
+    ElMessage.success("已转为普通会员");
+    await load();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : "转换失败");
+  }
+}
+function statusLabel(status: string) {
+  return (
+    (
+      {
+        pending: "待开奖",
+        won: "已中奖",
+        unwon: "未中奖",
+        refunded: "已退单",
+      } as Record<string, string>
+    )[status] || "处理中"
+  );
+}
+function logTime(entry: RobotRunLog, key: "execution_at" | "scheduled_at") {
+  const value = entry.context?.[key];
+  return typeof value === "string" && value !== "" ? value : "—";
+}
+async function loadHistory() {
+  if (!historyRobot.value) return;
+  historyLoading.value = true;
+  try {
+    const response = await getRobotHistory(historyRobot.value.id, {
+      lottery: historyLottery.value || undefined,
+      page: historyPage.value,
+      page_size: historyPageSize.value,
+    });
+    historyRows.value = response.data.list || [];
+    historyTotal.value = response.data.total || 0;
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : "历史加载失败");
+  } finally {
+    historyLoading.value = false;
+  }
+}
+async function showHistory(row: Robot) {
+  historyRobot.value = row;
+  historyLottery.value = "";
+  historyPage.value = 1;
+  historyVisible.value = true;
+  await loadHistory();
+}
+async function loadRobotLogs(reset = false) {
+  if (!logsRobot.value || logsLoading.value) return;
+  logsLoading.value = true;
+  try {
+    const response = await getRobotLogs(logsRobot.value.id, reset ? { limit: 300 } : { after_id: logsLastId.value, limit: 300 });
+    const incoming = response.data.list || [];
+    if (reset) logs.value = incoming;
+    else if (incoming.length) logs.value = [...logs.value, ...incoming].slice(-300);
+    if (incoming.length) logsLastId.value = Number(response.data.last_id || incoming[incoming.length - 1].id || logsLastId.value);
+    await nextTick();
+    if (logsContainer.value) logsContainer.value.scrollTop = logsContainer.value.scrollHeight;
+  } catch (error) {
+    if (reset) ElMessage.error(error instanceof Error ? error.message : "运行日志加载失败");
+  } finally {
+    logsLoading.value = false;
+  }
+}
+function stopLogPolling() {
+  if (logsTimer !== undefined) window.clearInterval(logsTimer);
+  logsTimer = undefined;
+}
+async function showLogs(row: Robot) {
+  stopLogPolling();
+  logsRobot.value = row;
+  logs.value = [];
+  logsLastId.value = 0;
+  logsVisible.value = true;
+  await loadRobotLogs(true);
+  logsTimer = window.setInterval(() => void loadRobotLogs(false), 1000);
+}
+watch(logsVisible, (visible) => { if (!visible) stopLogPolling(); });
+function historyFilterChanged() {
+  historyPage.value = 1;
+  void loadHistory();
+}
+async function clearLatest(row: Robot) {
+  await ElMessageBox.confirm(
+    `将删除账号“${row.username}”最新时间 ${row.last_bet_at || "-"} 及之前的全部注单及关联记录，并重置补单进度。会员余额按原始分配恢复，不重复返还历史本金或中奖；此操作不可恢复，是否继续？`,
+    "清除机器人历史",
+    {
+      type: "warning",
+      confirmButtonText: "确认清除",
+      cancelButtonText: "取消",
+    },
+  );
+  try {
+    const response = await clearRobotLatest(row.id);
+    if (response.code !== 0) throw new Error(response.message || "清除失败");
+    ElMessage.success(
+      `${response.data.deleted} 条历史注单已清除，会员余额已按原始分配恢复`,
+    );
+    await load();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : "清除失败");
+    await load();
+  }
+}
+onMounted(() => void load());
+onUnmounted(stopLogPolling);
+</script>
+
+<template>
+  <div class="robot-page" v-loading="loading">
+    <header class="page-head">
+      <div>
+        <h1>机器人列表</h1>
+        <p>
+          机器人等同于会员，必须挂载在代理下面；启动后由后台按配置自动打单。
+        </p>
+      </div>
+      <div class="actions">
+        <el-button :icon="Refresh" @click="load">刷新</el-button
+        ><el-button type="primary" :icon="Plus" @click="openCreate"
+          >新增机器人</el-button
+        >
+      </div>
+    </header>
+    <div class="tip">
+      当前已实现机器人账号、层级归属、分数、随机金额范围、时间间隔、彩种和福/体权重配置。密码按机器人配置明文展示。
+    </div>
+    <el-table :data="rows" border stripe empty-text="暂无机器人"
+      ><el-table-column
+        prop="name"
+        label="机器人"
+        min-width="150"
+      /><el-table-column label="账号 / 密码" min-width="190"
+        ><template #default="{ row }"
+          ><div>{{ row.username }}</div>
+          <small class="plain-pass">{{ row.plain_password }}</small></template
+        ></el-table-column
+      ><el-table-column label="站点 / 挂载代理" min-width="210"
+        ><template #default="{ row }"
+          >{{ row.site_name }}<br /><small>{{
+            row.organization_name
+          }}</small></template
+        ></el-table-column
+      ><el-table-column label="分数" width="130"
+        ><template #default="{ row }"
+          ><b>{{ row.available_score }}</b
+          ><small class="muted">可用</small></template
+        ></el-table-column
+      ><el-table-column label="输赢权重" width="120"
+        ><template #default="{ row }"
+          >赢 {{ row.win_weight || "50.00" }}%<small class="muted"
+            >输
+            {{
+              row.loss_weight ||
+              (100 - Number(row.win_weight || 50)).toFixed(2)
+            }}%</small
+          ></template
+        ></el-table-column
+      ><el-table-column label="金额范围" width="150"
+        ><template #default="{ row }"
+          >¥{{ row.min_amount }} - ¥{{ row.max_amount
+          }}<small class="muted"
+            >{{ row.amount_precision }} 位小数</small
+          ></template
+        ></el-table-column
+      ><el-table-column label="打单时间" min-width="180"
+        ><template #default="{ row }"
+          >开始 {{ row.start_at }}<br /><small class="muted"
+            >最新 {{ row.last_bet_at || "-" }}</small
+          ></template
+        ></el-table-column
+      ><el-table-column label="最近执行" min-width="210"
+        ><template #default="{ row }"
+          ><span v-if="row.last_run_at">{{ row.last_run_at }}</span>
+          <small v-if="row.last_run_status" class="muted run-status"
+            >{{ row.last_run_status === "success" ? "成功" : row.last_run_status === "skipped" ? "跳过" : "失败" }}：{{ row.last_run_message || "-" }}</small
+          ><small v-else class="muted">尚未执行</small>
+        </template></el-table-column
+      ><el-table-column label="状态" width="100"
+        ><template #default="{ row }"
+          ><el-tag :type="row.status === 'running' ? 'success' : 'info'">{{
+            row.status === "running" ? "运行中" : "已停止"
+          }}</el-tag></template
+        ></el-table-column
+      ><el-table-column label="操作" fixed="right" width="470"
+        ><template #default="{ row }"
+          ><el-button
+            link
+            type="primary"
+            :icon="row.status === 'running' ? VideoPause : VideoPlay"
+            @click="toggle(row)"
+            >{{ row.status === "running" ? "停止" : "启动" }}</el-button
+          ><el-button link type="primary" :icon="Edit" @click="openEdit(row)"
+            >编辑</el-button
+          ><el-button
+            link
+            type="primary"
+            :icon="Document"
+            @click="showHistory(row)"
+            >下单历史</el-button
+          ><el-button link type="primary" @click="showLogs(row)"
+            >实时日志</el-button
+          ><el-button link type="warning" :icon="User" @click="convert(row)"
+            >转为会员</el-button
+          ><el-button link type="danger" @click="clearLatest(row)"
+            >清除历史</el-button
+          ></template
+        ></el-table-column
+      ></el-table
+    >
+    <el-drawer
+      v-model="drawer"
+      :title="editing ? '编辑机器人' : '新增机器人'"
+      size="620px"
+      ><el-form label-width="120px"
+        ><el-form-item label="机器人名称"
+          ><el-input v-model="form.name" maxlength="120" /></el-form-item
+        ><el-form-item label="所属站点"
+          ><el-select
+            v-model="siteId"
+            :disabled="Boolean(editing) || options.sites.length <= 1"
+            style="width: 100%"
+            @change="(value: number) => loadOptions(value)"
+            ><el-option
+              v-for="site in options.sites"
+              :key="site.id"
+              :label="site.name"
+              :value="site.id" /></el-select></el-form-item
+        ><el-form-item label="挂载代理"
+          ><el-cascader
+            v-model="form.organization_id"
+            :options="orgTree"
+            :props="{ checkStrictly: true, emitPath: false }"
+            placeholder="选择到代理层级"
+            style="width: 100%"
+            filterable /></el-form-item
+        ><el-form-item label="登录账号"
+          ><el-input
+            v-model="form.username"
+            :disabled="Boolean(editing)"
+            maxlength="40" /></el-form-item
+        ><el-form-item label="登录密码"
+          ><el-input
+            v-model="form.password"
+            type="text"
+            autocomplete="new-password"
+            placeholder="SaaS 中明文显示" /></el-form-item
+        ><el-form-item label="复制其他机器人配置"
+          ><el-select
+            v-model="copySourceId"
+            clearable
+            filterable
+            placeholder="选择后自动填入打单配置"
+            style="width: 100%"
+            @change="copyRobotConfig"
+            ><el-option
+              v-for="robot in rows.filter((item) => item.id !== editing?.id && item.status !== 'converted')"
+              :key="robot.id"
+              :label="`${robot.name}（${robot.username}）`"
+              :value="robot.id" /></el-select
+          ><div class="field-tip">
+            只复制彩种、金额、时间、输赢/时段权重和跳过时段；不会复制账号、密码、余额、状态或历史注单。
+          </div></el-form-item
+        ><el-form-item label="机器人分数"
+          ><el-input-number
+            v-model="form.score"
+            :min="0"
+            :precision="2"
+            controls-position="right"
+            style="width: 100%"
+          />
+          <div class="field-tip">
+            这里是机器人可用总分；只有修改此数值才会调整代理分数。
+          </div></el-form-item
+        ><el-divider content-position="left">打单计划</el-divider
+        ><el-form-item label="开始时间"
+          ><el-date-picker
+            v-model="form.start_at"
+            type="datetime"
+            value-format="YYYY-MM-DDTHH:mm"
+            format="YYYY-MM-DD HH:mm"
+            style="width: 100%"
+            @change="syncMonthlyRules" /></el-form-item
+        ><el-form-item label="间隔分钟"
+          ><div class="inline-fields">
+            <el-input-number
+              v-model="form.interval_min"
+              :min="1"
+              :max="1440"
+              controls-position="right"
+            /><span>至</span
+            ><el-input-number
+              v-model="form.interval_max"
+              :min="1"
+              :max="1440"
+              controls-position="right"
+            />
+          </div>
+          <div class="field-tip">
+            历史补单每秒执行一条，但模拟投注时间会按这里设置的随机分钟数推进。
+          </div></el-form-item
+        ><el-form-item label="每日下单时段权重"
+          ><div class="hourly-rules">
+            <div
+              v-for="(rule, index) in form.hourly_weights"
+              :key="rule.start"
+              class="hourly-rule"
+            >
+              <span class="hour-label">{{ rule.start }}-{{ rule.end }}</span>
+              <el-input-number
+                v-model="rule.weight"
+                :min="0"
+                :max="100"
+                :precision="2"
+                controls-position="right"
+                @change="() => normalizeHourlyWeight(index)"
+              /><span>%</span>
+            </div>
+          </div>
+          <div class="field-tip">
+            每天仅在 00:00-21:00 下单，共 21 个小时段；权重总和自动保持
+            100%，数字越大该时段下单频率越高。
+          </div></el-form-item
+        ><el-form-item label="单批总金额"
+          ><div class="inline-fields">
+            <el-input-number
+              v-model="form.min_amount"
+              :min="0"
+              :max="10000"
+              :precision="2"
+              controls-position="right"
+            /><span>至</span
+            ><el-input-number
+              v-model="form.max_amount"
+              :min="0"
+              :max="10000"
+              :precision="2"
+              controls-position="right"
+            /><el-select v-model="form.amount_precision" style="width: 115px"
+              ><el-option label="整数" :value="0" /><el-option
+                label="1位小数"
+                :value="1" /><el-option label="2位小数" :value="2"
+            /></el-select>
+          </div>
+          <div class="field-tip">
+            金额范围是每次任务整批注单总金额，系统会按组合注数折算单注金额。
+          </div></el-form-item
+        ><el-form-item label="彩种"
+          ><div class="lottery-options">
+            <el-checkbox
+              v-for="lottery in options.lotteries"
+              :key="lottery.id"
+              :model-value="selectedLotteryIds.includes(lottery.id)"
+              @change="(value: boolean) => toggleLottery(lottery.id, value)"
+              >{{ lottery.name }}</el-checkbox
+            >
+          </div></el-form-item
+        ><el-form-item label="输赢权重"
+          ><div class="inline-fields weights">
+            <span>赢</span
+            ><el-input-number
+              v-model="form.win_weight"
+              :min="0"
+              :max="100"
+              :precision="2"
+              controls-position="right"
+            /><span>%</span
+            ><span class="field-tip inline-tip"
+              >输
+              {{ (100 - Number(form.win_weight)).toFixed(2) }}%（自动）</span
+            >
+          </div>
+          <div class="field-tip">
+            历史补单会先读取已开奖结果，按此权重生成中奖或未中奖注单；实时下注因开奖结果未知，按普通随机玩法生成。
+          </div></el-form-item
+        ><el-form-item label="每周输赢与上限"
+          ><div v-if="form.monthly_rules.length" class="monthly-rules">
+            <div
+              v-for="rule in form.monthly_rules"
+              :key="rule.month"
+              class="monthly-rule"
+            >
+              <div class="month-label">{{ rule.month }}</div>
+              <div class="weekly-rule-list">
+                <div v-for="week in rule.weeks || []" :key="week.week" class="weekly-rule">
+                  <span class="week-label">第{{ week.week }}周</span>
+                  <span>赢</span
+                  ><el-input-number
+                    v-model="week.win_weight"
+                    :min="0"
+                    :max="100"
+                    :precision="2"
+                    controls-position="right"
+                  />
+                  <span>%，均衡值</span
+                  ><el-input-number
+                    v-model="week.max_amount"
+                    :min="0"
+                    :precision="2"
+                    controls-position="right"
+                  />
+                  <span>元</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div v-else class="field-tip">请先选择开始时间</div>
+          <div class="field-tip">
+            每个月按第 1～5 周分组设置；均衡值按该周机器人注单总金额计算，达到后继续下注并按 50% / 50% 输赢运行；填 0
+            表示不限制。输单比例自动为 100% 减赢单比例。
+          </div></el-form-item
+        ><el-form-item label="福体权重"
+          ><div class="inline-fields weights">
+            <span>福</span
+            ><el-input-number
+              v-model="form.weight_fu"
+              :min="0"
+              :precision="2"
+              controls-position="right"
+            /><span>体</span
+            ><el-input-number
+              v-model="form.weight_ti"
+              :min="0"
+              :precision="2"
+              controls-position="right"
+            /><span>福体</span
+            ><el-input-number
+              v-model="form.weight_futi"
+              :min="0"
+              :precision="2"
+              controls-position="right"
+            /></div></el-form-item></el-form
+      ><template #footer
+        ><el-button @click="drawer = false">取消</el-button
+        ><el-button type="primary" :loading="saving" @click="save"
+          >保存</el-button
+        ></template
+      ></el-drawer
+    >
+    <el-dialog
+      v-model="historyVisible"
+      :title="`${historyRobot?.name || ''} · 下单历史`"
+      width="min(1100px,92vw)"
+      ><div class="history-toolbar">
+        <el-select
+          v-model="historyLottery"
+          clearable
+          placeholder="全部彩种"
+          style="width: 180px"
+          @change="historyFilterChanged"
+          ><el-option
+            v-for="lottery in options.lotteries"
+            :key="lottery.id"
+            :label="lottery.name"
+            :value="lottery.name" /></el-select
+        ><el-button :icon="Refresh" @click="loadHistory">刷新</el-button>
+      </div>
+      <el-table
+        v-loading="historyLoading"
+        :data="historyRows"
+        border
+        stripe
+        max-height="560"
+        empty-text="暂无下单记录"
+        ><el-table-column prop="id" label="订单" width="80" /><el-table-column
+          prop="issue_no"
+          label="期号"
+          width="130" /><el-table-column
+          prop="bet_count"
+          label="注数"
+          width="80" /><el-table-column
+          prop="amount"
+          label="金额"
+          width="100" /><el-table-column label="开奖状态" width="100"
+          ><template #default="{ row }"
+            ><el-tag
+              :type="
+                row.status === 'won'
+                  ? 'success'
+                  : row.status === 'unwon'
+                    ? 'info'
+                    : row.status === 'refunded'
+                      ? 'warning'
+                      : 'warning'
+              "
+              >{{ statusLabel(row.status) }}</el-tag
+            ></template
+          ></el-table-column
+        ><el-table-column
+          prop="win_amount"
+          label="中奖金额"
+          width="110" /><el-table-column
+          prop="placed_at"
+          label="投注时间"
+          width="170" /><el-table-column
+          prop="source_text"
+          label="下注内容"
+          min-width="240"
+          show-overflow-tooltip
+      /></el-table>
+      <div class="history-pagination">
+        <el-pagination
+          v-model:current-page="historyPage"
+          v-model:page-size="historyPageSize"
+          :page-sizes="[10, 20, 50, 100]"
+          layout="total, sizes, prev, pager, next"
+          :total="historyTotal"
+          @current-change="loadHistory"
+          @size-change="historyFilterChanged"
+        /></div
+    ></el-dialog>
+    <el-drawer
+      v-model="logsVisible"
+      :title="`${logsRobot?.name || ''} · 实时运行日志`"
+      size="760px"
+      @close="stopLogPolling"
+      ><div class="run-log-toolbar">
+        <span>每秒刷新，最多保留最近 300 条</span>
+        <el-button size="small" :loading="logsLoading" @click="loadRobotLogs(true)">刷新</el-button>
+      </div>
+      <div ref="logsContainer" class="run-log-screen">
+        <div v-if="!logs.length" class="run-log-empty">暂无运行日志，启动机器人后会显示执行过程。</div>
+        <div v-for="entry in logs" :key="entry.id" class="run-log-line" :class="`level-${entry.level}`">
+          <span class="run-log-time"><span>运行 {{ logTime(entry, "execution_at") === "—" ? entry.created_at : logTime(entry, "execution_at") }}</span><span>打单 {{ logTime(entry, "scheduled_at") }}</span></span>
+          <span class="run-log-status">{{ entry.context?.weight_miss ? "顺延" : entry.status === "success" ? "成功" : entry.status === "skipped" ? "跳过" : entry.status === "failed" ? "失败" : entry.status === "manual" ? "操作" : "日志" }}</span>
+          <span class="run-log-message">{{ entry.message }}<template v-if="entry.context?.lottery"> · {{ entry.context.lottery }}<template v-if="entry.context?.text"> · {{ entry.context.text }}</template></template></span>
+        </div>
+      </div>
+    </el-drawer>
+  </div>
+</template>
+
+<style scoped>
+.robot-page {
+  min-height: 100%;
+  padding: 22px;
+  background: #f5f7fb;
+  box-sizing: border-box;
+}
+.page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px;
+  background: #fff;
+  border-radius: 8px;
+}
+.page-head h1 {
+  margin: 0;
+  color: #26334b;
+  font-size: 22px;
+}
+.page-head p {
+  margin: 8px 0 0;
+  color: #7d8799;
+  font-size: 13px;
+}
+.actions {
+  display: flex;
+  gap: 10px;
+}
+.tip {
+  margin: 16px 0;
+  padding: 11px 14px;
+  border-left: 3px solid #3975df;
+  background: #f0f6ff;
+  color: #5c6d87;
+  font-size: 13px;
+}
+.plain-pass {
+  display: block;
+  margin-top: 4px;
+  color: #bd4c4c;
+  font-family: ui-monospace, monospace;
+}
+.muted {
+  display: block;
+  margin-top: 3px;
+  color: #9099aa;
+  font-size: 12px;
+}
+.run-status {
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inline-fields {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.field-tip {
+  margin-top: 6px;
+  color: #9099aa;
+  font-size: 12px;
+}
+.weights span {
+  color: #59677c;
+  font-size: 13px;
+}
+@media (max-width: 800px) {
+  .robot-page {
+    padding: 12px;
+  }
+  .page-head {
+    align-items: flex-start;
+    gap: 12px;
+    flex-direction: column;
+  }
+  .actions {
+    width: 100%;
+  }
+  .inline-fields {
+    flex-wrap: wrap;
+  }
+}
+.history-toolbar {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.history-pagination {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+.run-log-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  color: #8490a3;
+  font-size: 13px;
+}
+.run-log-screen {
+  height: calc(100vh - 150px);
+  min-height: 320px;
+  overflow-y: auto;
+  padding: 14px 16px;
+  border-radius: 6px;
+  background: #101722;
+  color: #d7e2f0;
+  box-sizing: border-box;
+  font: 13px/1.65 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+.run-log-line {
+  display: grid;
+  grid-template-columns: 265px 48px minmax(0, 1fr);
+  gap: 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.run-log-time { display: flex; flex-direction: column; color: #8190a5; line-height: 1.45; }
+.run-log-time span + span { color: #a3b4c9; }
+.run-log-status { color: #8bc4ff; }
+.level-warning .run-log-status,
+.level-warning .run-log-message { color: #ffc56b; }
+.level-error .run-log-status,
+.level-error .run-log-message { color: #ff8d8d; }
+.run-log-empty { color: #8190a5; }
+.skip-windows {
+  width: 100%;
+}
+.skip-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.skip-row .el-time-editor {
+  width: 145px;
+}
+.monthly-rules {
+  width: 100%;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 8px 10px;
+  border: 1px solid #e5eaf3;
+  border-radius: 6px;
+  background: #fafcff;
+  box-sizing: border-box;
+}
+.monthly-rule {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: #59677c;
+}
+.monthly-rule:last-child {
+  margin-bottom: 0;
+}
+.monthly-rule .month-label {
+  margin-bottom: 6px;
+  color: #26334b;
+  font-weight: 600;
+}
+.weekly-rule-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 12px;
+}
+.weekly-rule {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.week-label {
+  width: 52px;
+  color: #59677c;
+}
+.weekly-rule .el-input-number {
+  width: 120px;
+}
+.inline-tip {
+  margin-top: 0;
+}
+.hourly-rules {
+  width: 100%;
+  max-height: 330px;
+  overflow-y: auto;
+  padding: 8px 10px;
+  border: 1px solid #e5eaf3;
+  border-radius: 6px;
+  background: #fafcff;
+  box-sizing: border-box;
+}
+.hourly-rule {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 7px;
+  font-size: 13px;
+  color: #59677c;
+}
+.hourly-rule:last-child {
+  margin-bottom: 0;
+}
+.hour-label {
+  width: 100px;
+  color: #26334b;
+  font-weight: 600;
+}
+.hourly-rule .el-input-number {
+  width: 120px;
+}
+</style>

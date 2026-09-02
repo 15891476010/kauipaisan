@@ -1,6 +1,7 @@
+import { Modal } from "antd";
 import { InfoCircleOutlined } from "@ant-design/icons";
-import { Modal, Tabs } from "antd";
 import DOMPurify from "dompurify";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { RuleSettings } from "../api/user";
 import "./RuleInstructionsModal.css";
@@ -65,24 +66,91 @@ const panes: Record<string, ReactNode> = {
   文本规范: <TextRules />,
 };
 
-export function RuleInstructionsModal({ open, onClose, rules }: Props & { rules?: RuleSettings }) {
-  const currentPanes: Record<string, ReactNode> = rules ? {
-    基础玩法: <ConfiguredRules source={rules.basic || rules.content || ""} />,
-    特殊打法: <ConfiguredRules source={rules.special || ""} />,
-    总金额: <ConfiguredRules source={rules.amount || ""} />,
-    文本规范: <ConfiguredRules source={rules.text || ""} />,
-  } : panes;
+function RuleInstructionsContent({ panes }: { panes: Record<string, ReactNode> }) {
+  const keys = Object.keys(panes);
+  const [activeKey, setActiveKey] = useState("文本规范");
+
   return (
-    <Modal
-      open={open}
-      onCancel={onClose}
-      title={<span className="rule-modal-title"><InfoCircleOutlined />{rules?.title || '规则说明'}</span>}
-      footer={<button type="button" className="rule-close" onClick={onClose}>关闭</button>}
-      width={1000}
-      className="rule-modal"
-      centered
-    >
-      <Tabs defaultActiveKey="文本规范" items={Object.keys(currentPanes).map((key) => ({ key, label: key, children: currentPanes[key] }))} />
-    </Modal>
+    <div className="rule-reference-content">
+      <div className="rule-reference-tabs" role="tablist" aria-label="规则分类">
+        {keys.map((key) => (
+          <span
+            key={key}
+            className={activeKey === key ? "selected" : ""}
+            role="tab"
+            aria-selected={activeKey === key}
+            tabIndex={activeKey === key ? 0 : -1}
+            onClick={() => setActiveKey(key)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                setActiveKey(key);
+              }
+            }}
+          >
+            {key}
+          </span>
+        ))}
+      </div>
+      {keys.map((key) => (
+        <div
+          key={key}
+          className={"rule-reference-pane" + (activeKey === key ? " is-active" : "")}
+          role="tabpanel"
+          aria-hidden={activeKey !== key}
+          hidden={activeKey !== key}
+        >
+          {panes[key]}
+        </div>
+      ))}
+    </div>
   );
+}
+
+export function RuleInstructionsModal({ open, onClose, rules }: Props & { rules?: RuleSettings }) {
+  const [modal, contextHolder] = Modal.useModal();
+  const modalRef = useRef<{ destroy: () => void } | null>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  const currentPanes = useMemo<Record<string, ReactNode>>(
+    () =>
+      rules
+        ? {
+            基础玩法: <ConfiguredRules source={rules.basic || rules.content || ""} />,
+            特殊打法: <ConfiguredRules source={rules.special || ""} />,
+            总金额: <ConfiguredRules source={rules.amount || ""} />,
+            文本规范: <ConfiguredRules source={rules.text || ""} />,
+          }
+        : panes,
+    [rules],
+  );
+
+  useEffect(() => {
+    if (!open) {
+      modalRef.current?.destroy();
+      modalRef.current = null;
+      return;
+    }
+
+    const instance = modal.info({
+      title: "规则说明",
+      icon: <InfoCircleOutlined />,
+      width: 1000,
+      centered: true,
+      className: "rule-reference-modal",
+      content: <RuleInstructionsContent panes={currentPanes} />,
+      okText: "关 闭",
+      onOk: () => onCloseRef.current(),
+      onCancel: () => onCloseRef.current(),
+    });
+    modalRef.current = instance;
+
+    return () => {
+      instance.destroy();
+      if (modalRef.current === instance) modalRef.current = null;
+    };
+  }, [currentPanes, modal, open]);
+
+  return contextHolder;
 }

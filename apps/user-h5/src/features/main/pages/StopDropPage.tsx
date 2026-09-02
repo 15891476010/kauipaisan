@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-import { App as AntdApp, DatePicker, Empty } from "antd";
-import zhCN from "antd/es/date-picker/locale/zh_CN";
+import { App as AntdApp, Empty } from "antd";
 import dayjs from "dayjs";
 import { SearchOutlined } from "@ant-design/icons";
 import { apiErrorMessage } from "../../../utils/request";
@@ -132,6 +131,7 @@ export function StopDropPage() {
     if (!row.play_type.includes("双飞") && !String(row.source_text || "").includes("对子")) return row.number_text;
     return row.number_text.replace(/^0(?=\d{2}(?:飞)?$)/, "").replace(/飞$/, "");
   };
+  const dateOptions = Array.from({ length: 30 }, (_, index) => dayjs().subtract(index, "day").format("YYYY-MM-DD"));
   const [number, setNumber] = useState("");
   const [type, setType] = useState("all");
   const [lottery, setLottery] = useState("all");
@@ -168,60 +168,66 @@ export function StopDropPage() {
   return (
     <div className="stop-drop-panel">
       <div className="stop-filter">
-        <label className="stop-search-field">
-          <span>查号码</span>
-          <input
-            value={number}
-            onChange={(e) => setNumber(e.target.value)}
-            placeholder="查号码"
-          />
-        </label>
-        <label className="stop-select-field">
-          <span>类型</span>
-          <select value={type} onChange={(e) => setType(e.target.value)}>
-            <option value="all">所有</option>
-            <option value="stop">仅停押</option>
-            <option value="drop">仅降水</option>
-          </select>
-        </label>
-        <label className="stop-select-field">
-          <span>彩种</span>
-          <select value={lottery} onChange={(e) => setLottery(e.target.value)}>
-            <option value="all">所有</option>
-            <option value="体">体</option>
-            <option value="福">福</option>
-          </select>
-        </label>
-        <label className="stop-category-field">
-          <span>分类</span>
-          <select
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-          >
-            {categories.map((item) => (
-              <option key={item}>{item}</option>
-            ))}
-          </select>
-        </label>
-        <label className="stop-date-field">
-          <span>投注日期</span>
-          <DatePicker
-            locale={zhCN}
-            allowClear={false}
-            value={dayjs(date)}
-            format="YYYY-MM-DD"
-            onChange={(value) => value && setDate(value.format("YYYY-MM-DD"))}
-          />
-        </label>
-        <button
-          type="button"
-          className="stop-search-button"
-          onClick={() => load()}
-          disabled={loading}
-        >
-          <SearchOutlined /> 搜索
-        </button>
-        <button type="button" className="stop-back-button" onClick={() => { window.location.hash = "#/kb"; }}>返回</button>
+        <div className="stop-filter-row">
+          <label className="stop-search-field">
+            <span>号码</span>
+            <input
+              value={number}
+              onChange={(e) => setNumber(e.target.value)}
+              placeholder="查号码"
+            />
+          </label>
+          <label className="stop-select-field">
+            <span>类型</span>
+            <select value={type} onChange={(e) => setType(e.target.value)}>
+              <option value="all">所有</option>
+              <option value="stop">停押</option>
+              <option value="drop">降水</option>
+            </select>
+          </label>
+        </div>
+        <div className="stop-filter-row">
+          <label className="stop-date-field">
+            <span>日期</span>
+            <select value={date} onChange={(event) => setDate(event.target.value)}>
+              {dateOptions.map((value) => (
+                <option key={value} value={value}>{value}</option>
+              ))}
+            </select>
+          </label>
+          <label className="stop-category-field">
+            <span>分类</span>
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+            >
+              {categories.map((item) => (
+                <option key={item}>{item}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className="stop-filter-row">
+          <label className="stop-select-field">
+            <span>彩种</span>
+            <select value={lottery} onChange={(e) => setLottery(e.target.value)}>
+              <option value="all">所有</option>
+              <option value="体">体</option>
+              <option value="福">福</option>
+            </select>
+          </label>
+          <div className="stop-filter-actions">
+            <button
+              type="button"
+              className="stop-search-button"
+              onClick={() => load()}
+              disabled={loading}
+            >
+              <SearchOutlined /> <span>搜索</span>
+            </button>
+            <button type="button" className="stop-back-button" onClick={() => { window.location.hash = "#/kb"; }}>返回</button>
+          </div>
+        </div>
       </div>
       <div className="stop-sort">
         <strong>停押和降水</strong>
@@ -254,27 +260,27 @@ export function StopDropPage() {
       <div className="stop-pagination">第 <b>0</b> 页</div>
       <div className="stop-table">
         <div className="stop-head">
-          <span>编号</span>
-          <span>期号</span>
-          <span>下单时间</span>
-          <span>号码</span>
-          <span>应打/实打/停押</span>
-          <span>原水/实水/降水</span>
-          <span>查看文本</span>
+          <span><b>期号</b><b>号码</b></span>
+          <span><b>应打</b><b>实打</b><b>停押</b></span>
+          <span><b>原水</b><b>实水</b><b>降水</b></span>
+          <span><b>文本</b></span>
         </div>
         {rows.length
           ? rows.map((row) => (
               <div className="stop-row" key={row.id}>
-                <span>{row.id}</span>
-                <span>{row.issue_no}</span>
-                <span>{row.placed_at}</span>
-                <span>{displayNumber(row)}</span>
                 <span>
-                  {row.original_amount}/{row.actual_amount}/{row.stop_amount}
+                  <b>{row.issue_no}</b>
+                  <em>{displayNumber(row)}</em>
                 </span>
                 <span>
-                  {row.original_odds || "-"}/{row.actual_odds || "-"}/
-                  {row.drop_odds || "-"}
+                  <b>{row.original_amount}</b>
+                  <b>{row.actual_amount}</b>
+                  <b>{row.stop_amount}</b>
+                </span>
+                <span>
+                  <b>{row.original_odds || "-"}</b>
+                  <b>{row.actual_odds || "-"}</b>
+                  <b>{row.drop_odds || "-"}</b>
                 </span>
                 <span>{row.source_text || "-"}</span>
               </div>

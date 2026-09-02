@@ -35,3 +35,319 @@
 .rule-gap {
   height: 10px;
 }
+
+
+/* Reference H5 rule dialog: Modal.info/confirm layout and viewport-based units.
+   The reference root uses 2vw as its rem baseline; these vw values preserve
+   the same proportions without changing the global H5 root size. */
+.rule-reference-modal.ant-modal {
+  top: 0 !important;
+  width: 92vw !important;
+  max-width: 92vw !important;
+  margin: 0 auto !important;
+  padding: 0 0 24px !important;
+  font-family: "Microsoft YaHei", Tahoma, Helvetica, Arial, sans-serif !important;
+}
+
+.rule-reference-modal .ant-modal-container,
+.rule-reference-modal .ant-modal-content {
+  padding: 0 !important;
+  border-radius: 4px !important;
+  background: #fff !important;
+}
+
+.rule-reference-modal .ant-modal-header,
+.rule-reference-modal .ant-modal-close {
+  display: none !important;
+}
+
+.rule-reference-modal .ant-modal-body {
+  box-sizing: border-box !important;
+  max-height: 86vh !important;
+  padding: 4vw 3vw !important;
+  overflow-y: auto !important;
+  font-size: 3vw !important;
+  line-height: 4.5vw !important;
+}
+
+.rule-reference-modal .ant-modal-confirm-body > .anticon {
+  float: left !important;
+  margin-right: 2vw !important;
+  color: #1890ff !important;
+  font-size: 4vw !important;
+  line-height: 4vw !important;
+}
+
+.rule-reference-modal .ant-modal-confirm-body .ant-modal-confirm-title {
+  display: block !important;
+  overflow: hidden !important;
+  color: rgba(0, 0, 0, .85) !important;
+  font-size: 4.5vw !important;
+  font-weight: 500 !important;
+  line-height: 1.4 !important;
+}
+
+.rule-reference-modal .ant-modal-confirm-body .ant-modal-confirm-content {
+  margin: 1vw 0 0 !important;
+  color: #000 !important;
+  font-size: 4.8vw !important;
+  line-height: normal !important;
+}
+
+.rule-reference-content {
+  width: 100%;
+  height: calc(86vh - 30vw);
+  color: #000;
+  font-size: 2vw;
+  line-height: 1.5;
+}
+
+.rule-reference-tabs {
+  display: flex;
+  width: 100%;
+  height: 10vw;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.rule-reference-tabs > span {
+  display: inline-block;
+  padding: 2vw 2.8vw;
+  border: 1px dashed #afafaf;
+  color: #000;
+  font-size: 3.6vw;
+  line-height: 4.8vw;
+  cursor: pointer;
+}
+
+.rule-reference-tabs > span + span {
+  margin-left: 1.2vw;
+}
+
+.rule-reference-tabs > span:hover,
+.rule-reference-tabs > span.selected {
+  border-color: darkblue;
+  background: darkblue;
+  color: #fff;
+}
+
+.rule-reference-pane {
+  display: none;
+  width: 100%;
+  height: calc(100% - 10vw);
+  padding-top: 10px;
+  overflow: hidden auto;
+}
+
+.rule-reference-pane.is-active {
+  display: block;
+}
+
+.rule-reference-pane .rule-content {
+  color: #000 !important;
+  font-size: 3.6vw !important;
+  line-height: 4.8vw !important;
+}
+
+.rule-reference-pane .rule-content > div {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  margin: 0 !important;
+  padding: 0 .25vw !important;
+}
+
+.rule-reference-pane .rule-content > div + div {
+  margin-top: 2vw !important;
+}
+
+.rule-reference-pane .rule-content h4 {
+  margin: 0 0 1vw !important;
+  color: darkblue !important;
+  font-size: 4vw !important;
+  font-weight: 400 !important;
+  line-height: 1.5 !important;
+}
+
+.rule-reference-pane .rule-content p {
+  margin: 0 0 .6vw !important;
+  color: #000 !important;
+  font-size: 3.6vw !important;
+  line-height: 4.8vw !important;
+}
+
+.rule-reference-pane .rule-content span,
+.rule-reference-pane .rule-content .rule-highlight {
+  display: inline-block !important;
+  min-height: 6vw !important;
+  margin-bottom: 1vw !important;
+  padding: .6vw 2.6vw !important;
+  border: 1px solid darkorange !important;
+  border-radius: 3vw !important;
+  background: yellow !important;
+  color: #000 !important;
+  font-size: 3.6vw !important;
+  line-height: 4.8vw !important;
+}
+
+.rule-reference-modal .ant-modal-confirm-btns {
+  margin-top: 1.5vw !important;
+}
+
+.rule-reference-modal .ant-modal-confirm-btns button.ant-btn {
+  display: inline-flex !important;
+  height: 7.2vw !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0 1.6vw !important;
+  border: 0 !important;
+  border-radius: 1vw !important;
+  background: darkblue !important;
+  color: #fff !important;
+  font-size: 3.6vw !important;
+  line-height: normal !important;
+}
+
+.rule-reference-modal .ant-modal-confirm-btns button.ant-btn:hover,
+.rule-reference-modal .ant-modal-confirm-btns button.ant-btn:focus {
+  background: darkblue !important;
+  color: #fff !important;
+}
+
+.rule-reference-modal .ant-modal-confirm-btns button.ant-btn > span {
+  font-size: 3.6vw !important;
+  line-height: normal !important;
+}
+
+
+/* Final reference parity: override legacy H5 confirm-modal height rules only
+   for this rules dialog. */
+.rule-reference-modal.ant-modal-confirm {
+  top: 0 !important;
+  width: 92vw !important;
+  max-width: 92vw !important;
+  margin: 0 4vw !important;
+  padding: 0 0 24px !important;
+}
+
+.rule-reference-modal.ant-modal-confirm .ant-modal-container {
+  padding: 0 !important;
+  border-radius: 4px !important;
+  background: #fff !important;
+}
+
+.rule-reference-modal.ant-modal-confirm .ant-modal-body {
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: 86vh !important;
+  margin: 0 !important;
+  padding: 4vw 3vw !important;
+  overflow: auto !important;
+}
+
+.rule-reference-modal.ant-modal-confirm .ant-modal-confirm-body-wrapper,
+.rule-reference-modal.ant-modal-confirm .ant-modal-confirm-body {
+  height: auto !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.rule-reference-modal.ant-modal-confirm .ant-modal-confirm-body {
+  /* Ant Design 3 uses the float layout on both desktop and mobile. */
+  display: block !important;
+}
+
+.rule-reference-modal.ant-modal-confirm .ant-modal-confirm-body > .anticon {
+  width: auto !important;
+  height: auto !important;
+  margin: 0 16px 0 0 !important;
+  font-size: 4vw !important;
+  line-height: 0 !important;
+}
+
+.rule-reference-modal.ant-modal-confirm .ant-modal-confirm-body .ant-modal-confirm-title {
+  height: 6.3vw !important;
+  font-size: 4.5vw !important;
+  line-height: 6.3vw !important;
+}
+
+.rule-reference-modal.ant-modal-confirm .ant-modal-confirm-body .ant-modal-confirm-content {
+  /*
+   * The reference content follows the title in normal flow. Keeping
+   * clear:none is important on narrow screens; clear:both adds an extra
+   * line-height of empty space below the floated info icon.
+   */
+  clear: none !important;
+  margin: 8px 0 0 !important;
+  font-size: 4.8vw !important;
+  line-height: 7.2vw !important;
+}
+
+@media (max-width: 599px) {
+  .rule-reference-modal.ant-modal-confirm {
+    margin: 8px 4vw !important;
+  }
+}
+
+.rule-reference-modal.ant-modal-confirm .ant-modal-confirm-btns {
+  float: right !important;
+  width: auto !important;
+  height: 7.2vw !important;
+  margin: 24px 0 0 !important;
+  padding: 0 !important;
+  font-size: 2vw !important;
+  line-height: 3vw !important;
+}
+
+.rule-reference-modal.ant-modal-confirm .ant-modal-confirm-btns button.ant-btn {
+  width: 11.52vw !important;
+  min-width: 11.52vw !important;
+  height: 7.2vw !important;
+  min-height: 7.2vw !important;
+  margin: 0 !important;
+  padding: 0 1.6vw !important;
+  border: 0 !important;
+  border-radius: 1vw !important;
+  background: darkblue !important;
+  color: #fff !important;
+  font-size: 14px !important;
+  line-height: 3vw !important;
+}
+
+.rule-reference-modal.ant-modal-confirm .ant-modal-confirm-btns button.ant-btn > span {
+  display: block !important;
+  font-size: 3.6vw !important;
+  font-weight: 400 !important;
+  line-height: 5.4vw !important;
+  white-space: nowrap !important;
+}
+
+@media (min-width: 600px) {
+  .rule-reference-modal.ant-modal-confirm .ant-modal-confirm-body > .anticon {
+    font-size: 4vw !important;
+  }
+}
+
+
+/* Ant v6 wraps the title/content in an extra paragraph element. The
+   reference Ant version leaves the content at the full body width, so offset
+   only that wrapper's floated icon exclusion (4vw icon + fixed 16px gap). */
+.rule-reference-modal.ant-modal-confirm .ant-modal-confirm-paragraph {
+  /*
+   * Ant Design 6 wraps the title/content in this extra block. The reference
+   * Ant Design 3 markup lets the icon float beside the title, so keep this
+   * wrapper in the same float flow instead of creating a second line.
+   */
+  display: block !important;
+  width: calc(100% - 4vw - 16px) !important;
+  max-width: none !important;
+  margin: 0 0 0 calc(4vw + 16px) !important;
+  overflow: visible !important;
+}
+
+.rule-reference-modal.ant-modal-confirm .ant-modal-confirm-paragraph .ant-modal-confirm-content {
+  width: calc(100% + 4vw + 16px) !important;
+  margin-left: calc(-4vw - 16px) !important;
+}

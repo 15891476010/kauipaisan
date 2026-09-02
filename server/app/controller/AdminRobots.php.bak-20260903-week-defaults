@@ -1,0 +1,392 @@
+<?php
+declare(strict_types=1);
+
+namespace app\controller;
+
+use app\service\OrganizationHierarchy;
+use app\service\PasswordPolicy;
+use app\service\ScoreTransfer;
+use think\Request;
+use think\facade\Cache;
+use think\facade\Db;
+
+final class AdminRobots
+{
+    private function reply(mixed $data=null, string $message='ok', int $code=0): \think\response\Json
+    {
+        return json(['code'=>$code,'message'=>$message,'data'=>$data,'request_id'=>bin2hex(random_bytes(8))]);
+    }
+
+    private function session(Request $request): array
+    {
+        $token=trim(str_ireplace('Bearer ','',(string)$request->header('authorization')));
+        $session=$token!==''?Cache::get('token:'.$token):null;
+        if(!is_array($session)||($session['scope']??'')!=='admin') throw new \RuntimeException('未登录或登录已过期');
+        return $session;
+    }
+
+    private function siteId(Request $request, array $session): ?int
+    {
+        $bound=(int)($session['site_id']??0);
+        if(($session['admin_role']??'platform')!=='platform') {
+            if($bound<1) throw new \RuntimeException('当前管理员未绑定站点');
+            return $bound;
+        }
+        $id=(int)$request->param('site_id',0);
+        return $id>0?$id:null;
+    }
+
+    private function operator(array $session): array
+    {
+        return ['type'=>'platform_admin','id'=>(int)($session['user_id']??0),'name'=>(string)($session['username']??'')];
+    }
+
+    private function assertAgent(int $organizationId, int $siteId): array
+    {
+        $node=Db::name('organization_nodes')->where('id',$organizationId)->where('site_id',$siteId)->where('level','agent')->where('status',1)->whereNull('deleted_at')->find();
+        if(!$node) throw new \InvalidArgumentException('机器人只能挂载到启用中的代理下面');
+        return $node;
+    }
+
+    private function normalize(array $data, ?array $current=null): array
+    {
+        $min=(float)($data['min_amount']??$current['min_amount']??1);
+        $max=(float)($data['max_amount']??$current['max_amount']??100);
+        $precision=(int)($data['amount_precision']??$current['amount_precision']??0);
+        // Values are minutes; the worker itself still checks once per second.
+        $intervalMin=(int)($data['interval_min']??$current['interval_min']??3);
+        $intervalMax=(int)($data['interval_max']??$current['interval_max']??5);
+        if($min<0||$max<$min||$max>10000) throw new \InvalidArgumentException('金额范围无效，最大金额不能超过10000分');
+        if(!in_array($precision,[0,1,2],true)) throw new \InvalidArgumentException('金额精度只能是整数、1位或2位小数');
+        if($intervalMin<1||$intervalMax<$intervalMin||$intervalMax>1440) throw new \InvalidArgumentException('随机间隔范围无效，必须为 1-1440 分钟');
+        $start=(string)($data['start_at']??$current['start_at']??'');
+        $start=str_replace('T',' ',$start);
+        if($start===''||strtotime($start)===false) throw new \InvalidArgumentException('请填写有效的打单开始时间');
+        $weights=[];
+        foreach(['fu','ti','futi'] as $kind){$value=(float)($data['weight_'.$kind]??$current['weight_'.$kind]??1);if($value<0)throw new \InvalidArgumentException('玩法权重不能小于0');$weights[$kind]=$value;}
+        if(array_sum($weights)<=0) throw new \InvalidArgumentException('至少需要启用一个福/体玩法权重');
+        $winWeight=(float)($data['win_weight']??$current['win_weight']??50);
+        if($winWeight<0||$winWeight>100) throw new \InvalidArgumentException('赢单权重必须在 0-100 之间');
+        $monthlyRules=$data['monthly_rules']??($current['monthly_rules']??[]);
+        if(is_string($monthlyRules))$monthlyRules=json_decode($monthlyRules,true)?:[];
+        if(!is_array($monthlyRules))$monthlyRules=[];
+        $monthlyRules=array_values(array_filter(array_map(static function($item){
+            if(!is_array($item))return null;
+            $month=trim((string)($item['month']??''));
+            if(!preg_match('/^\d{4}-(0[1-9]|1[0-2])$/',$month))throw new \InvalidArgumentException('月份必须使用 YYYY-MM 格式');
+            $weight=(float)($item['win_weight']??50);$cap=(float)($item['max_amount']??0);
+            if($weight<0||$weight>100)throw new \InvalidArgumentException($month.'赢单权重必须在 0-100 之间');
+            if($cap<0||$cap>1000000000)throw new \InvalidArgumentException($month.'投注上限无效');
+            $weeks=$item['weeks']??null;
+            if(is_string($weeks))$weeks=json_decode($weeks,true)?:[];
+            if(is_array($weeks)&&$weeks!==[]){
+                $normalizedWeeks=[];
+                foreach($weeks as $week){
+                    if(!is_array($week))continue;
+                    $number=(int)($week['week']??0);$weekWeight=(float)($week['win_weight']??$weight);$weekCap=(float)($week['max_amount']??$cap);
+                    if($number<1||$number>5)throw new \InvalidArgumentException($month.'周次必须在1-5之间');
+                    if($weekWeight<0||$weekWeight>100)throw new \InvalidArgumentException($month.'第'.$number.'周赢单权重必须在 0-100 之间');
+                    if($weekCap<0||$weekCap>1000000000)throw new \InvalidArgumentException($month.'第'.$number.'周均衡值无效');
+                    $normalizedWeeks[]=['week'=>$number,'win_weight'=>number_format($weekWeight,2,'.',''),'max_amount'=>number_format($weekCap,2,'.','')];
+                }
+                usort($normalizedWeeks,static fn(array $a,array $b):int=>(int)$a['week']<=>(int)$b['week']);
+                return ['month'=>$month,'weeks'=>$normalizedWeeks,'win_weight'=>number_format($weight,2,'.',''),'max_amount'=>number_format($cap,2,'.','')];
+            }
+            // Keep the old flat shape readable for robots that have not been
+            // edited yet; the scheduler treats it as a legacy monthly rule.
+            return ['month'=>$month,'win_weight'=>number_format($weight,2,'.',''),'max_amount'=>number_format($cap,2,'.','')];
+        },$monthlyRules),static fn($item)=>is_array($item)));
+        $hourlyWeights=$data['hourly_weights']??($current['hourly_weights']??[]);
+        if(is_string($hourlyWeights))$hourlyWeights=json_decode($hourlyWeights,true)?:[];
+        if(!is_array($hourlyWeights))$hourlyWeights=[];
+        $hourlyWeights=array_values(array_filter(array_map(static function($item){
+            if(!is_array($item))return null;
+            $start=trim((string)($item['start']??''));$end=trim((string)($item['end']??''));$weight=(float)($item['weight']??0);
+            if(!preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/',$start)||!preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/',$end))throw new \InvalidArgumentException('小时段必须使用 HH:mm 格式');
+            if($weight<0||$weight>100)throw new \InvalidArgumentException('小时段权重必须在 0-100 之间');
+            return ['start'=>$start,'end'=>$end,'weight'=>number_format($weight,2,'.','')];
+        },$hourlyWeights),static fn($item)=>is_array($item)));
+        // New robots always have the complete 00:00-21:00 schedule.  For
+        // legacy rows that predate this field, materialise equal defaults on
+        // the next save so the UI and scheduler use the same model.
+        if($hourlyWeights===[]){
+            $hourlyWeights=[];
+            for($hour=0;$hour<21;$hour++) $hourlyWeights[]=['start'=>sprintf('%02d:00',$hour),'end'=>sprintf('%02d:00',$hour+1),'weight'=>number_format(100/21,2,'.','')];
+            $hourlyWeights[20]['weight']=number_format(100-array_sum(array_map(static fn($item)=>(float)$item['weight'],$hourlyWeights,)),2,'.','');
+        }
+        $hourlyTotal=array_sum(array_map(static fn($item)=>(float)$item['weight'],$hourlyWeights));
+        if($hourlyWeights!==[] && abs($hourlyTotal-100)>0.01)throw new \InvalidArgumentException('每日小时段权重总和必须为100%');
+        $skipWindows=$data['skip_windows']??($current['skip_windows']??[]);
+        if(is_string($skipWindows))$skipWindows=json_decode($skipWindows,true)?:[];
+        if(!is_array($skipWindows))$skipWindows=[];
+        $skipWindows=array_values(array_filter(array_map(static function($item){
+            if(!is_array($item))return null;
+            $start=trim((string)($item['start']??''));$end=trim((string)($item['end']??''));
+            if(!preg_match('/^([01]\d|2[0-3]):[0-5]\d$/',$start)||!preg_match('/^([01]\d|2[0-3]):[0-5]\d$/',$end))throw new \InvalidArgumentException('跳过时段必须使用 HH:MM 格式');
+            return ['start'=>$start,'end'=>$end];
+        },$skipWindows),static fn($item)=>is_array($item)));
+        $configs=$data['lottery_configs']??($current['lottery_configs']??[]);
+        if(is_string($configs))$configs=json_decode($configs,true)?:[];
+        if(!is_array($configs))$configs=[];
+        $configs=array_values(array_filter(array_map(static fn($item)=>is_array($item)?['lottery_id'=>(int)($item['lottery_id']??0),'enabled'=>(int)($item['enabled']??1)===1]:null,$configs),static fn($item)=>is_array($item)&&$item['lottery_id']>0));
+        if($configs===[]) throw new \InvalidArgumentException('请至少选择一个彩种');
+        return compact('min','max','precision','intervalMin','intervalMax','start','weights','configs','skipWindows','winWeight','monthlyRules','hourlyWeights');
+    }
+
+    public function options(Request $request): \think\response\Json
+    {
+        $session=$this->session($request); $siteId=$this->siteId($request,$session);
+        $sites=Db::name('sites')->whereNull('deleted_at')->where('status',1)->field('id,name')->order('id asc')->select()->toArray();
+        if($siteId!==null)$sites=array_values(array_filter($sites,static fn(array $row)=>(int)$row['id']===$siteId));
+        $siteForOptions=$siteId??(int)($sites[0]['id']??0);
+        $nodes=$siteForOptions?Db::name('organization_nodes')->where('site_id',$siteForOptions)->where('status',1)->whereNull('deleted_at')->field('id,parent_id,level,name,code,depth,path')->order('path asc')->select()->toArray():[];
+        $lotteries=$siteForOptions?Db::name('lotteries')->alias('l')->join('site_lotteries sl','sl.lottery_id=l.id')->where('sl.site_id',$siteForOptions)->where('l.status',1)->whereNull('l.deleted_at')->field('l.id,l.name,l.code,l.sort')->order('l.sort asc')->order('l.id asc')->select()->toArray():[];
+        return $this->reply(['sites'=>$sites,'site_id'=>$siteForOptions,'nodes'=>$nodes,'lotteries'=>$lotteries]);
+    }
+
+    public function index(Request $request): \think\response\Json
+    {
+        $session=$this->session($request); $siteId=$this->siteId($request,$session); $query=Db::name('robot_accounts')->alias('r')->join('site_users u','u.id=r.user_id')->join('sites s','s.id=r.site_id')->join('organization_nodes n','n.id=r.organization_id')->whereNull('r.converted_at');
+        if($siteId!==null)$query->where('r.site_id',$siteId);
+        $rows=$query->field('r.*,u.balance,u.credit_balance,u.used_balance,s.name site_name,n.name organization_name')->order('r.id desc')->select()->toArray();
+        foreach($rows as &$row){$row['available_score']=number_format(max(0,(float)$row['balance']+(float)$row['credit_balance']-(float)$row['used_balance']),2,'.','');$decoded=json_decode((string)($row['lottery_configs']??'[]'),true)?:[];$row['lottery_configs']=array_values(array_filter(array_map(static fn($item)=>is_array($item)?['lottery_id'=>(int)($item['lottery_id']??0),'enabled'=>(int)($item['enabled']??1)===1]:null,$decoded),static fn($item)=>is_array($item)&&$item['lottery_id']>0));$row['skip_windows']=json_decode((string)($row['skip_windows']??'[]'),true)?:[];$row['win_weight']=number_format((float)($row['win_weight']??50),2,'.','');$row['loss_weight']=number_format(100-(float)($row['win_weight']??50),2,'.','');$row['monthly_rules']=json_decode((string)($row['monthly_rules']??'[]'),true)?:[];$row['hourly_weights']=json_decode((string)($row['hourly_weights']??'[]'),true)?:[];$row['plain_password']=(string)$row['plain_password'];}unset($row);
+        return $this->reply(['list'=>$rows,'total'=>count($rows)]);
+    }
+
+    public function create(Request $request): \think\response\Json
+    {
+        $session=$this->session($request);$data=$request->post();$siteId=(int)($data['site_id']??$this->siteId($request,$session));if($siteId<1)throw new \InvalidArgumentException('请选择站点');$site=Db::name('sites')->where('id',$siteId)->where('status',1)->whereNull('deleted_at')->find();if(!$site)throw new \InvalidArgumentException('站点不存在或已停用');$organizationId=(int)($data['organization_id']??0);$this->assertAgent($organizationId,$siteId);$name=trim((string)($data['name']??''));$username=trim((string)($data['username']??''));$password=(string)($data['password']??'');if($name==='')throw new \InvalidArgumentException('请输入机器人名称');if($username===''||!preg_match('/^[A-Za-z0-9_]{3,40}$/',$username))throw new \InvalidArgumentException('机器人账号必须为3-40位字母、数字或下划线');PasswordPolicy::assertValid($password,$username);if(Db::name('site_users')->where('site_id',$siteId)->where('username',$username)->whereNull('deleted_at')->find())throw new \InvalidArgumentException('当前站点已存在该账号');$cfg=$this->normalize($data);$now=date('Y-m-d H:i:s');$plain=$password;$operator=$this->operator($session);
+        $id=Db::transaction(function()use($site,$siteId,$organizationId,$name,$username,$password,$plain,$cfg,$data,$now,$operator):int{$userId=(int)Db::name('site_users')->insertGetId(['tenant_id'=>(int)$site['tenant_id'],'site_id'=>$siteId,'organization_id'=>$organizationId,'username'=>$username,'display_name'=>$name,'password'=>password_hash($password,PASSWORD_DEFAULT),'status'=>1,'account_state'=>'enabled','must_change_password'=>0,'balance'=>'0.00','credit_balance'=>'0.00','used_balance'=>'0.00','created_at'=>$now,'updated_at'=>$now]);$user=Db::name('site_users')->where('id',$userId)->find();ScoreTransfer::setUserBalances($user,0,(float)($data['score']??0),$operator);return (int)Db::name('robot_accounts')->insertGetId(['tenant_id'=>(int)$site['tenant_id'],'site_id'=>$siteId,'organization_id'=>$organizationId,'user_id'=>$userId,'name'=>$name,'username'=>$username,'plain_password'=>$plain,'min_amount'=>number_format($cfg['min'],2,'.',''),'max_amount'=>number_format($cfg['max'],2,'.',''),'amount_precision'=>$cfg['precision'],'start_at'=>$cfg['start'],'next_run_at'=>$cfg['start'],'interval_min'=>$cfg['intervalMin'],'interval_max'=>$cfg['intervalMax'],'weight_fu'=>$cfg['weights']['fu'],'weight_ti'=>$cfg['weights']['ti'],'weight_futi'=>$cfg['weights']['futi'],'lottery_configs'=>json_encode($cfg['configs'],JSON_UNESCAPED_UNICODE),'skip_windows'=>json_encode($cfg['skipWindows'],JSON_UNESCAPED_UNICODE),'win_weight'=>number_format($cfg['winWeight'],2,'.',''),'monthly_rules'=>json_encode($cfg['monthlyRules'],JSON_UNESCAPED_UNICODE),'status'=>'stopped','created_at'=>$now,'updated_at'=>$now]);});
+        Db::name('robot_accounts')->where('id',$id)->update(['hourly_weights'=>json_encode($cfg['hourlyWeights'],JSON_UNESCAPED_UNICODE)]);
+        return $this->reply(['id'=>$id],'机器人创建成功');
+    }
+
+    public function update(Request $request,int $id): \think\response\Json
+    {
+        $session=$this->session($request);
+        $robot=Db::name('robot_accounts')->where('id',$id)->whereNull('converted_at')->find();
+        if(!$robot)throw new \InvalidArgumentException('机器人不存在');
+        $siteId=$this->siteId($request,$session);
+        if($siteId!==null&&(int)$robot['site_id']!==$siteId)throw new \RuntimeException('无权修改该机器人');
+        $data=$request->put();
+        $cfg=$this->normalize($data,$robot);
+        $name=trim((string)($data['name']??$robot['name']));
+        if($name==='')throw new \InvalidArgumentException('请输入机器人名称');
+        $now=date('Y-m-d H:i:s');
+        $operator=$this->operator($session);
+        Db::transaction(function()use($robot,$data,$cfg,$name,$now,$operator):void{
+            $update=['name'=>$name,'min_amount'=>number_format($cfg['min'],2,'.',''),'max_amount'=>number_format($cfg['max'],2,'.',''),'amount_precision'=>$cfg['precision'],'start_at'=>$cfg['start'],'next_run_at'=>$cfg['start'],'interval_min'=>$cfg['intervalMin'],'interval_max'=>$cfg['intervalMax'],'weight_fu'=>$cfg['weights']['fu'],'weight_ti'=>$cfg['weights']['ti'],'weight_futi'=>$cfg['weights']['futi'],'lottery_configs'=>json_encode($cfg['configs'],JSON_UNESCAPED_UNICODE),'skip_windows'=>json_encode($cfg['skipWindows'],JSON_UNESCAPED_UNICODE),'win_weight'=>number_format($cfg['winWeight'],2,'.',''),'monthly_rules'=>json_encode($cfg['monthlyRules'],JSON_UNESCAPED_UNICODE),'updated_at'=>$now];
+            if(array_key_exists('password',$data)&&trim((string)$data['password'])!==''){
+                PasswordPolicy::assertValid((string)$data['password'],(string)$robot['username']);
+                $update['plain_password']=(string)$data['password'];
+                Db::name('site_users')->where('id',(int)$robot['user_id'])->update(['password'=>password_hash((string)$data['password'],PASSWORD_DEFAULT),'updated_at'=>$now]);
+            }
+            Db::name('robot_accounts')->where('id',(int)$robot['id'])->update($update);
+            // `score` means the robot's displayed available score. It is
+            // changed only when the explicit flag is present; editing any
+            // other setting must never attempt to debit the agent account.
+            if((int)($data['adjust_score']??0)===1 && array_key_exists('score',$data)){
+                $targetAvailable=(float)$data['score'];
+                if($targetAvailable<0)throw new \InvalidArgumentException('机器人分数必须为非负数字');
+                $user=Db::name('site_users')->where('id',(int)$robot['user_id'])->find();
+                if(!$user)throw new \RuntimeException('机器人会员账户不存在');
+                $used=(float)($user['used_balance']??0);
+                $targetTotal=round($targetAvailable+$used,2);
+                // Preserve existing cash first; any extra allocation is
+                // recorded as credit, while a reduction consumes cash first.
+                $targetBalance=min((float)$user['balance'],$targetTotal);
+                $targetCredit=round($targetTotal-$targetBalance,2);
+                ScoreTransfer::setUserBalances($user,$targetBalance,$targetCredit,$operator);
+            }
+        });
+        Db::name('robot_accounts')->where('id',(int)$robot['id'])->update(['hourly_weights'=>json_encode($cfg['hourlyWeights'],JSON_UNESCAPED_UNICODE)]);
+        return $this->reply(null,'机器人已更新');
+    }
+
+    public function status(Request $request,int $id): \think\response\Json
+    {
+        $session=$this->session($request);$robot=Db::name('robot_accounts')->where('id',$id)->whereNull('converted_at')->find();if(!$robot)throw new \InvalidArgumentException('机器人不存在');$siteId=$this->siteId($request,$session);if($siteId!==null&&(int)$robot['site_id']!==$siteId)throw new \RuntimeException('无权操作该机器人');$status=(string)$request->post('status','');if(!in_array($status,['running','stopped'],true))throw new \InvalidArgumentException('机器人状态无效');$now=date('Y-m-d H:i:s');$next=$status==='running'?strtotime((string)$robot['start_at']):null;Db::name('robot_accounts')->where('id',$id)->update(['status'=>$status,'next_run_at'=>$next?date('Y-m-d H:i:s',$next):null,'updated_at'=>$now]);$this->appendRunLog((int)$id,'info','manual',$status==='running'?'机器人已启动':'机器人已停止',['execution_at'=>$now,'scheduled_at'=>$next?date('Y-m-d H:i:s',$next):$now,'next_run_at'=>$next?date('Y-m-d H:i:s',$next):null]);return $this->reply(null,$status==='running'?'机器人已启动':'机器人已停止');
+    }
+
+    /** Return the most recent bounded scheduler log, oldest first. */
+    public function logs(Request $request,int $id): \think\response\Json
+    {
+        $session=$this->session($request);$robot=Db::name('robot_accounts')->where('id',$id)->whereNull('converted_at')->find();
+        if(!$robot)throw new \InvalidArgumentException('机器人不存在');
+        $siteId=$this->siteId($request,$session);if($siteId!==null&&(int)$robot['site_id']!==$siteId)throw new \RuntimeException('无权查看该机器人日志');
+        $limit=min(300,max(1,(int)$request->param('limit',300)));$after=max(0,(int)$request->param('after_id',0));
+        $query=Db::name('robot_run_logs')->where('robot_id',$id);
+        if($after>0){$rows=$query->where('id','>',$after)->order('id asc')->limit($limit)->select()->toArray();}
+        else{$rows=$query->order('id desc')->limit($limit)->select()->toArray();$rows=array_reverse($rows);}
+        foreach($rows as &$row){$row['id']=(int)$row['id'];$row['robot_id']=(int)$row['robot_id'];$row['context']=is_string($row['context']??null)?(json_decode((string)$row['context'],true)?:[]):($row['context']??[]);}unset($row);
+        $lastId=$rows===[]?$after:(int)$rows[array_key_last($rows)]['id'];
+        return $this->reply(['robot_id'=>$id,'list'=>$rows,'last_id'=>$lastId,'limit'=>$limit]);
+    }
+
+    private function appendRunLog(int $robotId,string $level,string $status,string $message,array $context=[]): void
+    {
+        try {
+            $now=date('Y-m-d H:i:s');Db::name('robot_run_logs')->insert(['robot_id'=>$robotId,'level'=>$level,'status'=>$status,'message'=>mb_substr($message,0,500),'context'=>$context===[]?null:json_encode($context,JSON_UNESCAPED_UNICODE),'created_at'=>$now]);
+            $old=Db::name('robot_run_logs')->where('robot_id',$robotId)->order('id desc')->limit(100000,300)->column('id');if($old!==[])Db::name('robot_run_logs')->whereIn('id',array_map('intval',$old))->delete();
+        } catch(\Throwable $error) { /* logging must not block account actions */ }
+    }
+
+    public function convert(Request $request,int $id): \think\response\Json
+    {
+        $session=$this->session($request);$robot=Db::name('robot_accounts')->where('id',$id)->whereNull('converted_at')->find();if(!$robot)throw new \InvalidArgumentException('机器人不存在');$siteId=$this->siteId($request,$session);if($siteId!==null&&(int)$robot['site_id']!==$siteId)throw new \RuntimeException('无权操作该机器人');$now=date('Y-m-d H:i:s');Db::transaction(function()use($robot,$now):void{Db::name('robot_accounts')->where('id',(int)$robot['id'])->update(['status'=>'converted','converted_at'=>$now,'updated_at'=>$now]);Db::name('site_users')->where('id',(int)$robot['user_id'])->update(['account_state'=>'enabled','updated_at'=>$now]);});return $this->reply(null,'机器人已转为普通会员，自动打单已停止');
+    }
+
+    public function history(Request $request,int $id): \think\response\Json
+    {
+        $session=$this->session($request);$robot=Db::name('robot_accounts')->where('id',$id)->whereNull('converted_at')->find();if(!$robot)throw new \InvalidArgumentException('机器人不存在');$siteId=$this->siteId($request,$session);
+        if($siteId!==null&&(int)$robot['site_id']!==$siteId)throw new \RuntimeException('无权查看该机器人');
+        $query=Db::name('bet_records')->where('site_id',(int)$robot['site_id'])->where('user_id',(int)$robot['user_id']);
+        $lottery=trim((string)$request->param('lottery',''));
+        if($lottery!=='') {
+            $recordIds=Db::name('user_stop_drops')->alias('s')->join('bet_details d','d.id=s.bet_detail_id')
+                ->where('s.site_id',(int)$robot['site_id'])->where('s.user_id',(int)$robot['user_id'])->where('s.lottery',$lottery)
+                ->column('d.bet_record_id');
+            $query=$recordIds===[] ? $query->where('id',-1) : $query->whereIn('id',array_values(array_unique(array_map('intval',$recordIds))));
+        }
+        $total=(int)(clone $query)->count();$page=max(1,(int)$request->param('page',1));$size=min(100,max(1,(int)$request->param('page_size',20)));
+        $rows=$query->field('id,issue_no,bet_count,amount,status,win_amount,placed_at,formatted_text,source_text')->order('id desc')->page($page,$size)->select()->toArray();
+        return $this->reply(['robot_id'=>$id,'list'=>$rows,'total'=>$total,'page'=>$page,'page_size'=>$size,'lottery'=>$lottery]);
+    }
+
+    /** Apply a rollback delta without ever creating a negative user field. */
+    private function applyUserAccountDelta(int $userId,float $delta): void
+    {
+        $user=Db::name('site_users')->where('id',$userId)->lock(true)->find();
+        if(!$user)return;
+        $balance=(float)$user['balance'];$credit=(float)$user['credit_balance'];
+        if($delta>=0)$balance=round($balance+$delta,2);
+        else{
+            $amount=abs($delta);$cash=min($balance,$amount);$balance=round($balance-$cash,2);$credit=round($credit-($amount-$cash),2);
+            if($credit< -0.000001)throw new \RuntimeException('清除历史后会员可用分数不足（需要追回 '.number_format(abs($credit),2,'.','').' 分）');
+            $credit=max(0,$credit);
+        }
+        Db::name('site_users')->where('id',$userId)->update(['balance'=>number_format($balance,2,'.',''),'credit_balance'=>number_format($credit,2,'.',''),'updated_at'=>date('Y-m-d H:i:s')]);
+    }
+
+    /**
+     * Validate every reverse ledger movement before deleting anything.  A
+     * settlement may already have been spent by the member, so blindly
+     * subtracting it would either create a negative balance or abort halfway
+     * through the clear operation.  This preflight keeps the operation atomic.
+     */
+    private function assertRollbackAvailable(array $deltas, float $pendingRefund, int $pendingUserId): void
+    {
+        foreach($deltas as $key=>$delta){
+            if(abs($delta)<0.000001)continue;
+            [$type,$account]=explode(':',$key,2);$account=(int)$account;
+            $reverse=-$delta;
+            if($type==='user'){
+                $row=Db::name('site_users')->where('id',$account)->lock(true)->find();
+                if(!$row)continue;
+                $balance=(float)$row['balance'];$credit=(float)$row['credit_balance'];
+                // Pending bets release their used balance as part of a clear.
+                $available=$balance+$credit-(float)($row['used_balance']??0)+($account===$pendingUserId?$pendingRefund:0.0);
+                if($reverse<0 && $available+0.000001<abs($reverse)){
+                    $short=abs($reverse)-$available;
+                    throw new \RuntimeException('清除历史后会员可用分数不足（需要追回 '.number_format($short,2,'.','').' 分），机器人已停止');
+                }
+            }elseif(in_array($type,['organization','platform','site'],true) && $reverse<0){
+                $table=$type==='organization'?'organization_nodes':($type==='platform'?'platform_credit_accounts':'site_credit_accounts');
+                $row=Db::name($table)->where('id',$account)->lock(true)->find();
+                $balance=(float)($row['balance']??0);
+                if($balance+0.000001<abs($reverse)){
+                    $short=abs($reverse)-$balance;
+                    throw new \RuntimeException('清除历史后'.$type.'可用分数不足（差额 '.number_format($short,2,'.','').' 分），机器人已停止');
+                }
+            }
+        }
+    }
+
+    /** Restore a robot member to the net score explicitly allocated to it. */
+    private function restoreRobotBaseline(array $robot): void
+    {
+        $allocated=0.0;
+        $rows=Db::name('organization_credit_ledger')->where('account_type','user')
+            ->where('account_id',(int)$robot['user_id'])->where('source_type','score_allocation')
+            ->field('direction,amount')->select()->toArray();
+        foreach($rows as $row){
+            $allocated+=((string)($row['direction']??'out')==='in'?1:-1)*(float)($row['amount']??0);
+        }
+        Db::name('site_users')->where('id',(int)$robot['user_id'])->update([
+            'balance'=>number_format(max(0,$allocated),2,'.',''),
+            'credit_balance'=>'0.00',
+            'used_balance'=>'0.00',
+            'updated_at'=>date('Y-m-d H:i:s'),
+        ]);
+    }
+
+    /** Remove this robot's records before its displayed latest bet time. */
+    public function clearLatest(Request $request,int $id): \think\response\Json
+    {
+        $session=$this->session($request);$robot=Db::name('robot_accounts')->where('id',$id)->whereNull('converted_at')->find();if(!$robot)throw new \InvalidArgumentException('机器人不存在');$siteId=$this->siteId($request,$session);if($siteId!==null&&(int)$robot['site_id']!==$siteId)throw new \RuntimeException('无权操作该机器人');
+        try{$result=Db::transaction(function()use($robot):array{
+            $lockedRobot=Db::name('robot_accounts')->where('id',(int)$robot['id'])->lock(true)->find() ?: $robot;
+            $cutoff=trim((string)($lockedRobot['last_bet_at']??''));
+            // A previous clear may have reset last_bet_at while the worker
+            // created new records afterwards. In that case use the current
+            // maximum record time so the newly-created batch is clearable.
+            if($cutoff==='')$cutoff=trim((string)(Db::name('bet_records')->where('site_id',(int)$robot['site_id'])->where('user_id',(int)$robot['user_id'])->order('placed_at','desc')->order('id','desc')->value('placed_at')??''));
+            if($cutoff===''){$this->restoreRobotBaseline($robot);Db::name('robot_accounts')->where('id',(int)$robot['id'])->update(['last_bet_at'=>null,'pending_ticket_text'=>null,'pending_ticket_lottery'=>null,'pending_ticket_target_issue'=>null,'pending_ticket_target_draw'=>null,'pending_ticket_created_at'=>null,'pending_ticket_scheduled_at'=>null,'next_run_at'=>(string)$lockedRobot['status']==='running'?$lockedRobot['start_at']:null,'updated_at'=>date('Y-m-d H:i:s')]);return ['deleted'=>0,'cutoff'=>null];}
+            // Include the latest timestamp itself. Multiple records can share
+            // the same second, so an inclusive boundary is intentional.
+            $records=Db::name('bet_records')->where('site_id',(int)$robot['site_id'])->where('user_id',(int)$robot['user_id'])->where('placed_at','<=',$cutoff)->select()->toArray();
+            if($records===[]){$this->restoreRobotBaseline($robot);Db::name('robot_accounts')->where('id',(int)$robot['id'])->update(['last_bet_at'=>null,'pending_ticket_text'=>null,'pending_ticket_lottery'=>null,'pending_ticket_target_issue'=>null,'pending_ticket_target_draw'=>null,'pending_ticket_created_at'=>null,'pending_ticket_scheduled_at'=>null,'next_run_at'=>(string)$lockedRobot['status']==='running'?$lockedRobot['start_at']:null,'updated_at'=>date('Y-m-d H:i:s')]);return ['deleted'=>0,'cutoff'=>$cutoff];}
+            $recordIds=array_map('intval',array_column($records,'id'));$detailIds=Db::name('bet_details')->whereIn('bet_record_id',$recordIds)->column('id');
+            // Ledger rows must belong to this robot's member account as well
+            // as reference one of its bet records. Historical backfills may
+            // contain reused/mismatched record IDs; filtering by member is
+            // what prevents a robot clear from touching another user's
+            // balance or hierarchy share.
+            $ledger=Db::name('organization_credit_ledger')->whereIn('related_bet_record_id',$recordIds)->where('related_user_id',(int)$robot['user_id'])->select()->toArray();$deltas=[];
+            foreach($ledger as $row){
+                // Clearing a robot restores the member's stake, but winnings
+                // already paid to the member are intentionally retained.  We
+                // still reverse all organization/platform settlement-share
+                // movements below so the hierarchy is restored normally.
+                // Member balance is restored from the robot's original score
+                // allocation, not by replaying every historical bet ledger.
+                // Those rows can be orphaned/cross-linked after a backfill;
+                // applying them here would refund millions more than the
+                // member actually owns.  Only hierarchy/platform movements
+                // are reversed in this operation.
+                if((string)($row['account_type']??'')==='user')continue;
+                $key=(string)$row['account_type'].':'.(int)$row['account_id'];$delta=((string)($row['direction']??'out')==='in'?1:-1)*(float)($row['amount']??0);$deltas[$key]=($deltas[$key]??0)+$delta;
+            }
+            $pendingAmount=0.0;foreach($records as $record)if((string)($record['status']??'pending')==='pending')$pendingAmount+=(float)$record['amount'];
+            $this->assertRollbackAvailable($deltas,$pendingAmount,(int)$robot['user_id']);
+            foreach($deltas as $key=>$delta){[$type,$account]=explode(':',$key,2);$account=(int)$account;if(abs($delta)<0.000001)continue;$change=number_format($delta,2,'.','');if($type==='user')$this->applyUserAccountDelta($account,-$delta);elseif($type==='organization')Db::name('organization_nodes')->where('id',$account)->update(['balance'=>Db::raw('balance - '.$change),'updated_at'=>date('Y-m-d H:i:s')]);elseif($type==='platform')Db::name('platform_credit_accounts')->where('id',$account)->update(['balance'=>Db::raw('balance - '.$change),'updated_at'=>date('Y-m-d H:i:s')]);elseif($type==='site')Db::name('site_credit_accounts')->where('id',$account)->update(['balance'=>Db::raw('balance - '.$change),'updated_at'=>date('Y-m-d H:i:s')]);}
+            if($pendingAmount>0)Db::name('site_users')->where('id',(int)$robot['user_id'])->update(['used_balance'=>Db::raw('GREATEST(used_balance - '.number_format($pendingAmount,2,'.','').',0)'),'updated_at'=>date('Y-m-d H:i:s')]);
+            // Robot accounts are dedicated members. Once their historical
+            // bets are removed, restore the account to its allocation
+            // baseline.  Settlement can move part of the baseline between
+            // cash and credit; retaining that residual credit here would
+            // make available_score larger than the score actually allocated
+            // to the robot (and was the reason clear-history left balances
+            // such as 1,519,065.89 instead of 1,500,000.00).  The allocation
+            // ledger is the source of truth, so the baseline is represented
+            // as cash with zero credit and zero locked stake.
+            $this->restoreRobotBaseline($robot);
+            // Settlement updates the daily bill summary. Roll those values
+            // back too, otherwise reports would retain deleted robot bets.
+            $billTotals=[];foreach($records as $record){$day=substr((string)$record['placed_at'],0,10);if(!isset($billTotals[$day]))$billTotals[$day]=['count'=>0,'amount'=>0.0,'win'=>0.0];$billTotals[$day]['count']+=(int)($record['bet_count']??0);$billTotals[$day]['amount']+=(float)($record['amount']??0);$billTotals[$day]['win']+=(float)($record['win_amount']??0);}
+            foreach($billTotals as $day=>$totals){$bill=Db::name('bills')->where('site_id',(int)$robot['site_id'])->where('user_id',(int)$robot['user_id'])->where('bill_date',$day)->find();if(!$bill)continue;Db::name('bills')->where('id',(int)$bill['id'])->update(['bet_count'=>max(0,(int)$bill['bet_count']-$totals['count']),'amount'=>number_format(max(0,(float)$bill['amount']-$totals['amount']),2,'.',''),'win_amount'=>number_format(max(0,(float)$bill['win_amount']-$totals['win']),2,'.',''),'profit'=>number_format((float)$bill['profit']-($totals['win']-$totals['amount']),2,'.','')]);}
+            if($detailIds!==[])Db::name('organization_credit_ledger')->whereIn('related_bet_detail_id',array_map('intval',$detailIds))->where('related_user_id',(int)$robot['user_id'])->delete();Db::name('organization_credit_ledger')->whereIn('related_bet_record_id',$recordIds)->where('related_user_id',(int)$robot['user_id'])->delete();
+            if($detailIds!==[])Db::name('agent_interceptions')->whereIn('bet_detail_id',array_map('intval',$detailIds))->delete();Db::name('user_stop_drops')->whereIn('bet_detail_id',array_map('intval',$detailIds))->delete();Db::name('bet_details')->whereIn('id',array_map('intval',$detailIds))->delete();
+            $submissionIds=Db::name('bet_records')->whereIn('id',$recordIds)->column('submission_id');Db::name('bet_records')->whereIn('id',$recordIds)->delete();
+            foreach(array_unique(array_filter(array_map('intval',$submissionIds))) as $submissionId)if(Db::name('bet_records')->where('submission_id',$submissionId)->count()===0)Db::name('bet_submissions')->where('id',$submissionId)->delete();
+            Db::name('robot_accounts')->where('id',(int)$robot['id'])->update(['last_bet_at'=>null,'pending_ticket_text'=>null,'pending_ticket_lottery'=>null,'pending_ticket_target_issue'=>null,'pending_ticket_target_draw'=>null,'pending_ticket_created_at'=>null,'pending_ticket_scheduled_at'=>null,'next_run_at'=>(string)$lockedRobot['status']==='running'?$lockedRobot['start_at']:null,'updated_at'=>date('Y-m-d H:i:s')]);return ['deleted'=>count($records),'cutoff'=>$cutoff];
+        });}catch(\Throwable $e){
+            // The transaction has been rolled back; stop future bets and make
+            // the reason visible to the operator.  No records or balances are
+            // changed when the reverse movement cannot be funded.
+            Db::name('robot_accounts')->where('id',(int)$robot['id'])->update(['status'=>'stopped','next_run_at'=>null,'updated_at'=>date('Y-m-d H:i:s')]);
+            return $this->reply(['deleted'=>0,'stopped'=>true,'cutoff'=>$robot['last_bet_at']??null],$e->getMessage(),409);
+        }
+        return $this->reply($result,'已清除该最新时间之前的机器人注单（会员可用余额按原始分配恢复，不重复返还历史本金或中奖）');
+    }
+}

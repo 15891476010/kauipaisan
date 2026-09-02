@@ -26,8 +26,8 @@ function displayNumber(row: BetDetail): string {
   if (play.includes("双飞") || source.includes("对子")) {
     return value.replace(/^0(?=\d{2}(?:飞)?$)/, "").replace(/飞$/, "");
   }
-  if (play.includes("组3") || play.includes("组6")) return value.replace(/^[三六]/u, "");
-  return /^\d{3}$/.test(value) ? String(Number(value)) : value;
+  if (play.includes("组3") || play.includes("组6") || row.play_label === "组") return value.replace(/^[三六]/u, "");
+  return value.replace(/直+$/u, "直").replace(/组+$/u, "组");
 }
 
 const statusLabels: Record<string, string> = {
@@ -59,7 +59,7 @@ export function BetDetailsTable({
           {sameOrder ? <span className="bet-same-order">同上</span> : <button type="button" className="bet-text-link" disabled={!row.source_text && !row.parsed_source_text} title="查看投注文本" onClick={() => onPreview(row)}><FileTextOutlined /></button>}
         </div>;
       }) : !loading && <div className="bet-detail-empty"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" /></div>}
-      {rows.length ? <div className="bet-detail-total"><span>合计</span><span /><span /><span>{totals.amount}</span><span /><span>---</span><span>{totals.rebate}</span><span>{totals.profit}</span><span /><span /></div> : null}
+      {rows.length ? <div className="bet-detail-total"><span>合计</span><span /><span /><span>{totals.amount}</span><span /><span>{totals.win_amount}</span><span>{totals.rebate}</span><span>{totals.profit}</span><span /><span /></div> : null}
       {loading && <div className="page-local-loading" role="status" aria-label="加载中" />}
     </div>
   );

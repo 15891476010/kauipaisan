@@ -23,6 +23,7 @@ const router = useRouter();
 const auth = useAuthStore();
 const loading = ref(false);
 const rows = ref<Record<string, unknown>[]>([]);
+const selectedBetRecordIds = ref<number[]>([]);
 const total = ref(0);
 const drawer = ref(false);
 const editingId = ref<number | null>(null);
@@ -46,10 +47,25 @@ const auditDetail = ref<Record<string, unknown> | null>(null);
 const auditDetailVisible = ref(false);
 const auditDetailLoading = ref(false);
 const clearingAuditLogs = ref(false);
-let refreshTimer: ReturnType<typeof setInterval> | null = null;
-let realtimeRefreshing = false;
 const isPlatform = computed(() => auth.user?.role !== "site");
 const query = reactive({ keyword: "", site_id: "", lottery: "", page: 1, page_size: 20 });
+type AlertConfig = { bet: string; win: string; number: string };
+const alertSettings = reactive<Record<string, AlertConfig>>({});
+const numberSimulation = ref<Record<string, unknown> | null>(null);
+const currentAlert = computed<AlertConfig>(() => {
+  const key = query.lottery || "__all__";
+  if (!alertSettings[key]) alertSettings[key] = { bet: "", win: "", number: "" };
+  return alertSettings[key];
+});
+const tableHeight = computed<string | undefined>(() => {
+  if (resource.value === "audit-logs") return "calc(100% - 172px)";
+  if (resource.value === "bet-records") {
+    // Short pages should collapse to their actual row count so the pager stays nearby.
+    if (query.page_size <= 5 || rows.value.length <= 5) return "auto";
+    return numberSimulation.value ? "calc(100vh - 510px)" : "calc(100vh - 470px)";
+  }
+  return "calc(100vh - 300px)";
+});
 type DomainItem = { domain: string; is_primary: number; status: number };
 const createDomainItem = (isPrimary = false): DomainItem => ({
   domain: "",
@@ -117,7 +133,7 @@ const fields: Record<string, string[]> = {
     "status",
     "created_at",
   ],
-  "bet-records": ["id", "site_name", "username", "lottery", "issue_no", "bet_count", "amount", "win_amount", "win_status", "source_text", "formatted_text", "status", "sealed", "placed_at"],
+  "bet-records": ["id", "site_name", "username", "lottery", "issue_no", "bet_count", "amount", "potential_win_amount", "win_amount", "win_status", "source_text", "formatted_text", "status", "sealed", "placed_at"],
   admins: ["id", "site_name", "scope_label", "username", "display_name", "online", "last_seen_at", "last_login_at", "last_login_device", "last_login_location", "last_login_ip", "status"],
   roles: ["id", "name", "code", "status", "created_at"],
   menus: ["id", "title", "path", "component", "sort", "status"],
@@ -165,6 +181,7 @@ const labels: Record<string, string> = {
   issue_no: "期号",
   bet_count: "笔数",
   amount: "下单金额",
+  potential_win_amount: "预中奖金额",
   win_amount: "中奖金额",
   win_status: "中奖状态",
   source_text: "原始文本",
@@ -194,20 +211,49 @@ const pageSubtitle = computed(() =>
       ? "统一管理平台管理员和各站点后台管理员"
     : "每个站点拥有独立管理员与反代域名，站点之间账号和数据隔离",
 );
-async function load(silent = false) {
-  if (silent && realtimeRefreshing) return;
-  if (silent) realtimeRefreshing = true;
-  if (!silent) loading.value = true;
+async function load() {
+  loading.value = true;
   try {
-    const res = await listResource(resource.value, query);
+    const params = resource.value === "bet-records"
+      ? { ...query, bet_alert_threshold: currentAlert.value.bet, win_alert_threshold: currentAlert.value.win, check_number: currentAlert.value.number }
+      : query;
+    const res = await listResource(resource.value, params);
     rows.value = res.data.list;
     total.value = res.data.total;
+    if (resource.value === "bet-records") selectedBetRecordIds.value = [];
+    numberSimulation.value = resource.value === "bet-records"
+      ? ((res.data as Record<string, unknown>).number_simulation as Record<string, unknown> | null) || null
+      : null;
   } catch (e) {
-    if (!silent) ElMessage.error(e instanceof Error ? e.message : "加载失败");
+    ElMessage.error(e instanceof Error ? e.message : "加载失败");
   } finally {
-    if (!silent) loading.value = false;
-    if (silent) realtimeRefreshing = false;
+    loading.value = false;
   }
+}
+function betRowClassName({ row }: { row: Record<string, unknown> }): string {
+  if (resource.value !== "bet-records" || String(row.status || "").toLowerCase() !== "pending") return "";
+  return row.alert_level ? `bet-alert-row bet-alert-${String(row.alert_level)}` : "";
+}
+function betRowSelectable(row: Record<string, unknown>): boolean {
+  return resource.value === "bet-records"
+    && String(row.status || "").toLowerCase() === "pending"
+    && Number(row.sealed || 0) !== 1
+    && row.batch_editable !== false;
+}
+function betAlertLabel(row: Record<string, unknown>): string {
+  const reasons = Array.isArray(row.alert_reasons) ? row.alert_reasons.map(String) : [];
+  return reasons.map((reason) => reason === "bet_amount" ? "下注金额超阈值" : "预中奖金额超阈值").join("；");
+}
+function handleBetSelectionChange(selection: Record<string, unknown>[]) {
+  selectedBetRecordIds.value = selection.map((row) => Number(row.id)).filter((id) => Number.isInteger(id) && id > 0);
+}
+function openSelectedBatchReplace() {
+  if (!selectedBetRecordIds.value.length) return ElMessage.warning("请先选择需要批量修改的注单");
+  const selectedRows = rows.value.filter((row) => selectedBetRecordIds.value.includes(Number(row.id)));
+  const lotteries = [...new Set(selectedRows.map((row) => String(row.lottery || "")).filter(Boolean))];
+  const issues = [...new Set(selectedRows.map((row) => String(row.issue_no || "")).filter(Boolean))];
+  if (lotteries.length > 1 || issues.length > 1) return ElMessage.warning("批量修改只能选择同一彩种、同一期的未开奖注单");
+  void router.push({ path: "/bet-records/batch-replace", query: { record_ids: selectedBetRecordIds.value.join(","), lottery: lotteries[0] || query.lottery || undefined, issue_no: issues[0] || undefined } });
 }
 const betLotteryOptions = computed(() => lotteryOptions.value.length
   ? lotteryOptions.value.map((item) => item.name)
@@ -545,7 +591,7 @@ async function saveExpandedBet(row: BetDetail) {
   try {
     await updateBetDetail(row.id, { number_index: Number(row.number_index || 0), number_text: number, amount: String(row.amount), play_type: String(row.play_type || row.category || ""), source_text: String(row.source_text || "") });
     row.number_text = number;
-    await load(true);
+    await load();
   } catch (e) {
     ElMessage.error(e instanceof Error ? e.message : "保存失败");
   } finally {
@@ -560,23 +606,6 @@ function scheduleExpandedBetSave(row: BetDetail) {
     detailSaveTimers.delete(key);
     void saveExpandedBet(row);
   }, 300));
-}
-async function refreshRealtime() {
-  if (resource.value !== "bet-records" && resource.value !== "site-users") return;
-  await load(true);
-  if (resource.value !== "bet-records") return;
-  if (detailDrawer.value && detailRecord.value?.id) {
-    const activeTag = document.activeElement?.tagName;
-    if (activeTag === "INPUT" || activeTag === "TEXTAREA") return;
-    try {
-      const response = await getBetDetails(Number(detailRecord.value.id), { page: detailPage.value, page_size: detailPageSize.value });
-      Object.assign(detailRecord.value, response.data.record);
-      detailRows.value = response.data.list;
-      detailTotal.value = response.data.total;
-    } catch {
-      // Keep the currently visible detail when a transient refresh fails.
-    }
-  }
 }
 function openOrganizations(row: Record<string, unknown>) {
   void router.push({ name: 'site-organizations', params: { siteId: Number(row.id) }, query: { name: String(row.name || '') } });
@@ -648,55 +677,68 @@ onMounted(async () => {
   await load();
   if (resource.value === "site-users" || resource.value === "bet-records" || resource.value === "admins") await loadSites();
   if (resource.value === "agent-center" || resource.value === "bet-records") await loadLotteryOptions();
-  refreshTimer = setInterval(refreshRealtime, 15000);
 });
 onBeforeUnmount(() => {
-  if (refreshTimer) clearInterval(refreshTimer);
-  refreshTimer = null;
   detailSaveTimers.forEach((timer) => clearTimeout(timer));
   detailSaveTimers.clear();
 });
 </script>
 <template>
-  <div :class="['page-card', { 'audit-page-card': resource === 'audit-logs' }]">
+  <div :class="['page-card', { 'audit-page-card': resource === 'audit-logs', 'bet-records-page-card': resource === 'bet-records' }]">
     <h1 class="page-title">{{ title }}</h1>
     <p class="page-subtitle">{{ pageSubtitle }}</p>
-    <div class="toolbar">
-      <el-input
-        v-model="query.keyword"
-        clearable
-        :placeholder="
-          resource === 'site-users'
-            ? '搜索账号、姓名或手机号'
-            : resource === 'bet-records'
-              ? '搜索期号、原始文本或状态'
-            : '搜索站点、管理员或域名'
-        "
-        style="width: 280px"
-        @keyup.enter="load"
-      /><el-select
-        v-if="(resource === 'site-users' || resource === 'bet-records' || resource === 'admins') && isPlatform"
-        v-model="query.site_id"
-        clearable
-        placeholder="全部站点"
-        style="width: 180px"
-        @change="load"
-        ><el-option
-          v-for="site in siteOptions"
-          :key="site.id"
-          :label="String(site.name)"
-          :value="String(site.id)"
-      /></el-select>
-      <el-select
-        v-if="resource === 'bet-records'"
-        v-model="query.lottery"
-        clearable
-        filterable
-        placeholder="按彩种检索"
-        style="width: 170px"
-        @change="query.page = 1; load()"
-      ><el-option v-for="lottery in betLotteryOptions" :key="lottery" :label="lottery" :value="lottery" /></el-select>
-      <div>
+    <div :class="['toolbar', { 'bet-records-toolbar': resource === 'bet-records' }]">
+      <div class="toolbar-filter-group">
+        <div v-if="resource === 'bet-records'" class="toolbar-group-title">查询条件</div>
+        <div class="toolbar-filter-controls">
+          <el-input
+            v-model="query.keyword"
+            clearable
+            :placeholder="
+              resource === 'site-users'
+                ? '搜索账号、姓名或手机号'
+                : resource === 'bet-records'
+                  ? '搜索期号、原始文本或状态'
+                : '搜索站点、管理员或域名'
+            "
+            style="width: 280px"
+            @keyup.enter="load"
+          /><el-select
+            v-if="(resource === 'site-users' || resource === 'bet-records' || resource === 'admins') && isPlatform"
+            v-model="query.site_id"
+            clearable
+            placeholder="全部站点"
+            style="width: 180px"
+            @change="load"
+            ><el-option
+              v-for="site in siteOptions"
+              :key="site.id"
+              :label="String(site.name)"
+              :value="String(site.id)"
+          /></el-select>
+          <el-select
+            v-if="resource === 'bet-records'"
+            v-model="query.lottery"
+            clearable
+            filterable
+            placeholder="按彩种检索"
+            style="width: 170px"
+            @change="query.page = 1; load()"
+          ><el-option v-for="lottery in betLotteryOptions" :key="lottery" :label="lottery" :value="lottery" /></el-select>
+        </div>
+      </div>
+      <div v-if="resource === 'bet-records'" class="toolbar-alert-group">
+        <div class="toolbar-group-title">预警与号码试算</div>
+        <div class="bet-alert-controls">
+          <el-form-item label="下注金额预警"><el-input v-model="currentAlert.bet" clearable placeholder="金额（元）" style="width: 130px" @keyup.enter="query.page = 1; load()" /></el-form-item>
+          <el-form-item label="预中奖金额预警"><el-input v-model="currentAlert.win" clearable placeholder="金额（元）" style="width: 130px" @keyup.enter="query.page = 1; load()" /></el-form-item>
+          <el-form-item label="号码试算"><el-input v-model="currentAlert.number" clearable maxlength="3" placeholder="三位数字" style="width: 115px" @keyup.enter="query.page = 1; load()" /></el-form-item>
+          <el-button type="warning" @click="query.page = 1; load()">应用/试算</el-button>
+        </div>
+      </div>
+      <div class="toolbar-action-group">
+        <div v-if="resource === 'bet-records'" class="toolbar-group-title">操作</div>
+        <div class="toolbar-action-buttons">
         <el-button @click="load">刷新</el-button
         ><el-button
           v-if="resource === 'audit-logs' && isPlatform"
@@ -707,9 +749,9 @@ onBeforeUnmount(() => {
           >清除日志</el-button
         ><el-button
           v-if="resource === 'bet-records'"
-          type="primary"
-          @click="router.push('/bet-records/batch-replace')"
-          >批量替换</el-button
+          :type="selectedBetRecordIds.length ? 'warning' : 'primary'"
+          @click="selectedBetRecordIds.length ? openSelectedBatchReplace() : router.push('/bet-records/batch-replace')"
+          >{{ selectedBetRecordIds.length ? '批量修改已选' : '批量替换' }}</el-button
         ><el-button
           v-if="resource !== 'audit-logs' && resource !== 'bet-records'"
           type="primary"
@@ -720,21 +762,34 @@ onBeforeUnmount(() => {
               : `新增${title.replace("管理", "")}`
           }}</el-button
         >
+        </div>
       </div>
+    </div>
+    <div v-if="resource === 'bet-records' && numberSimulation" class="bet-number-simulation">
+      <el-tooltip content="按当前筛选条件下的未开奖注单计算，不代表彩票本身的开奖概率" placement="top"><strong>号码 {{ numberSimulation.number }} 试算（仅未开奖注单）</strong></el-tooltip>
+      <span>中奖：{{ numberSimulation.win_count }} / {{ numberSimulation.total }} 注（{{ numberSimulation.win_probability }}%）</span>
+      <span>未中奖：{{ numberSimulation.lose_count }} / {{ numberSimulation.total }} 注（{{ numberSimulation.lose_probability }}%）</span>
+      <span>按金额：中奖 ¥{{ numberSimulation.win_amount }}（{{ numberSimulation.win_amount_probability }}%）</span>
+      <span>未中奖 ¥{{ numberSimulation.lose_amount }}（{{ numberSimulation.lose_amount_probability }}%）</span>
     </div>
     <el-table
       v-loading="loading"
       :data="rows"
       stripe
-      :height="resource === 'audit-logs' ? 'calc(100% - 172px)' : 'calc(100vh - 300px)'"
-      ><el-table-column
+      :row-class-name="betRowClassName"
+      :selectable="betRowSelectable"
+      :height="tableHeight"
+      @selection-change="handleBetSelectionChange"
+      ><el-table-column v-if="resource === 'bet-records'" type="selection" width="52" fixed="left" />
+      <el-table-column
         v-for="col in columns"
         :key="col"
         :prop="col"
         :label="labels[col] || col"
         :min-width="['last_login_device','last_login_location'].includes(col) ? 180 : col === 'last_login_ip' ? 210 : col === 'online' ? 100 : 120"
         ><template #default="scope"
-          ><el-tag v-if="col === 'status'"
+          ><span v-if="resource === 'bet-records' && col === 'id'" class="bet-id-cell"><span>{{ scope.row[col] ?? "-" }}</span><el-tooltip v-if="Array.isArray(scope.row.alert_reasons) && scope.row.alert_reasons.length" :content="betAlertLabel(scope.row)" placement="top"><span class="bet-alert-icon">⚠</span></el-tooltip></span
+          ><el-tag v-else-if="col === 'status'"
             :type="resource === 'bet-records' ? betStatusTagType(scope.row) : (Number(scope.row.status) === 1 ? 'success' : 'info')"
             >{{ resource === 'bet-records' ? betStatusLabel(scope.row) : (Number(scope.row.status) === 1 ? "启用" : "停用") }}</el-tag
           ><el-tag v-else-if="col === 'win_status'" :type="winStatusTagType(scope.row)">{{ winStatusLabel(scope.row) }}</el-tag
@@ -813,9 +868,11 @@ onBeforeUnmount(() => {
       v-model:current-page="query.page"
       v-model:page-size="query.page_size"
       :total="total"
-      layout="total, prev, pager, next"
+      :page-sizes="[5, 10, 20, 50, 100]"
+      layout="total, sizes, prev, pager, next"
       style="margin-top: 18px; justify-content: flex-end"
-      @change="load"
+      @size-change="query.page = 1; load()"
+      @current-change="load"
     /><el-drawer
       v-model="auditDetailVisible"
       title="审计日志详情"
@@ -1031,6 +1088,11 @@ onBeforeUnmount(() => {
 .domain-form-item :deep(.el-form-item__content) {
   min-width: 0;
 }
+.bet-records-page-card {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
 .lottery-checkboxes {
   display: flex;
   width: 100%;
@@ -1069,4 +1131,38 @@ onBeforeUnmount(() => {
 .audit-request-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 18px; margin-top: 18px; padding: 14px; border: 1px solid #e5e7eb; border-radius: 5px; background: #fafafa; }
 .audit-request-grid span { display: flex; flex-direction: column; gap: 4px; word-break: break-word; }
 .audit-request-grid b { color: #64748b; font-size: 12px; font-weight: 500; }
+.toolbar-filter-group,
+.toolbar-alert-group,
+.toolbar-action-group { min-width: 0; }
+.toolbar-filter-group { display: flex; flex-direction: column; gap: 7px; flex: 1 1 auto; }
+.toolbar-filter-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; min-width: 0; }
+.toolbar-action-group { display: flex; flex-direction: column; align-items: flex-end; gap: 7px; flex: 0 0 auto; }
+.toolbar-action-buttons { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.toolbar-action-buttons :deep(.el-button) { margin: 0; }
+.toolbar-group-title { color: #64748b; font-size: 12px; font-weight: 700; letter-spacing: .02em; line-height: 1; }
+.bet-records-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "filters actions" "alerts alerts"; align-items: end; gap: 14px 18px; justify-content: initial; }
+.bet-records-toolbar .toolbar-filter-group { grid-area: filters; }
+.bet-records-toolbar .toolbar-alert-group { grid-area: alerts; }
+.bet-records-toolbar .toolbar-action-group { grid-area: actions; }
+.bet-records-toolbar .toolbar-alert-group { min-width: 0; }
+.bet-alert-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px; padding: 11px 13px; border: 1px solid #e5eaf2; border-radius: 8px; background: #f8fafc; }
+.bet-alert-controls :deep(.el-form-item) { margin: 0; }
+.bet-alert-controls :deep(.el-form-item__label) { color: #334155; font-weight: 600; }
+.bet-alert-controls :deep(.el-form-item__content) { min-width: 0; }
+.bet-alert-controls :deep(.el-button) { margin-left: 2px; }
+.bet-records-toolbar .toolbar-filter-controls :deep(.el-input),
+.bet-records-toolbar .toolbar-filter-controls :deep(.el-select) { max-width: 100%; }
+@media (max-width: 1280px) {
+  .bet-records-toolbar { grid-template-columns: 1fr; grid-template-areas: "filters" "alerts" "actions"; }
+  .bet-records-toolbar .toolbar-action-group { align-items: flex-start; }
+  .bet-records-toolbar .toolbar-action-buttons { justify-content: flex-start; }
+}
+.bet-number-simulation { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 18px; margin: 0 0 12px; padding: 10px 14px; border: 1px solid #f4c78b; border-radius: 6px; background: #fff8eb; color: #7c4a03; font-size: 13px; }
+.bet-number-simulation strong { color: #92400e; }
+.bet-id-cell { display: inline-flex; align-items: center; gap: 6px; }
+.bet-alert-icon { color: #dc2626; font-size: 16px; font-weight: 700; }
+:deep(.bet-alert-row > td) { background: #fff7ed !important; }
+:deep(.bet-alert-bet_amount > td) { background: #fff7ed !important; }
+:deep(.bet-alert-potential_win > td) { background: #fff1f2 !important; }
+:deep(.bet-alert-danger > td) { background: #ffe4e6 !important; }
 </style>

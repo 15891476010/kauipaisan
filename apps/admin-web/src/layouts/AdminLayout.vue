@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watchEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Grid, User, Connection, Lock, Menu as MenuIcon, Document, Setting, Fold, Expand, Tickets, List } from '@element-plus/icons-vue'
+import { Grid, User, Connection, Lock, Menu as MenuIcon, Document, Setting, Fold, Expand, Tickets, List, Monitor } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { getBranding, heartbeat } from '../api/admin'
 
@@ -15,6 +15,7 @@ const menuItems = [
   { path: '/agent-center', title: '代理中心', icon: Connection },
   { path: '/site-users', title: '站点用户', icon: User },
   { path: '/bet-records', title: '下单记录', icon: List },
+  { path: '/robots', title: '机器人列表', icon: Monitor },
   { path: '/lotteries', title: '彩票列表', icon: Tickets },
   { path: '/admins', title: '管理员', icon: User },
   { path: '/roles', title: '角色权限', icon: Lock },

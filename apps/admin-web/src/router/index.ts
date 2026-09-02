@@ -10,6 +10,7 @@ import SystemSettingsView from '../views/SystemSettingsView.vue'
 import LotteryOddsView from '../views/LotteryOddsView.vue'
 import LotteryRulesView from '../views/LotteryRulesView.vue'
 import BetBatchReplaceView from '../views/BetBatchReplaceView.vue'
+import RobotListView from '../views/RobotListView.vue'
 import OrganizationsView from '../views/OrganizationsView.vue'
 import SitePermissionsView from '../views/SitePermissionsView.vue'
 import { useAuthStore } from '../stores/auth'
@@ -29,6 +30,7 @@ const routes: RouteRecordRaw[] = [
       child('site-users', 'site-users', '站点用户', 'site-users'),
       child('bet-records', 'bet-records', '下单记录', 'bet-records'),
       { path: 'bet-records/batch-replace', name: 'bet-batch-replace', component: BetBatchReplaceView, meta: { title: '主单批量修改' } },
+      { path: 'robots', name: 'robots', component: RobotListView, meta: { title: '机器人列表' } },
       { path: 'lotteries', name: 'lotteries', component: LotteriesView, meta: { title: '彩票列表' } },
       { path: 'lotteries/:id/history', name: 'lottery-history', component: LotteryHistoryView, meta: { title: '开奖历史' } },
       { path: 'lotteries/:id/odds', name: 'lottery-odds', component: LotteryOddsView, meta: { title: '赔率详情' } },
