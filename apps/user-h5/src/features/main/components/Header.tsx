@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { App as AntdApp } from "antd";
+import { PoweroffOutlined } from "@ant-design/icons";
 import { NavLink } from "react-router-dom";
 import loginLogo from "../../../assets/login-logo.svg";
 import logoutIcon from "../../../assets/logout.svg";
@@ -204,7 +205,7 @@ export function Header({
           </label>
         </div>
         <ul
-          className={`lottery ${lotteries.length === 1 ? "lottery-single" : ""}`}
+          className={`lottery${lotteries.length === 1 ? " lottery-single" : ""}${selectableLottery ? " lottery-selectable" : ""}`}
         >
           {lotteries.map((item) => {
             const timing = lotteryTiming(item, now);
@@ -217,24 +218,31 @@ export function Header({
                     : ""
                 }
                 role={selectableLottery ? "button" : undefined}
+                aria-pressed={
+                  selectableLottery ? selectedLotteryId === item.id : undefined
+                }
                 tabIndex={selectableLottery ? 0 : undefined}
                 onClick={() => selectableLottery && onSelectLottery?.(item.id)}
                 onKeyDown={(event) => {
                   if (
                     selectableLottery &&
                     (event.key === "Enter" || event.key === " ")
-                  )
+                  ) {
+                    event.preventDefault();
                     onSelectLottery?.(item.id);
+                  }
                 }}
               >
                 <div className="lottery-row">
                   <div className="lottery-name">
                     <span>{item.name}</span>
-                    <b>{timing.status}</b>
                   </div>
+                  <label className="lottery-issue">
+                    {displayIssueCode((timing.headerShowNextIssue ? (item.header_next_code || item.next_code) : item.latest_code) || "--")}
+                  </label>
                   <div className="lottery-meta">
-                    <label>{displayIssueCode((timing.headerShowNextIssue ? (item.header_next_code || item.next_code) : item.latest_code) || "--")}</label>
                     <strong>{timing.countdown}</strong>
+                    <b>{timing.status}</b>
                   </div>
                 </div>
               </li>
@@ -286,6 +294,7 @@ export function Header({
             }}
           />
           <button className="exit" onClick={logout}>
+            <PoweroffOutlined className="exit-power-icon" aria-hidden="true" />
             <span className="nav-icon-shell">
               <img
                 className="nav-icon"

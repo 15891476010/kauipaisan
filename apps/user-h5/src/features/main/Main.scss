@@ -4453,8 +4453,10 @@ body {
 }
 .bill-page .business-row b,
 .bill-page .bill-total b {
-  font: inherit;
-  font-weight: 700;
+  color: #000;
+  font-size: 1.6rem;
+  line-height: inherit;
+  font-weight: 400;
 }
 
 /* Reference H5 query/list layouts.  Desktop keeps the dense table; phones use

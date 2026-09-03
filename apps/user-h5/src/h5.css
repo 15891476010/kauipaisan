@@ -2598,6 +2598,39 @@ table { min-width: 620px; }
   border-radius: 0 0 0 2vw !important;
 }
 
+.site-navigation .exit > .exit-power-icon {
+  display: none;
+}
+
+@media (max-width: 599px) {
+  .site-navigation .exit::before {
+    content: none !important;
+    display: none !important;
+  }
+
+  .site-navigation .exit > em {
+    display: none !important;
+  }
+
+  .site-navigation .exit > .exit-power-icon {
+    display: inline-flex !important;
+    width: 5.4vw !important;
+    height: 5.4vw !important;
+    align-items: center !important;
+    justify-content: center !important;
+    color: #fff !important;
+    font-size: 5.4vw !important;
+    line-height: 1 !important;
+  }
+
+  .site-navigation .exit > .exit-power-icon > svg {
+    display: block !important;
+    width: 100% !important;
+    height: 100% !important;
+    fill: currentColor !important;
+  }
+}
+
 .nav-arrow {
   grid-column: 7 !important;
   grid-row: 1 !important;
@@ -12625,9 +12658,11 @@ body,
   display: flex !important;
   width: 100vw !important;
   height: 100vh !important;
+  height: 100dvh !important;
+  max-height: 100dvh !important;
   flex-direction: column !important;
   align-items: center !important;
-  overflow-y: auto !important;
+  overflow: hidden !important;
   background: #fff !important;
   color: #000 !important;
   font-size: 2rem !important;
@@ -12724,7 +12759,10 @@ body,
   flex-direction: column !important;
   align-items: center !important;
   overflow-y: auto !important;
-  padding: 1rem 0 !important;
+  padding: 1rem 0 calc(1rem + env(safe-area-inset-bottom, 0px)) !important;
+  scroll-padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px)) !important;
+  overscroll-behavior: contain !important;
+  -webkit-overflow-scrolling: touch;
   background: #fff !important;
 }
 .number-paper {
@@ -13816,6 +13854,39 @@ body,
     transform: none !important;
   }
 
+  #root .entry > .options > .option-card .ant-switch-inner-checked,
+  #root .entry > .options > .option-card .ant-switch-inner-unchecked,
+  #root .entry > .options > .option-card-lottery .ant-switch-inner-checked,
+  #root .entry > .options > .option-card-lottery .ant-switch-inner-unchecked {
+    position: absolute !important;
+    top: 0 !important;
+    display: block !important;
+    width: auto !important;
+    height: 100% !important;
+    margin: 0 !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  #root .entry > .options > .option-card .ant-switch-inner-checked,
+  #root .entry > .options > .option-card-lottery .ant-switch-inner-checked {
+    right: auto !important;
+    left: .6rem !important;
+  }
+
+  #root .entry > .options > .option-card .ant-switch-inner-unchecked,
+  #root .entry > .options > .option-card-lottery .ant-switch-inner-unchecked {
+    right: .6rem !important;
+    left: auto !important;
+  }
+
+  #root .entry > .options > .option-card .ant-switch:not(.ant-switch-checked) .ant-switch-inner-checked,
+  #root .entry > .options > .option-card .ant-switch.ant-switch-checked .ant-switch-inner-unchecked,
+  #root .entry > .options > .option-card-lottery .ant-switch:not(.ant-switch-checked) .ant-switch-inner-checked,
+  #root .entry > .options > .option-card-lottery .ant-switch.ant-switch-checked .ant-switch-inner-unchecked {
+    display: none !important;
+  }
+
   #root .body:not(.full-page) > aside > .side-total {
     position: static !important;
     display: block !important;
@@ -14188,7 +14259,7 @@ body,
     color: #fff !important;
     font-size: 1.6rem !important;
     line-height: 2.6rem !important;
-    vertical-align: middle !important;
+    vertical-align: baseline !important;
   }
 
   .body:not(.full-page) > aside > .side-record-list > .side-record-item > .side-record-text {
@@ -14277,6 +14348,10 @@ body,
   .body:not(.full-page) > aside > .side-record-list > .side-record-item.refunded,
   .body:not(.full-page) > aside > .side-record-list > .side-record-item.refunded:nth-of-type(even) {
     background: #ffe0e0 !important;
+  }
+
+  .body:not(.full-page) > aside > .side-record-list > .side-record-item.refunded > time .side-record-board {
+    color: #000 !important;
   }
 
   .body:not(.full-page) > aside > .side-record-list > .side-record-item.refunded > footer > strong {
@@ -14440,4 +14515,257 @@ body,
   border: 0 !important;
   background: darkblue !important;
   color: #fff !important;
+}
+/* Prize-number pages use the reference header as an actual lottery selector. */
+.lottery.lottery-selectable {
+  border: .1rem solid darkblue !important;
+  border-right: 0 !important;
+  background: #fff !important;
+}
+
+.lottery.lottery-selectable > li {
+  cursor: pointer !important;
+  background: transparent !important;
+  color: #000 !important;
+  box-shadow: none !important;
+}
+
+.lottery.lottery-selectable > li + li {
+  border-top-color: transparent !important;
+}
+
+.lottery.lottery-selectable > li:not(.selected):hover {
+  background: transparent !important;
+}
+
+.lottery.lottery-selectable > li:not(.selected) .lottery-name span,
+.lottery.lottery-selectable > li:not(.selected) .lottery-meta strong {
+  color: #000 !important;
+}
+
+.lottery.lottery-selectable > li:not(.selected) .lottery-meta label {
+  color: darkblue !important;
+}
+
+.lottery.lottery-selectable > li:not(.selected) .lottery-name b {
+  color: #c36b00 !important;
+}
+
+.lottery.lottery-selectable > li.selected {
+  z-index: 1 !important;
+  background: darkblue !important;
+  color: #fff !important;
+  box-shadow: none !important;
+}
+
+.lottery.lottery-selectable > li.selected .lottery-name span,
+.lottery.lottery-selectable > li.selected .lottery-name b,
+.lottery.lottery-selectable > li.selected .lottery-meta label,
+.lottery.lottery-selectable > li.selected .lottery-meta strong {
+  color: #fff !important;
+}
+
+/* Mobile lottery rows use the reference component's real layout rather than
+ * a screenshot-derived grid. The root is 2vw, so 7rem/2rem/10rem remain
+ * proportional across actual phone widths and browser font metrics. */
+@media (max-width: 599px) {
+  .lottery-row {
+    position: static !important;
+    display: flex !important;
+    gap: 0 !important;
+    width: 100% !important;
+    height: 7rem !important;
+    margin: 0 !important;
+    padding: 0 2rem !important;
+    box-sizing: border-box !important;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+  }
+
+  .lottery-row > .lottery-name {
+    display: block !important;
+    width: 7rem !important;
+    height: auto !important;
+    margin: 0 !important;
+    flex: 0 1 auto !important;
+  }
+
+  .lottery-row > .lottery-name > span,
+  .lottery-row > .lottery-issue,
+  .lottery-row > .lottery-meta > strong,
+  .lottery-row > .lottery-meta > b {
+    font-size: 1.8rem !important;
+    line-height: normal !important;
+  }
+
+  .lottery-row > .lottery-issue {
+    display: block !important;
+    width: auto !important;
+    height: auto !important;
+    margin: 0 .4rem !important;
+    padding: 0 !important;
+    flex: 0 1 auto !important;
+    align-self: auto !important;
+    color: darkblue !important;
+    font-weight: 700 !important;
+    white-space: normal !important;
+  }
+
+  .lottery-row > .lottery-meta {
+    display: inline-flex !important;
+    width: 10rem !important;
+    min-width: 0 !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    flex: 0 1 auto !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: normal !important;
+  }
+
+  .lottery-row > .lottery-meta > strong,
+  .lottery-row > .lottery-meta > b {
+    position: static !important;
+    display: block !important;
+    width: auto !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    align-self: auto !important;
+    white-space: normal !important;
+  }
+
+  .lottery-row > .lottery-meta > strong {
+    color: #000 !important;
+    font-weight: 700 !important;
+  }
+
+  .lottery-row > .lottery-meta > b {
+    color: #c36b00 !important;
+    font-weight: 700 !important;
+  }
+
+  .lottery.lottery-selectable > li:not(.selected) .lottery-issue {
+    color: darkblue !important;
+  }
+
+  .lottery.lottery-selectable > li:not(.selected) .lottery-meta > strong {
+    color: #000 !important;
+  }
+
+  .lottery.lottery-selectable > li:not(.selected) .lottery-meta > b {
+    color: #c36b00 !important;
+  }
+
+  .lottery.lottery-selectable > li.selected .lottery-issue,
+  .lottery.lottery-selectable > li.selected .lottery-meta > strong,
+  .lottery.lottery-selectable > li.selected .lottery-meta > b {
+    color: #fff !important;
+  }
+}
+
+/* Keep the moved issue/status nodes aligned on wider pages as well. */
+@media (min-width: 600px) {
+  .lottery-row > .lottery-issue {
+    grid-column: 2 !important;
+    width: auto !important;
+    margin: 0 !important;
+    align-self: center !important;
+    color: darkblue !important;
+    font-size: 3.6vw !important;
+    font-weight: 700 !important;
+    line-height: normal !important;
+    white-space: nowrap !important;
+  }
+
+  .lottery-row > .lottery-meta > b {
+    position: absolute !important;
+    top: 8.78vw !important;
+    left: 50.6vw !important;
+    display: block !important;
+    width: auto !important;
+    margin: 0 !important;
+    color: #c36b00 !important;
+    font-size: 3.6vw !important;
+    font-weight: 700 !important;
+    line-height: normal !important;
+    white-space: nowrap !important;
+  }
+
+  .lottery.lottery-selectable > li:not(.selected) .lottery-issue {
+    color: darkblue !important;
+  }
+
+  .lottery.lottery-selectable > li:not(.selected) .lottery-meta > b {
+    color: #c36b00 !important;
+  }
+
+  .lottery.lottery-selectable > li.selected .lottery-issue,
+  .lottery.lottery-selectable > li.selected .lottery-meta > b {
+    color: #fff !important;
+  }
+}
+
+/* Mobile stop/drop table follows the reference rem typography and lets each
+ * row grow with its three-line values instead of compressing the line box. */
+@media (max-width: 599px) {
+  .stop-head,
+  .stop-row {
+    grid-template-columns: 29% 26% 26% 19% !important;
+    height: auto !important;
+    align-items: stretch !important;
+  }
+
+  .stop-head {
+    min-height: 0 !important;
+    font-size: 1.6rem !important;
+    line-height: 1.9rem !important;
+  }
+
+  .stop-row {
+    min-height: 0 !important;
+    font-size: 1.6rem !important;
+    line-height: 1.9rem !important;
+  }
+
+  .stop-head > span,
+  .stop-row > span {
+    height: auto !important;
+    min-height: 100% !important;
+    overflow: hidden !important;
+  }
+
+  .stop-head > span {
+    padding: .75rem .15rem !important;
+  }
+
+  .stop-row > span {
+    padding: .5rem .25rem !important;
+  }
+
+  .stop-head > span > b,
+  .stop-row > span > b,
+  .stop-row > span > em {
+    font-size: 1.6rem !important;
+    line-height: 1.9rem !important;
+  }
+
+  .stop-head > span > b,
+  .stop-row > span > b {
+    white-space: nowrap !important;
+  }
+
+  .stop-row > span:first-child > em {
+    white-space: normal !important;
+    overflow-wrap: anywhere !important;
+  }
+
+  .stop-row > span:last-child {
+    font-size: 1.6rem !important;
+    line-height: 1.9rem !important;
+    white-space: normal !important;
+    overflow-wrap: anywhere !important;
+  }
 }

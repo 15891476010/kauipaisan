@@ -1059,12 +1059,21 @@
 - [x] 完成 lint、生产构建、线上资源检查并刷新原页面。
 - 验证：user-h5 lint 0 errors（保留既有 15 条 warnings），最终生产构建发布 `index-BYDcwZRi.css` / `index-CqxjOJWG.js`；线上 CSS 包含 `4rem/3.6rem/1rem` 底栏几何及奇偶卡片底色，线上 JS 包含文件图标结构，未执行详情、号码或退单业务操作。
 
-### 本轮：首页与“查看更多”共用号码页面（进行中）
+### 本轮：首页与“查看更多”共用号码页面（已完成）
 
 - [x] 追踪首页“号”和“查看更多”卡片“号”的事件链与数据请求。
 - [x] 首页“号”改为打开 `MorePanel` 的同一号码页面，并携带当前注单。
 - [x] 删除首页旧的独立号码弹窗、复制和打印实现，只保留下注详情弹窗。
-- [ ] 完成 lint、生产构建、线上行为检查并刷新原页面。
+- [x] 完成 lint、生产构建、线上行为检查并刷新原页面。
+- 验证：user-h5 lint 0 errors（保留既有 15 条 warnings），生产构建通过；当前线上资源 `index-CKQEjN3T.css` / `index-DzwqB0Pp.js` 已包含统一入口。原页实测首页“号”进入 `#/rtl`，`.more-number-page` 为 1、旧 `.record-number-modal` 为 0，工具栏含“上页 / 下页 / 下载 / 复制号码”，验证后已返回 `#/kb`。
+
+### 本轮：按参考站源码恢复手机开奖时间 flex 布局（进行中）
+
+- [x] 在 430×932 视口读取参考站真实 DOM、计算样式和打包后的 styled-components 源码。
+- [x] 确认参考站根单位为 `calc(100vw / 50)`，开奖行使用横向 flex，时间/状态使用纵向 flex。
+- [x] 将当前截图近似的 grid/absolute 结构改为同一套 `7rem / 2rem / 10rem` flex 关系。
+- [x] 完成 lint、构建、双站计算样式对比和原页面刷新。
+- 验证：430×932 下当前站与参考站均为 `7rem` 横向 flex、`10rem` 纵向时间列，时间列 `x=326.8125 / width=86`，状态 `y≈88.67`；lint 0 errors（保留既有 15 条 warnings），构建发布 `index-xm4J6F-7.css` / `index-Dw6j_s_m.js`。
 # 本轮：修复手机工具栏虚线高度归零（已完成）
 
 - [x] 确认 `height:auto` 父级导致分隔线百分比高度无法解析。
@@ -1113,3 +1122,15 @@
 - [x] 前端重建物理行时补齐合并批次、合并文本和末行状态，前 7 行不再误标为“新”。
 - [x] 成功行统一为参考站 `#a7e1ce`，福标签为 `#7a2bc3`，“合/详”分别使用 `#037bab/#036564`。
 - [x] lint、生产构建和线上资源校验通过；发布 `index-CN1c61sJ.css` / `index-CTYfrBYS.js`。
+# 本轮：对齐手机记录标题中的盘名和时间（已完成）
+
+- [x] 对比参考站与当前站标题行 DOM 和计算样式。
+- [x] 将盘名从 `vertical-align: middle` 恢复为参考站的基线对齐。
+- [x] 完成 lint、生产构建，并刷新原页面核对线上计算样式。
+- 验证：盘名为 `vertical-align: baseline`，字体/行高继续保持参考站的 `1.6rem/2.6rem`；lint 0 errors（保留既有 15 条 warnings），发布 `index-CBNVQHWW.css` / `index-CXqQq4uk.js`。
+# 本轮：修复真机号码页底部遮挡与退出图标缺失（已完成）
+
+- [x] 号码页从固定 `100vh` 改为带兼容回退的 `100dvh`，仅保留内容区滚动并增加底部安全区。
+- [x] 将依赖系统字体的 `⏻` 字符替换为参考站同类 SVG 电源图标。
+- [x] 隐藏退出按钮旧文字节点，确认 SVG 在 430px 页面中水平、垂直居中。
+- [x] lint 0 errors（保留既有 15 条 warnings），生产构建发布 `index-C8vQ3l6R.css` / `index-BOHNKXwI.js`，原页面已刷新。
