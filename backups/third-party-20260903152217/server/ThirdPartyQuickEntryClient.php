@@ -1,0 +1,175 @@
+<?php
+declare(strict_types=1);
+
+namespace app\service;
+
+use think\facade\Cache;
+
+/**
+ * Isolated client for the reference quick-entry API. It does not parse or
+ * alter local betting rules; callers may use its decoded result alongside the
+ * existing QuickEntryParser.
+ */
+final class ThirdPartyQuickEntryClient
+{
+    private const CACHE_PREFIX = 'quick-entry:third-party:';
+
+    public function __construct(private readonly array $config, private readonly ?ThirdPartyCaptchaRecognizer $captcha = null)
+    {
+        if (trim((string)($config['base_url'] ?? '')) === '') throw new \InvalidArgumentException('三方平台 Base URL 未配置');
+    }
+
+    /** @return array<string,mixed> */
+    public function recognize(string $text, int $dlt): array
+    {
+        $accounts = array_values(array_filter((array)($this->config['accounts'] ?? []), static fn($a): bool => is_array($a) && trim((string)($a['username'] ?? '')) !== '' && (string)($a['password'] ?? '') !== ''));
+        if ($accounts === []) throw new \RuntimeException('三方账号池为空');
+        shuffle($accounts);
+        $lastError = null;
+        while (true) {
+            $earliest = null;
+            foreach ($accounts as $account) {
+                $accountKey = $this->accountKey($account);
+                $token = $this->cachedToken($accountKey);
+                if ($token === null) {
+                    try { $token = $this->login($account, $accountKey); }
+                    catch (\Throwable $e) { $lastError = $e; continue; }
+                }
+                $wait = $this->throttleWait($accountKey, $account);
+                if ($wait > 0) {
+                    $earliest = $earliest === null ? $wait : min($earliest, $wait);
+                    continue;
+                }
+                try {
+                    $result = $this->recognizeWithToken($token, $text, $dlt);
+                    if (ThirdPartyQuickEntryUtils::tokenRejected($result)) {
+                        $this->forgetToken($accountKey);
+                        $token = $this->login($account, $accountKey);
+                        $result = $this->recognizeWithToken($token, $text, $dlt);
+                    }
+                    // A provider-side frequency limit is transport capacity,
+                    // not a betting-text error. Rotate to another account;
+                    // if every account is limited, the caller handles this as
+                    // an unavailable provider and keeps the message hidden.
+                    if (ThirdPartyQuickEntryUtils::rateLimited($result)) {
+                        $lastError = new \RuntimeException('三方识别请求频率受限');
+                        continue;
+                    }
+                    $this->markCall($accountKey, $account);
+                    return $result;
+                } catch (\Throwable $e) { $lastError = $e; }
+            }
+            if ($earliest === null) throw $lastError ?? new \RuntimeException('三方识别调用失败');
+            usleep((int)min(3000000, max(1000, $earliest * 1000000)));
+        }
+    }
+
+    /** @return string */
+    private function login(array $account, string $accountKey): string
+    {
+        $cookieJar = $this->cookieJar($accountKey);
+        $captchaUrl = $this->url((string)($this->config['captcha_endpoint'] ?? '/vc/qc.php'));
+        $captchaUrl .= (str_contains($captchaUrl, '?') ? '&' : '?').'time='.(int)floor(microtime(true) * 1000);
+        $captchaResponse = $this->request('GET', $captchaUrl, null, [], $cookieJar);
+        if ($captchaResponse['status'] < 200 || $captchaResponse['status'] >= 300 || $captchaResponse['body'] === '') throw new \RuntimeException('获取三方验证码失败');
+        $recognizer = $this->captcha ?? new ThirdPartyCaptchaRecognizer();
+        $verifyCode = $recognizer->recognize($captchaResponse['body'], $this->config);
+        $payload = ['a'=>'mb.lg','m'=>'ml','an'=>(string)$account['username'],'pw'=>(string)$account['password'],'dt'=>1,'vc'=>$verifyCode];
+        $response = $this->postEnvelope((string)($this->config['login_endpoint'] ?? '/mb/'), $payload, $cookieJar);
+        if (ThirdPartyQuickEntryUtils::responseCode($response) !== 200) throw new \RuntimeException((string)($response['message'] ?? '三方登录失败'));
+        $token = trim((string)($response['data']['ak'] ?? $response['data']['token'] ?? $response['ak'] ?? $response['token'] ?? ''));
+        if ($token === '') throw new \RuntimeException('三方登录响应缺少 ak');
+        Cache::set(self::CACHE_PREFIX.'token:'.$accountKey, ['ak'=>$token,'expires_at'=>time() + (int)$this->config['token_ttl_seconds']], (int)$this->config['token_ttl_seconds']);
+        return $token;
+    }
+
+    /** @return array<string,mixed> */
+    private function recognizeWithToken(string $token, string $text, int $dlt): array
+    {
+        $bt = ThirdPartyQuickEntryUtils::encodeBetText($text);
+        return $this->postEnvelope((string)($this->config['recognize_endpoint'] ?? '/mb/'), ['a'=>'mb.tz','m'=>'dct','ak'=>$token,'dlt'=>$dlt,'bt'=>$bt]);
+    }
+
+    /** @return array<string,mixed> */
+    private function postEnvelope(string $endpoint, array $payload, ?string $cookieJar = null): array
+    {
+        $body = ThirdPartyQuickEntryUtils::encodeEnvelope($payload);
+        $response = $this->request('POST', $this->url($endpoint), $body, ['Content-Type: application/x-www-form-urlencoded'], $cookieJar);
+        if ($response['status'] < 200 || $response['status'] >= 300) {
+            throw new \RuntimeException('三方接口 HTTP 状态异常: '.(int)$response['status']);
+        }
+        return ThirdPartyQuickEntryUtils::decodeEnvelope($response['body']);
+    }
+
+    /** @return array{status:int,body:string} */
+    private function request(string $method, string $url, ?string $body, array $headers, ?string $cookieJar = null): array
+    {
+        $ch = curl_init($url);
+        if ($ch === false) throw new \RuntimeException('无法初始化三方请求');
+        $options = [CURLOPT_RETURNTRANSFER=>true, CURLOPT_FOLLOWLOCATION=>true, CURLOPT_TIMEOUT=>(int)$this->config['request_timeout'], CURLOPT_CONNECTTIMEOUT=>5, CURLOPT_HTTPHEADER=>$headers];
+        if ($method === 'POST') { $options[CURLOPT_POST] = true; $options[CURLOPT_POSTFIELDS] = $body ?? ''; }
+        if ($cookieJar) { $options[CURLOPT_COOKIEJAR] = $cookieJar; $options[CURLOPT_COOKIEFILE] = $cookieJar; }
+        curl_setopt_array($ch, $options); $responseBody = curl_exec($ch); $status = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE); $error = curl_error($ch); curl_close($ch);
+        if ($responseBody === false) throw new \RuntimeException('三方请求失败: '.$error);
+        return ['status'=>$status,'body'=>(string)$responseBody];
+    }
+
+    private function url(string $endpoint): string
+    {
+        if (preg_match('#^https?://#i', $endpoint)) return $endpoint;
+        return rtrim((string)$this->config['base_url'], '/').'/'.ltrim($endpoint, '/');
+    }
+
+    private function accountKey(array $account): string
+    {
+        return hash('sha256', (string)$this->config['base_url'].'|'.(string)$account['username'].'|'.(string)$account['password']);
+    }
+    private function cachedToken(string $accountKey): ?string { $value=Cache::get(self::CACHE_PREFIX.'token:'.$accountKey); return is_array($value) && (int)($value['expires_at']??0)>time() ? (string)$value['ak'] : null; }
+    private function forgetToken(string $accountKey): void { Cache::delete(self::CACHE_PREFIX.'token:'.$accountKey); }
+    private function cookieJar(string $accountKey): string { return rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.'quick-entry-'.$accountKey.'.cookie'; }
+
+    private function throttlePolicy(array $account): array
+    {
+        $window = $account['rate_window_seconds'] ?? ($this->config['rate_window_seconds'] ?? 0);
+        $limit = $account['rate_limit_calls'] ?? ($this->config['freeze_after_calls'] ?? 3);
+        $freeze = $account['freeze_seconds'] ?? ($this->config['freeze_seconds'] ?? 3);
+        return [
+            'window' => max(0, min(86400, (int)$window)),
+            'limit' => max(1, min(1000, (int)$limit)),
+            'freeze' => max(0, min(3600, (int)$freeze)),
+        ];
+    }
+
+    private function throttleWait(string $accountKey, array $account): float
+    {
+        $policy = $this->throttlePolicy($account);
+        $key = self::CACHE_PREFIX.'throttle:'.hash('sha256', $accountKey);
+        $state = Cache::get($key);
+        if (!is_array($state)) return 0.0;
+        $now = microtime(true);
+        $frozen = (float)($state['frozen_until'] ?? 0);
+        if ($frozen > $now) return $frozen - $now;
+        $timestamps = array_values(array_filter((array)($state['timestamps'] ?? []), static fn($time): bool => is_numeric($time) && $policy['window'] > 0 && (float)$time >= $now - $policy['window']));
+        $count = $policy['window'] > 0 ? count($timestamps) : (int)($state['count'] ?? 0);
+        if ($count >= $policy['limit']) {
+            $until = $now + $policy['freeze'];
+            Cache::set($key, ['count'=>0, 'timestamps'=>[], 'frozen_until'=>$until], max(60, $policy['window'] + $policy['freeze'] + 10));
+            return $policy['freeze'];
+        }
+        return 0.0;
+    }
+
+    private function markCall(string $accountKey, array $account): void
+    {
+        $policy = $this->throttlePolicy($account);
+        $key = self::CACHE_PREFIX.'throttle:'.hash('sha256', $accountKey);
+        $state = Cache::get($key);
+        $now = microtime(true);
+        $timestamps = array_values(array_filter((array)(is_array($state) ? ($state['timestamps'] ?? []) : []), static fn($time): bool => is_numeric($time) && $policy['window'] > 0 && (float)$time >= $now - $policy['window']));
+        $count = $policy['window'] > 0 ? count($timestamps) + 1 : (int)(is_array($state) ? ($state['count'] ?? 0) : 0) + 1;
+        $timestamps[] = $now;
+        $freeze = $count >= $policy['limit'] ? $now + $policy['freeze'] : 0.0;
+        if ($freeze > 0) { $count = 0; $timestamps = []; }
+        Cache::set($key, ['count'=>$count, 'timestamps'=>$timestamps, 'frozen_until'=>$freeze], max(60, $policy['window'] + $policy['freeze'] + 10));
+    }
+}

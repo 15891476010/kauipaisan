@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
 import { App as AntdApp, Input, Modal, Switch, Tooltip } from "antd";
 import {
+  CheckCircleFilled,
+  InfoCircleFilled,
   QuestionCircleOutlined,
   RestOutlined,
 } from "@ant-design/icons";
@@ -28,9 +31,11 @@ import { StopDropPage } from "./StopDropPage";
 export function QuickEntryPage({
   lotteries,
   selectedLottery,
+  onResultsVisibilityChange,
 }: {
   lotteries: Lottery[];
   selectedLottery?: Lottery;
+  onResultsVisibilityChange?: (hasResults: boolean) => void;
 }) {
   const { message, modal } = AntdApp.useApp();
   const [text, setText] = useState("");
@@ -67,9 +72,36 @@ export function QuickEntryPage({
   });
   const [resultHeight, setResultHeight] = useState(0);
   const [generating, setGenerating] = useState(false);
+  const [betNotices, setBetNotices] = useState<Array<{
+    id: number;
+    type: "info" | "success";
+    text: string;
+  }>>([]);
+  const betNoticeId = useRef(0);
+  const betNoticeTimers = useRef<number[]>([]);
   const previewRequestId = useRef(0);
   const quickSettingsLoaded = useRef(false);
   const defaultLotteryFallbackNotice = useRef("");
+  useEffect(() => {
+    onResultsVisibilityChange?.(generatedLines.length > 0);
+  }, [generatedLines.length, onResultsVisibilityChange]);
+  useEffect(
+    () => () => onResultsVisibilityChange?.(false),
+    [onResultsVisibilityChange],
+  );
+  useEffect(
+    () => () => betNoticeTimers.current.forEach((timer) => window.clearTimeout(timer)),
+    [],
+  );
+  const showBetNotice = (type: "info" | "success", noticeText: string) => {
+    const id = ++betNoticeId.current;
+    setBetNotices((current) => [...current, { id, type, text: noticeText }]);
+    const timer = window.setTimeout(() => {
+      setBetNotices((current) => current.filter((notice) => notice.id !== id));
+      betNoticeTimers.current = betNoticeTimers.current.filter((item) => item !== timer);
+    }, 3_000);
+    betNoticeTimers.current.push(timer);
+  };
   useEffect(() => {
     if (generatedLines.length === 0) {
       setResultHeight(0);
@@ -289,14 +321,23 @@ export function QuickEntryPage({
       return false;
     }
     try {
+      showBetNotice("info", "下注中...");
       const response = await placeQuickEntry({
         text: sourceText,
         lottery,
         board_code: boardCode,
         confirmed: true,
       });
-      if (showSuccess)
-        message.success(response.data?.message || "下注提交成功");
+      if (showSuccess) {
+        const expectedAmount = displayAmount(preview.amount);
+        const placedAmount = displayAmount(
+          response.data?.data?.amount ?? preview.amount,
+        );
+        showBetNotice(
+          "success",
+          `下注成功：应打：${expectedAmount}，实打：${placedAmount}`,
+        );
+      }
       if (options[2]) await copyTicket(sourceText, valid, options[3]);
       // A successful submission starts a fresh ticket. Keep the generated
       // result and input area in sync by clearing the editor after the ticket
@@ -363,10 +404,28 @@ export function QuickEntryPage({
     });
   };
   return (
-    <div
-      className={`entry${showMask ? " entry-locked" : ""}${generatedLines.length ? " has-results" : ""}`}
+    <>
+      {betNotices.length > 0 && createPortal(
+        <div className="reference-bet-message" role="status" aria-live="polite">
+          {betNotices.map((notice) => (
+            <div className="reference-bet-message-notice" key={notice.id}>
+              <div className="reference-bet-message-content">
+                {notice.type === "success" ? (
+                  <CheckCircleFilled className="reference-bet-message-icon reference-bet-message-icon-success" />
+                ) : (
+                  <InfoCircleFilled className="reference-bet-message-icon reference-bet-message-icon-info" />
+                )}
+                <span>{notice.text}</span>
+              </div>
+            </div>
+          ))}
+        </div>,
+        document.body,
+      )}
+      <div
+      className={`entry${showMask ? " entry-locked" : ""}${generatedLines.length ? " has-results" : ""}${tab === "快速录入" && text.length > 0 ? " has-entry-content" : ""}`}
       style={{ "--quick-result-height": `${resultHeight}px` } as CSSProperties}
-    >
+      >
       {showMask && (
         <div className="entry-lock-overlay" aria-label="当前不可下注" />
       )}
@@ -797,6 +856,7 @@ export function QuickEntryPage({
       ) : (
         <StopDropPage />
       )}
-    </div>
+      </div>
+    </>
   );
 }

@@ -1,7 +1,6 @@
 import { Fragment, memo, useLayoutEffect, useState } from "react";
 import type { QuickEntryLine } from "../api/user";
 import { Button, Modal } from "antd";
-import { InfoCircleOutlined } from "@ant-design/icons";
 import "./QuickResultTable.css";
 
 type QuickResultTableProps = {
@@ -107,6 +106,9 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
       expandedLines.push({ ...candidate, __sourceIds: [candidate.id], __detailLines: [candidate] });
     }
   } else if (physicalExpanded) {
+    const physicalBatchId = lines.find((item) => item.batch_id)?.batch_id || `physical-${lines.map((item) => item.id).join("-")}`;
+    const physicalMergedText = lines.find((item) => item.batch_merged_text)?.batch_merged_text
+      || sourcePhysical.filter((raw) => raw.trim()).join(" ").replace(/\s+/gu, " ").trim();
     sourcePhysical.forEach((raw, physicalIndex) => {
       const last = physicalIndex === sourcePhysical.length - 1;
       const semantic = lines[Math.min(physicalIndex, lines.length - 1)];
@@ -116,11 +118,19 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
         raw_text: raw,
         input_text: raw,
         __blank: raw.trim() === "",
-        status: last ? semantic.status : raw.trim() ? "new" : "new",
+        status: raw.trim() ? semantic.status : "new",
+        batch_id: semantic.batch_id || physicalBatchId,
+        batch_index: physicalIndex + 1,
+        batch_size: sourcePhysical.length,
+        batch_end: last,
+        batch_valid: semantic.batch_valid !== false,
+        batch_merged_text: last ? physicalMergedText : undefined,
         amount: last ? lines.reduce((sum, item) => sum + Number(item.amount || 0), 0).toFixed(2) : "0.00",
         count: last ? lines.reduce((sum, item) => sum + Number(item.count || 0), 0) : 0,
         code_count: last ? lines.reduce((sum, item) => sum + Number(item.code_count ?? item.count ?? 0), 0) : 0,
         stake_count: last ? lines.reduce((sum, item) => sum + Number(item.stake_count ?? item.count ?? 0), 0) : 0,
+        batch_count: last ? lines.reduce((sum, item) => sum + Number(item.code_count ?? item.count ?? 0), 0) : undefined,
+        batch_amount: last ? lines.reduce((sum, item) => sum + Number(item.amount || 0), 0).toFixed(2) : undefined,
         __sourceIds: lines.map((item) => item.id),
         __detailLines: lines,
       });
@@ -138,6 +148,9 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
       expandedLines.push(...members.map((member) => ({ ...member, __sourceIds: [member.id] })));
       continue;
     }
+    const joinedBatchId = members.find((item) => item.batch_id)?.batch_id || `joined-${members.map((item) => item.id).join("-")}`;
+    const joinedText = members.find((item) => item.batch_merged_text)?.batch_merged_text
+      || physical.filter((raw) => raw.trim()).join(" ").replace(/\s+/gu, " ").trim();
     physical.forEach((raw, physicalIndex) => {
       const last = physicalIndex === physical.length - 1;
       const semantic = members[physicalIndex] || members[0];
@@ -146,11 +159,19 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
         raw_text: raw,
         input_text: raw,
         __blank: raw.trim() === "",
-        status: last ? semantic.status : "new",
+        status: raw.trim() ? semantic.status : "new",
+        batch_id: semantic.batch_id || joinedBatchId,
+        batch_index: physicalIndex + 1,
+        batch_size: physical.length,
+        batch_end: last,
+        batch_valid: semantic.batch_valid !== false,
+        batch_merged_text: last ? joinedText : undefined,
         amount: last ? members.reduce((sum, item) => sum + Number(item.amount || 0), 0).toFixed(2) : "0.00",
         count: last ? members.reduce((sum, item) => sum + Number(item.count || 0), 0) : 0,
         code_count: last ? members.reduce((sum, item) => sum + Number(item.code_count ?? item.count ?? 0), 0) : 0,
         stake_count: last ? members.reduce((sum, item) => sum + Number(item.stake_count ?? item.count ?? 0), 0) : 0,
+        batch_count: last ? members.reduce((sum, item) => sum + Number(item.code_count ?? item.count ?? 0), 0) : undefined,
+        batch_amount: last ? members.reduce((sum, item) => sum + Number(item.amount || 0), 0).toFixed(2) : undefined,
         __sourceIds: members.map((item) => item.id),
         __detailLines: members,
       });
@@ -239,6 +260,11 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
       ? stakeCount / occurrences.length
       : 1;
     const unitAmount = stakeCount > 0 ? Number(line.amount || 0) / stakeCount : 0;
+    const counts = occurrences.reduce<Record<string, number>>((values, number) => {
+      const displayNumber = isGroup ? normalizeGroupNumber(number) : number;
+      values[displayNumber] = (values[displayNumber] || 0) + occurrenceWeight;
+      return values;
+    }, {});
     const amounts = occurrences.reduce<Record<string, number>>((values, number) => {
       const displayNumber = isGroup ? normalizeGroupNumber(number) : number;
       values[displayNumber] = (values[displayNumber] || 0) + unitAmount * occurrenceWeight;
@@ -247,7 +273,7 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
     const numbers = Array.from(new Set(occurrences.map((number) => isGroup ? normalizeGroupNumber(number) : number))).sort();
     const detectedCategory = line.category || categoryFromSource(line.input_text || line.raw_text || "");
     const categorySections = detectedCategory === "福体" ? ["体", "福"] : [detectedCategory || "福"];
-    return categorySections.map((category) => ({ line, category, title: playLabel(line), numbers, amounts }));
+    return categorySections.map((category) => ({ line, category, title: playLabel(line), numbers, amounts, counts }));
   }).sort((left, right) => {
     const categoryRank = (category: string) => category === "体" ? 0 : category === "福" ? 1 : 2;
     const playRank = (title: string) => title.includes("组三") ? 0 : title.includes("组六") ? 1 : title === "直选" ? 0 : 2;
@@ -257,7 +283,7 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
   // 12467 and 23457 are both 组三五码). Merge those sections so the detail
   // table has one 组三五码 block and one 组六五码 block, while retaining the
   // individual numbers and their amounts.
-  const detailSectionsPrepared = detailSectionsRaw.map((section) => ({ ...section, numbers: [...section.numbers], amounts: { ...section.amounts } }));
+  const detailSectionsPrepared = detailSectionsRaw.map((section) => ({ ...section, numbers: [...section.numbers], amounts: { ...section.amounts }, counts: { ...section.counts } }));
   const directSections = detailSectionsPrepared.filter((section) => section.title === "直选");
   const groupSections = detailSectionsPrepared.filter((section) => section.title === "组选");
   const isLeopard = (value: string) => {
@@ -274,20 +300,25 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
       const amount = group.amounts[number];
       if (amount == null) return;
       direct.amounts[number] = (direct.amounts[number] || 0) + amount;
+      direct.counts[number] = (direct.counts[number] || 0) + (group.counts[number] || 0);
       group.numbers = group.numbers.filter((item) => item !== number);
       delete group.amounts[number];
+      delete group.counts[number];
     });
   });
   const detailSections = detailSectionsPrepared.filter((section) => section.title !== "组选" || section.numbers.length > 0).reduce<typeof detailSectionsRaw>((merged, section) => {
     const key = `${section.category}|${section.title}`;
     const existing = merged.find((item) => `${item.category}|${item.title}` === key);
     if (!existing) {
-      merged.push({ ...section, numbers: [...section.numbers], amounts: { ...section.amounts } });
+      merged.push({ ...section, numbers: [...section.numbers], amounts: { ...section.amounts }, counts: { ...section.counts } });
       return merged;
     }
     existing.numbers = Array.from(new Set([...existing.numbers, ...section.numbers])).sort();
     Object.entries(section.amounts).forEach(([number, amount]) => {
       existing.amounts[number] = (existing.amounts[number] || 0) + amount;
+    });
+    Object.entries(section.counts).forEach(([number, count]) => {
+      existing.counts[number] = (existing.counts[number] || 0) + count;
     });
     return merged;
   }, []);
@@ -304,8 +335,23 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
       return sum + Number(line.batch_count ?? line.code_count ?? line.count ?? 0);
     }, 0);
   };
-  const detailCount = displayCount(detailLines);
-  const detailAmount = detailLines.reduce((sum, line) => sum + Number(line.batch_amount ?? line.amount ?? 0), 0);
+  const detailCategoryGroups = detailSections.reduce<Array<{
+    category: string;
+    sections: typeof detailSections;
+  }>>((groups, section) => {
+    const current = groups[groups.length - 1];
+    if (current?.category === section.category) {
+      current.sections.push(section);
+    } else {
+      groups.push({ category: section.category, sections: [section] });
+    }
+    return groups;
+  }, []);
+  const detailModalCount = displayCount(detailLines);
+  const detailModalAmount = detailLines.reduce(
+    (sum, line) => sum + Number(line.amount || 0),
+    0,
+  );
   const openDetails = (group: DisplayLine[]) => {
     const details = group[group.length - 1]?.__detailLines;
     const mismatch = group.some((item) => item.status === "failed" && item.suggested_amount);
@@ -387,6 +433,9 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
               <button type="button" className="quick-result-remove" aria-label={`删除第${line.id}条`} onClick={() => removeGroup(group)} />
               <span className="quick-result-index">{line.id}</span>
               <button type="button" className="quick-result-add" aria-label={`新增第${line.id}条`} onClick={() => addLine(line)} />
+              <strong className={`quick-result-status ${visualStatus}${visualTone ? ` ${visualTone}` : ""}`}>
+                {isBlank ? "" : isEditing ? "新" : mismatchGroup ? displayCategory : line.status === "success" ? line.category || "成功" : line.status === "new" ? "新" : "失败"}
+              </strong>
               <span className="quick-result-detail-slot">
                 {isBatchEnd && (line.batch_has_duplicates || line.batch_count_mismatch) && (
                   <span
@@ -404,9 +453,6 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
                   <button type="button" className="quick-result-confirm" aria-label={mismatchLine?.suggested_amount ? `确认按${mismatchLine.suggested_amount}元修正` : "人工确认金额后修改"} onClick={() => onConfirmMismatch(mismatchLine || line)}>✓</button>
                 )}
               </span>
-              <strong className={`quick-result-status ${visualStatus}${visualTone ? ` ${visualTone}` : ""}`}>
-                {isBlank ? "" : isEditing ? "新" : mismatchGroup ? displayCategory : line.status === "success" ? line.category || "成功" : line.status === "new" ? "新" : "失败"}
-              </strong>
             </div>
             <textarea
               className="quick-result-text"
@@ -476,59 +522,78 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
         <textarea className="quick-merge-text" readOnly rows={8} value={mergedLine?.batch_merged_text || mergedLine?.input_text || mergedLine?.raw_text || ""} />
       </Modal>
       <Modal
-        open={detailLines.length > 0}
-        title={null}
-        style={{ top: 100 }}
+        className="quick-entry-detail-modal"
+        centered
         closable={false}
-        footer={<Button type="primary" onClick={() => setDetailLines([])}>关 闭</Button>}
+        maskClosable={false}
+        open={detailLines.length > 0}
+        title={
+          <span className="quick-entry-detail-heading">
+            <span className="quick-entry-detail-info" aria-hidden="true">i</span>
+            <strong>
+              详情：总笔数 {detailModalCount}，总金额 {formatAmount(detailModalAmount.toFixed(2))}
+            </strong>
+          </span>
+        }
+        footer={
+          <button type="button" className="quick-entry-detail-close" onClick={() => setDetailLines([])}>
+            关闭
+          </button>
+        }
         onCancel={() => setDetailLines([])}
-        width={1000}
-        className="quick-detail-modal"
+        width={window.innerWidth}
       >
-        <div className="quick-detail-summary"><InfoCircleOutlined className="quick-detail-info" />详情：总笔数 {detailCount}，总金额 {formatAmount(detailAmount.toFixed(2))}</div>
-        <div className="quick-detail-scroll">
-          <div className="result-table">
-            <div className="result-category-tabs">
-              {Array.from(new Set(detailSections.map((section) => section.category))).map((category) => (
-                <div key={`category-tab-${category}`} className={`ltype-wrapper ${category === "体" ? "is-ti" : category === "福" ? "is-fu" : "is-futi"}`}>{category}</div>
-              ))}
-            </div>
-            {detailSections.map((section, sectionIndex) => {
-              const previousSection = detailSections[sectionIndex - 1];
-              const isNewCategory = !previousSection || previousSection.category !== section.category;
-              return (
-              <Fragment key={`${section.category}-${section.title}-${sectionIndex}`}>
-                {isNewCategory && sectionIndex > 0 && <div className="sep" />}
-                {isNewCategory && <div className={`ltype-wrapper ${section.category === "体" ? "is-ti" : "is-fu"}`}>{section.category}</div>}
-                <div className="ltype-body">
-                  <div className="game-type-wrapper">
-                    <div className="game-type-title">{section.title}</div>
-                    <div className="row-container row-header-container">
-                      {Array.from({ length: 4 }, (_, index) => (
-                        <div className="row-label-container" key={`header-${section}-${index}`}>
-                          <span className="label-wrapper">号码</span>
-                          <span className="label-wrapper">金额</span>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="row-container">
-                      {Array.from({ length: Math.ceil(section.numbers.length / 4) }, (_, rowIndex) => section.numbers.slice(rowIndex * 4, rowIndex * 4 + 4)).map((row, rowIndex) => (
-                        <Fragment key={`${section}-row-${rowIndex}`}>
-                          {Array.from({ length: 4 }, (_, index) => row[index] || null).map((number, index) => (
-                            <div className={`row-label-container${number ? " has-amount" : ""}`} key={`${section.category}-${section.title}-${rowIndex}-${index}`}>
-                              <span className="label-wrapper">{number || "--"}</span>
-                              <span className="label-wrapper">{number ? formatAmount((section.amounts[number] || 0).toFixed(2)) : "--"}</span>
+        <div className="quick-entry-code-detail">
+          {detailCategoryGroups.length ? (
+            <div className="result-table">
+              {detailCategoryGroups.map((categoryGroup, categoryIndex) => (
+                <Fragment key={categoryGroup.category}>
+                  {categoryIndex > 0 && <div className="sep" />}
+                  <div className={`ltype-wrapper ${categoryGroup.category === "体" ? "is-ti" : "is-fu"}`}>
+                    {categoryGroup.category}
+                  </div>
+                  <div className="ltype-body">
+                    {categoryGroup.sections.map((section, sectionIndex) => (
+                      <div className="game-type-wrapper" key={`${section.category}-${section.title}-${sectionIndex}`}>
+                        <div className="game-type-title">{section.title}</div>
+                        <div className="row-container row-header-container">
+                          {Array.from({ length: 4 }, (_, pairIndex) => (
+                            <div className="row-label-container" key={`header-${pairIndex}`}>
+                              <span className="label-wrapper">号码</span>
+                              <span className="label-wrapper">金额</span>
                             </div>
                           ))}
-                        </Fragment>
-                      ))}
-                    </div>
+                        </div>
+                        {Array.from({ length: Math.ceil(section.numbers.length / 4) }, (_, rowIndex) => (
+                          <div className="row-container" key={`row-${rowIndex}`}>
+                            {Array.from({ length: 4 }, (_, pairIndex) => {
+                              const number = section.numbers[rowIndex * 4 + pairIndex];
+                              const repeatCount = number ? Math.round(section.counts[number] || 1) : 0;
+                              return (
+                                <div className={`row-label-container${number ? " has-amount" : ""}`} key={`cell-${pairIndex}`}>
+                                  <span className="label-wrapper">
+                                    {number || "--"}
+                                    {repeatCount > 1 && (
+                                      <span className="repeat-count">(<span>{repeatCount}</span>次重复)</span>
+                                    )}
+                                  </span>
+                                  <span className="label-wrapper">
+                                    {number ? formatAmount((section.amounts[number] || 0).toFixed(2)) : "--"}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ))}
+                      </div>
+                    ))}
                   </div>
-                </div>
-              </Fragment>
-              );
-            })}
-          </div>
+                </Fragment>
+              ))}
+            </div>
+          ) : (
+            <div className="quick-entry-detail-empty">暂无详情</div>
+          )}
         </div>
       </Modal>
     </>

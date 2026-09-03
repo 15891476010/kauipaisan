@@ -404,8 +404,16 @@ final class Resource
                 $recordIds = $ids ? Db::name('bet_details')->whereIn('id', $ids)->column('bet_record_id') : [];
                 $query->whereIn('id', $recordIds ?: [0]);
             }
+            $drawStatus = strtolower(trim((string)$request->param('draw_status', 'all')));
+            if (!in_array($drawStatus, ['all', 'opened', 'pending'], true)) throw new \InvalidArgumentException('开奖状态筛选值无效');
+            if ($drawStatus === 'opened') {
+                $query->whereIn('status', ['won', 'unwon']);
+            } elseif ($drawStatus === 'pending') {
+                $query->where('status', 'pending');
+            }
         }
         $betAlertThreshold = 0.0; $winAlertThreshold = 0.0; $checkNumber = ''; $numberSimulation = null;
+        $sortField = ''; $sortOrder = '';
         if ($resource === 'bet-records') {
             $betAlertThreshold = $this->alertThreshold($request->param('bet_alert_threshold'));
             $winAlertThreshold = $this->alertThreshold($request->param('win_alert_threshold'));
@@ -414,10 +422,29 @@ final class Resource
                 if (strlen($candidateNumber) !== 3) throw new \InvalidArgumentException('试算号码必须是三位数字');
                 $checkNumber = $candidateNumber;
             }
+            $sortField=trim((string)$request->param('sort_field',''));
+            $sortOrder=strtolower(trim((string)$request->param('sort_order','')));
+            if ($sortField!=='' && !in_array($sortField,['amount','potential_win_amount'],true)) throw new \InvalidArgumentException('下单列表排序字段无效');
+            if ($sortField!=='' && !in_array($sortOrder,['asc','desc'],true)) throw new \InvalidArgumentException('下单列表排序方向无效');
         }
         $simulationQuery = clone $query;
         $total = (clone $query)->count();
-        $list = $query->page(max(1,(int)$request->param('page',1)),min(100,max(1,(int)$request->param('page_size',20))))->order('id desc')->select()->toArray();
+        if ($resource==='bet-records' && $sortField==='amount') {
+            $query->order('amount',$sortOrder)->order('id','desc');
+        } elseif ($resource==='bet-records' && $sortField==='potential_win_amount') {
+            // potential_win_amount is derived from all detail rows belonging
+            // to one order. Sort with the same formula in SQL before paging;
+            // sorting the returned page in Vue would produce incorrect global
+            // order whenever more than one page exists.
+            $numberText="TRIM(COALESCE(sort_detail.number_text,''))";
+            $selectionCount="(CASE WHEN {$numberText}='' THEN 1 ELSE 1+CHAR_LENGTH({$numberText})-CHAR_LENGTH(REPLACE({$numberText},' ','')) END)";
+            $packagePattern='(^|[^0-9])[0-9]{1,10}[[:space:]]*(组三|组六)[一二两三四五六七八九1-9]码';
+            $potentialSql="COALESCE((SELECT SUM(GREATEST(COALESCE(sort_detail.amount,0),0)*GREATEST(COALESCE(sort_detail.odds,0),0)*(CASE WHEN {$selectionCount}>1 AND COALESCE(sort_detail.source_text,'') REGEXP '{$packagePattern}' THEN {$selectionCount} ELSE 1 END)) FROM bet_details AS sort_detail WHERE sort_detail.bet_record_id=bet_records.id),0)";
+            $query->orderRaw($potentialSql.' '.strtoupper($sortOrder))->order('id','desc');
+        } else {
+            $query->order('id','desc');
+        }
+        $list = $query->page(max(1,(int)$request->param('page',1)),min(100,max(1,(int)$request->param('page_size',20))))->select()->toArray();
         if ($resource === 'audit-logs') {
             $userIds=array_values(array_unique(array_filter(array_map('intval',array_column($list,'user_id')))));
             $siteUsers=$userIds ? Db::name('site_users')->whereIn('id',$userIds)->field('id,site_id')->select()->toArray() : [];

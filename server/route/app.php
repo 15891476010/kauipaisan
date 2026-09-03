@@ -83,6 +83,7 @@ Route::group('api/v1', static function () {
     Route::get('user/draws', 'UserBusiness/draws');
     Route::get('user/draws/wait', 'UserBusiness/waitDraws');
     Route::post('user/quick-entry/preview', 'UserBusiness/quickPreview');
+    Route::post('user/quick-entry/third-party-preview', 'ThirdPartyQuickEntry/preview');
     Route::post('user/quick-entry/place', 'UserBusiness/quickPlace');
     Route::get('user/quick-entry/settings', 'UserBusiness/quickSettings');
     Route::put('user/quick-entry/settings', 'UserBusiness/saveQuickSettings');
@@ -130,6 +131,8 @@ Route::group('api/v1', static function () {
     Route::delete('admin/site-users/:id', 'Resource/delete')->append(['resource' => 'site-users']);
     // Keep the collection route exact so `/admin/bet-records/batch-options`
     // reaches AdminBetBatch instead of being swallowed by Resource/index.
+    Route::get('admin/bet-aggregation', 'BetAggregation/index')->completeMatch();
+    Route::get('admin/bet-aggregation/details', 'BetAggregation/details')->completeMatch();
     Route::get('admin/bet-records', 'Resource/index')->append(['resource' => 'bet-records'])->completeMatch();
     Route::get('admin/bet-details/batch-options', 'AdminBetBatch/options');
     Route::put('admin/bet-details/batch-replace', 'AdminBetBatch/replace');
@@ -169,13 +172,16 @@ Route::group('api/v1', static function () {
     Route::get('admin/lottery-config', 'Lottery/config');
     Route::put('admin/lottery-config', 'Lottery/saveConfig');
     Route::post('admin/lottery-config/test', 'Lottery/testConfig');
+    Route::get('admin/system-settings/third-party-quick-entry', 'ThirdPartyQuickEntry/config');
+    Route::put('admin/system-settings/third-party-quick-entry', 'ThirdPartyQuickEntry/saveConfig');
+    Route::post('admin/system-settings/third-party-quick-entry/test', 'ThirdPartyQuickEntry/test');
+    Route::post('admin/system-settings/third-party-quick-entry/accounts/login', 'ThirdPartyQuickEntry/loginAccount');
+    Route::post('admin/system-settings/third-party-quick-entry/accounts/:accountId/login', 'ThirdPartyQuickEntry/loginAccount')
+        ->pattern(['accountId'=>'[A-Za-z0-9_.-]+']);
     Route::get('admin/lottery-history/:id', 'Lottery/history');
     Route::put('admin/lottery-history/:id', 'Lottery/updateHistory');
     Route::post('admin/lotteries/:id/copy-odds', 'Lottery/copyOdds');
     Route::get('admin/lottery-odds/:id', 'Lottery/odds');
-    Route::get('admin/lottery-boards', 'Lottery/boards');
-    Route::post('admin/lottery-boards', 'Lottery/createBoard');
-    Route::put('admin/lottery-boards/:id', 'Lottery/updateBoard');
     Route::post('admin/lottery-odds/:id/categories', 'Lottery/createOddsCategory');
     Route::put('admin/lottery-odds/:id/categories/:category_id', 'Lottery/updateOddsCategory');
     Route::delete('admin/lottery-odds/:id/categories/:category_id', 'Lottery/deleteOddsCategory');

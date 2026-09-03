@@ -22,6 +22,7 @@ const menuItems = [
   { path: '/menus', title: '菜单管理', icon: MenuIcon },
   { path: '/audit-logs', title: '审计日志', icon: Document },
   { path: '/settings', title: '系统配置', icon: Setting },
+  { path: '/settings/third-party-quick-entry', title: '三方快速录入', icon: Setting },
   { path: '/site-settings', title: '站点配置', icon: Setting },
 ]
 const title = computed(() => String(route.meta.title || '控制台'))

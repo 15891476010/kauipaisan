@@ -1,5 +1,6 @@
-import { Fragment, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { App as AntdApp, Empty, Modal } from "antd";
+import { QuestionCircleOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import arrowRightIcon from "../../../assets/arrow-right.svg";
 import {
@@ -10,26 +11,28 @@ import {
   type BetRecord,
 } from "../../../api/user";
 import { apiErrorMessage } from "../../../utils/request";
-import { displayAmount } from "../shared";
+import { useReferenceSuccessMessage } from "../../../components/ReferenceSuccessMessage";
 
 export function SideBetRecords({
   onMore,
+  onNumbers,
   panelRight,
   onToggleSide,
   disabled = false,
 }: {
   onMore: () => void;
+  onNumbers: (record: BetRecord) => void;
   panelRight: boolean;
   onToggleSide: () => void;
   disabled?: boolean;
 }) {
   const { message, modal } = AntdApp.useApp();
+  const { holder: refundSuccessHolder, show: showRefundSuccess } = useReferenceSuccessMessage();
   const [records, setRecords] = useState<BetRecord[]>([]);
   const [amountTotal, setAmountTotal] = useState("0.00");
   const [loading, setLoading] = useState(false);
   const [details, setDetails] = useState<BetDetail[]>([]);
   const [detailRecord, setDetailRecord] = useState<BetRecord>();
-  const [detailMode, setDetailMode] = useState<"detail" | "numbers">("detail");
   const [detailLoading, setDetailLoading] = useState(false);
   const load = () => {
     if (disabled) return;
@@ -53,9 +56,8 @@ export function SideBetRecords({
     window.addEventListener("bet-records-updated", refresh);
     return () => window.removeEventListener("bet-records-updated", refresh);
   }, [disabled]);
-  const showRecord = async (record: BetRecord, mode: "detail" | "numbers") => {
+  const showRecord = async (record: BetRecord) => {
     setDetailRecord(record);
-    setDetailMode(mode);
     setDetailLoading(true);
     try {
       const result = await getBetDetails({
@@ -73,15 +75,18 @@ export function SideBetRecords({
   };
   const refund = (record: BetRecord) => {
     modal.confirm({
-      title: "确认退单",
-      content: `确定退回该注单，金额 ¥ ${displayAmount(record.amount)} 吗？`,
-      okText: "确认退单",
+      className: "refund-confirm-modal",
+      rootClassName: "refund-confirm-root",
+      centered: true,
+      width: "92vw",
+      icon: <QuestionCircleOutlined />,
+      title: "确认退码吗？",
+      okText: "我确定",
       cancelText: "取消",
-      okButtonProps: { danger: true },
       onOk: async () => {
         try {
           await refundBetRecord(record.id);
-          message.success("退单成功");
+          showRefundSuccess(`${lotteryName(record.lottery)}成功退单`);
           setDetailRecord(undefined);
           await load();
           window.dispatchEvent(new Event("profile-updated"));
@@ -136,12 +141,6 @@ export function SideBetRecords({
     playMap.get(play)!.push(detail);
     return lotteryMap;
   }, new Map<string, Map<string, BetDetail[]>>()));
-  const numberGroups = Array.from(orderedDetails.reduce((map, detail) => {
-    const key = `${lotteryName(detail.lottery)}|${detail.issue_no}`;
-    if (!map.has(key)) map.set(key, []);
-    map.get(key)!.push(detail);
-    return map;
-  }, new Map<string, BetDetail[]>()));
   const copyText = async (text: string) => {
     const textarea = document.createElement("textarea");
     textarea.value = text;
@@ -176,57 +175,9 @@ export function SideBetRecords({
       .then(() => message.success("原始文本已复制"))
       .catch(() => message.error("复制原始文本失败"));
   };
-  const copyNumbers = async () => {
-    try {
-      await copyText(orderedDetails.map((detail) => displayDetailNumber(detail)).join("\n"));
-      message.success("号码已复制");
-    } catch {
-      message.error("复制号码失败，请长按号码手动复制");
-    }
-  };
-  const escapeHtml = (value: unknown) => String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-  const printNumbers = () => {
-    const rows = numberGroups.map(([key, group]) => `<tr><th colspan="2">${escapeHtml(key.replace("|", " 第 "))} 期，共 ${group.reduce((sum, item) => sum + Number(item.amount || 0), 0).toFixed(2)}</th></tr>${group.map((item) => `<tr><td>${escapeHtml(displayDetailNumber(item))}</td><td>${escapeHtml(item.amount)}</td></tr>`).join("")}`).join("");
-    const paper = `<div class="bet-number-print-paper"><p>时间：${escapeHtml(detailRecord?.placed_at || "")}</p><p>会员：-</p><table>${rows}</table><p>请核对一切以小票为准<br>总笔数：${details.length} 总金额：${details.reduce((sum, item) => sum + Number(item.amount || 0), 0).toFixed(2)}</p></div>`;
-    const printCss = "body{font:14px Arial,sans-serif;padding:20px;color:#111}.bet-number-print-paper{max-width:580px;margin:0 auto}table{border-collapse:collapse;width:100%}th,td{border:1px solid #777;padding:7px;text-align:center}th{background:#666!important;color:#fff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}";
-
-    // 必须在点击事件内同步打开窗口，否则容易被浏览器当作广告弹窗拦截。
-    const printWindow = window.open("", "_blank", "width=620,height=760");
-    if (printWindow) {
-      printWindow.document.open();
-      printWindow.document.write(`<html><head><meta charset="utf-8"><title>号码小票</title><style>${printCss}</style></head><body>${paper}</body></html>`);
-      printWindow.document.close();
-      printWindow.focus();
-      printWindow.print();
-      return;
-    }
-
-    // 新窗口被拦截时，使用当前页面的隐藏打印区域，不再直接报错。
-    const printRoot = document.createElement("div");
-    const printStyle = document.createElement("style");
-    printRoot.id = "bet-number-print-root";
-    printRoot.innerHTML = paper;
-    printStyle.textContent = `@media print{body>*:not(#bet-number-print-root){display:none!important}#bet-number-print-root{display:block!important;position:static!important}${printCss}}`;
-    document.body.append(printStyle, printRoot);
-    let cleaned = false;
-    const cleanup = () => {
-      if (cleaned) return;
-      cleaned = true;
-      printRoot.remove();
-      printStyle.remove();
-      window.removeEventListener("afterprint", cleanup);
-    };
-    window.addEventListener("afterprint", cleanup);
-    window.print();
-    window.setTimeout(cleanup, 1500);
-  };
   return (
     <>
+      {refundSuccessHolder}
       <div className="side-total">
         <span>
           总金额: <b>{amountTotal}</b>
@@ -279,17 +230,26 @@ export function SideBetRecords({
                     type="button"
                     className="side-record-action detail"
                     style={{ backgroundColor: "#087e0b", color: "#fff" }}
+                    aria-label="详情"
                     disabled={disabled}
-                    onClick={() => showRecord(record, "detail")}
+                    onClick={() => showRecord(record)}
                   >
-                    详
+                    <svg
+                      className="side-record-detail-icon"
+                      viewBox="0 0 16 16"
+                      aria-hidden="true"
+                      focusable="false"
+                    >
+                      <path d="M3.25 1.75h6l3.5 3.5v9H3.25z" />
+                      <path d="M9.25 1.75v3.5h3.5M5.5 8h5M5.5 10.5h5" />
+                    </svg>
                   </button>
                   <button
                     type="button"
                     className="side-record-action numbers"
                     style={{ backgroundColor: "#ffe5cf", color: "#80502d" }}
                     disabled={disabled}
-                    onClick={() => showRecord(record, "numbers")}
+                    onClick={() => onNumbers(record)}
                   >
                     号
                   </button>
@@ -312,19 +272,19 @@ export function SideBetRecords({
         ))}
       </div>
       <Modal
-        className={detailMode === "numbers" ? "record-number-modal" : "records-detail-modal"}
-        wrapClassName={detailMode === "detail" ? "records-detail-wrap" : "record-number-wrap"}
+        className="records-detail-modal"
+        wrapClassName="records-detail-wrap"
         open={Boolean(detailRecord)}
-        title={detailMode === "detail" ? "下注详情" : null}
-        footer={detailMode === "detail" ? (
+        title="下注详情"
+        footer={(
           <button type="button" className="records-modal-close" onClick={() => setDetailRecord(undefined)}>
             关 闭
           </button>
-        ) : null}
+        )}
         onCancel={() => setDetailRecord(undefined)}
-        width={detailMode === "numbers" ? 520 : 760}
+        width={760}
       >
-        {detailLoading ? <div className="record-detail-loading">加载中...</div> : details.length && detailMode === "detail" ? (
+        {detailLoading ? <div className="record-detail-loading">加载中...</div> : details.length ? (
           <div className="record-detail-content">
             <div className="record-detail-tabs">
               {groupedDetails.map(([lottery]) => <span className="selected" key={lottery}>{lottery}</span>)}
@@ -362,11 +322,6 @@ export function SideBetRecords({
                 </section>
               ))}
             </div>
-          </div>
-        ) : details.length ? (
-          <div className="record-number-content">
-            <div className="record-number-toolbar"><button type="button" onClick={() => setDetailRecord(undefined)}>←</button><span>第1/1页</span><button type="button" disabled>上页</button><button type="button" disabled>下页</button><button type="button" className="download" onClick={printNumbers}>下载PDF</button><button type="button" className="copy" onClick={() => void copyNumbers()}>复制号码</button></div>
-            <div className="record-number-paper"><p>时间:{detailRecord?.placed_at || ""}</p><p>会员:-</p><table><thead><tr><th>号码</th><th>全额</th></tr></thead><tbody>{numberGroups.map(([key, group]) => <Fragment key={key}><tr className="group"><th colSpan={2}>{key.replace("|", " 第 ")} 期，共 {group.reduce((sum, item) => sum + Number(item.amount || 0), 0).toFixed(2)}</th></tr>{group.map((detail, index) => <tr key={detail.id + "-" + index}><td>{displayDetailNumber(detail)}</td><td>{detail.amount}</td></tr>)}</Fragment>)}</tbody></table><p>请核对一切以小票为准<br />总笔数:{details.length} 总金额:{details.reduce((sum, item) => sum + Number(item.amount || 0), 0).toFixed(2)}</p></div>
           </div>
         ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" />}
       </Modal>

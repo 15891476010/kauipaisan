@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { Empty, Modal, Pagination, Switch } from "antd";
-import paginationZhCN from "@rc-component/pagination/locale/zh_CN";
+import { Empty, Modal, Switch } from "antd";
 import { InfoCircleOutlined, SearchOutlined } from "@ant-design/icons";
 import { getBetDetails, getBetRecords, type BetDetail, type BetRecord } from "../../../api/user";
 import { apiErrorMessage } from "../../../utils/request";
+import { RecordsPagination } from "../components/RecordsPagination";
 import { displayAmount } from "../shared";
 
 const PAGE_SIZE = 20;
@@ -399,31 +399,5 @@ export function RecordsPage() {
 
       <RecordsPagination page={page} total={total} loading={loading} onPage={changePage} />
     </section>
-  );
-}
-
-function RecordsPagination({
-  page,
-  total,
-  loading,
-  onPage,
-}: {
-  page: number;
-  total: number;
-  loading: boolean;
-  onPage: (page: number) => void;
-}) {
-  return (
-    <Pagination
-      className="records-page-pagination ant-pagination-customized"
-      current={page}
-      pageSize={PAGE_SIZE}
-      total={total}
-      showSizeChanger={false}
-      showQuickJumper
-      locale={paginationZhCN}
-      disabled={loading}
-      onChange={(nextPage) => onPage(nextPage)}
-    />
   );
 }

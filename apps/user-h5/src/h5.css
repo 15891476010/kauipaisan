@@ -3058,20 +3058,6 @@ table { min-width: 620px; }
   top: calc(140.7vw + 32.2vw) !important;
 }
 
-/* H5 bills: use the reference site's 430px compact proportions. */
-.bill-page { min-height: calc(100dvh - 181px); background: #fff; }
-.bill-page .bill-toolbar { height: 130px; min-height: 130px; padding: 4px 0; }
-.bill-page .lottery-selector { height: 43px; padding: 4px 13px; }
-.bill-page .lottery-selector > span { height: 34px; padding: 0 17px; font-size: 17px; line-height: 33px; }
-.bill-page .bill-date-selectors { height: 39px; padding: 4px 13px; }
-.bill-page .bill-date-selectors select { width: 106px; height: 30px; font-size: 16px; line-height: 28px; }
-.bill-page .bill-date-selectors > span { margin: 0 10px; font-size: 16px; }
-.bill-page .bill-period-selector { height: 34px; margin: 3px auto; padding: 4px 13px; }
-.bill-page .bill-period-selector > .link-button { height: 26px; padding: 0 13px; font-size: 16px; line-height: 26px; }
-.bill-page .business-head { min-height: 37px; font-size: 15px; }
-.bill-page .business-row, .bill-page .bill-total { min-height: 33px; font-size: 15px; }
-.bill-page .business-head > span, .bill-page .business-row > span, .bill-page .bill-total > span { padding: 4px 2px; }
-
 /* Let the editor consume the remaining viewport so fixed bottom tools stay visible on short phones. */
 .site-header:not(.header-collapsed) ~ .body .entry > .text-entry {
   height: calc(100dvh - 94vw) !important;
@@ -5084,134 +5070,6 @@ body,
   .draw-empty {
     min-height: 16vw !important;
     background: #fff !important;
-  }
-}
-
-/* Bill toolbar and table use the same viewport-based proportions as the
-   reference site on desktop/enlarged viewports. */
-@media (min-width: 600px) {
-  .bill-page {
-    min-height: calc(100dvh - 42.2vw) !important;
-    background: #fff !important;
-    color: #111 !important;
-    font-size: 1rem !important;
-  }
-  .bill-page .bill-toolbar {
-    display: flex !important;
-    flex-direction: column !important;
-    align-items: center !important;
-    gap: 0 !important;
-    height: 30.1vw !important;
-    min-height: 30.1vw !important;
-    padding: 1vw 0 !important;
-    border-top: 1px solid #00008b !important;
-    background: #e7f9fc !important;
-  }
-  .bill-page .lottery-selector {
-    display: flex !important;
-    width: auto !important;
-    height: 10vw !important;
-    min-height: 10vw !important;
-    align-items: center !important;
-    padding: 1vw 3vw !important;
-  }
-  .bill-page .lottery-selector > span {
-    display: block !important;
-    width: 12.4vw !important;
-    height: 8vw !important;
-    box-sizing: border-box !important;
-    padding: 0 !important;
-    border: 3px solid #00008b !important;
-    background: #00008b !important;
-    color: #fff !important;
-    font-size: 2rem !important;
-    line-height: 7.6vw !important;
-    text-align: center !important;
-  }
-  .bill-page .lottery-selector > span:first-child {
-    border-radius: 2vw 0 0 2vw !important;
-  }
-  .bill-page .lottery-selector > span:last-child {
-    margin-left: .4vw !important;
-    border-radius: 0 2vw 2vw 0 !important;
-  }
-  .bill-page .bill-date-selectors {
-    display: flex !important;
-    width: auto !important;
-    height: 9vw !important;
-    min-height: 9vw !important;
-    align-items: center !important;
-    padding: 1vw 3vw !important;
-  }
-  .bill-page .bill-date-selectors select {
-    width: 21vw !important;
-    height: 7vw !important;
-    box-sizing: border-box !important;
-    padding: 0 !important;
-    border: 3px solid #c0c0c0 !important;
-    border-radius: .8vw !important;
-    background: #fff !important;
-    color: #111 !important;
-    font-size: 1.9rem !important;
-    line-height: normal !important;
-  }
-  .bill-page .bill-date-selectors > span {
-    width: 8vw !important;
-    margin: 0 !important;
-    color: #111 !important;
-    font-size: 1.8rem !important;
-    text-align: center !important;
-  }
-  .bill-page .bill-period-selector {
-    display: flex !important;
-    width: auto !important;
-    height: 8vw !important;
-    min-height: 8vw !important;
-    align-items: center !important;
-    margin: .6vw auto !important;
-    padding: 1vw 3vw !important;
-  }
-  .bill-page .bill-period-selector > .link-button {
-    display: flex !important;
-    height: 6vw !important;
-    align-items: center !important;
-    padding: 0 3vw !important;
-    border: 0 !important;
-    color: #00008b !important;
-    font-size: 1rem !important;
-    line-height: 6vw !important;
-  }
-  .bill-page .bill-period-selector > .link-button.selected {
-    border-radius: .8vw !important;
-    background: #00008b !important;
-    color: #fff !important;
-  }
-  .bill-page .bill-table {
-    width: 100% !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    background: #fff !important;
-  }
-  .bill-page .business-head,
-  .bill-page .business-row,
-  .bill-page .bill-total {
-    grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
-    width: 100% !important;
-    min-height: 2.1vw !important;
-    align-items: center !important;
-    border-bottom: 1px solid #777 !important;
-    font-size: .48rem !important;
-  }
-  .bill-page .business-head {
-    min-height: 2.35vw !important;
-    background: #efefef !important;
-    font-weight: 700 !important;
-  }
-  .bill-page .business-head > span,
-  .bill-page .business-row > span,
-  .bill-page .bill-total > span {
-    min-width: 0 !important;
-    padding: .25vw .15vw !important;
   }
 }
 
@@ -11426,7 +11284,7 @@ body,
   font-size: 1rem !important;
 }
 .quick-result-row.success { background: #a7e1ce !important; }
-.quick-result-row.success.batch-end { background: #a8a7e1 !important; }
+.quick-result-row.success.batch-end { background: #a7e1ce !important; }
 .quick-result-row.failed,
 .quick-result-row.mismatch { background: #ffd3d3 !important; }
 .quick-result-row.new { background: #afecff !important; }
@@ -11480,6 +11338,35 @@ body,
   content: "+" !important;
   border: .1rem solid #005f03 !important;
   color: #005f03 !important;
+}
+.quick-result-combine {
+  border: .1rem solid #037bab !important;
+  border-radius: .3rem !important;
+  color: #037bab !important;
+  font-size: 1.6rem !important;
+  line-height: 2.4rem !important;
+}
+.quick-result-combine:hover {
+  background: #037bab !important;
+  color: #fff !important;
+}
+.quick-result-more::before {
+  content: "详" !important;
+  display: inline-block !important;
+  box-sizing: border-box !important;
+  width: 2.6rem !important;
+  height: 2.6rem !important;
+  border: .1rem solid #036564 !important;
+  border-radius: .3rem !important;
+  background: #fff !important;
+  color: #036564 !important;
+  font-size: 1.6rem !important;
+  line-height: 2.4rem !important;
+  text-align: center !important;
+}
+.quick-result-more:hover::before {
+  background: #036564 !important;
+  color: #fff !important;
 }
 .quick-result-index {
   display: inline-block !important;
@@ -12365,4 +12252,2192 @@ body,
     font-size: 1.8rem !important;
     line-height: 3.4rem !important;
   }
+}
+
+/* Mobile more-record cards use the same rem-based structure as the reference
+   detail-list; the desktop card rules intentionally do not apply below 600px. */
+@media (max-width: 599px) {
+  #root .more-results {
+    width: 100% !important;
+    margin: .5rem 0 !important;
+    padding: 0 !important;
+    background: transparent !important;
+  }
+  #root .more-card-list {
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: hidden auto !important;
+    background: #efefef !important;
+    padding: 1rem 0 !important;
+    margin: .5rem 0 !important;
+  }
+  #root .more-card {
+    width: 96% !important;
+    display: flex !important;
+    flex-direction: column !important;
+    min-height: 0 !important;
+    margin: 0 auto !important;
+    padding: .5rem !important;
+    border: 0 !important;
+    border-radius: .6rem !important;
+    background: transparent !important;
+    color: #000 !important;
+    font-size: 1rem !important;
+    line-height: normal !important;
+  }
+  #root .more-card + .more-card {
+    margin-top: .8rem !important;
+  }
+  #root .more-card.is-refunded {
+    background: #ffe0e0 !important;
+  }
+  #root .more-card > * {
+    padding: 0 .3rem !important;
+  }
+  #root .more-card-meta {
+    display: block !important;
+    width: 100% !important;
+    height: 3rem !important;
+    min-height: 3rem !important;
+    margin: 0 0 .6rem !important;
+    padding: 0 .3rem !important;
+    color: #000 !important;
+    font-size: 1.8rem !important;
+    font-weight: 400 !important;
+    line-height: 3rem !important;
+    white-space: normal !important;
+  }
+  #root .more-card-board {
+    display: inline-block !important;
+    height: 2.6rem !important;
+    min-height: 2.6rem !important;
+    margin-right: .6rem !important;
+    padding: 0 .6rem !important;
+    border-radius: .3rem !important;
+    color: #fff !important;
+    font-size: 1.6rem !important;
+    font-weight: 400 !important;
+    line-height: 2.6rem !important;
+  }
+  #root .more-card:not(.is-refunded) .more-card-board {
+    background: #0496dc !important;
+  }
+  #root .more-card.is-refunded .more-card-board {
+    background: transparent !important;
+    color: #000 !important;
+  }
+  #root .more-card > p {
+    display: block !important;
+    width: 100% !important;
+    min-height: 2rem !important;
+    margin: 0 !important;
+    padding: .8rem 1rem !important;
+    color: #000 !important;
+    font-size: 1.6rem !important;
+    font-weight: 400 !important;
+    line-height: 2rem !important;
+    white-space: pre-wrap !important;
+    overflow-wrap: anywhere !important;
+  }
+  #root .more-card:not(.is-refunded) > p.fc3 {
+    background: #c1eeff !important;
+  }
+  #root .more-card:not(.is-refunded) > p.pl3 {
+    background: #c1ffd8 !important;
+  }
+  #root .more-card.is-refunded > p {
+    background: transparent !important;
+  }
+  #root .more-card-footer {
+    display: flex !important;
+    width: 100% !important;
+    height: 4rem !important;
+    min-height: 4rem !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    margin: .3rem 0 0 !important;
+    padding: 0 .3rem !important;
+  }
+  #root .more-card-footer > span {
+    display: block !important;
+    color: red !important;
+    font-size: 1.8rem !important;
+    font-weight: 400 !important;
+    line-height: 4rem !important;
+  }
+  #root .more-card.is-refunded .more-card-footer > span {
+    color: darkblue !important;
+    font-size: 1.6rem !important;
+  }
+  #root .more-card-actions {
+    display: inline-flex !important;
+    align-items: center !important;
+  }
+  #root .more-card-action {
+    display: inline-flex !important;
+    width: 3.4rem !important;
+    min-width: 3.4rem !important;
+    height: 3.6rem !important;
+    min-height: 3.6rem !important;
+    align-items: center !important;
+    justify-content: center !important;
+    margin: 0 1rem 0 0 !important;
+    padding: 0 .8rem !important;
+    border: 0 !important;
+    border-radius: .5rem !important;
+    font-size: 14px !important;
+    line-height: 1.5 !important;
+  }
+  #root .more-card-action.copy {
+    background: #027f00 !important;
+    color: #fff !important;
+  }
+  #root .more-card-action.copy .anticon {
+    font-size: 1.8rem !important;
+    line-height: 1.8rem !important;
+  }
+  #root .more-card-action.numbers {
+    border: 1px solid #d9d9d9 !important;
+    background: #fff !important;
+    color: rgba(0, 0, 0, .65) !important;
+    font-size: 1.8rem !important;
+    line-height: 2.7rem !important;
+  }
+}
+
+/* Mobile betting-detail modal parity with the reference H5. */
+@media (max-width: 599px) {
+  .more-detail-modal.ant-modal {
+    width: calc(100vw - 32px) !important;
+    max-width: calc(100vw - 32px) !important;
+    margin: 8px 16px !important;
+    padding: 0 0 24px !important;
+  }
+  .more-detail-modal .ant-modal-container {
+    box-sizing: border-box !important;
+    padding: 0 !important;
+    border-radius: 4px !important;
+  }
+  .more-detail-modal .ant-modal-close {
+    top: 0 !important;
+    right: 0 !important;
+    width: 56px !important;
+    height: 56px !important;
+    color: rgba(0, 0, 0, .45) !important;
+  }
+  .more-detail-modal .ant-modal-close-icon {
+    font-size: 1rem !important;
+    line-height: 0 !important;
+  }
+  .more-detail-modal .ant-modal-header {
+    height: 55px !important;
+    margin: 0 !important;
+    padding: 16px 24px !important;
+    border-bottom: 1px solid #e8e8e8 !important;
+    background: #fff !important;
+  }
+  .more-detail-modal .ant-modal-title {
+    font-size: 14px !important;
+    line-height: 22px !important;
+  }
+  .more-detail-modal .ant-modal-body {
+    box-sizing: border-box !important;
+    max-height: calc(100vh - 27rem) !important;
+    padding: 2rem 1.5rem !important;
+    overflow: auto !important;
+    font-size: 1rem !important;
+    line-height: 1.5 !important;
+  }
+  .more-detail-lottery {
+    width: 10.75rem !important;
+    min-width: 10.75rem !important;
+    height: 3rem !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border: .1rem solid #036564 !important;
+    background: #036564 !important;
+    color: #fff !important;
+    font-size: 1.6rem !important;
+    line-height: 2.8rem !important;
+  }
+  .more-detail-lines {
+    margin-top: 1rem !important;
+    border: 1px solid #6f6f6f !important;
+  }
+  .more-detail-line {
+    grid-template-columns: 35% 18% 22% 25% !important;
+    height: 4.6rem !important;
+    min-height: 4.6rem !important;
+    font-size: 1.4rem !important;
+    line-height: 2.2rem !important;
+  }
+  .more-detail-line.more-detail-header {
+    font-size: 1.6rem !important;
+  }
+  .more-detail-close {
+    width: 6rem !important;
+    min-width: 6rem !important;
+    height: 3.6rem !important;
+    min-height: 3.6rem !important;
+    font-size: 14px !important;
+    line-height: 2.7rem !important;
+    padding: 0 .8rem !important;
+  }
+  .more-detail-modal .ant-modal-footer {
+    display: flex !important;
+    min-height: 4.3rem !important;
+    height: 4.3rem !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 10px 16px !important;
+    border-top: 1px solid #e8e8e8 !important;
+  }
+}
+
+/* Mobile refund switch parity: center the switch inside its field. */
+@media (max-width: 599px) {
+  #root .more-refund-toggle .record-detail-winning-switch.ant-switch {
+    margin: 2.35vw 0 0 !important;
+  }
+}
+
+/* Detail modal section hierarchy mirrors the reference code-body: lottery
+   title, play label, then the four-column result table. */
+.more-detail-section-title {
+  margin: .5rem 0 !important;
+  padding: .5rem 0 !important;
+  border-bottom: .1rem solid #7a2bc3 !important;
+  color: #7a2bc3 !important;
+  font-size: 2rem !important;
+  font-weight: 700 !important;
+  line-height: normal !important;
+}
+.more-detail-play-label {
+  display: block !important;
+  width: 100% !important;
+  margin: 0 0 .5rem !important;
+  padding: .5rem 1.5rem 0 !important;
+  color: #036564 !important;
+  font-size: 1.8rem !important;
+  line-height: normal !important;
+  text-align: left !important;
+}
+.more-detail-lines {
+  margin-top: 0 !important;
+}
+
+/* Mobile detail table must remain a four-column flex/grid table instead of
+   collapsing each row into one inline text run. */
+@media (max-width: 599px) {
+  .more-detail-line {
+    display: flex !important;
+    width: 100% !important;
+    height: 4.6rem !important;
+    min-height: 4.6rem !important;
+    align-items: center !important;
+    border-top: 0 !important;
+    border-right: .1rem solid #6f6f6f !important;
+    border-bottom: .1rem solid #6f6f6f !important;
+    text-align: center !important;
+  }
+  .more-detail-line.more-detail-header {
+    background: #6f6f6f !important;
+    color: #fff !important;
+    font-size: 1.6rem !important;
+    font-weight: 400 !important;
+  }
+  .more-detail-line:not(.more-detail-header):nth-child(2n + 1) {
+    background: #cefcff !important;
+  }
+  .more-detail-line > span {
+    display: inline-flex !important;
+    height: 100% !important;
+    align-items: center !important;
+    justify-content: center !important;
+    min-width: 0 !important;
+    padding: 0 !important;
+    font-size: 1.4rem !important;
+    line-height: 2.1rem !important;
+    overflow-wrap: anywhere !important;
+  }
+  .more-detail-line > span:nth-child(1) { width: 35% !important; }
+  .more-detail-line > span:nth-child(2) { width: 18% !important; }
+  .more-detail-line > span:nth-child(3) { width: 22% !important; }
+  .more-detail-line > span:nth-child(4) { width: 25% !important; }
+  .more-detail-line > span + span {
+    border-left: 1px dashed #6f6f6f !important;
+  }
+  .more-detail-line.more-detail-header > span {
+    color: #fff !important;
+    font-size: 1.6rem !important;
+    font-weight: 400 !important;
+    line-height: 2.2rem !important;
+  }
+  .more-detail-line.more-detail-header > span + span {
+    border-left-color: #fff !important;
+  }
+  .more-detail-line:not(.more-detail-header) > span:nth-child(1) {
+    color: #000 !important;
+    font-weight: 700 !important;
+  }
+  .more-detail-line:not(.more-detail-header) > span:nth-child(2) {
+    color: darkblue !important;
+    font-weight: 700 !important;
+  }
+  .more-detail-line:not(.more-detail-header) > span:nth-child(3) {
+    color: darkorange !important;
+    font-weight: 700 !important;
+  }
+  .more-detail-line:not(.more-detail-header) > span:nth-child(4) {
+    color: #000 !important;
+    font-weight: 400 !important;
+  }
+}
+
+/* Keep the detail dialog height bounded by the viewport like the reference:
+   the inner content scrolls, while the header/footer stay fixed. */
+.more-detail-modal .ant-modal-body {
+  max-height: none !important;
+  overflow: visible !important;
+}
+.more-detail-content {
+  max-height: calc(100vh - 27rem) !important;
+  overflow: auto !important;
+}
+@media (max-width: 599px) {
+  .more-detail-modal .ant-modal-body {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+  .more-detail-content {
+    max-height: calc(100vh - 27rem) !important;
+    overflow: auto !important;
+  }
+}
+
+/* Number-detail view mirrors the reference full-screen dXPONK layout. */
+.more-number-page {
+  position: fixed !important;
+  z-index: 102 !important;
+  top: 0 !important;
+  left: 0 !important;
+  display: flex !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  overflow-y: auto !important;
+  background: #fff !important;
+  color: #000 !important;
+  font-size: 2rem !important;
+}
+.number-page-toolbar {
+  display: flex !important;
+  width: 100% !important;
+  height: 5rem !important;
+  min-height: 5rem !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  background: #cfcfcf !important;
+}
+.number-page-toolbar > * {
+  display: inline-flex !important;
+  width: 5rem !important;
+  height: 5rem !important;
+  min-height: 5rem !important;
+  flex-shrink: 1 !important;
+  align-items: center !important;
+  justify-content: center !important;
+  color: #fff !important;
+}
+.number-page-back {
+  border: 0 !important;
+  background: #6f6f6f !important;
+  font-size: 3rem !important;
+  cursor: pointer !important;
+}
+.number-page-back .anticon,
+.number-page-back svg {
+  width: 3rem !important;
+  height: 3rem !important;
+  font-size: 3rem !important;
+}
+.number-page-indicator {
+  width: auto !important;
+  min-width: 8rem !important;
+  margin-right: .5rem !important;
+  color: #000 !important;
+  font-size: 2.3rem !important;
+  line-height: 5rem !important;
+  white-space: nowrap !important;
+}
+.number-page-indicator > span {
+  display: inline-flex !important;
+  width: 8rem !important;
+  align-items: center !important;
+  height: 5rem !important;
+  line-height: 5rem !important;
+  white-space: nowrap !important;
+}
+.number-page-indicator b {
+  color: darkblue !important;
+  font-size: 2.3rem !important;
+  font-weight: 400 !important;
+}
+.number-page-toolbar,
+.number-page-toolbar > *,
+.number-page-toolbar button {
+  font-family: "Microsoft YaHei", Tahoma, Helvetica, Arial, sans-serif !important;
+}
+.number-page-actions {
+  width: auto !important;
+  flex-wrap: nowrap !important;
+  justify-content: flex-end !important;
+}
+.number-page-actions > button {
+  width: auto !important;
+  height: 5rem !important;
+  min-height: 5rem !important;
+  padding: 0 1rem !important;
+  border: 0 !important;
+  background: darkblue !important;
+  color: #fff !important;
+  font-size: 1.8rem !important;
+  line-height: 5rem !important;
+  cursor: pointer !important;
+}
+.number-page-actions > button + button {
+  margin-left: .5rem !important;
+}
+.number-page-actions > button:nth-last-child(2) {
+  background: #af6000 !important;
+}
+.number-page-actions > button:last-child {
+  background: darkgreen !important;
+}
+.number-page-body {
+  display: flex !important;
+  width: 100% !important;
+  min-height: 0 !important;
+  flex: 1 1 auto !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  overflow-y: auto !important;
+  padding: 1rem 0 !important;
+  background: #fff !important;
+}
+.number-paper {
+  width: 35rem !important;
+  min-width: 35rem !important;
+  color: #000 !important;
+}
+.number-paper > * {
+  border-left: .1rem solid #000 !important;
+  border-right: .1rem solid #000 !important;
+}
+.number-unit {
+  margin: 0 !important;
+  padding: 0 .5rem 0 0 !important;
+  border-top: .1rem solid #000 !important;
+  font-size: 1.8rem !important;
+  line-height: normal !important;
+  text-align: right !important;
+}
+.number-meta {
+  margin: 0 !important;
+  border-top: .1rem solid #3f3f3f !important;
+  border-bottom: .1rem solid #3f3f3f !important;
+}
+.number-meta > div {
+  display: flex !important;
+  height: 3.2rem !important;
+  align-items: center !important;
+  padding: 0 .1rem !important;
+  font-size: 1.8rem !important;
+  line-height: 3.2rem !important;
+}
+.number-table-head,
+.number-row {
+  display: flex !important;
+  width: 100% !important;
+  height: 2.8rem !important;
+  min-height: 2.8rem !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+}
+.number-table-head {
+  background: #efefef !important;
+}
+.number-table-head > span,
+.number-row > span {
+  display: inline-block !important;
+  flex-grow: 1 !important;
+  height: 100% !important;
+  border-bottom: .1rem solid #5f5f5f !important;
+  color: #000 !important;
+  font-size: 2rem !important;
+  line-height: 2.7rem !important;
+  text-align: center !important;
+}
+.number-table-head > span:first-child,
+.number-row > span:first-child {
+  width: 70% !important;
+}
+.number-table-head > span:last-child,
+.number-row > span:last-child {
+  width: 30% !important;
+  border-left: .1rem solid #5f5f5f !important;
+}
+.number-table-head > span {
+  font-weight: 700 !important;
+}
+.number-group-header {
+  display: inline-flex !important;
+  width: 100% !important;
+  height: 3.2rem !important;
+  min-height: 3.2rem !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  border-bottom: .1rem solid #5f5f5f !important;
+  background: #6f6f6f !important;
+  color: #fff !important;
+  font-size: 1.8rem !important;
+}
+.number-group-header > * {
+  color: #fff !important;
+  font-size: 1.8rem !important;
+  font-weight: 400 !important;
+}
+.number-group-header > b {
+  margin: 0 .4rem !important;
+}
+.number-empty {
+  padding: 2rem 0 !important;
+  text-align: center !important;
+}
+
+.number-note {
+  display: flex !important;
+  min-height: 5rem !important;
+  height: 5rem !important;
+  align-items: center !important;
+  flex-wrap: nowrap !important;
+  padding: 0 .3rem !important;
+  border-bottom: .1rem solid #5f5f5f !important;
+  color: #000 !important;
+  font-size: 1.8rem !important;
+  line-height: 2.4rem !important;
+}
+
+/* Quick-entry detail modal typography follows the reference rem rhythm. */
+.quick-entry-detail-modal .more-detail-section-title {
+  line-height: 1.5 !important;
+}
+.quick-entry-detail-modal .more-detail-play-label {
+  line-height: 1.5 !important;
+}
+.quick-entry-detail-modal .more-detail-lines {
+  border: 0 !important;
+}
+.quick-entry-detail-modal .more-detail-line {
+  border-left: .1rem solid #6f6f6f !important;
+}
+
+/*
+ * Mobile quick-entry toolbar compatibility.
+ * The current markup keeps rule/warning inside .replace, while the older
+ * mobile rules still target .actions. Keep one board indicator and position
+ * the four controls against their real parent.
+ */
+@media (max-width: 599px) {
+  #root .entry > .quick-board-indicator {
+    display: none !important;
+  }
+
+  #root .entry > .replace {
+    position: relative !important;
+    display: grid !important;
+    grid-template-columns: 23vw 23vw 18vw 1fr !important;
+    grid-template-rows: 12vw 15vw !important;
+    width: 100% !important;
+    height: 27vw !important;
+    min-height: 27vw !important;
+    margin: 0 !important;
+    padding: 2vw 4vw 0 !important;
+    box-sizing: border-box !important;
+    background: #fff !important;
+    overflow: visible !important;
+  }
+
+  #root .entry > .replace > button:not(.new):not(.undo):not(.rule-action) {
+    position: static !important;
+    grid-column: 2 !important;
+    grid-row: 2 !important;
+    display: grid !important;
+    width: 20vw !important;
+    min-width: 20vw !important;
+    height: 8vw !important;
+    min-height: 8vw !important;
+    place-items: center !important;
+    margin: 1vw 0 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 1vw !important;
+    background: #d87500 !important;
+    color: transparent !important;
+    font-size: 0 !important;
+    transform: none !important;
+    inset: auto !important;
+  }
+
+  #root .entry > .replace > button.rule-action.rule-action {
+    position: static !important;
+    grid-column: 3 !important;
+    grid-row: 2 !important;
+    display: grid !important;
+    width: 13vw !important;
+    min-width: 13vw !important;
+    height: 8vw !important;
+    min-height: 8vw !important;
+    place-items: center !important;
+    margin: 1vw 0 0 1vw !important;
+    padding: 0 !important;
+    border: 1px solid #008f10 !important;
+    border-radius: 1vw !important;
+    background: #fff !important;
+    color: #008f10 !important;
+    font-size: 3.6vw !important;
+    font-weight: 400 !important;
+    line-height: 8vw !important;
+    transform: none !important;
+    inset: auto !important;
+  }
+
+  #root .entry > .replace > button.rule-action.rule-action::before,
+  #root .entry > .replace > button.rule-action.rule-action::after {
+    content: none !important;
+    display: none !important;
+  }
+
+  #root .entry > .replace > .warning-label {
+    position: relative !important;
+    grid-column: 4 !important;
+    grid-row: 2 !important;
+    display: flex !important;
+    width: 24vw !important;
+    min-width: 24vw !important;
+    height: 11vw !important;
+    min-height: 11vw !important;
+    align-items: center !important;
+    justify-content: center !important;
+    align-self: start !important;
+    justify-self: end !important;
+    margin: 0 !important;
+    padding: 0 1vw !important;
+    box-sizing: border-box !important;
+    border: 1px solid #777 !important;
+    border-radius: 1vw !important;
+    background: #fff !important;
+    color: #111 !important;
+    transform: none !important;
+    inset: auto !important;
+  }
+
+  #root .entry > .replace > .warning-label > label {
+    position: absolute !important;
+    top: -2vw !important;
+    left: 1vw !important;
+    height: 4vw !important;
+    margin: 0 !important;
+    padding: 0 1vw !important;
+    background: #fff !important;
+    color: #111 !important;
+    font-size: 3.2vw !important;
+    font-weight: 400 !important;
+    line-height: 4vw !important;
+    white-space: nowrap !important;
+  }
+
+  #root .entry > .replace > .warning-label > .warning-input {
+    position: static !important;
+    display: block !important;
+    width: 21vw !important;
+    min-width: 21vw !important;
+    height: 7vw !important;
+    min-height: 7vw !important;
+    margin: 2vw 0 0 !important;
+    padding: 0 1vw !important;
+    box-sizing: border-box !important;
+    border: 1px dashed #8f8f8f !important;
+    border-radius: .8vw !important;
+    background: #f0f0f0 !important;
+    color: #000 !important;
+    font-size: 3.4vw !important;
+    line-height: 7vw !important;
+  }
+
+  #root .entry > .replace > .replace-separator {
+    display: none !important;
+  }
+
+  #root .entry > .replace:has(> .tag-list) {
+    height: 40.3vw !important;
+    min-height: 40.3vw !important;
+  }
+
+  #root .entry > .replace > .tag-list {
+    top: 27vw !important;
+  }
+}
+
+/* Let the H5 shell scroll the complete more-records page, matching the
+ * reference: header, search controls and cards move as one document. */
+@media (max-width: 599px) {
+  #root .app > .more-panel {
+    flex: 0 0 auto !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    touch-action: auto !important;
+  }
+}
+/* Mobile quick-entry parity correction: keep the board and action toolbar as
+   two distinct rows, so separators cannot cross the board and the editor
+   starts immediately after the controls. */
+@media (max-width: 599px) {
+  #root .entry > .quick-board-indicator {
+    position: relative !important;
+    display: flex !important;
+    width: 100% !important;
+    height: 12vw !important;
+    min-height: 12vw !important;
+    box-sizing: border-box !important;
+    align-items: flex-start !important;
+    justify-content: flex-start !important;
+    margin: 0 !important;
+    padding: 1.6vw 2.5vw 0 !important;
+    border-top: 1px solid #3053cf !important;
+    background: #fff !important;
+  }
+
+  #root .entry > .quick-board-indicator > span {
+    display: grid !important;
+    width: 46.4vw !important;
+    min-width: 46.4vw !important;
+    height: 7vw !important;
+    min-height: 7vw !important;
+    place-items: center !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-sizing: border-box !important;
+    border: 1px solid #315bdc !important;
+    border-radius: .8vw !important;
+    background: #b5c8ff !important;
+    color: #111 !important;
+    font-size: 4vw !important;
+    line-height: 7vw !important;
+    text-align: center !important;
+  }
+
+  #root .entry > .replace {
+    position: relative !important;
+    display: block !important;
+    width: 100% !important;
+    height: 15vw !important;
+    min-height: 15vw !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-sizing: border-box !important;
+    border: 0 !important;
+    background: #fff !important;
+    background-image: none !important;
+    overflow: visible !important;
+  }
+
+  #root .entry > .replace::before,
+  #root .entry > .replace::after,
+  #root .entry > .replace > button::before,
+  #root .entry > .replace > button::after {
+    content: none !important;
+    display: none !important;
+  }
+
+  #root .entry > .replace > button.new,
+  #root .entry > .replace > button:not(.new):not(.undo):not(.rule-action),
+  #root .entry > .replace > button.rule-action.rule-action {
+    position: absolute !important;
+    top: 2.4vw !important;
+    display: grid !important;
+    height: 7.2vw !important;
+    min-height: 7.2vw !important;
+    place-items: center !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border-radius: 1vw !important;
+    font-size: 3.6vw !important;
+    line-height: 7.2vw !important;
+    transform: none !important;
+  }
+
+  #root .entry > .replace > button.new {
+    left: 4.14vw !important;
+    width: 19.2vw !important;
+    min-width: 19.2vw !important;
+    border: 0 !important;
+    background: #008f10 !important;
+    color: #fff !important;
+  }
+
+  #root .entry > .replace > button:not(.new):not(.undo):not(.rule-action) {
+    left: 28.82vw !important;
+    width: 17.6vw !important;
+    min-width: 17.6vw !important;
+    border: 0 !important;
+    background: #d87500 !important;
+    color: #fff !important;
+  }
+
+  #root .entry > .replace > button.rule-action.rule-action {
+    left: 50.66vw !important;
+    width: 12vw !important;
+    min-width: 12vw !important;
+    border: 1px solid #008f10 !important;
+    background: #fff !important;
+    color: #008f10 !important;
+    font-weight: 400 !important;
+  }
+
+  #root .entry > .replace > .warning-label {
+    position: absolute !important;
+    top: 0 !important;
+    right: 5.06vw !important;
+    display: flex !important;
+    width: 28vw !important;
+    min-width: 28vw !important;
+    height: 13.2vw !important;
+    min-height: 13.2vw !important;
+    align-items: center !important;
+    justify-content: center !important;
+    margin: 0 !important;
+    padding: 0 1vw !important;
+    box-sizing: border-box !important;
+    border: 1px solid #5f5f5f !important;
+    border-radius: 1vw !important;
+    background: #fff !important;
+    color: #111 !important;
+    transform: none !important;
+  }
+
+  #root .entry > .replace > .warning-label > label {
+    position: absolute !important;
+    top: -1.8vw !important;
+    left: 1vw !important;
+    height: 4vw !important;
+    margin: 0 !important;
+    padding: 0 1vw !important;
+    background: #fff !important;
+    color: #111 !important;
+    font-size: 3.2vw !important;
+    font-weight: 400 !important;
+    line-height: 4vw !important;
+    white-space: nowrap !important;
+  }
+
+  #root .entry > .replace > .warning-label > .warning-input {
+    position: static !important;
+    display: block !important;
+    width: 26vw !important;
+    min-width: 26vw !important;
+    height: 6.4vw !important;
+    min-height: 6.4vw !important;
+    margin: 2vw 0 0 !important;
+    padding: 0 1vw !important;
+    box-sizing: border-box !important;
+    border: 1px dashed #8f8f8f !important;
+    border-radius: .8vw !important;
+    background: #f0f0f0 !important;
+    color: #000 !important;
+    font-size: 3.4vw !important;
+    line-height: 6.4vw !important;
+  }
+
+  #root .entry > .replace > .replace-separator {
+    position: absolute !important;
+    top: 2vw !important;
+    z-index: 5 !important;
+    display: block !important;
+    width: 0 !important;
+    height: 9vw !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border-left: 1px dashed #3f3f3f !important;
+    background: transparent !important;
+    pointer-events: none !important;
+  }
+
+  #root .entry > .replace > .replace-separator:nth-of-type(1) {
+    left: 25.37vw !important;
+  }
+
+  #root .entry > .replace > .replace-separator:nth-of-type(2) {
+    left: 48.41vw !important;
+  }
+
+  #root .entry > .replace > .replace-separator:nth-of-type(3) {
+    left: 64.69vw !important;
+  }
+
+  #root .entry > .text-entry {
+    margin: 0 0 1.6vw !important;
+  }
+
+  #root .entry > .replace:has(> .tag-list) {
+    height: 28.3vw !important;
+    min-height: 28.3vw !important;
+  }
+
+  #root .entry > .replace > .tag-list {
+    top: 15vw !important;
+  }
+}
+
+/* Mobile more-record search geometry measured from the reference at 430px. */
+@media (max-width: 599px) {
+  #root .app > .more-panel {
+    border-top: 1px solid #000 !important;
+    padding-top: calc(.3rem - 1px) !important;
+  }
+
+  #root .more-text-field > textarea.ant-input {
+    height: 32px !important;
+    min-height: 32px !important;
+  }
+}
+
+/* The reference renders either decoded rows or the quick-record component.
+   Once decoded rows exist, the complete record component is absent. */
+#root .body:not(.full-page):has(> main > .entry.has-results) > aside {
+  display: none !important;
+}
+
+/* Mobile quick-entry toolbar: mirror the reference component's actual
+   flex/rem layout.  The document root is 100vw / 50, so 1rem equals 2vw;
+   separators derive their height from the flex row instead of a guessed vw. */
+@media (max-width: 599px) {
+  #root .entry > .quick-board-indicator {
+    position: relative !important;
+    display: flex !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    flex-wrap: wrap !important;
+    margin: 0 !important;
+    padding: .6rem .8rem 0 !important;
+    box-sizing: border-box !important;
+    border-top: 1px solid #3053cf !important;
+    background: #fff !important;
+  }
+
+  #root .entry > .quick-board-indicator > span {
+    display: inline-block !important;
+    width: calc(50% - 1rem) !important;
+    min-width: 0 !important;
+    height: 3.5rem !important;
+    min-height: 3.5rem !important;
+    margin: .3rem .5rem !important;
+    padding: 0 !important;
+    box-sizing: border-box !important;
+    border: .1rem solid #3053cf !important;
+    border-radius: .4rem !important;
+    background: #b1c2ff !important;
+    color: #000 !important;
+    font-size: 2rem !important;
+    line-height: 3.3rem !important;
+    text-align: center !important;
+  }
+
+  #root .entry > .replace {
+    position: relative !important;
+    display: flex !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 5rem !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    flex-wrap: nowrap !important;
+    margin: 0 !important;
+    padding: 1rem .8rem !important;
+    box-sizing: border-box !important;
+    border: 0 !important;
+    background: #fff !important;
+    background-image: none !important;
+    overflow: visible !important;
+  }
+
+  #root .entry > .replace > button,
+  #root .entry > .replace > button.new,
+  #root .entry > .replace > button.undo,
+  #root .entry > .replace > button.rule-action.rule-action,
+  #root .entry > .replace > button:not(.new):not(.undo):not(.rule-action) {
+    position: static !important;
+    display: inline-flex !important;
+    flex: 0 0 auto !important;
+    width: auto !important;
+    min-width: 0 !important;
+    height: 3.6rem !important;
+    min-height: 3.6rem !important;
+    align-items: center !important;
+    justify-content: center !important;
+    margin: 0 0 0 .6rem !important;
+    padding: 0 .8rem !important;
+    border-radius: .5rem !important;
+    font-size: 1.8rem !important;
+    line-height: normal !important;
+    transform: none !important;
+    white-space: nowrap !important;
+  }
+
+  #root .entry > .replace > button > span {
+    font-size: 1.8rem !important;
+  }
+
+  #root .entry > .replace > button.new {
+    order: 1 !important;
+    margin-left: 10px !important;
+    border: 0 !important;
+    background: #008f10 !important;
+    color: #fff !important;
+  }
+
+  #root .entry > .replace > .replace-separator:nth-of-type(1) {
+    order: 2 !important;
+  }
+
+  #root .entry > .replace > button:not(.new):not(.undo):not(.rule-action) {
+    order: 3 !important;
+    border: 0 !important;
+    background: #d87500 !important;
+    color: #fff !important;
+  }
+
+  #root .entry > .replace > button.undo {
+    order: 4 !important;
+  }
+
+  #root .entry > .replace > .replace-separator:nth-of-type(2) {
+    order: 5 !important;
+  }
+
+  #root .entry > .replace > button.rule-action.rule-action {
+    order: 6 !important;
+    margin-left: 0 !important;
+    border: .1rem solid #008f10 !important;
+    background: #fff !important;
+    color: #008f10 !important;
+    font-weight: 400 !important;
+  }
+
+  #root .entry > .replace > .replace-separator:nth-of-type(3) {
+    order: 7 !important;
+  }
+
+  #root .entry > .replace > .replace-separator {
+    position: static !important;
+    z-index: auto !important;
+    display: inline-block !important;
+    flex: 0 0 0 !important;
+    width: 0 !important;
+    min-width: 0 !important;
+    height: calc(100% - .6rem) !important;
+    min-height: 0 !important;
+    margin: 0 1rem !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-left: 1px dashed #3f3f3f !important;
+    background: transparent !important;
+    pointer-events: none !important;
+  }
+
+  #root .entry > .replace > .warning-label {
+    position: relative !important;
+    top: auto !important;
+    right: auto !important;
+    order: 8 !important;
+    display: inline-flex !important;
+    flex: 0 0 14rem !important;
+    width: 14rem !important;
+    min-width: 14rem !important;
+    height: 6.6rem !important;
+    min-height: 6.6rem !important;
+    align-items: center !important;
+    justify-content: center !important;
+    margin: 0 !important;
+    padding: 0 .5rem !important;
+    box-sizing: border-box !important;
+    border: .1rem solid #5f5f5f !important;
+    border-radius: .5rem !important;
+    background: #fff !important;
+    color: #000 !important;
+    transform: none !important;
+  }
+
+  #root .entry > .replace > .warning-label > label {
+    position: absolute !important;
+    top: -1rem !important;
+    left: .5rem !important;
+    display: inline-block !important;
+    height: 2.4rem !important;
+    margin: 0 !important;
+    padding: 0 .5rem !important;
+    background: #fff !important;
+    color: #000 !important;
+    font-size: 1.6rem !important;
+    font-weight: 400 !important;
+    line-height: 2.2rem !important;
+    white-space: nowrap !important;
+  }
+
+  #root .entry > .replace > .warning-label > .warning-input {
+    position: static !important;
+    display: block !important;
+    width: 10rem !important;
+    min-width: 10rem !important;
+    height: 3.2rem !important;
+    min-height: 3.2rem !important;
+    margin: 1rem 1rem 0 0 !important;
+    padding: 0 !important;
+    box-sizing: border-box !important;
+    border: .1rem dashed #8f8f8f !important;
+    border-radius: 0 !important;
+    background: #f0f0f0 !important;
+    color: #000 !important;
+    font-size: 1.6rem !important;
+    line-height: 3.2rem !important;
+  }
+
+  #root .entry > .text-entry {
+    margin: 0 0 .8rem !important;
+  }
+
+  #root .entry > .replace:has(> .tag-list) {
+    height: auto !important;
+    min-height: 5rem !important;
+    flex-wrap: wrap !important;
+  }
+
+  #root .entry > .replace > .tag-list {
+    position: static !important;
+    inset: auto !important;
+    order: 20 !important;
+    display: flex !important;
+    flex: 0 0 calc(100% + 1.6rem) !important;
+    width: calc(100% + 1.6rem) !important;
+    min-height: 4.5rem !important;
+    align-items: center !important;
+    flex-wrap: wrap !important;
+    margin: 1rem -.8rem -1rem !important;
+    padding: 1rem .8rem !important;
+    box-sizing: border-box !important;
+    border-top: 1px dashed #8f8f8f !important;
+    border-bottom: 1px solid #8f8f8f !important;
+    background: #fff !important;
+  }
+}
+
+/* Mobile /rtl controls follow the reference's rem-scaled switch metrics.
+ * At 430px the reference root is 8.6px, so this renders at 46.44x25.8px. */
+@media (max-width: 599px) {
+  #root .more-board-field > select {
+    width: auto !important;
+    min-width: 0 !important;
+    height: 3.8rem !important;
+  }
+
+  #root .more-refund-toggle {
+    flex-basis: 12rem !important;
+    width: 12rem !important;
+    min-width: 12rem !important;
+    height: 5rem !important;
+    min-height: 5rem !important;
+    padding: 0 .5rem !important;
+  }
+
+  #root .more-refund-toggle .record-detail-winning-switch.ant-switch {
+    flex: 0 0 5.4rem !important;
+    width: 5.4rem !important;
+    min-width: 5.4rem !important;
+    height: 3rem !important;
+    min-height: 3rem !important;
+    margin: 1.3rem 0 0 !important;
+    padding: 0 !important;
+    border: 1px solid transparent !important;
+    font-size: 1.6rem !important;
+    line-height: 2.8rem !important;
+  }
+
+  #root .more-refund-toggle .record-detail-winning-switch .ant-switch-handle {
+    top: 50% !important;
+    left: .1rem !important;
+    right: auto !important;
+    width: 2.4rem !important;
+    height: 2.4rem !important;
+    transform: translateY(-50%) !important;
+  }
+
+  #root .more-refund-toggle .record-detail-winning-switch.ant-switch-checked .ant-switch-handle {
+    right: .1rem !important;
+    left: auto !important;
+  }
+
+  #root .more-refund-toggle .record-detail-winning-switch .ant-switch-inner,
+  #root .more-refund-toggle .record-detail-winning-switch .ant-switch-inner > span {
+    font-size: 1.6rem !important;
+    line-height: 2.8rem !important;
+  }
+}
+
+/* Quick-entry decoded state copied from the reference production styles.
+   The reference root uses 1rem = 100vw / 50 at both narrow and wide widths,
+   so these rem measurements must not be replaced by 430px-only constants. */
+#root .entry.has-results {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  flex-grow: 1 !important;
+}
+
+#root .entry.has-results > * {
+  flex-shrink: 0 !important;
+}
+
+#root .entry.has-results > .text-entry {
+  display: flex !important;
+  flex: 1 1 auto !important;
+  width: 100% !important;
+  height: auto !important;
+  min-height: 21rem !important;
+  max-height: none !important;
+  margin: 0 0 .8rem !important;
+}
+
+#root .entry.has-results > .text-entry > textarea {
+  flex: 1 1 auto !important;
+  height: auto !important;
+  min-height: 16rem !important;
+  max-height: none !important;
+}
+
+#root .entry.has-results > .text-entry > .text-entry-footer {
+  flex: 0 0 5rem !important;
+  height: 5rem !important;
+  min-height: 5rem !important;
+  max-height: 5rem !important;
+}
+
+#root .entry.has-results > .quick-result {
+  display: block !important;
+  flex: 0 0 auto !important;
+  width: 100% !important;
+  min-height: 30rem !important;
+  max-height: none !important;
+  margin: 0 0 2rem !important;
+  padding: 0 !important;
+  overflow: auto !important;
+  background: #fff !important;
+}
+
+#root .entry.has-results > .quick-result .quick-result-row {
+  width: 100% !important;
+  min-height: 3rem !important;
+  height: auto !important;
+  margin: 0 0 .2rem !important;
+}
+
+#root .entry.has-results > .quick-result .quick-result-main {
+  display: inline-flex !important;
+  width: 100% !important;
+  height: 3rem !important;
+  min-height: 3rem !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+}
+
+#root .entry.has-results > .quick-result .quick-result-text {
+  display: block !important;
+  width: 100% !important;
+  height: 3rem !important;
+  min-height: 3rem !important;
+  margin: 0 !important;
+  padding: 0 .6rem !important;
+  font-size: 1.6rem !important;
+  line-height: 2.8rem !important;
+  white-space: pre-wrap !important;
+  overflow: hidden !important;
+}
+
+#root .entry.has-results > .quick-result .quick-result-detail,
+#root .entry.has-results > .quick-result .quick-result-summary {
+  display: flex !important;
+  width: 100% !important;
+  height: 3rem !important;
+  min-height: 3rem !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  margin: 0 !important;
+  padding: 0 1rem !important;
+  font-size: 1.6rem !important;
+  line-height: 3rem !important;
+}
+
+@media (max-width: 599px) {
+  #root .site-header:not(.header-collapsed)
+    ~ .body:not(.full-page)
+    > main
+    > .entry.has-results {
+    min-height: calc(100svh - 42.2vw) !important;
+  }
+
+  #root .site-header.header-collapsed
+    ~ .body:not(.full-page)
+    > main
+    > .entry.has-results {
+    min-height: calc(100svh - 10vw) !important;
+  }
+}
+
+/* The separator's percentage height needs a definite flex-row height.
+   Reference geometry: 6.6rem warning control + 1rem vertical padding on each
+   side = an 8.6rem toolbar; calc(100% - .6rem) then resolves to 6rem. */
+@media (max-width: 599px) {
+  #root .entry > .replace {
+    height: 8.6rem !important;
+    min-height: 8.6rem !important;
+  }
+
+  #root .entry > .replace > .replace-separator {
+    height: calc(100% - .6rem) !important;
+    min-height: 6rem !important;
+  }
+
+  #root .entry > .replace:has(> .tag-list) {
+    height: auto !important;
+    min-height: 8.6rem !important;
+  }
+}
+
+/* Mobile quick-entry lower controls: use the reference component's native
+   rem/flex sizing instead of the earlier 430px measurements. */
+@media (max-width: 599px) {
+  #root .body:not(.full-page) > main > .entry > .options {
+    display: flex !important;
+    flex: 0 0 7rem !important;
+    width: 96% !important;
+    height: 7rem !important;
+    min-height: 7rem !important;
+    max-height: 7rem !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    gap: 0 !important;
+    box-sizing: border-box !important;
+    overflow: visible !important;
+    background: #fff !important;
+    font-size: 1.6rem !important;
+    transform: none !important;
+  }
+
+  #root .entry > .options > .option-card-0,
+  #root .entry > .options > .option-card-2,
+  #root .entry > .options > .option-card-3,
+  #root .entry > .options > .option-card-4,
+  #root .entry > .options > .option-card-lottery {
+    position: relative !important;
+    display: inline-flex !important;
+    flex: 1 1 14rem !important;
+    width: 14rem !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    height: 5rem !important;
+    min-height: 5rem !important;
+    max-height: 5rem !important;
+    align-items: center !important;
+    justify-content: center !important;
+    margin: 0 !important;
+    padding: 0 .5rem !important;
+    box-sizing: border-box !important;
+    border: .1rem solid #5f5f5f !important;
+    border-radius: .5rem !important;
+    overflow: visible !important;
+  }
+
+  #root .entry > .options > .option-card-0,
+  #root .entry > .options > .option-card-2,
+  #root .entry > .options > .option-card-3,
+  #root .entry > .options > .option-card-4 {
+    margin-left: .6rem !important;
+  }
+
+  #root .entry > .options > .option-card-1 {
+    display: none !important;
+  }
+
+  #root .entry > .options > .option-card-lottery {
+    order: -1 !important;
+  }
+
+  #root .entry > .options > .option-card > .option-label,
+  #root .entry > .options > .option-card-lottery > .option-label {
+    position: absolute !important;
+    top: -1rem !important;
+    left: .5rem !important;
+    display: inline-block !important;
+    width: auto !important;
+    height: 2.4rem !important;
+    margin: 0 !important;
+    padding: 0 .5rem !important;
+    background: #fff !important;
+    color: #000 !important;
+    line-height: 2.2rem !important;
+    white-space: nowrap !important;
+  }
+
+  #root .entry > .options > .option-card > .option-label::after,
+  #root .entry > .options > .option-card-lottery > .option-label::after {
+    font-size: 1.6rem !important;
+    line-height: 2.2rem !important;
+  }
+
+  #root .entry > .options .option-hint {
+    display: none !important;
+  }
+
+  #root .entry > .options > .option-card .ant-switch,
+  #root .entry > .options > .option-card-lottery .lottery-default-switch {
+    position: relative !important;
+    display: inline-flex !important;
+    flex: 0 0 5.2rem !important;
+    width: 5.2rem !important;
+    min-width: 5.2rem !important;
+    max-width: 5.2rem !important;
+    height: 3rem !important;
+    min-height: 3rem !important;
+    max-height: 3rem !important;
+    align-items: center !important;
+    justify-content: center !important;
+    margin: 1.3rem auto 0 !important;
+    padding: 0 !important;
+    box-sizing: border-box !important;
+    border: .1rem solid transparent !important;
+    border-radius: 100px !important;
+    background: rgba(0, 0, 0, .25) !important;
+    color: #fff !important;
+    font-size: 1.6rem !important;
+    line-height: 2.8rem !important;
+  }
+
+  #root .entry > .options > .option-card .ant-switch.ant-switch-checked,
+  #root .entry > .options > .option-card-lottery .lottery-default-switch.ant-switch-checked {
+    flex-basis: 5.7rem !important;
+    width: 5.7rem !important;
+    min-width: 5.7rem !important;
+    max-width: 5.7rem !important;
+  }
+
+  #root .entry > .options > .option-card .ant-switch.ant-switch-checked {
+    background: darkblue !important;
+  }
+
+  #root .entry > .options > .option-card-lottery .lottery-default-switch {
+    background: #208b24 !important;
+  }
+
+  #root .entry > .options > .option-card-lottery .lottery-default-switch.ant-switch-checked {
+    background: #56008b !important;
+  }
+
+  #root .entry > .options > .option-card .ant-switch-handle,
+  #root .entry > .options > .option-card-lottery .ant-switch-handle {
+    position: absolute !important;
+    z-index: 2 !important;
+    top: .2rem !important;
+    left: .2rem !important;
+    right: auto !important;
+    width: 2.4rem !important;
+    height: 2.4rem !important;
+    margin: 0 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+
+  #root .entry > .options > .option-card .ant-switch.ant-switch-checked .ant-switch-handle,
+  #root .entry > .options > .option-card-lottery .ant-switch-checked .ant-switch-handle {
+    right: .1rem !important;
+    left: auto !important;
+    inset-inline-start: auto !important;
+  }
+
+  #root .entry > .options > .option-card .ant-switch-handle::before,
+  #root .entry > .options > .option-card-lottery .ant-switch-handle::before {
+    width: 100% !important;
+    height: 100% !important;
+    border-radius: 50% !important;
+    background: #fff !important;
+    box-shadow: 0 .2rem .4rem rgba(0, 35, 11, .2) !important;
+  }
+
+  #root .entry > .options > .option-card .ant-switch-inner,
+  #root .entry > .options > .option-card-lottery .ant-switch-inner {
+    position: relative !important;
+    z-index: 1 !important;
+    display: block !important;
+    width: 100% !important;
+    height: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    color: #fff !important;
+    font-size: 1.6rem !important;
+    line-height: 2.8rem !important;
+    overflow: visible !important;
+  }
+
+  #root .entry > .options > .option-card .ant-switch-inner > span,
+  #root .entry > .options > .option-card-lottery .ant-switch-inner > span {
+    top: 0 !important;
+    height: 100% !important;
+    margin: 0 !important;
+    color: #fff !important;
+    font-size: 1.6rem !important;
+    line-height: 2.8rem !important;
+    transform: none !important;
+  }
+
+  #root .body:not(.full-page) > aside > .side-total {
+    position: static !important;
+    display: block !important;
+    width: 100% !important;
+    height: 4.8rem !important;
+    min-height: 4.8rem !important;
+    max-height: 4.8rem !important;
+    margin: 0 !important;
+    padding: .3rem .1rem !important;
+    box-sizing: border-box !important;
+    border: 0 !important;
+    background: #fff !important;
+    overflow: hidden !important;
+  }
+
+  #root .body:not(.full-page) > aside > .side-total > span {
+    display: none !important;
+  }
+
+  #root .body:not(.full-page) > aside > .side-total > .side-actions {
+    display: flex !important;
+    width: 100% !important;
+    height: 3.6rem !important;
+    min-height: 3.6rem !important;
+    max-height: 3.6rem !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 0 !important;
+    margin: 0 0 .6rem !important;
+  }
+
+  #root .body:not(.full-page) > aside > .side-total > .side-actions > button {
+    position: static !important;
+    display: inline-flex !important;
+    flex: 0 0 auto !important;
+    width: auto !important;
+    min-width: 0 !important;
+    height: 3.6rem !important;
+    min-height: 3.6rem !important;
+    align-items: center !important;
+    justify-content: center !important;
+    margin: 0 !important;
+    padding: 0 .8rem !important;
+    box-sizing: border-box !important;
+    border: 0 !important;
+    border-radius: .5rem !important;
+    background: darkblue !important;
+    color: #fff !important;
+    font-size: 0 !important;
+    line-height: 3.6rem !important;
+    white-space: nowrap !important;
+  }
+
+  #root .body:not(.full-page) > aside > .side-total > .side-actions > .side-right {
+    margin-left: 1.5rem !important;
+    background: #d57500 !important;
+  }
+
+  #root .body:not(.full-page) > aside > .side-total > .side-actions > .side-right img,
+  #root .body:not(.full-page) > aside > .side-total > .side-actions .side-action-label {
+    display: none !important;
+  }
+
+  #root .body:not(.full-page) > aside > .side-total > .side-actions > button:first-child::after,
+  #root .body:not(.full-page) > aside > .side-total > .side-actions > .side-right::after {
+    display: inline-flex !important;
+    height: 100% !important;
+    align-items: center !important;
+    justify-content: center !important;
+    color: #fff !important;
+    font-size: 1.8rem !important;
+    line-height: 3.6rem !important;
+    white-space: nowrap !important;
+  }
+
+  #root .body:not(.full-page) > aside > .side-total > .side-actions > button:first-child::after {
+    content: "查看更多" !important;
+  }
+
+  #root .body:not(.full-page) > aside > .side-total > .side-actions > .side-right::after {
+    content: "停押/降水" !important;
+  }
+}
+
+/* Stop/drop filters mirror the reference production layout. The reference
+ * uses one responsive scale (1rem = 2vw), three 4rem flex rows, and natural
+ * select widths instead of stretching the controls across a grid cell. */
+#root .stop-filter {
+  position: relative !important;
+  display: block !important;
+  box-sizing: border-box !important;
+  width: 100% !important;
+  height: auto !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: #fff !important;
+}
+
+#root .stop-filter-row {
+  display: flex !important;
+  width: 100% !important;
+  height: 4rem !important;
+  min-height: 4rem !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 0 !important;
+  margin: .7rem 0 !important;
+  padding: 0 !important;
+  background: #fff !important;
+  font-size: 1.6rem !important;
+}
+
+#root .stop-filter-row > .stop-search-field,
+#root .stop-filter-row > .stop-select-field,
+#root .stop-filter-row > .stop-date-field,
+#root .stop-filter-row > .stop-category-field,
+#root .stop-filter-row > .stop-filter-actions {
+  display: inline-flex !important;
+  flex: 1 1 auto !important;
+  box-sizing: border-box !important;
+  width: 50% !important;
+  height: auto !important;
+  min-height: 0 !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 0 !important;
+  margin: .4rem .1rem !important;
+  padding: 0 .5rem !important;
+  border: 0 !important;
+  background: transparent !important;
+  transform: none !important;
+}
+
+#root .stop-filter-row > div > label {
+  position: static !important;
+  display: block !important;
+  flex: 0 0 auto !important;
+  width: auto !important;
+  min-width: 0 !important;
+  height: auto !important;
+  margin: 0 1rem 0 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: #000 !important;
+  font-size: 1.6rem !important;
+  line-height: normal !important;
+  white-space: nowrap !important;
+}
+
+#root .stop-filter-row > div:first-child > label {
+  padding: 0 .3rem 0 .2rem !important;
+}
+
+#root .stop-filter-row > div > input {
+  display: block !important;
+  flex: 0 0 15rem !important;
+  box-sizing: border-box !important;
+  width: 15rem !important;
+  min-width: 15rem !important;
+  height: 4rem !important;
+  min-height: 4rem !important;
+  margin: 0 !important;
+  padding: 4px 11px !important;
+  border: 1px solid #d9d9d9 !important;
+  border-radius: 4px !important;
+  background: #fff !important;
+  color: rgba(0, 0, 0, .65) !important;
+  font-size: 1.9rem !important;
+  line-height: 3.8rem !important;
+}
+
+#root .stop-filter-row > div > select {
+  display: block !important;
+  flex: 0 0 auto !important;
+  box-sizing: border-box !important;
+  width: auto !important;
+  min-width: 0 !important;
+  height: 3.8rem !important;
+  min-height: 3.8rem !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 1px solid #c0c0c0 !important;
+  border-radius: .4rem !important;
+  background: #fff !important;
+  color: #000 !important;
+  font-size: 1.9rem !important;
+  line-height: normal !important;
+}
+
+#root .stop-filter-row > .stop-filter-actions {
+  gap: 0 !important;
+}
+
+#root .stop-filter-actions .stop-search-button,
+#root .stop-filter-actions .stop-back-button {
+  display: inline-flex !important;
+  flex: 0 0 auto !important;
+  box-sizing: border-box !important;
+  width: auto !important;
+  min-width: 0 !important;
+  height: 3.6rem !important;
+  min-height: 3.6rem !important;
+  align-items: center !important;
+  justify-content: center !important;
+  margin: 0 !important;
+  padding: 0 .8rem !important;
+  border: 0 !important;
+  border-radius: .5rem !important;
+  background: #00008b !important;
+  color: #fff !important;
+  font-size: 14px !important;
+  font-weight: 400 !important;
+  line-height: 1.5 !important;
+  white-space: nowrap !important;
+}
+
+#root .stop-filter-actions .stop-back-button {
+  position: static !important;
+  inset: auto !important;
+  margin-left: 1rem !important;
+  background: #6f6f6f !important;
+  transform: none !important;
+}
+
+#root .stop-filter-actions .stop-search-button > .anticon + span {
+  margin-left: 8px !important;
+}
+
+/* The order feedback uses the reference site's Ant Design 3 message
+ * structure instead of inheriting Ant Design 6's different outer layout. */
+.reference-bet-message {
+  position: fixed;
+  z-index: 100003;
+  top: 30vh;
+  left: 0;
+  width: 100%;
+  color: #000;
+  font-size: 2rem;
+  line-height: 1.5;
+  text-align: center;
+  pointer-events: none;
+}
+
+.reference-bet-message-notice {
+  padding: 8px;
+  text-align: center;
+}
+
+.reference-bet-message-content {
+  display: inline-block;
+  max-width: calc(100vw - 16px);
+  padding: 1rem 1.6rem;
+  box-sizing: border-box;
+  border: 2px solid #000;
+  border-radius: .5rem;
+  background: #ffffc7;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, .15);
+  color: #000;
+  font-size: 2rem;
+  line-height: 1.5;
+  white-space: nowrap;
+  pointer-events: all;
+  animation: reference-bet-message-enter .3s cubic-bezier(.23, 1, .32, 1);
+}
+
+.reference-bet-message-icon {
+  position: relative;
+  top: .1rem;
+  margin-right: 1rem;
+  font-size: 2rem;
+}
+
+.reference-bet-message-icon-info {
+  color: #1890ff;
+}
+
+.reference-bet-message-icon-success {
+  color: #52c41a;
+}
+
+.reference-bet-message-content > span:last-child {
+  color: #000;
+  font-size: 2rem;
+}
+
+@keyframes reference-bet-message-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* The reference keeps both pagination strips on the same white sheet as the
+ * filters; do not let the stop/drop panel's blue background show through. */
+#root .stop-pagination,
+#root .stop-pagination-bottom {
+  background: #fff !important;
+}
+
+#root .stop-drop-panel {
+  background: #fff !important;
+}
+
+/* Mobile quick-record cards follow the reference styled-component directly.
+ * The reference uses rem units from html { font-size: calc(100vw / 50) }:
+ * 96% card width, a 4rem footer, 3.6rem buttons and 1rem action spacing. */
+@media (max-width: 599px) {
+  .body:not(.full-page) > aside > .side-record-list {
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 1rem 0 !important;
+    background: #efefef !important;
+  }
+
+  .body:not(.full-page) > aside > .side-record-list > .side-record-item {
+    display: flex !important;
+    flex-direction: column !important;
+    width: 96% !important;
+    min-height: 0 !important;
+    margin: 0 auto !important;
+    padding: .5rem !important;
+    border: 0 !important;
+    border-radius: .6rem !important;
+    background: transparent !important;
+  }
+
+  .body:not(.full-page) > aside > .side-record-list > .side-record-item:nth-of-type(n + 2) {
+    margin-top: .8rem !important;
+  }
+
+  .body:not(.full-page) > aside > .side-record-list > .side-record-item:nth-of-type(even) {
+    background: #fff !important;
+  }
+
+  .body:not(.full-page) > aside > .side-record-list > .side-record-item:not(.refunded) {
+    background: transparent !important;
+  }
+
+  .body:not(.full-page) > aside > .side-record-list > .side-record-item:not(.refunded):nth-of-type(even) {
+    background: #fff !important;
+  }
+
+  .body:not(.full-page) > aside > .side-record-list > .side-record-item > time {
+    display: block !important;
+    width: 100% !important;
+    height: 3rem !important;
+    min-height: 3rem !important;
+    margin: 0 0 .6rem !important;
+    padding: 0 .3rem !important;
+    color: #000 !important;
+    font-size: 1.8rem !important;
+    line-height: 3rem !important;
+  }
+
+  .body:not(.full-page) > aside > .side-record-list > .side-record-item > time .side-record-board {
+    display: inline-block !important;
+    width: auto !important;
+    min-width: 0 !important;
+    height: 2.6rem !important;
+    margin-right: .6rem !important;
+    padding: 0 .6rem !important;
+    border-radius: .3rem !important;
+    color: #fff !important;
+    font-size: 1.6rem !important;
+    line-height: 2.6rem !important;
+    vertical-align: middle !important;
+  }
+
+  .body:not(.full-page) > aside > .side-record-list > .side-record-item > .side-record-text {
+    display: contents !important;
+  }
+
+  .body:not(.full-page) > aside > .side-record-list > .side-record-item > .side-record-text > p {
+    width: 100% !important;
+    margin: 0 !important;
+    padding: .8rem 1rem !important;
+    color: #000 !important;
+    font-size: 1.6rem !important;
+    line-height: 2rem !important;
+    white-space: pre-wrap !important;
+  }
+
+  .body:not(.full-page) > aside > .side-record-list > .side-record-item > footer {
+    display: flex !important;
+    width: 100% !important;
+    height: 4rem !important;
+    min-height: 4rem !important;
+    margin: .3rem 0 0 !important;
+    padding: 0 .3rem !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    background: transparent !important;
+  }
+
+  .body:not(.full-page) > aside > .side-record-list > .side-record-item > footer > strong {
+    color: red !important;
+    font-size: 1.8rem !important;
+    font-weight: 400 !important;
+    line-height: 4rem !important;
+  }
+
+  .body:not(.full-page) > aside > .side-record-list > .side-record-item > footer > div {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 0 !important;
+  }
+
+  .body:not(.full-page) > aside > .side-record-list > .side-record-item > footer .side-record-action {
+    display: inline-flex !important;
+    width: auto !important;
+    min-width: 0 !important;
+    height: 3.6rem !important;
+    min-height: 3.6rem !important;
+    margin: 0 1rem 0 0 !important;
+    padding: 0 .8rem !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border-radius: .5rem !important;
+    font-size: 1.8rem !important;
+    line-height: 1 !important;
+  }
+
+  .body:not(.full-page) > aside > .side-record-list > .side-record-item > footer .side-record-action.detail {
+    border: 0 !important;
+    background: #027f00 !important;
+    color: #fff !important;
+  }
+
+  .body:not(.full-page) > aside > .side-record-list > .side-record-item > footer .side-record-action.numbers {
+    border: .1rem solid #d9d9d9 !important;
+    background: #fff !important;
+    color: rgba(0, 0, 0, .65) !important;
+  }
+
+  .body:not(.full-page) > aside > .side-record-list > .side-record-item > footer .side-record-action.refund {
+    margin-right: 0 !important;
+    border: 0 !important;
+    background: #d50707 !important;
+    color: #fff !important;
+  }
+
+  .body:not(.full-page) > aside > .side-record-list .side-record-detail-icon {
+    width: 1.8rem !important;
+    height: 1.8rem !important;
+    fill: none !important;
+    stroke: currentColor !important;
+    stroke-width: 1.4 !important;
+    stroke-linecap: round !important;
+    stroke-linejoin: round !important;
+  }
+
+  .body:not(.full-page) > aside > .side-record-list > .side-record-item.refunded,
+  .body:not(.full-page) > aside > .side-record-list > .side-record-item.refunded:nth-of-type(even) {
+    background: #ffe0e0 !important;
+  }
+
+  .body:not(.full-page) > aside > .side-record-list > .side-record-item.refunded > footer > strong {
+    color: darkblue !important;
+  }
+}
+/* Reference-parity refund confirmation. Kept separate from every other modal. */
+.ant-modal-wrap:has(> .refund-confirm-modal) {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  overflow: auto !important;
+}
+
+.refund-confirm-modal.ant-modal-confirm {
+  box-sizing: border-box !important;
+  width: 92vw !important;
+  max-width: 92vw !important;
+  top: 0 !important;
+  margin: 0 4vw !important;
+  padding: 0 0 24px !important;
+}
+
+.refund-confirm-modal.ant-modal-confirm .ant-modal-container,
+.refund-confirm-modal.ant-modal-confirm .ant-modal-content {
+  box-sizing: border-box !important;
+  padding: 0 !important;
+  border-radius: .4rem !important;
+  background: #fff !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, .15) !important;
+}
+
+.refund-confirm-modal.ant-modal-confirm .ant-modal-header,
+.refund-confirm-modal.ant-modal-confirm .ant-modal-close {
+  display: none !important;
+}
+
+.refund-confirm-modal.ant-modal-confirm .ant-modal-body {
+  box-sizing: border-box !important;
+  width: 100% !important;
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: 86vh !important;
+  margin: 0 !important;
+  padding: 2rem 1.5rem !important;
+  overflow-y: auto !important;
+}
+
+.refund-confirm-modal.ant-modal-confirm .ant-modal-confirm-body-wrapper {
+  display: block !important;
+  width: 100% !important;
+  height: auto !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  zoom: 1 !important;
+}
+
+.refund-confirm-modal.ant-modal-confirm .ant-modal-confirm-body-wrapper::before,
+.refund-confirm-modal.ant-modal-confirm .ant-modal-confirm-body-wrapper::after {
+  display: table !important;
+  content: "" !important;
+}
+
+.refund-confirm-modal.ant-modal-confirm .ant-modal-confirm-body-wrapper::after {
+  clear: both !important;
+}
+
+.refund-confirm-modal.ant-modal-confirm .ant-modal-confirm-body {
+  display: block !important;
+  width: 100% !important;
+  height: auto !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.refund-confirm-modal.ant-modal-confirm .ant-modal-confirm-body > .anticon {
+  float: left !important;
+  display: block !important;
+  width: 22px !important;
+  height: 22px !important;
+  margin: 0 16px 0 0 !important;
+  color: #faad14 !important;
+  font-size: 22px !important;
+  line-height: 0 !important;
+}
+
+.refund-confirm-modal.ant-modal-confirm .ant-modal-confirm-paragraph {
+  display: block !important;
+  width: auto !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+.refund-confirm-modal.ant-modal-confirm .ant-modal-confirm-title {
+  display: block !important;
+  width: auto !important;
+  height: auto !important;
+  min-height: 3.15rem !important;
+  overflow: hidden !important;
+  color: rgba(0, 0, 0, .85) !important;
+  font-size: 2.25rem !important;
+  font-weight: 500 !important;
+  line-height: 3.15rem !important;
+}
+
+.refund-confirm-modal.ant-modal-confirm .ant-modal-confirm-content:empty {
+  display: none !important;
+}
+
+.refund-confirm-modal.ant-modal-confirm .ant-modal-confirm-btns {
+  display: flex !important;
+  float: right !important;
+  width: auto !important;
+  height: 3.6rem !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  margin: 24px 0 0 !important;
+  padding: 0 !important;
+}
+
+.refund-confirm-modal.ant-modal-confirm .ant-modal-confirm-btns button.ant-btn {
+  display: inline-flex !important;
+  box-sizing: border-box !important;
+  width: auto !important;
+  min-width: 0 !important;
+  height: 3.6rem !important;
+  min-height: 3.6rem !important;
+  align-items: center !important;
+  justify-content: center !important;
+  margin: 0 !important;
+  padding: 0 .8rem !important;
+  border-radius: .5rem !important;
+  font-size: 1.8rem !important;
+  font-weight: 400 !important;
+  line-height: 3.6rem !important;
+  white-space: nowrap !important;
+}
+
+.refund-confirm-modal.ant-modal-confirm .ant-modal-confirm-btns button.ant-btn + button.ant-btn {
+  margin-left: 8px !important;
+}
+
+.refund-confirm-modal.ant-modal-confirm .ant-modal-confirm-btns button.ant-btn > span {
+  display: block !important;
+  font-size: 1.8rem !important;
+  font-weight: 400 !important;
+  line-height: 2.7rem !important;
+  white-space: nowrap !important;
+}
+
+.refund-confirm-modal.ant-modal-confirm .ant-modal-confirm-btns .ant-btn-default {
+  border: 1px solid #d9d9d9 !important;
+  background: #fff !important;
+  color: rgba(0, 0, 0, .65) !important;
+}
+
+.refund-confirm-modal.ant-modal-confirm .ant-modal-confirm-btns .ant-btn-primary {
+  border: 0 !important;
+  background: darkblue !important;
+  color: #fff !important;
 }

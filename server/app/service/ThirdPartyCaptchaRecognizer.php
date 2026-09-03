@@ -1,0 +1,130 @@
+<?php
+declare(strict_types=1);
+
+namespace app\service;
+
+/** Decode the reference site's arithmetic image captcha through a configured OCR provider. */
+final class ThirdPartyCaptchaRecognizer
+{
+    public function recognize(string $imageBytes, array $config): string
+    {
+        if ($imageBytes === '') throw new \RuntimeException('验证码图片为空');
+        $ocrText = ''; $ocrCandidates = [];
+        $endpoint = trim((string)($config['captcha_ocr_endpoint'] ?? ''));
+        if ($endpoint !== '') {
+            if (!preg_match('#^https?://#i', $endpoint)) {
+                $endpoint = rtrim((string)($config['base_url'] ?? ''), '/').'/'.ltrim($endpoint, '/');
+            }
+            $response = $this->httpJson($endpoint, ['image_base64' => base64_encode($imageBytes)]);
+            $ocrText = (string)($response['data']['text'] ?? $response['data']['result'] ?? $response['text'] ?? $response['result'] ?? '');
+            $ocrCandidates = [$ocrText];
+        } else {
+            $command = trim((string)($config['captcha_ocr_command'] ?? ''));
+            if ($command === '') throw new \RuntimeException('未配置验证码 OCR 端点或 OCR 命令');
+            $ocrCandidates = $this->runOcrCandidates($command, $imageBytes, (string)($config['captcha_ocr_language'] ?? 'chi_sim+eng'));
+            $ocrText = $ocrCandidates[0] ?? '';
+        }
+        $answers = [];
+        foreach ($ocrCandidates as $candidate) {
+            $candidateAnswer = self::parseExpression($candidate);
+            if ($candidateAnswer !== null) $answers[$candidateAnswer] = ($answers[$candidateAnswer] ?? 0) + 1;
+        }
+        if ($answers === []) throw new \RuntimeException('验证码 OCR 结果无法解析: '.mb_substr($ocrText, 0, 80));
+        // Prefer a value supported by more OCR passes; ties keep the first
+        // pass, which is the least transformed source image.
+        arsort($answers); return (string)array_key_first($answers);
+    }
+
+    /** Public for deterministic unit tests and OCR-provider adapters. */
+    public static function parseExpression(string $text): ?int
+    {
+        $text = trim($text);
+        $map = ['人参'=>'3','参'=>'3','零'=>'0','〇'=>'0','一'=>'1','壹'=>'1','二'=>'2','贰'=>'2','两'=>'2','三'=>'3','叁'=>'3','四'=>'4','肆'=>'4','五'=>'5','伍'=>'5','六'=>'6','陆'=>'6','七'=>'7','柒'=>'7','八'=>'8','捌'=>'8','九'=>'9','玖'=>'9'];
+        $text = strtr($text, $map);
+        $text = preg_replace('/\s+/u', '', $text) ?? '';
+        $text = str_replace(['＝','×','*','÷','－','—','−'], ['=','*','*','/','-','-','-'], $text);
+        if (preg_match('/^=?([0-9]{1,2})$/', $text, $match)) return (int)$match[1];
+        if (!preg_match('/^([0-9]{1,2})([+\-*\/])([0-9]{1,2})(?:=([0-9]{1,2}))?$/', $text, $match)) return null;
+        $left = (int)$match[1]; $right = (int)$match[3];
+        $value = match ($match[2]) {
+            '+' => $left + $right,
+            '-' => $left - $right,
+            '*' => $left * $right,
+            '/' => $right !== 0 && $left % $right === 0 ? intdiv($left, $right) : null,
+            default => null,
+        };
+        if ($value === null || $value < 0 || $value > 99) return null;
+        if (isset($match[4]) && (int)$match[4] !== $value) return null;
+        return $value;
+    }
+
+    private function runOcrCommand(string $command, string $imageBytes, string $language): string
+    {
+        return $this->runOcrCandidates($command, $imageBytes, $language)[0] ?? '';
+    }
+
+    /** @return array<int,string> */
+    private function runOcrCandidates(string $command, string $imageBytes, string $language): array
+    {
+        if (preg_match('/^[A-Za-z0-9_\.\/-]+$/', $command) !== 1) throw new \InvalidArgumentException('OCR 命令路径无效');
+        $file = tempnam(sys_get_temp_dir(), 'quick-captcha-');
+        if ($file === false) throw new \RuntimeException('无法创建验证码临时文件');
+        try {
+            if (file_put_contents($file, $imageBytes) === false) throw new \RuntimeException('无法保存验证码临时文件');
+            if ($language !== '' && preg_match('/^[A-Za-z0-9_+.-]+$/', $language) !== 1) throw new \InvalidArgumentException('OCR 语言参数无效');
+            $files = [$file];
+            // The source image is only 100x45.  An enlarged grayscale copy
+            // gives Tesseract enough glyph detail to recognize Chinese
+            // numerals such as “叁/陆” reliably.
+            if (function_exists('imagecreatefromstring') && function_exists('imagecreatetruecolor')) {
+                $src = @imagecreatefromstring($imageBytes);
+                if ($src !== false) {
+                    $w = imagesx($src); $h = imagesy($src); $scaled = imagecreatetruecolor($w * 4, $h * 4);
+                    imagecopyresampled($scaled, $src, 0, 0, 0, 0, $w * 4, $h * 4, $w, $h);
+                    imagefilter($scaled, IMG_FILTER_GRAYSCALE); imagefilter($scaled, IMG_FILTER_CONTRAST, -25);
+                    $scaledFile = tempnam(sys_get_temp_dir(), 'quick-captcha-up-');
+                    if ($scaledFile !== false) { imagejpeg($scaled, $scaledFile, 95); $files[] = $scaledFile; }
+                    imagedestroy($scaled); imagedestroy($src);
+                }
+            }
+            $langArg = $language === '' ? '' : ' -l '.escapeshellarg($language); $candidates = []; $answerVotes = [];
+            foreach ($files as $candidateFile) foreach ([6,7,8,10,13] as $psm) {
+                $cmd = escapeshellcmd($command).$langArg.' '.escapeshellarg($candidateFile).' stdout --psm '.$psm.' 2>/dev/null';
+                $output = []; $exit = 0;
+                if (function_exists('exec')) { \exec($cmd, $output, $exit); }
+                elseif (function_exists('shell_exec')) { $raw = \shell_exec($cmd); $output = $raw === null ? [] : (preg_split('/\R/', trim($raw)) ?: []); $exit = $raw === null ? 1 : 0; }
+                else throw new \RuntimeException('服务器未启用 OCR 命令执行，请填写 OCR HTTP 端点');
+                if ($exit === 0) {
+                    $value = trim(implode('', $output));
+                    if ($value !== '') {
+                        $candidates[] = $value;
+                        $answer = self::parseExpression($value);
+                        if ($answer !== null) {
+                            $answerVotes[$answer] = ($answerVotes[$answer] ?? 0) + 1;
+                            // Two agreeing OCR layouts are enough for this
+                            // small arithmetic captcha. Avoid always running
+                            // all ten Tesseract passes, which previously made
+                            // first login exceed the browser's 12s timeout.
+                            if ($answerVotes[$answer] >= 2) break 2;
+                        }
+                    }
+                }
+            }
+            foreach ($files as $candidateFile) if ($candidateFile !== $file) @unlink($candidateFile);
+            if ($candidates === []) throw new \RuntimeException('OCR 命令执行失败');
+            return $candidates;
+        } finally { @unlink($file); }
+    }
+
+    private function httpJson(string $url, array $payload): array
+    {
+        $ch = curl_init($url);
+        if ($ch === false) throw new \RuntimeException('无法初始化 OCR 请求');
+        curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 15, CURLOPT_HTTPHEADER => ['Content-Type: application/json'], CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR)]);
+        $raw = curl_exec($ch); $error = curl_error($ch); curl_close($ch);
+        if ($raw === false) throw new \RuntimeException('OCR 请求失败: '.$error);
+        $decoded = json_decode((string)$raw, true);
+        if (!is_array($decoded)) throw new \RuntimeException('OCR 返回格式无效');
+        return $decoded;
+    }
+}

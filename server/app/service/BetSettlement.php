@@ -46,6 +46,17 @@ final class BetSettlement
                         if($fallback!=='') $numbers=[$fallback];
                     }
                     if($numbers===[])throw new \RuntimeException('注单明细 #'.(int)$detail['id'].' 没有可结算的玩法表达式，已停止整单结算');
+                    // Provider continuation tickets used to persist a 组三/组六
+                    // catalogue selection as all of its expanded combinations.
+                    // Restore the original compact package before matching so
+                    // one package stake receives one package payout. Example:
+                    // `123 组三三码 10元` must settle as `三123` at 10×50,
+                    // not as six unrelated 1.67-yuan rows.
+                    $numbers=$this->compactLegacyGroupPackage(
+                        $numbers,
+                        (string)($lockedRecord['source_text']??''),
+                        (string)($stop['play_type']??'')
+                    );
                     [$odds,$legacyFallback]=$this->lockedOdds($detail,$stop,$lotteryId,count($numbers));
                     $payout=$this->detailPayout($numbers,$draw,(string)($detail['source_text']??''),(float)$detail['amount'],$odds);
                     $win=$payout['win'];$totalWin+=$win;$totalRebate+=(float)($detail['rebate']??0);
@@ -124,6 +135,38 @@ final class BetSettlement
             if($settled!==null){$processed++;if((float)$settled['win']>0)$won++;}
         }
         return ['records' => $processed, 'won' => $won];
+    }
+
+    /**
+     * @param array<int,string> $numbers
+     * @return array<int,string>
+     */
+    private function compactLegacyGroupPackage(array $numbers,string $recordSource,string $playType): array
+    {
+        if(count($numbers)<2||$recordSource==='')return $numbers;
+        if(preg_match('/^(组三|组六)([一二两三四五六七八九])码$/u',trim($playType),$play)!==1)return $numbers;
+        $lengths=['一'=>1,'二'=>2,'两'=>2,'三'=>3,'四'=>4,'五'=>5,'六'=>6,'七'=>7,'八'=>8,'九'=>9];
+        $selectionLength=$lengths[$play[2]]??0;
+        if($selectionLength<2)return $numbers;
+        $requiredUnique=$play[1]==='组三'?2:3;
+        $expandedDigits=[];
+        foreach($numbers as $number){
+            if(preg_match('/^\d{3}$/',$number)!==1)return $numbers;
+            $digits=array_values(array_unique(str_split($number)));
+            if(count($digits)!==$requiredUnique)return $numbers;
+            foreach($digits as $digit)$expandedDigits[$digit]=true;
+        }
+        if(count($expandedDigits)!==$selectionLength)return $numbers;
+        $matchCount=preg_match_all('/(?<!\d)(\d{'.$selectionLength.'})(?!\d)/u',$recordSource,$matches);
+        if($matchCount===false||$matchCount<1)return $numbers;
+        foreach((array)($matches[1]??[]) as $candidate){
+            $selected=array_values(array_unique(str_split((string)$candidate)));
+            if(count($selected)!==$selectionLength)continue;
+            if(array_diff($selected,array_keys($expandedDigits))===[]&&array_diff(array_keys($expandedDigits),$selected)===[]){
+                return [($play[1]==='组三'?'三':'六').$candidate];
+            }
+        }
+        return $numbers;
     }
 
     private function syncSubmissionSummary(int $submissionId): void

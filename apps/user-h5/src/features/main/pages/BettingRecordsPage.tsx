@@ -2,12 +2,14 @@ import { useEffect, useState } from "react";
 import { App as AntdApp, DatePicker, Empty } from "antd";
 import zhCN from "antd/es/date-picker/locale/zh_CN";
 import dayjs from "dayjs";
-import { ExportOutlined, SearchOutlined } from "@ant-design/icons";
+import { ExportOutlined, QuestionCircleOutlined, SearchOutlined } from "@ant-design/icons";
 import { apiErrorMessage } from "../../../utils/request";
 import { getBetRecords, refundBetRecord, type BetRecord } from "../../../api/user";
+import { useReferenceSuccessMessage } from "../../../components/ReferenceSuccessMessage";
 
 export function BettingRecordsPage() {
   const { message, modal } = AntdApp.useApp();
+  const { holder: refundSuccessHolder, show: showRefundSuccess } = useReferenceSuccessMessage();
   const today = dayjs().format("YYYY-MM-DD");
   const [records, setRecords] = useState<BetRecord[]>([]);
   const [status, setStatus] = useState("all");
@@ -71,15 +73,23 @@ export function BettingRecordsPage() {
   };
   const refund = (record: BetRecord) => {
     modal.confirm({
-      title: "确认退单",
-      content: `确定退回该注单，金额 ¥ ${record.amount} 吗？`,
-      okText: "确认退单",
+      className: "refund-confirm-modal",
+      rootClassName: "refund-confirm-root",
+      centered: true,
+      width: "92vw",
+      icon: <QuestionCircleOutlined />,
+      title: "确认退码吗？",
+      okText: "我确定",
       cancelText: "取消",
-      okButtonProps: { danger: true },
       onOk: async () => {
         try {
           await refundBetRecord(record.id);
-          message.success("退单成功");
+          const lotteryName = record.lottery === "福"
+            ? "福彩3D"
+            : record.lottery === "体"
+              ? "排列三"
+              : record.lottery || "福彩3D";
+          showRefundSuccess(`${lotteryName}成功退单`);
           await loadRecords(1);
           window.dispatchEvent(new Event("profile-updated"));
           window.dispatchEvent(new Event("bet-records-updated"));
@@ -91,6 +101,7 @@ export function BettingRecordsPage() {
   };
   return (
     <div className="records-panel">
+      {refundSuccessHolder}
       <div className="records-filter">
         <label className="records-field records-prize">
           <span>中奖</span>

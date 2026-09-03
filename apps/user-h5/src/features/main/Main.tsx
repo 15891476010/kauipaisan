@@ -5,6 +5,7 @@ import {
   getLotteries,
   getProfile,
   heartbeat,
+  type BetRecord,
   type Lottery,
 } from "../../api/user";
 import { Header } from "./components/Header";
@@ -27,6 +28,8 @@ function MainShell({ name, logout, forcePasswordChange = false, onPasswordChange
   const locked = forcePasswordChange;
   const [panelRight, setPanelRight] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [moreNumberRecord, setMoreNumberRecord] = useState<BetRecord>();
+  const [quickEntryHasResults, setQuickEntryHasResults] = useState(false);
   const [warmVisible, setWarmVisible] = useState(false);
   const [warmOpen, setWarmOpen] = useState(true);
   const [balances, setBalances] = useState<Balances>({
@@ -205,7 +208,10 @@ function MainShell({ name, logout, forcePasswordChange = false, onPasswordChange
       {moreOpen ? (
         <MorePanel
           lotteries={lotteries}
+          memberName={name}
+          initialNumberRecord={moreNumberRecord}
           onBack={() => {
+            setMoreNumberRecord(undefined);
             setMoreOpen(false);
             window.location.hash = "#/kb";
           }}
@@ -214,10 +220,16 @@ function MainShell({ name, logout, forcePasswordChange = false, onPasswordChange
         <div
           className={`body${panelRight ? " panel-right" : ""}${fullPage ? " full-page" : ""}`}
         >
-          {!fullPage && (
+          {!fullPage && !quickEntryHasResults && (
             <aside>
               <SideBetRecords
                 onMore={() => {
+                  setMoreNumberRecord(undefined);
+                  setMoreOpen(true);
+                  window.location.hash = "#/rtl";
+                }}
+                onNumbers={(record) => {
+                  setMoreNumberRecord(record);
                   setMoreOpen(true);
                   window.location.hash = "#/rtl";
                 }}
@@ -249,6 +261,7 @@ function MainShell({ name, logout, forcePasswordChange = false, onPasswordChange
                   <QuickEntryPage
                     lotteries={lotteries}
                     selectedLottery={selectedLottery}
+                    onResultsVisibilityChange={setQuickEntryHasResults}
                   />
                 }
               />
@@ -258,13 +271,14 @@ function MainShell({ name, logout, forcePasswordChange = false, onPasswordChange
                   <QuickEntryPage
                     lotteries={lotteries}
                     selectedLottery={selectedLottery}
+                    onResultsVisibilityChange={setQuickEntryHasResults}
                   />
                 }
               />
               <Route path="/zh" element={<RecordsPage />} />
               <Route path="/zd" element={<BillsPage />} />
               <Route path="/dbl" element={<StopDropPage />} />
-              <Route path="/rtl" element={<MorePanel lotteries={lotteries} onBack={() => { window.location.hash = "#/kb"; }} />} />
+              <Route path="/rtl" element={<MorePanel lotteries={lotteries} memberName={name} onBack={() => { setMoreNumberRecord(undefined); window.location.hash = "#/kb"; }} />} />
               <Route
                 path="/hyxx"
                 element={<MemberPage name={name} selectedLottery={selectedLottery} />}

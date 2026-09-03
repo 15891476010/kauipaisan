@@ -51,15 +51,22 @@ final class AgentReport
 
     public function issues(Request $request): \think\response\Json
     {
-        $session=$this->session($request); $siteId=(int)$session['site_id']; $lottery=trim((string)$request->param('lottery',''));
+        $session=$this->session($request); $siteId=(int)$session['site_id']; $tenantId=(int)($session['tenant_id']??1); $lottery=trim((string)$request->param('lottery',''));
+        $requestedFrom=trim((string)$request->param('from','')); $requestedTo=trim((string)$request->param('to',''));
+        if($requestedFrom!==''||$requestedTo!=='') {
+            try { [$from,$to]=$this->dates($request,$session); } catch (\InvalidArgumentException $e) { return $this->reply(null,$e->getMessage(),422); }
+        } else {
+            $from=date('Y-m-01'); $to=date('Y-m-t');
+        }
         $query=Db::name('lottery_histories')->alias('h')->join('lotteries l','l.id=h.lottery_id')->join('site_lotteries sl','sl.lottery_id=l.id')
-            ->where('sl.site_id',$siteId)->where('h.draw_day','>=',date('Y-m-01'))->where('h.draw_day','<=',date('Y-m-t'));
+            ->where('sl.site_id',$siteId)->where('sl.tenant_id',$tenantId)->where('l.tenant_id',$tenantId)
+            ->where('l.status',1)->whereNull('l.deleted_at')->where('h.draw_day','>=',$from)->where('h.draw_day','<=',$to);
         if($lottery!=='') $query->where('l.name',$lottery);
-        $configuredLimit=(int)Db::name('settings')->where('site_id',$siteId)->where('key','draw_history_limit')->value('value');
-        $drawHistoryLimit=$configuredLimit>0?min(200,$configuredLimit):80;
-        $items=$query->field('h.code AS issue_no,h.draw_day AS date')->order('h.draw_day desc')->order('h.code desc')->limit($drawHistoryLimit)->select()->toArray();
+        // A single monthly dropdown needs every issue in the selected month;
+        // the general draw-history display limit must not truncate it.
+        $items=$query->field('h.code AS issue_no,h.draw_day AS date')->order('h.draw_day desc')->order('h.code desc')->limit(100)->select()->toArray();
         $seen=[]; $list=[]; foreach($items as $row) { $issue=(string)$row['issue_no']; if(isset($seen[$issue])) continue; $seen[$issue]=true; $list[]=['issue_no'=>$issue,'date'=>(string)$row['date']]; }
-        return $this->reply(['list'=>$list]);
+        return $this->reply(['list'=>$list,'from'=>$from,'to'=>$to]);
     }
 
     private function rows(array $session,string $from,string $to,array $lotteries): array

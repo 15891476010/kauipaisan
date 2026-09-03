@@ -41,6 +41,65 @@ export const listResource = (
     `/admin/${endpoint(resource)}`,
     { params },
   );
+export type BetAggregationMode = "play" | "risk";
+export type BetAggregationRow = {
+  group_id: string;
+  lottery: string;
+  issue_no: string;
+  play_type?: string;
+  position?: string;
+  selection?: string;
+  outcome?: string;
+  occurrence_count: number;
+  order_count: number;
+  member_count: number;
+  frequency_rate?: number;
+  bet_amount: string;
+  potential_win_amount: string;
+};
+export type BetAggregationMember = {
+  site_id: number;
+  user_id: number;
+  site_name: string;
+  username: string;
+  display_name?: string;
+  occurrence_count: number;
+  order_count: number;
+  bet_amount: string;
+  potential_win_amount: string;
+};
+export type BetAggregationOrder = {
+  record_id: number;
+  detail_id: number;
+  site_name: string;
+  username: string;
+  placed_at: string;
+  lottery: string;
+  issue_no: string;
+  play_type: string;
+  position: string;
+  selection: string;
+  amount: string;
+  odds: string;
+  potential_win_amount: string;
+  source_text: string;
+};
+export const getBetAggregation = (params: Record<string, unknown>) =>
+  http.get<never, Envelope<{
+    list: BetAggregationRow[];
+    total: number;
+    source_item_count: number;
+    unmapped_item_count: number;
+  }>>("/admin/bet-aggregation", { params });
+export const getBetAggregationDetails = (params: Record<string, unknown>) =>
+  http.get<never, Envelope<{
+    members: BetAggregationMember[];
+    member_total: number;
+    orders: BetAggregationOrder[];
+    orders_total: number;
+    page: number;
+    page_size: number;
+  }>>("/admin/bet-aggregation/details", { params });
 export const getAuditLog = (id: number) =>
   http.get<never, Envelope<Record<string, unknown>>>(`/admin/audit-logs/${id}`);
 export const clearAuditLogs = () =>
@@ -697,6 +756,30 @@ export const saveLotteryConfig = (payload: { base_url: string }) =>
     "/admin/lottery-config",
     payload,
   );
+export type ThirdPartyQuickEntryAccount = {
+  id: string; username: string; password: string;
+  rate_window_seconds?: number | null; rate_limit_calls?: number | null; freeze_seconds?: number | null;
+  is_current?: boolean; call_count?: number; success_count?: number; failure_count?: number;
+  login_count?: number; login_failure_count?: number; window_call_count?: number;
+  health_check_count?: number; last_health_at?: string; last_health_status?: string; last_health_error?: string;
+  ak?: string; ak_expires_at?: string; last_used_at?: string; last_duration_ms?: number;
+  last_status?: string; last_error?: string; frozen_until?: string;
+};
+export type ThirdPartyQuickEntryConfig = {
+  enabled: boolean; strict: boolean; base_url: string; captcha_endpoint: string;
+  login_endpoint: string; recognize_endpoint: string; captcha_ocr_endpoint: string;
+  captcha_ocr_command: string; captcha_ocr_language: string; request_timeout: number; token_ttl_seconds: number; rate_window_seconds: number;
+  freeze_after_calls: number; freeze_seconds: number; accounts: ThirdPartyQuickEntryAccount[];
+  current_account?: ThirdPartyQuickEntryAccount | null;
+};
+export const getThirdPartyQuickEntryConfig = (siteId?: number) =>
+  http.get<never, Envelope<ThirdPartyQuickEntryConfig>>('/admin/system-settings/third-party-quick-entry', { params: siteId ? { site_id: siteId } : undefined });
+export const saveThirdPartyQuickEntryConfig = (payload: Partial<ThirdPartyQuickEntryConfig> & { site_id?: number }) =>
+  http.put<never, Envelope<ThirdPartyQuickEntryConfig>>('/admin/system-settings/third-party-quick-entry', payload);
+export const testThirdPartyQuickEntryConfig = (payload?: { site_id?: number; text?: string; lottery?: string }) =>
+  http.post<never, Envelope<{ code: number; total_amount: number | string | null; total_count: number | string | null; account?: { id: string; username: string; ak: string } | null; result: Record<string, unknown> }>>('/admin/system-settings/third-party-quick-entry/test', payload, { timeout: 45000 });
+export const loginThirdPartyQuickEntryAccount = (accountId: string, siteId?: number) =>
+  http.post<never, Envelope<{ id: string; username: string; ak: string; ak_expires_at: string; duration_ms: number; attempts: number }>>('/admin/system-settings/third-party-quick-entry/accounts/login', { account_id: accountId, ...(siteId ? { site_id: siteId } : {}) }, { timeout: 45000 });
 export type LotteryConfigTest = {
   base_url: string;
   url: string;

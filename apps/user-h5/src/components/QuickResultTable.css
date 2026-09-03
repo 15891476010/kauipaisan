@@ -101,6 +101,7 @@
 .quick-result-status.fu { background: #722ed1; }
 .quick-result-status.ti { background: #389e0d; }
 .quick-result-status.futi { background: #111; }
+.quick-result-status.failed { color: #fff; background: #d90000; }
 
 .quick-result-text {
   width: 100%;

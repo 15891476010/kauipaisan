@@ -169,35 +169,40 @@ export function StopDropPage() {
     <div className="stop-drop-panel">
       <div className="stop-filter">
         <div className="stop-filter-row">
-          <label className="stop-search-field">
-            <span>号码</span>
+          <div className="stop-search-field">
+            <label htmlFor="stop-drop-number">号码</label>
             <input
+              id="stop-drop-number"
               value={number}
               onChange={(e) => setNumber(e.target.value)}
-              placeholder="查号码"
+              maxLength={20}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") load();
+              }}
             />
-          </label>
-          <label className="stop-select-field">
-            <span>类型</span>
-            <select value={type} onChange={(e) => setType(e.target.value)}>
+          </div>
+          <div className="stop-select-field">
+            <label htmlFor="stop-drop-type">类型</label>
+            <select id="stop-drop-type" value={type} onChange={(e) => setType(e.target.value)}>
               <option value="all">所有</option>
               <option value="stop">停押</option>
               <option value="drop">降水</option>
             </select>
-          </label>
+          </div>
         </div>
         <div className="stop-filter-row">
-          <label className="stop-date-field">
-            <span>日期</span>
-            <select value={date} onChange={(event) => setDate(event.target.value)}>
+          <div className="stop-date-field">
+            <label htmlFor="stop-drop-date">日期</label>
+            <select id="stop-drop-date" value={date} onChange={(event) => setDate(event.target.value)}>
               {dateOptions.map((value) => (
                 <option key={value} value={value}>{value}</option>
               ))}
             </select>
-          </label>
-          <label className="stop-category-field">
-            <span>分类</span>
+          </div>
+          <div className="stop-category-field">
+            <label htmlFor="stop-drop-category">分类</label>
             <select
+              id="stop-drop-category"
               value={category}
               onChange={(e) => setCategory(e.target.value)}
             >
@@ -205,17 +210,17 @@ export function StopDropPage() {
                 <option key={item}>{item}</option>
               ))}
             </select>
-          </label>
+          </div>
         </div>
         <div className="stop-filter-row">
-          <label className="stop-select-field">
-            <span>彩种</span>
-            <select value={lottery} onChange={(e) => setLottery(e.target.value)}>
+          <div className="stop-select-field">
+            <label htmlFor="stop-drop-lottery">彩种</label>
+            <select id="stop-drop-lottery" value={lottery} onChange={(e) => setLottery(e.target.value)}>
               <option value="all">所有</option>
               <option value="体">体</option>
               <option value="福">福</option>
             </select>
-          </label>
+          </div>
           <div className="stop-filter-actions">
             <button
               type="button"
@@ -225,7 +230,7 @@ export function StopDropPage() {
             >
               <SearchOutlined /> <span>搜索</span>
             </button>
-            <button type="button" className="stop-back-button" onClick={() => { window.location.hash = "#/kb"; }}>返回</button>
+            <button type="button" className="stop-back-button" onClick={() => { window.location.hash = "#/kb"; }}>返 回</button>
           </div>
         </div>
       </div>

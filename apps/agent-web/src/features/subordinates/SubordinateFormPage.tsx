@@ -89,7 +89,8 @@ export function SubordinateFormPage() {
       } else {
         const payload = { username, display_name: username, password: form.password, permissions: permissions.map(({ lottery_id, can_view, can_bet }) => ({ lottery_id, can_view, can_bet })) };
         const response = await createAgentMember(payload);
-        modal.success({ title: "下级创建成功", content: <InitialCredentials value={response.data.data} />, okText: "我已保存", centered: true, width: 480, onOk: () => navigate("/subordinates") });
+        const memberId = response.data.data.id;
+        modal.success({ title: "下级创建成功", content: <InitialCredentials value={response.data.data} />, okText: "我已保存", centered: true, width: 480, onOk: () => navigate(`/subordinates/${memberId}/edit?kind=member`) });
       }
     } catch (reason) {
       message.error(apiErrorMessage(reason, "创建失败"));

@@ -30,6 +30,17 @@ export function BillsPage() {
   const dateOptions = Array.from({ length: 42 }, (_, index) =>
     today.subtract(index, "day"),
   );
+  const displayValue = (value: string | number) => {
+    const text = String(value ?? "0");
+    return text.endsWith(".00") ? text.slice(0, -3) : text;
+  };
+
+  const toggleLottery = (key: "fu" | "ti") => {
+    setLotteries((value) => {
+      if (value[key] && value.fu !== value.ti) return value;
+      return { ...value, [key]: !value[key] };
+    });
+  };
 
   const setRange = (nextFrom: Dayjs, nextTo: Dayjs, nextPeriod: string) => {
     setFrom(nextFrom.startOf("day"));
@@ -84,20 +95,20 @@ export function BillsPage() {
             className={lotteries.fu ? "selected" : ""}
             role="button"
             tabIndex={0}
-            onClick={() => setLotteries((value) => ({ ...value, fu: !value.fu }))}
+            onClick={() => toggleLottery("fu")}
             onKeyDown={(event) => {
               if (event.key === "Enter" || event.key === " ")
-                setLotteries((value) => ({ ...value, fu: !value.fu }));
+                toggleLottery("fu");
             }}
           >福</span>
           <span
             className={lotteries.ti ? "selected" : ""}
             role="button"
             tabIndex={0}
-            onClick={() => setLotteries((value) => ({ ...value, ti: !value.ti }))}
+            onClick={() => toggleLottery("ti")}
             onKeyDown={(event) => {
               if (event.key === "Enter" || event.key === " ")
-                setLotteries((value) => ({ ...value, ti: !value.ti }));
+                toggleLottery("ti");
             }}
           >体</span>
         </div>
@@ -111,7 +122,7 @@ export function BillsPage() {
           </select>
         </div>
         <div className="bill-period-selector">
-          <span className="link-button"><span>{today.format("YYYY年MM月")}</span></span>
+          <span className={`link-button ${period === "month" ? "selected" : ""}`} role="button" tabIndex={0} onClick={() => applyPeriod("month")} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") applyPeriod("month"); }}><span>{today.format("YYYY年MM月")}</span></span>
           {[
             ["today", "今天"],
             ["yesterday", "昨天"],
@@ -130,11 +141,11 @@ export function BillsPage() {
         </div>
         {rows.map((row) => (
           <div className="business-row" key={row.bill_date}>
-            <span>{row.bill_date}</span><span>{row.amount}</span><span>{row.rebate}</span><span>{row.offline_rebate}</span><span>{row.win_amount}</span><span>{row.profit}</span>
+            <span>{row.bill_date}</span><span><b>{displayValue(row.amount)}</b></span><span><b>{displayValue(row.rebate)}</b></span><span><b>{displayValue(row.offline_rebate)}</b></span><span><b>{displayValue(row.win_amount)}</b></span><span><b>{displayValue(row.profit)}</b></span>
           </div>
         ))}
         <div className="bill-total">
-          <span>合计</span><span>{total.amount === "0.00" ? "0" : total.amount}</span><span>{total.rebate === "0.00" ? "0" : total.rebate}</span><span>{total.offline_rebate === "0.00" ? "0" : total.offline_rebate}</span><span>{total.win_amount === "0.00" ? "0" : total.win_amount}</span><span>{total.profit === "0.00" ? "0" : total.profit}</span>
+          <span>合计</span><span><b>{displayValue(total.amount)}</b></span><span><b>{displayValue(total.rebate)}</b></span><span><b>{displayValue(total.offline_rebate)}</b></span><span><b>{displayValue(total.win_amount)}</b></span><span><b>{displayValue(total.profit)}</b></span>
         </div>
         {loading && <div className="page-local-loading" role="status" aria-label="加载中" />}
       </div>

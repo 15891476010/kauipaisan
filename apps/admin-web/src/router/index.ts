@@ -13,6 +13,7 @@ import BetBatchReplaceView from '../views/BetBatchReplaceView.vue'
 import RobotListView from '../views/RobotListView.vue'
 import OrganizationsView from '../views/OrganizationsView.vue'
 import SitePermissionsView from '../views/SitePermissionsView.vue'
+import ThirdPartyQuickEntrySettingsView from '../views/ThirdPartyQuickEntrySettingsView.vue'
 import { useAuthStore } from '../stores/auth'
 
 const child = (path: string, name: string, title: string, resource: string): RouteRecordRaw => ({
@@ -41,6 +42,7 @@ const routes: RouteRecordRaw[] = [
       child('audit-logs', 'audit-logs', '审计日志', 'audit-logs'),
       { path: 'site-settings', name: 'site-settings', component: AgreementSettingsView, meta: { title: '站点配置' } },
       { path: 'settings', name: 'settings', component: SystemSettingsView, meta: { title: '系统配置' } },
+      { path: 'settings/third-party-quick-entry', name: 'third-party-quick-entry', component: ThirdPartyQuickEntrySettingsView, meta: { title: '三方快速录入' } },
     ],
   },
   { path: '/:pathMatch(.*)*', redirect: '/' },

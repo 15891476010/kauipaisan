@@ -83,8 +83,8 @@ export type QuickEntryLine = { id: number; raw_text: string; input_text?: string
 export type QuickPreview = { lines: QuickEntryLine[]; count: number; code_count?: number; amount: string; formatted_text: string };
 export type QuickTag = { id: number; name: string };
 export type QuickSettings = { preferences: Record<string, unknown>; tags: QuickTag[] };
-export const previewQuickEntry = (payload: { text: string; lottery: string; board_code?: string }) => request.post<ApiEnvelope<QuickPreview>>("/user/quick-entry/preview", payload);
-export const placeQuickEntry = (payload: { text: string; lottery: string; confirmed: boolean; board_code?: string }) => request.post<ApiEnvelope<{ record_id: number; count: number; amount: string }>>("/user/quick-entry/place", payload);
+export const previewQuickEntry = (payload: { text: string; lottery: string; board_code?: string }) => request.post<ApiEnvelope<QuickPreview>>("/user/quick-entry/preview", payload, { timeout: 45000 });
+export const placeQuickEntry = (payload: { text: string; lottery: string; confirmed: boolean; board_code?: string }) => request.post<ApiEnvelope<{ record_id: number; count: number; amount: string }>>("/user/quick-entry/place", payload, { timeout: 45000 });
 export const getQuickSettings = () => request.get<ApiEnvelope<QuickSettings>>("/user/quick-entry/settings");
 export const saveQuickSettings = (preferences: Record<string, unknown>) => request.put<ApiEnvelope<{ preferences: Record<string, unknown> }>>("/user/quick-entry/settings", { preferences });
 export const createQuickTag = (name: string) => request.post<ApiEnvelope<{ id: number; name: string }>>("/user/quick-entry/tags", { name });
