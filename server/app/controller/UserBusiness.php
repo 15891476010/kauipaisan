@@ -103,14 +103,39 @@ final class UserBusiness
     private function timingAllowsBet(array $control): bool { return $this->timingState($control)['allow_bet']; }
     private function lineOdds(array $session, string $lottery, array $line): array
     {
-        $lotteryRow=Db::name('lotteries')->where('tenant_id',$session['tenant_id'])->where('name',$lottery)->whereNull('deleted_at')->field('id')->find();
+        $boardCode=trim((string)($line['board_code']??'A')); if ($boardCode==='') $boardCode='A';
+        $lotteryRow=Db::name('lotteries')->alias('l')->join('site_lotteries sl','sl.lottery_id=l.id')
+            ->where('sl.site_id',$session['site_id'])->where('sl.tenant_id',$session['tenant_id'])
+            ->where('l.tenant_id',$session['tenant_id'])->where('l.name',$lottery)->where('l.status',1)->whereNull('l.deleted_at')
+            ->order('l.source_type asc')->order('l.id asc')->field('l.id')->find();
         if (!$lotteryRow) return [];
         $lotteryId=(int)$lotteryRow['id'];
         $source=(string)($line['settlement_text']??$line['raw_text']??'');
         $matched=(new \app\service\BetSettlement())->oddsRowFor($lotteryId,$source);
         if (!$matched) return [];
         $matched['platform_single_item_limit']=$matched['single_item_limit']??0;
-        $override=Db::name('user_lottery_odds')->where('site_id',$session['site_id'])->where('user_id',$session['user_id'])->where('lottery_odds_id',(int)$matched['id'])->find();
+        // Member odds may have been saved against another active record with
+        // the same display lottery name (for example a system copy versus the
+        // official copy). Resolve the newest matching override by logical
+        // lottery/category/play identity instead of only the selected ID.
+        $overrides=[];
+        $directId=(int)$matched['id']>=1000000000;
+        $candidateLotteries=Db::name('lotteries')->where('tenant_id',$session['tenant_id'])->where('name',$lottery)->whereNull('deleted_at')->column('id');
+        foreach ($candidateLotteries as $candidateLotteryId) {
+            $candidateIds=[];
+            if ($directId) {
+                $categoryId=(int)$candidateLotteryId>0 ? (int)Db::name('lottery_odds_categories')->where('lottery_id',(int)$candidateLotteryId)->where('board_code',$boardCode)->where('name',(string)$matched['name'])->whereNull('deleted_at')->value('id') : 0;
+                if ($categoryId>0) $candidateIds[] = 1000000000+$categoryId;
+            } else {
+                $candidateIds=Db::name('lottery_odds')->where('lottery_id',(int)$candidateLotteryId)->where('board_code',$boardCode)->where('category',(string)$matched['category'])->where('name',(string)$matched['name'])->whereNull('deleted_at')->column('id');
+            }
+            foreach ($candidateIds as $candidateId) {
+                $candidate=Db::name('user_lottery_odds')->where('site_id',$session['site_id'])->where('user_id',$session['user_id'])->where('lottery_odds_id',(int)$candidateId)->where('board_code',$boardCode)->find();
+                if ($candidate) $overrides[]=$candidate;
+            }
+        }
+        usort($overrides,static fn(array $a,array $b): int=>strcmp((string)($b['updated_at']??''),(string)($a['updated_at']??'')));
+        $override=$overrides[0]??null;
         if ($override) foreach (['min_bet','odds_limit','single_bet_limit','single_item_limit','odds','offline_rebate'] as $field) if (array_key_exists($field,$override)) $matched[$field]=$override[$field];
         return $matched;
     }
@@ -458,7 +483,15 @@ final class UserBusiness
             $groupPackage=$this->isExpandedGroupPackage($matchTokens,$source);$displayOdds=$row['odds']===null?null:(float)$row['odds']*($groupPackage?$count:1);$oddsText=$displayOdds===null?'-':rtrim(rtrim(number_format($displayOdds,3,'.',''),'0'),'.');
             foreach($tokens as $index=>$token){$amount=(float)$amounts[$index];$win=(float)$wins[$index];$rebate=(float)$rebates[$index];$offlineRebate=(float)$offlineRebates[$index];$tokenStatus=(string)($row['status']??$row['record_status']??'pending');if($resolved&&$tokenStatus==='won')$tokenStatus=$win>0?'won':'unwon';$groupFirst=$index===0;$expanded[]=['id'=>(int)$row['id'],'row_key'=>(int)$row['id'].'-'.$index,'detail_group_id'=>(int)$row['id'],'detail_group_index'=>$index,'detail_group_size'=>$count,'group_first'=>$groupFirst,'is_group_first'=>$groupFirst,'show_text_button'=>$groupFirst,'bet_record_id'=>(int)($row['bet_record_id']??0),'submission_id'=>(int)($row['submission_id']??0)?:null,'order_no'=>$orderNo,'issue_no'=>(string)$row['issue_no'],'number_text'=>$token,'stored_number_text'=>$storedNumberText,'category'=>(string)($row['category']??''),'play_type'=>(string)($row['play_type']??''),'play_label'=>$this->detailPlayLabel($row['play_type']??'',$row['category']??''),'lottery'=>(string)($row['lottery']??''),'amount'=>$amounts[$index],'odds'=>$oddsText,'win_amount'=>$wins[$index],'is_winning_number'=>in_array($index,$winningIndexes,true),'win_projection_resolved'=>$resolved,'rebate'=>$rebates[$index],'offline_rebate'=>$this->detailMoney($offlineRebate),'profit'=>$this->detailMoney($win-$amount+$rebate+$offlineRebate),'status'=>$tokenStatus,'placed_at'=>(string)$row['placed_at'],'source_text'=>$source];}
         }
-        $total=count($expanded);$page=max(1,(int)$request->param('page',1));$size=min(100,max(1,(int)$request->param('page_size',40)));$pageRows=array_slice($expanded,($page-1)*$size,$size);$allTotals=$this->detailTotals($expanded);$pageTotals=$this->detailTotals($pageRows);
+        $total=count($expanded);$page=max(1,(int)$request->param('page',1));
+        $requestedPageSize=trim((string)$request->param('page_size','40'));
+        // Detail consumers that request 100 rows (or explicitly use `all`)
+        // need the complete expanded ticket, not an arbitrary 100-row slice.
+        // Keep the normal UI default paginated at 40 rows.
+        $allRequested=strtolower($requestedPageSize)==='all' || (is_numeric($requestedPageSize) && (int)$requestedPageSize>=100);
+        $size=$allRequested?max(1,$total):min(100,max(1,(int)$requestedPageSize));
+        if ($allRequested) $page=1;
+        $pageRows=array_slice($expanded,($page-1)*$size,$size);$allTotals=$this->detailTotals($expanded);$pageTotals=$this->detailTotals($pageRows);
         return $this->reply(['list'=>$pageRows,'total'=>$total,'page'=>$page,'page_size'=>$size,'total_amount'=>$allTotals['amount'],'win_amount'=>$allTotals['win_amount'],'rebate'=>$allTotals['rebate'],'offline_rebate'=>$allTotals['offline_rebate'],'profit'=>$allTotals['profit'],'page_total'=>$pageTotals]);
     }
     public function bills(Request $request): \think\response\Json
