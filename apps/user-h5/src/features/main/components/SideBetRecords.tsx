@@ -122,6 +122,23 @@ export function SideBetRecords({
     const raw = String(detail.play_label || detail.play_type || detail.category || "投注");
     if (raw === "直" || raw.startsWith("直")) return "直";
     if (raw === "组" || raw === "组选") return "组选";
+    const multiSource = `${detail.source_text || ""} ${detail.original_source_text || ""} ${detail.record_source || ""}`;
+    const multiDigits = String(detail.number_text || "").match(/\d{4,10}/u)?.[0]
+      || multiSource.match(/(?:组三|组六|组3|组6)\s*(\d{4,10})/u)?.[1]
+      || multiSource.match(/(\d{4,10})\s*(?:组三|组六|组3|组6)/u)?.[1];
+    const multiFamily = /组六|组6/u.test(raw) ? "组六" : /组三|组3/u.test(raw) ? "组三" : /组六|组6/u.test(multiSource) ? "组六" : /组三|组3/u.test(multiSource) ? "组三" : "";
+    if (multiDigits && multiFamily) {
+      const words: Record<string, string> = { "4": "四", "5": "五", "6": "六", "7": "七", "8": "八", "9": "九" };
+      return `${multiFamily}${words[String(multiDigits.length)] || multiDigits.length}${/赖/u.test(multiSource) ? "赖" : "码"}`;
+    }
+    const groupSource = `${detail.source_text || ""} ${detail.original_source_text || ""} ${detail.record_source || ""}`;
+    const mixedGroup = /(?:组三|组3)[^\n]*(?:组六|组6)|(?:组六|组6)[^\n]*(?:组三|组3)/u.test(groupSource);
+    if (mixedGroup && /(?:组三|组六|组3|组6)/u.test(raw)) {
+      const count = groupSource.match(/(?<!\d)(\d{3,10})\s*(?:组三|组六|组3|组6)([一二两三四五六七八九]|[2-9])?码?/u);
+      const words: Record<string, string> = { "2": "二", "3": "三", "4": "四", "5": "五", "6": "六", "7": "七", "8": "八", "9": "九" };
+      const size = count?.[2] || (count?.[1] ? words[String(count[1].length)] : "");
+      return size ? `组${words[size] || size}${/赖/u.test(groupSource) ? "赖" : "码"}` : "组选";
+    }
     return raw;
   };
   const compactDetailNumber = (detail: BetDetail, play: string, source: string) => {
@@ -144,6 +161,18 @@ export function SideBetRecords({
     const play = playName(detail);
     const compact = compactDetailNumber(detail, play, source);
     if (compact) return compact;
+    // A multi-code 组三/组六 selection is one item even when the provider
+    // returns its semantic marker and digits as separate tokens.
+    const multiCodeText = `${source} ${detail.original_source_text || ""} ${detail.record_source || ""} ${play}`;
+    const multiCode = multiCodeText.match(/(?<!\d)(\d{3,10})\s*(组三|组六|组3|组6)(?:[一二两三四五六七八九]|[2-9])?(?:码|赖)?/u)
+      || multiCodeText.match(/(组三|组六|组3|组6)\s*(\d{3,10})/u);
+    if (multiCode) {
+      const family = multiCode[1].startsWith("组") ? multiCode[1] : multiCode[2];
+      const digits = multiCode[1].startsWith("组") ? multiCode[2] : multiCode[1];
+      return `${family === "组六" || family === "组6" ? "六" : "三"}${digits}`;
+    }
+    const compactStored = String(detail.number_text || "").replace(/\s+/gu, "");
+    if (/^(组三|组六|组3|组6)/u.test(play) && /^[三六]\d{4,10}$/u.test(compactStored)) return compactStored;
     const sticky = source.match(/(\d{4,10})\s*(组三|组六)六码/u);
     if (sticky) return `${sticky[2] === "组三" ? "三" : "六"}${sticky[1]}`;
     if (play.includes("组3") || play.includes("组6") || play.includes("组选")) {
@@ -159,7 +188,9 @@ export function SideBetRecords({
     if (detail.number_text === "000" && play.startsWith("和值")) return play;
     let value = detail.number_text || "";
     if (play === "直" || play.startsWith("直")) value = value.replace(/直$/u, "");
-    return /^\d{3}$/.test(value) ? String(Number(value)) : value || "-";
+    // Preserve the three-character lottery expression, including a leading
+    // zero, for direct and multi-position displays.
+    return value || "-";
   };
   const orderedDetails = [...details].sort((left, right) => {
     const leftNumber = Number(displayDetailNumber(left).replace(/\D/g, ""));

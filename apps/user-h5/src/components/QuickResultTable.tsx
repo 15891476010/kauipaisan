@@ -1,6 +1,7 @@
 import { Fragment, memo, useLayoutEffect, useState } from "react";
 import type { QuickEntryLine } from "../api/user";
 import { Button, Modal } from "antd";
+import { InfoCircleOutlined } from "@ant-design/icons";
 import "./QuickResultTable.css";
 
 type QuickResultTableProps = {
@@ -31,9 +32,6 @@ const batchMetadataKeys = [
   "batch_duplicate_numbers",
   "batch_declared_stake_count",
   "batch_count_mismatch",
-  "ticket_group_id",
-  "ticket_group_count",
-  "ticket_group_numbers",
 ] as const;
 
 /**
@@ -53,8 +51,6 @@ type DisplayLine = QuickEntryLine & {
   __sourceIds?: number[];
   __detailLines?: QuickEntryLine[];
   __blank?: boolean;
-  __hideSummary?: boolean;
-  __hideDetail?: boolean;
 };
 
 function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onConfirmMismatch }: QuickResultTableProps) {
@@ -75,69 +71,11 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
   const sourcePhysical = _sourceText ? _sourceText.split(/\r?\n/u) : [];
   const hasPhysicalBlank = sourcePhysical.some((raw) => raw.trim() === "");
   const physicalExpanded = sourcePhysical.length > lines.length && lines.length > 0;
-  // The provider collapses a multi-line ticket into one row per lottery and
-  // keeps the concrete play rows in provider_place_parts. Rebuild the same
-  // physical layout as the reference UI: explicit 福/体 rows first, followed
-  // by the aggregate “共…米” row, and preserve a trailing blank input row.
-  const providerGrouped = lines.filter((line) => Array.isArray(line.provider_place_parts) && line.provider_place_parts.length > 0);
-  if (providerGrouped.length > 0 && sourcePhysical.length > 0) {
-    const byCategory = new Map<string, QuickEntryLine>();
-    providerGrouped.forEach((line) => {
-      const category = String(line.category || "");
-      if (category && !byCategory.has(category)) byCategory.set(category, line);
-    });
-    const fallbackLine = providerGrouped[0];
-    sourcePhysical.forEach((raw, physicalIndex) => {
-      const trimmed = raw.trim();
-      if (!trimmed) {
-        const blank: QuickEntryLine = { id: physicalIndex + 1, raw_text: raw, input_text: raw, status: "new", number_text: "", amount: "0", count: 0, category: null, reason: null };
-        expandedLines.push({ ...blank, __blank: true });
-        return;
-      }
-      const explicitCategory = /^(福|体)(?:[，,\s]|$)/u.exec(trimmed)?.[1];
-      const isAggregate = !explicitCategory;
-      const sourceLine = (explicitCategory ? byCategory.get(explicitCategory) : byCategory.get("体") || fallbackLine) || fallbackLine;
-      const detailLines = sourceLine.provider_place_parts || [sourceLine];
-      if (isAggregate) {
-        expandedLines.push({
-          ...sourceLine,
-          id: physicalIndex + 1,
-          raw_text: raw,
-          input_text: raw,
-          __sourceIds: [sourceLine.id],
-          __detailLines: detailLines,
-          batch_id: sourceLine.batch_id || `provider-${sourceLine.id}`,
-          batch_index: 1,
-          batch_size: 1,
-          batch_end: true,
-          batch_valid: true,
-          batch_count: Number(sourceLine.count || 0),
-          batch_stake_count: Number(sourceLine.stake_count ?? sourceLine.count ?? 0),
-          batch_amount: sourceLine.amount,
-        });
-      } else {
-        expandedLines.push({
-          ...sourceLine,
-          id: physicalIndex + 1,
-          raw_text: raw,
-          input_text: raw,
-          __sourceIds: [sourceLine.id],
-          __detailLines: detailLines,
-          amount: explicitCategory === "体" ? "0.00" : sourceLine.amount,
-          count: explicitCategory === "体" ? 0 : sourceLine.count,
-          stake_count: explicitCategory === "体" ? 0 : sourceLine.stake_count,
-          code_count: explicitCategory === "体" ? 0 : sourceLine.code_count,
-          __hideSummary: explicitCategory === "体",
-          __hideDetail: explicitCategory === "体",
-        });
-      }
-    });
-  }
   // The preview API omits empty input lines. Rebuild those physical rows in
   // the table so the user's original layout remains visible, while mapping
   // each non-empty row to the next parsed result instead of turning it into
   // a misleading “新” row.
-  if (expandedLines.length === 0 && hasPhysicalBlank) {
+  if (hasPhysicalBlank) {
     const fallbackBlank: QuickEntryLine = { id: 0, raw_text: "", status: "new", number_text: "", amount: "0", count: 0, category: null, reason: null };
     let semanticIndex = 0;
     sourcePhysical.forEach((raw, physicalIndex) => {
@@ -165,10 +103,7 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
       const candidate = lines[semanticIndex++];
       expandedLines.push({ ...candidate, __sourceIds: [candidate.id], __detailLines: [candidate] });
     }
-  } else if (expandedLines.length === 0 && physicalExpanded) {
-    const physicalBatchId = lines.find((item) => item.batch_id)?.batch_id || `physical-${lines.map((item) => item.id).join("-")}`;
-    const physicalMergedText = lines.find((item) => item.batch_merged_text)?.batch_merged_text
-      || sourcePhysical.filter((raw) => raw.trim()).join(" ").replace(/\s+/gu, " ").trim();
+  } else if (physicalExpanded) {
     sourcePhysical.forEach((raw, physicalIndex) => {
       const last = physicalIndex === sourcePhysical.length - 1;
       const semantic = lines[Math.min(physicalIndex, lines.length - 1)];
@@ -178,25 +113,17 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
         raw_text: raw,
         input_text: raw,
         __blank: raw.trim() === "",
-        status: raw.trim() ? semantic.status : "new",
-        batch_id: semantic.batch_id || physicalBatchId,
-        batch_index: physicalIndex + 1,
-        batch_size: sourcePhysical.length,
-        batch_end: last,
-        batch_valid: semantic.batch_valid !== false,
-        batch_merged_text: last ? physicalMergedText : undefined,
+        status: last ? semantic.status : raw.trim() ? "new" : "new",
         amount: last ? lines.reduce((sum, item) => sum + Number(item.amount || 0), 0).toFixed(2) : "0.00",
         count: last ? lines.reduce((sum, item) => sum + Number(item.count || 0), 0) : 0,
         code_count: last ? lines.reduce((sum, item) => sum + Number(item.code_count ?? item.count ?? 0), 0) : 0,
         stake_count: last ? lines.reduce((sum, item) => sum + Number(item.stake_count ?? item.count ?? 0), 0) : 0,
-        batch_count: last ? lines.reduce((sum, item) => sum + Number(item.code_count ?? item.count ?? 0), 0) : undefined,
-        batch_amount: last ? lines.reduce((sum, item) => sum + Number(item.amount || 0), 0).toFixed(2) : undefined,
         __sourceIds: lines.map((item) => item.id),
         __detailLines: lines,
       });
     });
   }
-  for (let index = expandedLines.length > 0 || hasPhysicalBlank || physicalExpanded ? lines.length : 0; index < lines.length; ) {
+  for (let index = hasPhysicalBlank || physicalExpanded ? lines.length : 0; index < lines.length; ) {
     const source = lines[index].input_text || lines[index].raw_text || "";
     const members: QuickEntryLine[] = [];
     while (index < lines.length && (lines[index].input_text || lines[index].raw_text || "") === source) {
@@ -208,9 +135,6 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
       expandedLines.push(...members.map((member) => ({ ...member, __sourceIds: [member.id] })));
       continue;
     }
-    const joinedBatchId = members.find((item) => item.batch_id)?.batch_id || `joined-${members.map((item) => item.id).join("-")}`;
-    const joinedText = members.find((item) => item.batch_merged_text)?.batch_merged_text
-      || physical.filter((raw) => raw.trim()).join(" ").replace(/\s+/gu, " ").trim();
     physical.forEach((raw, physicalIndex) => {
       const last = physicalIndex === physical.length - 1;
       const semantic = members[physicalIndex] || members[0];
@@ -219,25 +143,50 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
         raw_text: raw,
         input_text: raw,
         __blank: raw.trim() === "",
-        status: raw.trim() ? semantic.status : "new",
-        batch_id: semantic.batch_id || joinedBatchId,
-        batch_index: physicalIndex + 1,
-        batch_size: physical.length,
-        batch_end: last,
-        batch_valid: semantic.batch_valid !== false,
-        batch_merged_text: last ? joinedText : undefined,
+        status: last ? semantic.status : "new",
         amount: last ? members.reduce((sum, item) => sum + Number(item.amount || 0), 0).toFixed(2) : "0.00",
         count: last ? members.reduce((sum, item) => sum + Number(item.count || 0), 0) : 0,
         code_count: last ? members.reduce((sum, item) => sum + Number(item.code_count ?? item.count ?? 0), 0) : 0,
         stake_count: last ? members.reduce((sum, item) => sum + Number(item.stake_count ?? item.count ?? 0), 0) : 0,
-        batch_count: last ? members.reduce((sum, item) => sum + Number(item.code_count ?? item.count ?? 0), 0) : undefined,
-        batch_amount: last ? members.reduce((sum, item) => sum + Number(item.amount || 0), 0).toFixed(2) : undefined,
         __sourceIds: members.map((item) => item.id),
         __detailLines: members,
       });
     });
   }
   const displayGroups: DisplayLine[][] = [];
+  // The parser keeps the two settlement legs of a combined 福体 sentence as
+  // separate semantic rows (组三 and 组六). They are still one user-entered
+  // ticket, so group them for the editable preview whenever the category,
+  // selected numbers and stake text match. Do not merge different selections
+  // such as 12345 and 123456.
+  const combinedPlay = (line: QuickEntryLine): "组三" | "组六" | null => {
+    const play = String(line.play_type || "");
+    if (play.startsWith("组三")) return "组三";
+    if (play.startsWith("组六")) return "组六";
+    const source = String(line.input_text || line.raw_text || "");
+    if (/组三/u.test(source)) return "组三";
+    if (/组六/u.test(source)) return "组六";
+    if (/^\s*[三六]\s*(?=\d)/u.test(source)) return source.trimStart().startsWith("三") ? "组三" : "组六";
+    return null;
+  };
+  const combinedSourceKey = (line: QuickEntryLine): string | null => {
+    const play = combinedPlay(line);
+    if (!play) return null;
+    const source = String(line.input_text || line.raw_text || "").trim();
+    const key = source
+      .replace(/组三|组六/gu, "")
+      .replace(/^\s*[三六](?=\s*\d)/u, "")
+      .replace(/\s+/gu, "");
+    return `${line.category || ""}|${key}`;
+  };
+  const displayTextForGroup = (group: DisplayLine[]): string => {
+    const first = String(group[0]?.input_text || group[0]?.raw_text || "");
+    if (group.length < 2 || !group.some((item) => combinedPlay(item) === "组三") || !group.some((item) => combinedPlay(item) === "组六")) return first;
+    const original = String(_sourceText || "").trim();
+    if (original && !original.includes("\n") && /组三/u.test(original) && /组六/u.test(original)) return original;
+    if (/组三|组六/u.test(first)) return first.replace(/组三|组六/u, "组三组六");
+    return first.replace(/^\s*[三六]\s*(?=\d)/u, "组三组六 ");
+  };
   expandedLines.forEach((line) => {
     const previous = displayGroups[displayGroups.length - 1];
     if (
@@ -245,11 +194,13 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
       line.status === "success" &&
       !line.batch_id &&
       previous.every((item) => item.status === "success" && !item.batch_id) &&
-      (previous[0].input_text || previous[0].raw_text) === (line.input_text || line.raw_text) &&
+      ((previous[0].input_text || previous[0].raw_text) === (line.input_text || line.raw_text)
+        || (previous.length === 1 && combinedSourceKey(previous[0]) !== null && combinedSourceKey(previous[0]) === combinedSourceKey(line)
+          && combinedPlay(previous[0]) !== combinedPlay(line))) &&
       !previous[0].raw_text.includes("\n") &&
       !line.raw_text.includes("\n") &&
       previous[0].category === line.category &&
-      previous.some((item) => item.play_type !== line.play_type)
+      previous.some((item) => item.play_type !== line.play_type || combinedPlay(item) !== combinedPlay(line))
     ) {
       previous.push(line);
     } else {
@@ -279,16 +230,16 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
     // Multi-code plays such as “组六六码/组三六码” are represented internally
     // by their expanded settlement combinations, while the detail dialog
     // should show the original six-digit selection as one item.
-    if (line.play_type?.includes("码") && line.play_type !== "复式") {
-      const selection = (line.settlement_text || "").match(/([0-9]{3,10})\s+(?:组六|组三)(?:两|三|四|五|六|七|八|九)?码/)?.[1];
-      if (selection) return [`${line.play_type.startsWith("组三") ? "三" : "六"}${selection}`];
+    const play = String(line.play_type || "");
+    const family = play.startsWith("组三") || play.startsWith("组3") ? "三" : play.startsWith("组六") || play.startsWith("组6") ? "六" : "";
+    if (family && play !== "复式") {
+      const selection = String(line.settlement_text || line.parse_text || line.input_text || line.raw_text || "")
+        .match(/(?<!\d)(\d{4,10})\s*(?:组六|组三|组6|组3)(?:两|三|四|五|六|七|八|九|[2-9])?码?/u)?.[1];
+      if (selection) return [`${family}${selection}`];
+      const compact = String(line.number_text || line.display_number_text || "").replace(/\s+/gu, "");
+      if (/^[三六]\d{4,10}$/u.test(compact)) return [compact];
     }
-    // Group rows are displayed once per unordered combination, but their
-    // amount is based on every entered permutation. Prefer the compiler's
-    // original occurrence list so 189 and 198 render as one 189 cell with
-    // the combined amount (rather than silently showing only one stake).
-    const occurrenceText = (line as QuickEntryLine & { occurrence_number_text?: string }).occurrence_number_text;
-    const tokens = (occurrenceText || line.batch_occurrence_text || line.display_number_text || line.number_text || "")
+    const tokens = (line.batch_occurrence_text || line.display_number_text || line.number_text || "")
       .split(/\s+/)
       .map((token) => token.trim())
       .filter(Boolean);
@@ -301,136 +252,74 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
   const normalizeGroupNumber = (value: string) =>
     value.length === 3 && /^\d{3}$/.test(value) ? value.split("").sort().join("") : value;
   const playLabel = (line: QuickEntryLine) => {
-    const type = String(line.play_type || "");
-    if (type === "直" || type.startsWith("直")) return "直选";
-    if (type === "组" || type === "组选" || type.startsWith("组三") || type.startsWith("组六")) return "组选";
+    const play = String(line.play_type || "");
+    const groupSource = `${line.settlement_text || ""} ${line.parse_text || ""} ${line.input_text || ""} ${line.raw_text || ""}`;
+    const multiDigits = String(line.number_text || line.display_number_text || "").match(/\d{4,10}/u)?.[0]
+      || groupSource.match(/(?:组三|组六|组3|组6)\s*(\d{4,10})/u)?.[1]
+      || groupSource.match(/(\d{4,10})\s*(?:组三|组六|组3|组6)/u)?.[1];
+    const multiFamily = /组六|组6/u.test(play) ? "组六" : /组三|组3/u.test(play) ? "组三" : "";
+    if (multiDigits && multiFamily) {
+      const words: Record<string, string> = { "4": "四", "5": "五", "6": "六", "7": "七", "8": "八", "9": "九" };
+      return `${multiFamily}${words[String(multiDigits.length)] || multiDigits.length}码`;
+    }
+    const mixedGroup = /(?:组三|组3)[^\n]*(?:组六|组6)|(?:组六|组6)[^\n]*(?:组三|组3)/u.test(groupSource);
+    if (mixedGroup && /(?:组三|组六|组3|组6)/u.test(play)) {
+      const count = groupSource.match(/(?<!\d)(\d{3,10})\s*(?:组三|组六|组3|组6)([一二两三四五六七八九]|[2-9])?码?/u);
+      const words: Record<string, string> = { "2": "二", "3": "三", "4": "四", "5": "五", "6": "六", "7": "七", "8": "八", "9": "九" };
+      const size = count?.[2] || (count?.[1] ? words[String(count[1].length)] : "");
+      return size ? `组${words[size] || size}码` : "组选";
+    }
+    if (line.play_type === "直") return "直选";
+    if (line.play_type === "组" || line.play_type === "组三" || line.play_type === "组六") return "组选";
     if (line.play_type?.startsWith("和")) return "和值";
     if (line.play_type?.startsWith("跨")) return "跨度";
     return line.play_type || "直选";
   };
-  const detailSectionsRaw = detailLines.flatMap((line) => {
+  const rawDetailSections = detailLines.flatMap((line) => {
     const occurrences = numberTokens(line);
-    const isGroup = String(line.play_type || "").startsWith("组");
-    const stakeCount = Number(line.stake_count ?? line.code_count ?? line.count ?? 0);
-    // Count-prefix forms such as “二单一组” keep two direct stakes in one
-    // play row.  Scale the occurrence frequency by the row's stake count so
-    // each displayed number shows its real amount (4元直选 + 2元组选), rather
-    // than looking like a single 2元 direct entry.
-    const occurrenceWeight = occurrences.length > 0 && stakeCount > 0
-      ? stakeCount / occurrences.length
-      : 1;
-    const unitAmount = stakeCount > 0 ? Number(line.amount || 0) / stakeCount : 0;
-    const counts = occurrences.reduce<Record<string, number>>((values, number) => {
+    const isGroup = /^(?:组|组选|组三|组六|组3|组6)/u.test(String(line.play_type || ""));
+    const frequency = occurrences.reduce<Record<string, number>>((frequencies, number) => {
       const displayNumber = isGroup ? normalizeGroupNumber(number) : number;
-      values[displayNumber] = (values[displayNumber] || 0) + occurrenceWeight;
-      return values;
-    }, {});
-    const amounts = occurrences.reduce<Record<string, number>>((values, number) => {
-      const displayNumber = isGroup ? normalizeGroupNumber(number) : number;
-      values[displayNumber] = (values[displayNumber] || 0) + unitAmount * occurrenceWeight;
-      return values;
+      frequencies[displayNumber] = (frequencies[displayNumber] || 0) + 1;
+      return frequencies;
     }, {});
     const numbers = Array.from(new Set(occurrences.map((number) => isGroup ? normalizeGroupNumber(number) : number))).sort();
+    const stakeCount = Number(line.stake_count ?? line.code_count ?? line.count ?? 0);
+    const unitAmount = stakeCount > 0 ? Number(line.amount || 0) / stakeCount : 0;
     const detectedCategory = line.category || categoryFromSource(line.input_text || line.raw_text || "");
     const categorySections = detectedCategory === "福体" ? ["体", "福"] : [detectedCategory || "福"];
-    return categorySections.map((category) => ({ line, category, title: playLabel(line), numbers, amounts, counts }));
-  }).sort((left, right) => {
+    const amounts = Object.fromEntries(numbers.map((number) => [number, unitAmount * (frequency[number] || 1)]));
+    return categorySections.map((category) => ({ line, category, title: playLabel(line), numbers, frequency, unitAmount, amounts }));
+  });
+  const detailSections = Array.from(rawDetailSections.reduce((map, section) => {
+    const key = `${section.category}|${section.title}|${section.numbers.join(",")}`;
+    const previous = map.get(key);
+    if (!previous) { map.set(key, section); return map; }
+    section.numbers.forEach((number) => {
+      previous.amounts[number] = (previous.amounts[number] || 0) + (section.amounts[number] || 0);
+      previous.frequency[number] = (previous.frequency[number] || 0) + (section.frequency[number] || 0);
+    });
+    return map;
+  }, new Map<string, typeof rawDetailSections[number]>()).values()).sort((left, right) => {
     const categoryRank = (category: string) => category === "体" ? 0 : category === "福" ? 1 : 2;
     const playRank = (title: string) => title.includes("组三") ? 0 : title.includes("组六") ? 1 : title === "直选" ? 0 : 2;
     return categoryRank(left.category) - categoryRank(right.category) || playRank(left.title) - playRank(right.title);
   });
-  // Several physical selections can use the same catalog play (for example
-  // 12467 and 23457 are both 组三五码). Merge those sections so the detail
-  // table has one 组三五码 block and one 组六五码 block, while retaining the
-  // individual numbers and their amounts.
-  const detailSectionsPrepared = detailSectionsRaw.map((section) => ({ ...section, numbers: [...section.numbers], amounts: { ...section.amounts }, counts: { ...section.counts } }));
-  const directSections = detailSectionsPrepared.filter((section) => section.title === "直选");
-  const groupSections = detailSectionsPrepared.filter((section) => section.title === "组选");
-  const isLeopard = (value: string) => {
-    const number = value.replace(/\D/g, "");
-    return /^\d{3}$/.test(number) && new Set(number.split("")).size === 1;
-  };
-  // Only豹子 is combined into the direct display. Ordinary 组三/组六
-  // selections remain in the separate 组选 table; equivalent permutations
-  // (such as 849/948) continue to be merged there by normalizeGroupNumber.
-  directSections.forEach((direct) => {
-    const group = groupSections.find((candidate) => candidate.category === direct.category);
-    if (!group) return;
-    group.numbers.filter(isLeopard).forEach((number) => {
-      const amount = group.amounts[number];
-      if (amount == null) return;
-      direct.amounts[number] = (direct.amounts[number] || 0) + amount;
-      direct.counts[number] = (direct.counts[number] || 0) + (group.counts[number] || 0);
-      group.numbers = group.numbers.filter((item) => item !== number);
-      delete group.amounts[number];
-      delete group.counts[number];
-    });
-  });
-  const detailSections = detailSectionsPrepared.filter((section) => section.title !== "组选" || section.numbers.length > 0).reduce<typeof detailSectionsRaw>((merged, section) => {
-    const key = `${section.category}|${section.title}`;
-    const existing = merged.find((item) => `${item.category}|${item.title}` === key);
-    if (!existing) {
-      merged.push({ ...section, numbers: [...section.numbers], amounts: { ...section.amounts }, counts: { ...section.counts } });
-      return merged;
-    }
-    existing.numbers = Array.from(new Set([...existing.numbers, ...section.numbers])).sort();
-    Object.entries(section.amounts).forEach(([number, amount]) => {
-      existing.amounts[number] = (existing.amounts[number] || 0) + amount;
-    });
-    Object.entries(section.counts).forEach(([number, count]) => {
-      existing.counts[number] = (existing.counts[number] || 0) + count;
-    });
-    return merged;
-  }, []);
-  const displayCount = (items: QuickEntryLine[]) => {
-    let groupOpen = "";
-    return items.reduce((sum, line) => {
-      const groupId = line.ticket_group_id?.trim();
-      if (groupId) {
-        if (groupId === groupOpen) return sum;
-        groupOpen = groupId;
-        return sum + Number(line.ticket_group_count ?? line.count ?? 0);
-      }
-      groupOpen = "";
-      return sum + Number(line.batch_count ?? line.code_count ?? line.count ?? 0);
-    }, 0);
-  };
-  const detailCategoryGroups = detailSections.reduce<Array<{
-    category: string;
-    sections: typeof detailSections;
-  }>>((groups, section) => {
-    const current = groups[groups.length - 1];
-    if (current?.category === section.category) {
-      current.sections.push(section);
-    } else {
-      groups.push({ category: section.category, sections: [section] });
-    }
-    return groups;
-  }, []);
-  const detailModalCount = displayCount(detailLines);
-  const detailModalAmount = detailLines.reduce(
-    (sum, line) => sum + Number(line.amount || 0),
-    0,
-  );
+  const detailCount = detailLines.reduce((sum, line) => sum + Number(line.batch_count ?? line.code_count ?? line.count ?? 0), 0);
+  const detailAmount = detailLines.reduce((sum, line) => sum + Number(line.batch_amount ?? line.amount ?? 0), 0);
   const openDetails = (group: DisplayLine[]) => {
     const details = group[group.length - 1]?.__detailLines;
     const mismatch = group.some((item) => item.status === "failed" && item.suggested_amount);
-    const source = group[0]?.input_text || group[0]?.raw_text || "";
-    const ticketGroupId = group.find((item) => item.ticket_group_id)?.ticket_group_id?.trim();
-    // A composite sentence (for example “二单一组”) is represented by
-    // separate direct/group rows for odds matching.  The details dialog must
-    // show all of those rows together, otherwise opening it from the last
-    // displayed row hides the direct leg and its per-number amount.
-    const related = lines
-      .filter((item) => ticketGroupId
-        ? item.ticket_group_id?.trim() === ticketGroupId
-        : (item.input_text || item.raw_text || "") === source)
-      .filter((item) => item.status === "success");
     if (mismatch) {
+      const source = group[0]?.input_text || group[0]?.raw_text || "";
+      const related = lines.filter((item) => {
+        const key = item.input_text || item.raw_text || "";
+        return key === source || key.includes(source) || source.includes(key);
+      }).filter((item) => item.status === "success");
       setDetailLines(related.length ? related : (details?.length ? details : group));
       return;
     }
-    setDetailLines(related.length ? related : (details?.length ? details : group));
+    setDetailLines(details?.length ? details : group);
   };
   const removeGroup = (group: DisplayLine[]) => {
     const ids = new Set(group.flatMap((item) => item.__sourceIds || [item.id]));
@@ -455,11 +344,11 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
         const line = group[0];
         const groupKey = group.map((item) => item.id).join("-");
         const isEditing = editingGroupKey === groupKey;
-        const draftText = draftTexts[groupKey] ?? line.input_text ?? line.raw_text;
+        const draftText = draftTexts[groupKey] ?? displayTextForGroup(group);
         const isBatch = Boolean(line.batch_id);
         const isBatchEnd = isBatch && line.batch_end === true && line.batch_valid !== false;
         const isBlank = line.__blank === true;
-        const groupCount = displayCount(group);
+        const groupCount = group.reduce((sum, item) => sum + Number(item.code_count ?? item.count ?? 0), 0);
         const groupAmount = group.reduce((sum, item) => sum + Number(item.amount || 0), 0);
         const sourceKey = line.input_text || line.raw_text || "";
         // A single source sentence may expand into several successful rows
@@ -478,7 +367,7 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
               return candidateSource === sourceKey || candidateSource.includes(sourceKey) || sourceKey.includes(candidateSource);
             });
         const isLastRelatedGroup = !hasLaterRelatedGroup;
-        const showDetailButton = !line.__hideDetail && isLastRelatedGroup && ((group.some((item) => item.status === "success") && (!isBatch || isBatchEnd)) || mismatchGroup);
+        const showDetailButton = isLastRelatedGroup && ((group.some((item) => item.status === "success") && (!isBatch || isBatchEnd)) || mismatchGroup);
         const displayCategory = line.category || lines.find((item) => {
           const itemSource = item.input_text || item.raw_text || "";
           return item.category && (itemSource === sourceKey || itemSource.includes(sourceKey) || sourceKey.includes(itemSource));
@@ -493,9 +382,6 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
               <button type="button" className="quick-result-remove" aria-label={`删除第${line.id}条`} onClick={() => removeGroup(group)} />
               <span className="quick-result-index">{line.id}</span>
               <button type="button" className="quick-result-add" aria-label={`新增第${line.id}条`} onClick={() => addLine(line)} />
-              <strong className={`quick-result-status ${visualStatus}${visualTone ? ` ${visualTone}` : ""}`}>
-                {isBlank ? "" : isEditing ? "新" : mismatchGroup ? displayCategory : line.status === "success" ? line.category || "成功" : line.status === "new" ? "新" : "失败"}
-              </strong>
               <span className="quick-result-detail-slot">
                 {isBatchEnd && (line.batch_has_duplicates || line.batch_count_mismatch) && (
                   <span
@@ -513,33 +399,40 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
                   <button type="button" className="quick-result-confirm" aria-label={mismatchLine?.suggested_amount ? `确认按${mismatchLine.suggested_amount}元修正` : "人工确认金额后修改"} onClick={() => onConfirmMismatch(mismatchLine || line)}>✓</button>
                 )}
               </span>
+              <strong className={`quick-result-status ${visualStatus}${visualTone ? ` ${visualTone}` : ""}`}>
+                {isBlank ? "" : isEditing ? "新" : mismatchGroup ? displayCategory : line.status === "success" ? line.category || "成功" : line.status === "new" ? "新" : "失败"}
+              </strong>
+              <textarea
+                className="quick-result-text"
+                maxLength={5000}
+                // Keep the native minimum at one line. A row count derived
+                // from raw text length would reserve dozens of lines before
+                // wrapping is measured and make long previews push the page
+                // out of view.
+                rows={1}
+                value={draftText}
+                onInput={(event) => {
+                  const target = event.currentTarget;
+                  target.style.height = "auto";
+                  target.style.height = `${target.scrollHeight}px`;
+                }}
+                onFocus={() => setEditingGroupKey(groupKey)}
+                onChange={(event) => setDraftTexts((current) => ({ ...current, [groupKey]: event.target.value }))}
+                onBlur={() => {
+                  const nextText = draftTexts[groupKey] ?? line.raw_text;
+                  setEditingGroupKey((current) => current === groupKey ? null : current);
+                  setDraftTexts((current) => {
+                    const next = { ...current };
+                    delete next[groupKey];
+                    return next;
+                  });
+                  if (nextText !== line.raw_text) updateGroupText(group, nextText);
+                }}
+              />
             </div>
-            <textarea
-              className="quick-result-text"
-              maxLength={5000}
-              rows={1}
-              value={draftText}
-              onInput={(event) => {
-                const target = event.currentTarget;
-                target.style.height = "auto";
-                target.style.height = `${target.scrollHeight}px`;
-              }}
-              onFocus={() => setEditingGroupKey(groupKey)}
-              onChange={(event) => setDraftTexts((current) => ({ ...current, [groupKey]: event.target.value }))}
-              onBlur={() => {
-                const nextText = draftTexts[groupKey] ?? line.raw_text;
-                setEditingGroupKey((current) => current === groupKey ? null : current);
-                setDraftTexts((current) => {
-                  const next = { ...current };
-                  delete next[groupKey];
-                  return next;
-                });
-                if (nextText !== line.raw_text) updateGroupText(group, nextText);
-              }}
-            />
             {line.status === "success" ? (
               !isBatch ? (
-                !line.__hideSummary && <div className="quick-result-detail">
+                <div className="quick-result-detail">
                   <span>笔数：</span><b>{groupCount}</b>
                   <span>金额：</span><b>{formatAmount(groupAmount.toFixed(2))}</b>
                 </div>
@@ -582,78 +475,59 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
         <textarea className="quick-merge-text" readOnly rows={8} value={mergedLine?.batch_merged_text || mergedLine?.input_text || mergedLine?.raw_text || ""} />
       </Modal>
       <Modal
-        className="quick-entry-detail-modal"
-        centered
-        closable={false}
-        maskClosable={false}
         open={detailLines.length > 0}
-        title={
-          <span className="quick-entry-detail-heading">
-            <span className="quick-entry-detail-info" aria-hidden="true">i</span>
-            <strong>
-              详情：总笔数 {detailModalCount}，总金额 {formatAmount(detailModalAmount.toFixed(2))}
-            </strong>
-          </span>
-        }
-        footer={
-          <button type="button" className="quick-entry-detail-close" onClick={() => setDetailLines([])}>
-            关闭
-          </button>
-        }
+        title={null}
+        style={{ top: 100 }}
+        closable={false}
+        footer={<Button type="primary" onClick={() => setDetailLines([])}>关 闭</Button>}
         onCancel={() => setDetailLines([])}
-        width={window.innerWidth}
+        width={1000}
+        className="quick-detail-modal"
       >
-        <div className="quick-entry-code-detail">
-          {detailCategoryGroups.length ? (
-            <div className="result-table">
-              {detailCategoryGroups.map((categoryGroup, categoryIndex) => (
-                <Fragment key={categoryGroup.category}>
-                  {categoryIndex > 0 && <div className="sep" />}
-                  <div className={`ltype-wrapper ${categoryGroup.category === "体" ? "is-ti" : "is-fu"}`}>
-                    {categoryGroup.category}
-                  </div>
-                  <div className="ltype-body">
-                    {categoryGroup.sections.map((section, sectionIndex) => (
-                      <div className="game-type-wrapper" key={`${section.category}-${section.title}-${sectionIndex}`}>
-                        <div className="game-type-title">{section.title}</div>
-                        <div className="row-container row-header-container">
-                          {Array.from({ length: 4 }, (_, pairIndex) => (
-                            <div className="row-label-container" key={`header-${pairIndex}`}>
-                              <span className="label-wrapper">号码</span>
-                              <span className="label-wrapper">金额</span>
-                            </div>
-                          ))}
-                        </div>
-                        {Array.from({ length: Math.ceil(section.numbers.length / 4) }, (_, rowIndex) => (
-                          <div className="row-container" key={`row-${rowIndex}`}>
-                            {Array.from({ length: 4 }, (_, pairIndex) => {
-                              const number = section.numbers[rowIndex * 4 + pairIndex];
-                              const repeatCount = number ? Math.round(section.counts[number] || 1) : 0;
-                              return (
-                                <div className={`row-label-container${number ? " has-amount" : ""}`} key={`cell-${pairIndex}`}>
-                                  <span className="label-wrapper">
-                                    {number || "--"}
-                                    {repeatCount > 1 && (
-                                      <span className="repeat-count">(<span>{repeatCount}</span>次重复)</span>
-                                    )}
-                                  </span>
-                                  <span className="label-wrapper">
-                                    {number ? formatAmount((section.amounts[number] || 0).toFixed(2)) : "--"}
-                                  </span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        ))}
-                      </div>
-                    ))}
-                  </div>
-                </Fragment>
+        <div className="quick-detail-summary"><InfoCircleOutlined className="quick-detail-info" />详情：总笔数 {detailCount}，总金额 {formatAmount(detailAmount.toFixed(2))}</div>
+        <div className="quick-detail-scroll">
+          <div className="result-table">
+            <div className="result-category-tabs">
+              {Array.from(new Set(detailSections.map((section) => section.category))).map((category) => (
+                <div key={`category-tab-${category}`} className={`ltype-wrapper ${category === "体" ? "is-ti" : category === "福" ? "is-fu" : "is-futi"}`}>{category}</div>
               ))}
             </div>
-          ) : (
-            <div className="quick-entry-detail-empty">暂无详情</div>
-          )}
+            {detailSections.map((section, sectionIndex) => {
+              const previousSection = detailSections[sectionIndex - 1];
+              const isNewCategory = !previousSection || previousSection.category !== section.category;
+              return (
+              <Fragment key={`${section.category}-${section.title}-${sectionIndex}`}>
+                {isNewCategory && sectionIndex > 0 && <div className="sep" />}
+                {isNewCategory && <div className={`ltype-wrapper ${section.category === "体" ? "is-ti" : "is-fu"}`}>{section.category}</div>}
+                <div className="ltype-body">
+                  <div className="game-type-wrapper">
+                    <div className="game-type-title">{section.title}</div>
+                    <div className="row-container row-header-container">
+                      {Array.from({ length: 4 }, (_, index) => (
+                        <div className="row-label-container" key={`header-${section}-${index}`}>
+                          <span className="label-wrapper">号码</span>
+                          <span className="label-wrapper">金额</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="row-container">
+                      {Array.from({ length: Math.ceil(section.numbers.length / 4) }, (_, rowIndex) => section.numbers.slice(rowIndex * 8, rowIndex * 8 + 8)).map((row, rowIndex) => (
+                        <Fragment key={`${section}-row-${rowIndex}`}>
+                          {Array.from({ length: 4 }, (_, index) => row[index] || null).map((number, index) => (
+                            <div className={`row-label-container${number ? " has-amount" : ""}`} key={`${section.category}-${section.title}-${rowIndex}-${index}`}>
+                              <span className="label-wrapper">{number || "--"}</span>
+                              <span className="label-wrapper">{number ? formatAmount((section.amounts[number] ?? section.unitAmount * (section.frequency[number] || 1)).toFixed(2)) : "--"}</span>
+                            </div>
+                          ))}
+                        </Fragment>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </Fragment>
+              );
+            })}
+          </div>
         </div>
       </Modal>
     </>

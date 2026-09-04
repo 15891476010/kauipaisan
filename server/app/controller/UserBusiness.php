@@ -342,8 +342,14 @@ final class UserBusiness
     /** @return array<int,string> */
     private function detailNumberTokens(mixed $value): array
     {
-        $tokens=preg_split('/[\s,，、]+/u',trim((string)$value),-1,PREG_SPLIT_NO_EMPTY)?:[];
-        return array_values(array_filter(array_map(static fn(string $token): string=>mb_substr(trim($token),0,64),$tokens),static fn(string $token): bool=>$token!==''));
+        $rawTokens=preg_split('/[\s,，、]+/u',trim((string)$value),-1,PREG_SPLIT_NO_EMPTY)?:[];
+        $tokens=[];
+        for($index=0,$total=count($rawTokens);$index<$total;$index++){
+            $token=trim((string)$rawTokens[$index]);
+            if(($token==='三'||$token==='六') && $index+1<$total && preg_match('/^\d{2,10}$/u',(string)$rawTokens[$index+1])===1)$token.=(string)$rawTokens[++$index];
+            if($token!=='')$tokens[]=mb_substr($token,0,64);
+        }
+        return $tokens;
     }
 
     private function normalizeDoubleFlyNumber(string $value): string
@@ -479,6 +485,13 @@ final class UserBusiness
     private function collapseSingleGroupSelection(array $tokens,string $source,string $playType): array
     {
         if (count($tokens)<=1) return $tokens;
+        // Multi-code 组三/组六 is stored by some provider responses as a
+        // semantic prefix plus a digit selection (for example `三 23456`),
+        // while the source keeps the authoritative `23456组三五码` wording.
+        // It is one selection and must remain one detail row.
+        if (preg_match('/(?<!\d)(\d{4,10})\s*(组三|组六|组3|组6)(?:[一二两三四五六七八九]|[2-9])?码?/u',$source,$multi)===1) {
+            return [($multi[2]==='组六'||$multi[2]==='组6'?'六':'三').$multi[1]];
+        }
         // “五组” is the legacy shorthand for a three-digit 组三三码
         // selection; include it when locating the original code so the
         // detail view collapses its six permutations back to one selection.
@@ -608,6 +621,44 @@ final class UserBusiness
         foreach(array_keys($remove) as $index)unset($details[$index]);
         return array_values($details);
     }
+    /**
+     * A package expanded into multiple stored details can become the same
+     * visible selection after compacting (e.g. two 0.5 rows -> `三42365`).
+     * Merge only exact duplicates within one record/issue/category/play;
+     * distinct plays and selections remain separate.
+     * @param array<int,array<string,mixed>> $details
+     * @return array<int,array<string,mixed>>
+     */
+    private function mergeDuplicatePackagedDetails(array $details): array
+    {
+        $buckets=[];
+        foreach($details as $index=>$detail){
+            $play=trim((string)($detail['play_type']??''));
+            if(preg_match('/^(?:组三|组六)[一二两三四五六七八九1-9]码$/u',$play)!==1)continue;
+            $number=preg_replace('/\s+/u','',trim((string)($detail['number_text']??'')))??'';
+            if(preg_match('/^[三六]\d{2,10}$/u',$number)!==1)continue;
+            $key=implode('|',[(string)($detail['bet_record_id']??0),(string)($detail['issue_no']??''),(string)($detail['category']??''),$play,$number]);
+            $buckets[$key][]=$index;
+        }
+        $remove=[];
+        foreach($buckets as $indexes){
+            if(count($indexes)<2)continue;
+            $firstIndex=$indexes[0];$first=&$details[$firstIndex];
+            foreach(array_slice($indexes,1) as $index){
+                $duplicate=$details[$index];
+                foreach(['amount','win_amount','rebate','offline_rebate','profit'] as $field)$first[$field]=$this->detailMoney((float)($first[$field]??0)+(float)($duplicate[$field]??0));
+                $first['is_winning_number']=(bool)($first['is_winning_number']??false)||(bool)($duplicate['is_winning_number']??false);
+                if(($duplicate['status']??'')==='won')$first['status']='won';
+                if(($duplicate['win_projection_resolved']??false)===true)$first['win_projection_resolved']=true;
+                $remove[$index]=true;
+            }
+            $first['detail_group_index']=0;$first['detail_group_size']=1;$first['group_first']=true;$first['is_group_first']=true;$first['show_text_button']=true;
+            unset($first);
+        }
+        if($remove===[])return $details;
+        foreach(array_keys($remove) as $index)unset($details[$index]);
+        return array_values($details);
+    }
     private function detailDrawMap(array $rows,int $tenantId): array
     {
         $lotteries=[];$issues=[];
@@ -687,6 +738,10 @@ final class UserBusiness
             foreach($tokens as $index=>$token){$amount=(float)$amounts[$index];$win=(float)$wins[$index];$rebate=(float)$rebates[$index];$offlineRebate=(float)$offlineRebates[$index];$tokenStatus=(string)($row['status']??$row['record_status']??'pending');if($resolved&&$tokenStatus==='won')$tokenStatus=$win>0?'won':'unwon';$groupFirst=$index===0;$expanded[]=['id'=>(int)$row['id'],'row_key'=>(int)$row['id'].'-'.$index,'detail_group_id'=>(int)$row['id'],'detail_group_index'=>$index,'detail_group_size'=>$count,'group_first'=>$groupFirst,'is_group_first'=>$groupFirst,'show_text_button'=>$groupFirst,'bet_record_id'=>(int)($row['bet_record_id']??0),'submission_id'=>(int)($row['submission_id']??0)?:null,'order_no'=>$orderNo,'issue_no'=>(string)$row['issue_no'],'number_text'=>$token,'stored_number_text'=>$storedNumberText,'category'=>(string)($row['category']??''),'play_type'=>$packageLabel!==''?$packageLabel:(string)($row['play_type']??''),'play_label'=>$packageLabel!==''?$packageLabel:$this->detailPlayLabel($row['play_type']??'',$row['category']??'',$originalSource.' '.$source),'lottery'=>(string)($row['lottery']??''),'amount'=>$amounts[$index],'odds'=>$oddsText,'win_amount'=>$wins[$index],'is_winning_number'=>in_array($index,$winningIndexes,true),'win_projection_resolved'=>$resolved,'rebate'=>$rebates[$index],'offline_rebate'=>$this->detailMoney($offlineRebate),'profit'=>$this->detailMoney($win-$amount+$rebate+$offlineRebate),'status'=>$tokenStatus,'placed_at'=>(string)$row['placed_at'],'source_text'=>$originalSource,'record_source'=>$recordSource,'original_source_text'=>$originalSource,'parsed_source_text'=>$parsedText];}
         }
         $expanded=$this->collapseMixedDirectGroupDetails($expanded);
+        // Collapse equivalent permutations from legacy/provider rows only
+        // after all token amounts and winning indexes have been assigned.
+        $expanded=$this->mergeEquivalentGroupDetails($expanded);
+        $expanded=$this->mergeDuplicatePackagedDetails($expanded);
         $total=count($expanded);$page=max(1,(int)$request->param('page',1));
         $requestedPageSize=trim((string)$request->param('page_size','40'));
         // Detail consumers that request 100 rows (or explicitly use `all`)
@@ -856,7 +911,13 @@ final class UserBusiness
                         if (preg_match('/^[a-z]*?(\d)t(\d+)$/i',$code,$m)!==1) continue; $play='单选全胆拖';$display[]='胆'.$m[1].'拖'.$m[2];$source=$play.' 1码拖'.strlen($m[2]).' 胆'.$m[1].'拖'.$m[2].'各'.$amount.'元';
                     }
                     if ($source==='' || $display===[]) continue;
-                    $atomicKey=$type.'|'.$play.'|'.number_format($amount/max(1,$count),4,'.','').'|'.$display[0];
+                    // Provider type is a wire-format bucket, not the
+                    // business identity.  Different buckets can describe
+                    // the same package; include normalized business fields
+                    // so one selection is emitted once.
+                    $semanticPlay=preg_replace('/\s+/u','',$play)??$play;
+                    $semanticNumber=preg_replace('/\s+/u','',trim((string)$display[0]))??(string)$display[0];
+                    $atomicKey=$semanticPlay.'|'.number_format($amount/max(1,$count),4,'.','').'|'.$semanticNumber;
                     if (!isset($atomic[$atomicKey])) $atomic[$atomicKey]=['number'=>$display[0],'amount'=>0.0,'count'=>0,'source'=>$source,'play'=>$play,'type'=>$type,'categories'=>[]];
                     $atomic[$atomicKey]['amount']+=$amount; $atomic[$atomicKey]['count']+=$count; $atomic[$atomicKey]['categories'][$lineCategory]=true;
                 }
@@ -1289,7 +1350,14 @@ final class UserBusiness
         // existing local parser fallback.
         if ($thirdParty !== null) {
             $providerLines=$this->providerPreviewLines($thirdParty,$lottery);
-            return $this->reply(['lines'=>$providerLines,'count'=>(int)($thirdParty['data']['tc']??0),'code_count'=>(int)($thirdParty['data']['tc']??0),'amount'=>number_format((float)($thirdParty['data']['ta']??0),2,'.',''),'formatted_text'=>(new QuickEntryParser())->formatText($text)]);
+            $providerHasSuccess=array_reduce($providerLines,static fn(bool $found,array $line):bool=>$found || ($line['status']??'')==='success',false);
+            // A decoded provider response that only contains AK/login/timeout
+            // failures must not block a valid local ticket. Keep provider
+            // errors for genuinely invalid text, but fall back transparently
+            // when the local parser can recognize the same input.
+            if ($providerHasSuccess) {
+                return $this->reply(['lines'=>$providerLines,'count'=>(int)($thirdParty['data']['tc']??0),'code_count'=>(int)($thirdParty['data']['tc']??0),'amount'=>number_format((float)($thirdParty['data']['ta']??0),2,'.',''),'formatted_text'=>(new QuickEntryParser())->formatText($text)]);
+            }
         }
         $lines=$this->quickLines($text,$lottery,(int)$s['tenant_id']); $count=0; $codeCount=0; $amount=0.0;
         foreach ($lines as &$line) if ($line['status']==='success') {
@@ -1348,6 +1416,19 @@ final class UserBusiness
             }
         }
         $lines=$providerAuthoritative ? $this->providerPreviewLines($providerResult,$lottery) : $this->quickLines($text,$lottery,(int)$s['tenant_id']);
+        if ($providerAuthoritative) {
+            $providerHasSuccess=array_reduce($lines,static fn(bool $found,array $line):bool=>$found || ($line['status']??'')==='success',false);
+            if (!$providerHasSuccess) {
+                $localLines=$this->quickLines($text,$lottery,(int)$s['tenant_id']);
+                $localHasSuccess=array_reduce($localLines,static fn(bool $found,array $line):bool=>$found || ($line['status']??'')==='success',false);
+                if ($localHasSuccess) {
+                    $providerAuthoritative=false;
+                    $providerResult=null;
+                    $lines=$localLines;
+                    Log::info('quick place fell back to local parser after provider returned no successful lines');
+                }
+            }
+        }
         if (!$lines) return $this->reply(null,'没有可下注的有效内容',422);
         foreach ($lines as $line) if (($line['status']??'')!=='success') {
             return $this->reply(null, $providerAuthoritative ? (string)($line['reason']??$this->thirdPartyMessage($providerResult??[])) : '存在未识别或金额不一致的内容，已取消整单下注', 422);

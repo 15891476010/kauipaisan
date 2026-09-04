@@ -61,9 +61,12 @@ export function SideBetRecords({
       const result = await getBetDetails({
         submission_id: record.id,
         page: 1,
-        page_size: 100,
+        // Details can contain hundreds of numbers (for example a 181-line
+        // direct ticket). Load the complete record so the popup never hides
+        // the first/last entries behind the API page limit.
+        page_size: 2000,
       });
-      setDetails(result.data?.data?.list || []);
+      setDetails(normalizeDetailRows(result.data?.data?.list || []));
     } catch (error) {
       setDetails([]);
       message.error(apiErrorMessage(error, "注单详情加载失败"));
@@ -96,58 +99,141 @@ export function SideBetRecords({
     if (value === "体") return "排列三";
     return value || "福彩3D";
   };
-  const rawPlayName = (detail: BetDetail) =>
-    String(detail.play_label || detail.play_type || detail.category || "投注").trim();
+  const packagePlay = (detail: BetDetail) => {
+    // The detail row can contain only the provider's expanded atoms (for
+    // example `三 组三 3 组三`).  The parent record keeps the authoritative
+    // original wording, so include it when resolving package plays.
+    const text = `${detail.play_label || ""} ${detail.play_type || ""} ${detail.source_text || ""} ${detail.original_source_text || ""} ${detail.record_source || ""}`;
+    if (/(组六\s*(?:全包|包)|组6\s*(?:全包|包))/u.test(text)) return "组六全包";
+    if (/(组三\s*(?:全包|包)|组3\s*(?:全包|包))/u.test(text)) return "组三全包";
+    return "";
+  };
   const playName = (detail: BetDetail) => {
-    const raw = rawPlayName(detail);
-    const source = String(detail.source_text || detail.original_source_text || detail.parsed_source_text || "");
-    const locatorCount = ["百", "十", "个"].filter((position) =>
-      new RegExp(`${position}位?\\s*[0-9０-９]`, "u").test(source),
-    ).length;
-    if (locatorCount > 0 && (raw === "直" || raw === "直选")) return (["", "一", "二", "三"] as const)[locatorCount] + "码定位";
-    // 参考站把直选作为完整分组标题；仅归一化精确的直选标签，避免把“直组”
-    // 或定位类玩法误并到直选分组中。
-    if (raw === "直" || raw === "直选") return "直选";
-    if (["组", "组选", "组三", "组六", "组3", "组6"].includes(raw)) return "组选";
+    const raw = String(detail.play_label || detail.play_type || detail.category || "投注");
+    const packageType = packagePlay(detail);
+    if (packageType) return packageType;
+    // 多码/沾边赖在接口中可能是 `组三 + 三 23456`，也可能是
+    // `23456组三五码`。两种写法都归到参考站的同一表头。
+    const multiSource = `${detail.source_text || ""} ${detail.original_source_text || ""} ${detail.record_source || ""}`;
+    const multiDigits = String(detail.number_text || "").match(/\d{4,10}/u)?.[0]
+      || multiSource.match(/(?:组三|组六|组3|组6)\s*(\d{4,10})/u)?.[1]
+      || multiSource.match(/(\d{4,10})\s*(?:组三|组六|组3|组6)/u)?.[1];
+    const multiFamily = /组六|组6/u.test(raw) ? "组六" : /组三|组3/u.test(raw) ? "组三" : /组六|组6/u.test(multiSource) ? "组六" : /组三|组3/u.test(multiSource) ? "组三" : "";
+    if (multiDigits && multiFamily) {
+      const words: Record<string, string> = { "4": "四", "5": "五", "6": "六", "7": "七", "8": "八", "9": "九" };
+      return `${multiFamily}${words[String(multiDigits.length)] || multiDigits.length}${/赖/u.test(multiSource) ? "赖" : "码"}`;
+    }
+    const dragSource = `${raw} ${detail.number_text || ""} ${detail.source_text || ""}`;
+    if (/胆拖/u.test(dragSource)) {
+      if (/(组六|组6|六组)/u.test(dragSource)) return "组六胆拖";
+      if (/(组三|组3|三组)/u.test(dragSource)) return "组三胆拖";
+    }
+    // 定位玩法的 X/口 是内部占位符，不作为用户端玩法名称显示。
+    if (/^[口Xx]{2}[Xx]$/.test(raw) || raw === "口口X") return "二码定位";
+    if (/^[口Xx][Xx]{2}$/.test(raw)) return "一码定位";
+    // A mixed sentence may be expanded by the parser into separate 组三/组六
+    // rows. Keep those rows in one 组选 section; the number cell retains the
+    // 三/六 prefix so the original meaning is still visible.
+    const groupSource = `${detail.source_text || ""} ${detail.original_source_text || ""} ${detail.record_source || ""}`;
+    const mixedGroup = /(?:组三|组3)[^\n]*(?:组六|组6)|(?:组六|组6)[^\n]*(?:组三|组3)/u.test(groupSource);
+    if (mixedGroup && /(?:组三|组六|组3|组6)/u.test(raw)) {
+      const count = groupSource.match(/(?<!\d)(\d{3,10})\s*(?:组三|组六|组3|组6)([一二两三四五六七八九]|[2-9])?码?/u);
+      const words: Record<string, string> = { "2": "二", "3": "三", "4": "四", "5": "五", "6": "六", "7": "七", "8": "八", "9": "九" };
+      const size = count?.[2] || (count?.[1] ? words[String(count[1].length)] : "");
+      const suffix = /赖/u.test(groupSource) ? "赖" : "码";
+      return size ? `组${words[size] || size}${suffix}` : "组选";
+    }
+    // The API may return 直/直选 (or a direct-play subtype) for the same
+    // catalog play. Keep them in one section so the detail table has one
+    // heading instead of splitting the same direct bets into separate blocks.
+    if (raw === "直" || raw === "直选" || raw.startsWith("直")) return "直选";
+    if (raw === "组" || raw === "组三" || raw === "组六" || raw === "组3" || raw === "组6" || raw === "组选") return "组选";
     return raw;
   };
-  const compactDetailNumber = (detail: BetDetail, play: string, source: string) => {
-    const combined = `${detail.number_text || ""} ${source}`.replace(/\s+/gu, "");
-    const context = `${play}${combined}`;
-    const isDantuo = /胆拖/u.test(context);
-    const isPack = /(组三|组六|组3|组6)包/u.test(context);
-    if (!isDantuo && !isPack) return "";
-    const kind = /(组六|组6)/u.test(context) ? "六" : "三";
-    if (isDantuo) {
-      const match = combined.match(/胆?([0-9]+)拖([0-9]+)/u);
-      if (match) return `${kind}${match[1]}拖${match[2]}`;
-      const fallback = combined.replace(/(?:组三|组六|组3|组6)胆拖/gu, "").replace(/^胆/u, "");
-      return `${kind}${fallback}`;
-    }
-    return `${kind}包`;
+  const playMark = (detail: BetDetail) => {
+    const raw = String(detail.play_type || detail.play_label || "");
+    if (/胆拖/u.test(`${raw} ${detail.number_text || ""} ${detail.source_text || ""}`)) return "";
+    if (/^和/u.test(raw) || /^和值/u.test(raw)) return "";
+    if (/豹子/u.test(`${raw} ${detail.number_text || ""} ${detail.source_text || ""}`)) return "";
+    if (packagePlay(detail)) return "";
+    if (/口|X/i.test(raw) && !raw.includes("直")) return "";
+    // Multi-code and 沾边赖 rows already carry 三/六 in the number text;
+    // appending a second red play marker makes the table look split.
+    if (/\d{4,10}/u.test(String(detail.number_text || "")) && /(?:组三|组六|组3|组6)/u.test(`${raw} ${detail.source_text || ""}`)) return "";
+    if (/(?:组三|组六|组3|组6).*(?:码|赖)|(?:码|赖).*(?:组三|组六|组3|组6)/u.test(raw)) return "";
+    if (raw === "直" || raw === "直选" || raw.startsWith("直")) return "直";
+    if (raw === "组" || raw === "组三" || raw === "组六" || raw === "组3" || raw === "组6" || raw === "组选") return "组";
+    if (raw.startsWith("组三")) return "组三";
+    if (raw.startsWith("组六")) return "组六";
+    return raw;
+  };
+  const normalizeDetailRows = (input: BetDetail[]): BetDetail[] => {
+    const explicitLeopards = new Set<string>();
+    input.forEach((detail) => {
+      const source = String(detail.source_text || "");
+      if (!source.includes("豹子") || source.includes("豹子全包")) return;
+      String(detail.number_text || "").split(/[\s,，、]+/u).forEach((token) => {
+        const match = token.match(/^(\d{3})/u);
+        if (match && new Set(match[1]).size === 1) explicitLeopards.add(match[1]);
+      });
+    });
+    const result: BetDetail[] = [];
+    input.forEach((detail) => {
+      const source = String(detail.source_text || "");
+      const tokens = String(detail.number_text || "").split(/[\s,，、]+/u).filter(Boolean);
+      const rawPlay = String(detail.play_type || detail.play_label || "");
+      const isDirect = rawPlay === "直" && tokens.every((token) => /^\d{3}直$/u.test(token));
+      const isExplicitLeopard = source.includes("豹子") && !source.includes("豹子全包");
+      if (isExplicitLeopard) {
+        result.push({ ...detail, odds: "800" });
+        return;
+      }
+      if (!isDirect || tokens.length < 2) { result.push(detail); return; }
+      const leopard = tokens.filter((token) => {
+        const number = token.slice(0, 3);
+        return new Set(number).size === 1 && (explicitLeopards.size === 0 || explicitLeopards.has(number));
+      });
+      const normal = tokens.filter((token) => !leopard.includes(token));
+      if (leopard.length === 0) { result.push(detail); return; }
+      const perAmount = Number(detail.amount || 0) / tokens.length;
+      if (normal.length > 0) result.push({ ...detail, number_text: normal.join(" "), amount: (perAmount * normal.length).toFixed(2) });
+      if (explicitLeopards.size === 0) result.push({ ...detail, number_text: leopard.join(" "), amount: (perAmount * leopard.length).toFixed(2), odds: "800", source_text: `${leopard.map((token) => token.slice(0, 3)).join(" ")}直豹子各${perAmount}元` });
+    });
+    return result;
   };
   const displayDetailNumber = (detail: BetDetail) => {
     const source = detail.source_text || "";
     const play = playName(detail);
-    const rawPlay = rawPlayName(detail);
-    const compact = compactDetailNumber(detail, play, source);
-    if (compact) return compact;
+    const rawPlay = String(detail.play_type || detail.play_label || "");
+    // Multi-code 组三/组六 selections are one catalogue item. Older provider
+    // responses may expose the selection as `三 23456` or split it into
+    // expanded combinations; restore the compact reference-site form.
+    const multiCodeText = `${source} ${detail.original_source_text || ""} ${detail.record_source || ""} ${rawPlay}`;
+    const multiCode = multiCodeText.match(/(?<!\d)(\d{3,10})\s*(组三|组六|组3|组6)(?:[一二两三四五六七八九]|[2-9])?(?:码|赖)?/u)
+      || multiCodeText.match(/(组三|组六|组3|组6)\s*(\d{3,10})/u);
+    if (multiCode) {
+      const family = multiCode[1].startsWith("组") ? multiCode[1] : multiCode[2];
+      const digits = multiCode[1].startsWith("组") ? multiCode[2] : multiCode[1];
+      return `${family === "组六" || family === "组6" ? "六" : "三"}${digits}`;
+    }
+    const compactStored = String(detail.number_text || "").replace(/\s+/gu, "");
+    if (/^(组三|组六|组3|组6)/u.test(rawPlay) && /^[三六]\d{4,10}$/u.test(compactStored)) return compactStored;
+    // 胆拖的内部号码保存为“胆1拖2345678”，标题已经携带具体的
+    // 组六/组三语义；详情号码按用户约定显示为“六拖…”或“三拖…”。
+    const dragFamily = play.match(/^(组六|组三)胆拖/u)?.[1];
+    if (dragFamily) {
+      const stored = (detail.number_text || "").replace(/\s+/gu, "");
+      const countedDrag = stored.match(/^胆(\d{1,2})拖(\d{1,9})(?:(?:组三|组六|组3|组6)胆拖)?$/u);
+      if (countedDrag) return `${dragFamily === "组六" ? "六" : "三"} ${countedDrag[1]} 拖 ${countedDrag[2]}`;
+      const drag = stored.match(/^[三六](\d{2,9})(?:(?:组三|组六|组3|组6)胆拖)?$/u)?.[1];
+      if (drag) return `${dragFamily === "组六" ? "六" : "三"} 拖 ${drag}`;
+    }
     const sticky = source.match(/(\d{4,10})\s*(组三|组六)六码/u);
     if (sticky) return `${sticky[2] === "组三" ? "三" : "六"}${sticky[1]}`;
-    if (play === "组选" || /^(组|组三|组六|组3|组6)$/u.test(rawPlay)) {
-      const value = String(detail.number_text || "")
-        .replace(/^(?:三|六)/u, "")
-        .replace(/(?:组三|组六|组选|组)$/u, "");
-      return value ? `${value}组` : "组";
+    if (rawPlay.includes("组3") || rawPlay.includes("组6") || rawPlay === "组" || rawPlay === "组三" || rawPlay === "组六" || rawPlay === "组选") {
+      return (detail.number_text || "").replace(/^[三六]/u, "").replace(/(直|组|组三|组六)$/u, "");
     }
-    if (play === "直选") {
-      const value = String(detail.number_text || "")
-        .replace(/直$/u, "");
-      return value ? `${value}直` : "直";
-    }
-    if (/^[一二三]码定位$/u.test(play)) {
-      return String(detail.number_text || "").replace(/直$/u, "") || "-";
-    }
+    if (rawPlay.includes("直")) return (detail.number_text || "").replace(/(直|组|组三|组六)$/u, "");
     if (play.includes("双飞") || source.includes("对子")) {
       const number = (detail.number_text || "")
         .replace(/^0(?=\d{2}(?:飞)?$)/, "")
@@ -157,15 +243,27 @@ export function SideBetRecords({
     if (detail.number_text === "000" && play.startsWith("跨度")) return `跨${play.slice(2)}`;
     if (detail.number_text === "000" && play.startsWith("和值")) return play;
     const value = detail.number_text || "";
-    return /^\d{3}$/.test(value) ? String(Number(value)) : value || "-";
-  };
-  const renderDetailNumber = (detail: BetDetail) => {
-    const value = displayDetailNumber(detail);
-    const marked = value.match(/^(.*?)(直|组)$/u);
-    if (!marked) return <span>{value}</span>;
-    return <><span>{marked[1]}</span><em>{marked[2]}</em></>;
+    const packageType = packagePlay(detail);
+    if (packageType) return packageType.startsWith("组六") ? "六包" : "三包";
+    // 独胆的玩法标记单独显示为红色“独胆”，号码单元格只保留数字。
+    if (/^独胆$/u.test(play) || /^独胆$/u.test(rawPlay)) return value.replace(/胆$/u, "");
+    // 定位号码中的 X 表示未指定的位置，需保留在号码本身（例如 12X）。
+    // 仅将内部玩法标签“口口X/X口口”规范化为“二码定位”，不改写号码。
+    if (play.endsWith("码定位")) return value;
+    // Preserve the three-character lottery expression, including a leading
+    // zero, for direct and multi-position displays.
+    return value || "-";
   };
   const orderedDetails = [...details].sort((left, right) => {
+    const playRank = (detail: BetDetail) => {
+      const play = playName(detail);
+      if (play === "直选") return 0;
+      if (play === "组选") return 1;
+      return 2;
+    };
+    const leftRank = playRank(left);
+    const rightRank = playRank(right);
+    if (leftRank !== rightRank) return leftRank - rightRank;
     const leftNumber = Number(displayDetailNumber(left).replace(/\D/g, ""));
     const rightNumber = Number(displayDetailNumber(right).replace(/\D/g, ""));
     if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber) && leftNumber !== rightNumber) return leftNumber - rightNumber;
@@ -212,6 +310,16 @@ export function SideBetRecords({
       return;
     }
     throw new Error("copy failed");
+  };
+  const copyRecordSource = async (record: BetRecord) => {
+    const source = String(record.source_text || "");
+    if (!source) return;
+    try {
+      await copyText(source);
+      message.success("原始文本已复制");
+    } catch {
+      message.error("复制原始文本失败，请长按文本手动复制");
+    }
   };
   const copyNumbers = async () => {
     try {
@@ -288,6 +396,19 @@ export function SideBetRecords({
           <article
             className={`side-record-item${record.status === "refunded" ? " refunded" : ""}`}
             key={record.id}
+            role="button"
+            tabIndex={0}
+            title="点击复制完整原始文本"
+            onClick={(event) => {
+              if ((event.target as HTMLElement).closest("button")) return;
+              void copyRecordSource(record);
+            }}
+            onKeyDown={(event) => {
+              if ((event.key === "Enter" || event.key === " ") && event.target === event.currentTarget) {
+                event.preventDefault();
+                void copyRecordSource(record);
+              }
+            }}
           >
             <time>
               <span className="side-record-board">
@@ -371,7 +492,7 @@ export function SideBetRecords({
                         const cells = Array.from({ length: showLabels ? 5 : 6 }, (_, index) => chunk[index] || null);
                         const labelCell = (label: string) => showLabels ? <div className="record-detail-grid-label">{label}</div> : null;
                         return <div className={`record-detail-grid${showLabels ? "" : " continuation"}`} key={`${lottery}-${play}-${chunkIndex}`} style={{ gridTemplateColumns: "repeat(6, minmax(112px, 1fr))" }}>
-                          {labelCell("号码")}{cells.map((detail, index) => <div className={`record-detail-grid-value number${detail ? "" : " placeholder"}`} key={`number-${detail?.id || "empty"}-${index}`}>{detail ? renderDetailNumber(detail) : null}</div>)}
+                          {labelCell("号码")}{cells.map((detail, index) => <div className={`record-detail-grid-value number${detail ? "" : " placeholder"}`} key={`number-${detail?.id || "empty"}-${index}`}>{detail ? <><span>{displayDetailNumber(detail)}</span><em>{playMark(detail)}</em></> : null}</div>)}
                           {labelCell("金额")}{cells.map((detail, index) => <div className={`record-detail-grid-value amount${detail ? "" : " placeholder"}`} key={`amount-${detail?.id || "empty"}-${index}`}>{detail?.amount || null}</div>)}
                           {labelCell("赔率")}{cells.map((detail, index) => <div className={`record-detail-grid-value odds${detail ? "" : " placeholder"}`} key={`odds-${detail?.id || "empty"}-${index}`}>{detail?.odds || null}</div>)}
                           {labelCell("中奖")}{cells.map((detail, index) => <div className={`record-detail-grid-value win${detail ? "" : " placeholder"}`} key={`win-${detail?.id || "empty"}-${index}`}>{detail && Number(detail.win_amount || 0) > 0 ? detail.win_amount : null}</div>)}

@@ -12,7 +12,7 @@ function numberValue(value: unknown): number {
 function rowProfit(row: BetDetail): string {
   if (row.status === "pending") return "0.00";
   if (row.profit !== undefined) return row.profit;
-  return (numberValue(row.win_amount) - numberValue(row.amount) + numberValue(row.rebate)).toFixed(2);
+  return (numberValue(row.win_amount) - numberValue(row.amount) + numberValue(row.rebate) + numberValue(row.offline_rebate)).toFixed(2);
 }
 
 function detailOrderKey(row: BetDetail): string {
@@ -23,11 +23,19 @@ function displayNumber(row: BetDetail): string {
   const value = String(row.number_text || "");
   const play = `${row.play_label || ""}${row.play_type || ""}`;
   const source = String(row.source_text || row.parsed_source_text || "");
+  const dragFamily = play.match(/(组六|组三)胆拖/u)?.[1];
+  if (dragFamily) {
+    const drag = value.match(/^胆\d{1,2}拖(\d{1,9})$/u)?.[1]
+      || value.match(/^[三六](\d{2,9})$/u)?.[1];
+    if (drag) return `${dragFamily === "组六" ? "六" : "三"}拖${drag}`;
+  }
   if (play.includes("双飞") || source.includes("对子")) {
     return value.replace(/^0(?=\d{2}(?:飞)?$)/, "").replace(/飞$/, "");
   }
-  if (play.includes("组3") || play.includes("组6") || row.play_label === "组") return value.replace(/^[三六]/u, "");
-  return value.replace(/直+$/u, "直").replace(/组+$/u, "组");
+  if (play.includes("组3") || play.includes("组6")) return value.replace(/^[三六]/u, "");
+  // Lottery numbers are fixed-width expressions. Keep leading zeroes so
+  // direct and multi-position displays align as 0-0-3, never 3.
+  return value;
 }
 
 const statusLabels: Record<string, string> = {
@@ -47,7 +55,7 @@ export function BetDetailsTable({
 }) {
   return (
     <div className="bet-detail-table">
-      <div className="bet-detail-head"><span>注单编号</span><span>下单时间</span><span>号码</span><span>金额</span><span>赔率</span><span>中奖</span><span>回水</span><span>盈亏</span><span>状态</span><span>查看文本</span></div>
+      <div className="bet-detail-head"><span>注单编号</span><span>下单时间</span><span>号码</span><span>金额</span><span>赔率</span><span>中奖</span><span>回水</span><span>离线回水</span><span>盈亏</span><span>状态</span><span>查看文本</span></div>
       {rows.length ? rows.map((row, index) => {
         const sameOrder = index > 0 && detailOrderKey(rows[index - 1]) === detailOrderKey(row);
         const rowClass = ["bet-detail-row", index % 2 === 0 ? "stripe" : "plain", row.status === "refunded" ? "refunded" : ""].filter(Boolean).join(" ");
@@ -55,11 +63,11 @@ export function BetDetailsTable({
           <span className="bet-order-no">{row.order_no || row.bet_record_id || row.id}</span>
           <span className="bet-placed-at">{row.placed_at}</span>
           <span className="bet-number-link"><b>{displayNumber(row) || "-"}</b>{row.play_label ? <em>{row.play_label}</em> : null}</span>
-          <span className="bet-money">{row.amount}</span><span className="bet-odds">{row.odds || "-"}</span><span>{row.win_amount}</span><span>{row.rebate}</span><span>{rowProfit(row)}</span><span>{statusLabels[row.status] || "未知状态"}</span>
+          <span className="bet-money">{row.amount}</span><span className="bet-odds">{row.odds || "-"}</span><span>{row.win_amount}</span><span>{row.rebate}</span><span>{row.offline_rebate || "0"}</span><span>{rowProfit(row)}</span><span>{statusLabels[row.status] || "未知状态"}</span>
           {sameOrder ? <span className="bet-same-order">同上</span> : <button type="button" className="bet-text-link" disabled={!row.source_text && !row.parsed_source_text} title="查看投注文本" onClick={() => onPreview(row)}><FileTextOutlined /></button>}
         </div>;
       }) : !loading && <div className="bet-detail-empty"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" /></div>}
-      {rows.length ? <div className="bet-detail-total"><span>合计</span><span /><span /><span>{totals.amount}</span><span /><span>{totals.win_amount}</span><span>{totals.rebate}</span><span>{totals.profit}</span><span /><span /></div> : null}
+      {rows.length ? <div className="bet-detail-total"><span>合计</span><span /><span /><span>{totals.amount}</span><span /><span>{totals.win_amount || "0"}</span><span>{totals.rebate}</span><span>{totals.offline_rebate}</span><span>{totals.profit}</span><span /><span /></div> : null}
       {loading && <div className="page-local-loading" role="status" aria-label="加载中" />}
     </div>
   );

@@ -97,45 +97,38 @@ export function SideBetRecords({
     return value || "福彩3D";
   };
   const playName = (detail: BetDetail) => {
-    const raw = String(detail.play_label || detail.play_type || detail.category || "投注");
-    if (raw === "直" || raw.startsWith("直")) return "直";
-    if (raw === "组" || raw === "组选") return "组选";
+    const raw = String(detail.play_type || detail.play_label || detail.category || "投注");
+    if (raw === "直" || raw === "直选") return "直选";
+    if (raw === "组" || raw === "组三" || raw === "组六" || raw === "组3" || raw === "组6") return "组选";
     return raw;
   };
-  const compactDetailNumber = (detail: BetDetail, play: string, source: string) => {
-    const combined = `${detail.number_text || ""} ${source}`.replace(/\s+/gu, "");
-    const context = `${play}${combined}`;
-    const isDantuo = /胆拖/u.test(context);
-    const isPack = /(组三|组六|组3|组6)包/u.test(context);
-    if (!isDantuo && !isPack) return "";
-    const kind = /(组六|组6)/u.test(context) ? "六" : "三";
-    if (isDantuo) {
-      const match = combined.match(/胆?([0-9]+)拖([0-9]+)/u);
-      if (match) return `${kind}${match[1]}拖${match[2]}`;
-      const fallback = combined.replace(/(?:组三|组六|组3|组6)胆拖/gu, "").replace(/^胆/u, "");
-      return `${kind}${fallback}`;
-    }
-    return `${kind}包`;
+  const playMark = (detail: BetDetail) => {
+    const raw = String(detail.play_type || detail.play_label || "");
+    if (raw === "直" || raw === "直选") return "直";
+    if (raw === "组" || raw === "组三" || raw === "组六" || raw === "组3" || raw === "组6") return "组";
+    if (raw.startsWith("组三")) return "组三";
+    if (raw.startsWith("组六")) return "组六";
+    return raw;
   };
   const displayDetailNumber = (detail: BetDetail) => {
     const source = detail.source_text || "";
     const play = playName(detail);
-    const compact = compactDetailNumber(detail, play, source);
-    if (compact) return compact;
+    const rawPlay = String(detail.play_type || detail.play_label || "");
+    // 胆拖的内部号码保存为“胆1拖2345678”，标题已经携带具体的
+    // 组六/组三语义；详情号码按用户约定显示为“六拖…”或“三拖…”。
+    const dragFamily = play.match(/^(组六|组三)胆拖/u)?.[1];
+    if (dragFamily) {
+      const stored = detail.number_text || "";
+      const drag = stored.match(/^胆\d{1,2}拖(\d{1,9})$/u)?.[1]
+        || stored.match(/^[三六](\d{2,9})$/u)?.[1];
+      if (drag) return `${dragFamily === "组六" ? "六" : "三"}拖${drag}`;
+    }
     const sticky = source.match(/(\d{4,10})\s*(组三|组六)六码/u);
     if (sticky) return `${sticky[2] === "组三" ? "三" : "六"}${sticky[1]}`;
-    const stored = detail.number_text || "";
-    // The API stores the settlement suffix on each token (for example
-    // “123直”/“123组”) and the detail grid renders the play again as the
-    // colored label. Strip that storage-only suffix here so the result is
-    // “123 直”, never “123直 直”.
-    if (play === "直") return stored.replace(/(?:直|单)$/u, "") || "-";
-    if (play === "组选" || play.startsWith("组三") || play.startsWith("组六")) {
-      return stored.replace(/^[三六]/u, "").replace(/组$/u, "") || "-";
+    if (rawPlay.includes("组3") || rawPlay.includes("组6") || rawPlay === "组" || rawPlay === "组三" || rawPlay === "组六") {
+      return (detail.number_text || "").replace(/^[三六]/u, "").replace(/(直|组|组三|组六)$/u, "");
     }
-    if (play.includes("组3") || play.includes("组6") || play.includes("组选")) {
-      return (detail.number_text || "").replace(/^[三六]/u, "");
-    }
+    if (rawPlay.includes("直")) return (detail.number_text || "").replace(/(直|组|组三|组六)$/u, "");
     if (play.includes("双飞") || source.includes("对子")) {
       const number = (detail.number_text || "")
         .replace(/^0(?=\d{2}(?:飞)?$)/, "")
@@ -145,15 +138,11 @@ export function SideBetRecords({
     if (detail.number_text === "000" && play.startsWith("跨度")) return `跨${play.slice(2)}`;
     if (detail.number_text === "000" && play.startsWith("和值")) return play;
     const value = detail.number_text || "";
-    return /^\d{3}$/.test(value) ? String(Number(value)) : value || "-";
+    // Preserve the three-character lottery expression, including a leading
+    // zero, for direct and multi-position displays.
+    return value || "-";
   };
-  const orderedDetails = [...details].sort((left, right) => {
-    const leftNumber = Number(displayDetailNumber(left).replace(/\D/g, ""));
-    const rightNumber = Number(displayDetailNumber(right).replace(/\D/g, ""));
-    if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber) && leftNumber !== rightNumber) return leftNumber - rightNumber;
-    return displayDetailNumber(left).localeCompare(displayDetailNumber(right), "zh-CN");
-  });
-  const groupedDetails = Array.from(orderedDetails.reduce((lotteryMap, detail) => {
+  const groupedDetails = Array.from(details.reduce((lotteryMap, detail) => {
     const lottery = lotteryName(detail.lottery);
     if (!lotteryMap.has(lottery)) lotteryMap.set(lottery, new Map<string, BetDetail[]>());
     const play = playName(detail);
@@ -162,7 +151,7 @@ export function SideBetRecords({
     playMap.get(play)!.push(detail);
     return lotteryMap;
   }, new Map<string, Map<string, BetDetail[]>>()));
-  const numberGroups = Array.from(orderedDetails.reduce((map, detail) => {
+  const numberGroups = Array.from(details.reduce((map, detail) => {
     const key = `${lotteryName(detail.lottery)}|${detail.issue_no}`;
     if (!map.has(key)) map.set(key, []);
     map.get(key)!.push(detail);
@@ -197,7 +186,7 @@ export function SideBetRecords({
   };
   const copyNumbers = async () => {
     try {
-      await copyText(orderedDetails.map((detail) => displayDetailNumber(detail)).join("\n"));
+      await copyText(details.map((detail) => displayDetailNumber(detail)).join("\n"));
       message.success("号码已复制");
     } catch {
       message.error("复制号码失败，请长按号码手动复制");
@@ -271,12 +260,7 @@ export function SideBetRecords({
             className={`side-record-item${record.status === "refunded" ? " refunded" : ""}`}
             key={record.id}
           >
-            <time>
-              <span className="side-record-board">
-                {record.board_name || `${record.board_code || "A"}盘`}
-              </span>
-              时间：{record.placed_at}
-            </time>
+            <time>{record.placed_at}</time>
             <div className="side-record-text">
               <b className="side-record-issue">
                 {record.lottery ? `${record.lottery} ` : ""}第 {record.issue_no || "--"} 期
@@ -331,7 +315,7 @@ export function SideBetRecords({
         title={detailMode === "detail" ? "下注详情" : null}
         footer={detailMode === "detail" ? <Button onClick={() => setDetailRecord(undefined)}>关 闭</Button> : null}
         onCancel={() => setDetailRecord(undefined)}
-        width={detailMode === "numbers" ? 520 : 900}
+        width={detailMode === "numbers" ? 520 : 760}
       >
         {detailLoading ? <div className="record-detail-loading">加载中...</div> : details.length && detailMode === "detail" ? (
           <div className="record-detail-content">
@@ -344,23 +328,14 @@ export function SideBetRecords({
                 {Array.from(plays).map(([play, playDetails]) => (
                   <div className="record-detail-play" key={`${lottery}-${play}`}>
                     <h3>{play}</h3>
-                    <div className="record-detail-grid-list">
-                      {(() => {
-                        const chunks: BetDetail[][] = [playDetails.slice(0, 5)];
-                        for (let offset = 5; offset < playDetails.length; offset += 6) chunks.push(playDetails.slice(offset, offset + 6));
-                        return chunks.map((chunk, chunkIndex) => {
-                        const showLabels = chunkIndex === 0;
-                        const cells = Array.from({ length: showLabels ? 5 : 6 }, (_, index) => chunk[index] || null);
-                        const labelCell = (label: string) => showLabels ? <div className="record-detail-grid-label">{label}</div> : null;
-                        return <div className={`record-detail-grid${showLabels ? "" : " continuation"}`} key={`${lottery}-${play}-${chunkIndex}`} style={{ gridTemplateColumns: "repeat(6, minmax(112px, 1fr))" }}>
-                          {labelCell("号码")}{cells.map((detail, index) => <div className={`record-detail-grid-value number${detail ? "" : " placeholder"}`} key={`number-${detail?.id || "empty"}-${index}`}>{detail ? <><span>{displayDetailNumber(detail)}</span>{!/(胆拖|包$)/u.test(play) && <em>{play}</em>}</> : null}</div>)}
-                          {labelCell("金额")}{cells.map((detail, index) => <div className={`record-detail-grid-value amount${detail ? "" : " placeholder"}`} key={`amount-${detail?.id || "empty"}-${index}`}>{detail?.amount || null}</div>)}
-                          {labelCell("赔率")}{cells.map((detail, index) => <div className={`record-detail-grid-value odds${detail ? "" : " placeholder"}`} key={`odds-${detail?.id || "empty"}-${index}`}>{detail?.odds || null}</div>)}
-                          {labelCell("中奖")}{cells.map((detail, index) => <div className={`record-detail-grid-value win${detail ? "" : " placeholder"}`} key={`win-${detail?.id || "empty"}-${index}`}>{detail && Number(detail.win_amount || 0) > 0 ? detail.win_amount : null}</div>)}
-                        </div>;
-                        });
-                      })()}
-                    </div>
+                    {playDetails.map((detail, index) => (
+                      <div className="record-detail-card" key={`${detail.id}-${index}`}>
+                        <div className="record-detail-card-label">号码</div><div><span>{displayDetailNumber(detail)}</span><em className="record-detail-play-mark">{playMark(detail)}</em></div>
+                        <div className="record-detail-card-label">金额</div><div className="amount">{detail.amount}</div>
+                        <div className="record-detail-card-label">赔率</div><div className="odds">{detail.odds || "---"}</div>
+                        <div className="record-detail-card-label">中奖</div><div>{Number(detail.win_amount || 0) > 0 ? detail.win_amount : "---"}</div>
+                      </div>
+                    ))}
                   </div>
                 ))}
               </section>

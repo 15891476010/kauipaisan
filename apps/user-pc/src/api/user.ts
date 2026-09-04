@@ -20,7 +20,7 @@ export const getProfile = (params?: Record<string, unknown>) => request.get<ApiE
 export const heartbeat = () => request.post<ApiEnvelope<{ online: boolean; server_time: string }>>("/user/auth/heartbeat");
 export const logoutSession = () => request.post<ApiEnvelope<null>>("/user/auth/logout");
 export const getRules = (params?: Record<string, unknown>) => request.get<ApiEnvelope<RuleSettings>>("/user/rules", { params });
-export type BetRecord = { id: number; board_code?: string; board_name?: string; issue_no: string; source_text?: string; formatted_text?: string; submission_fingerprint?: string | null; submission_id?: number | null; bet_count: number; amount: string; win_amount: string; status: string; sealed: number; placed_at: string; refunded_at?: string | null; lottery?: string; open_time?: string | null; can_refund?: boolean };
+export type BetRecord = { id: number; issue_no: string; source_text?: string; formatted_text?: string; submission_fingerprint?: string | null; submission_id?: number | null; bet_count: number; amount: string; win_amount: string; status: string; sealed: number; placed_at: string; refunded_at?: string | null; lottery?: string; open_time?: string | null; can_refund?: boolean; board_code?: string; board_name?: string };
 export type StopDrop = { id: number; lottery: string; issue_no: string; number_text: string; play_type: string; stop_type: string; original_amount: string; actual_amount: string; stop_amount: string; original_odds?: string | null; actual_odds?: string | null; drop_odds?: string | null; source_text?: string; placed_at: string };
 export type BetDetail = {
   id: number;
@@ -45,6 +45,8 @@ export type BetDetail = {
   source_text?: string;
   original_source_text?: string;
   parsed_source_text?: string;
+  /** Original submission text retained by the detail endpoint. */
+  record_source?: string;
 };
 export type Bill = { bill_date: string; bet_count: number; amount: string; rebate: string; offline_rebate: string; win_amount: string; profit: string };
 export type Draw = { lottery: string; issue_no: string; draw_date: string; draw_time?: string | null; numbers: string; sum_value?: number | null; size?: string | null; parity?: string | null; span_value?: number | null; pending?: number };
@@ -79,12 +81,14 @@ export const getBills = (params?: Record<string, unknown>) => request.get<ApiEnv
 export const getDraws = (params?: Record<string, unknown>) => request.get<ApiEnvelope<{ list: Draw[] }>>("/user/draws", { params, headers: { "X-Skip-Global-Loading": "1" } });
 export const waitDraws = (params?: Record<string, unknown>) => request.get<ApiEnvelope<{ changed: boolean; signature?: string }>>("/user/draws/wait", { params, headers: { "X-Skip-Global-Loading": "1" } });
 export const changePassword = (payload: { old_password: string; password: string; confirm_password: string }) => request.post<ApiEnvelope<null>>("/user/auth/password", payload);
-export type QuickEntryLine = { id: number; raw_text: string; input_text?: string; parse_text?: string; status: "success" | "failed" | "new"; reason?: string | null; number_text: string; display_number_text?: string; expanded_number_text?: string; category?: string | null; play_type?: string; settlement_text?: string; amount: string; count: number; stake_count?: number; code_count?: number; ticket_group_id?: string; ticket_group_count?: number; ticket_group_numbers?: string[]; suggested_amount?: string; corrected_text?: string; batch_id?: string; batch_index?: number; batch_size?: number; batch_end?: boolean; batch_valid?: boolean; batch_count?: number; batch_stake_count?: number; batch_amount?: string; batch_number_text?: string; batch_occurrence_text?: string; batch_merged_text?: string; batch_has_duplicates?: boolean; batch_duplicate_numbers?: string[]; batch_declared_stake_count?: number; batch_count_mismatch?: boolean };
-export type QuickPreview = { lines: QuickEntryLine[]; count: number; code_count?: number; amount: string; formatted_text: string };
+export type QuickEntryLine = { id: number; raw_text: string; input_text?: string; parse_text?: string; status: "success" | "failed" | "new"; reason?: string | null; number_text: string; display_number_text?: string; expanded_number_text?: string; /** Original group occurrences before unordered display de-duplication. */ occurrence_number_text?: string; category?: string | null; play_type?: string; settlement_text?: string; amount: string; count: number; stake_count?: number; code_count?: number; suggested_amount?: string; corrected_text?: string; batch_id?: string; batch_index?: number; batch_size?: number; batch_end?: boolean; batch_valid?: boolean; batch_count?: number; batch_stake_count?: number; batch_amount?: string; batch_number_text?: string; batch_occurrence_text?: string; batch_merged_text?: string; batch_has_duplicates?: boolean; batch_duplicate_numbers?: string[]; batch_declared_stake_count?: number; batch_count_mismatch?: boolean };
+export type QuickPreview = { lines: QuickEntryLine[]; count: number; code_count?: number; amount: string; formatted_text: string; third_party?: Record<string, unknown> | null; third_party_error?: string | null };
 export type QuickTag = { id: number; name: string };
 export type QuickSettings = { preferences: Record<string, unknown>; tags: QuickTag[] };
-export const previewQuickEntry = (payload: { text: string; lottery: string; board_code?: string }) => request.post<ApiEnvelope<QuickPreview>>("/user/quick-entry/preview", payload, { timeout: 45000 });
-export const placeQuickEntry = (payload: { text: string; lottery: string; confirmed: boolean; board_code?: string }) => request.post<ApiEnvelope<{ record_id: number; count: number; amount: string }>>("/user/quick-entry/place", payload, { timeout: 45000 });
+export const previewQuickEntry = (payload: { text: string; lottery: string; board_code?: string }) => request.post<ApiEnvelope<QuickPreview>>("/user/quick-entry/preview", payload);
+export type ThirdPartyQuickPreview = { provider: "third_party"; code: number; message: string; code_info_list: Record<string, unknown>; text_statistics: unknown[]; blur_code_info_list: Record<string, unknown>; result_list: Record<string, unknown>[]; total_amount: number | string; total_count: number };
+export const previewThirdPartyQuickEntry = (payload: { text: string; lottery: string }) => request.post<ApiEnvelope<ThirdPartyQuickPreview>>("/user/quick-entry/third-party-preview", payload);
+export const placeQuickEntry = (payload: { text: string; lottery: string; confirmed: boolean; board_code?: string }) => request.post<ApiEnvelope<{ record_id: number; count: number; amount: string }>>("/user/quick-entry/place", payload);
 export const getQuickSettings = () => request.get<ApiEnvelope<QuickSettings>>("/user/quick-entry/settings");
 export const saveQuickSettings = (preferences: Record<string, unknown>) => request.put<ApiEnvelope<{ preferences: Record<string, unknown> }>>("/user/quick-entry/settings", { preferences });
 export const createQuickTag = (name: string) => request.post<ApiEnvelope<{ id: number; name: string }>>("/user/quick-entry/tags", { name });

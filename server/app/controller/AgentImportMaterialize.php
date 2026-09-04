@@ -62,6 +62,7 @@ final class AgentImportMaterialize
             if(!Db::name('agent_import_profiles')->where('id',$profileId)->where('site_id',$siteId)->where('tenant_id',(int)$session['tenant_id'])->count())return json(['code'=>404,'message'=>'数据源不存在','data'=>null],404);
             if(!Db::name('organization_nodes')->where('id',$targetId)->where('site_id',$siteId)->where('tenant_id',(int)$session['tenant_id'])->whereNull('deleted_at')->count())return json(['code'=>404,'message'=>'写入目标组织不存在','data'=>null],404);
             $now=date('Y-m-d H:i:s');$queuedId=(int)Db::name('agent_import_batches')->insertGetId(['tenant_id'=>(int)$session['tenant_id'],'site_id'=>$siteId,'profile_id'=>$profileId,'target_organization_id'=>$targetId,'from_date'=>$from,'to_date'=>$to,'types'=>json_encode(['report_overview','accounts','account_tree','sync_log'],JSON_UNESCAPED_UNICODE),'status'=>'queued','external_counts'=>null,'created_counts'=>null,'created_credentials'=>null,'started_at'=>null,'finished_at'=>null,'created_at'=>$now,'updated_at'=>$now]);
+            Db::name('agent_import_records')->insert(['batch_id'=>$queuedId,'entity_type'=>'sync_log','external_id'=>null,'local_id'=>null,'action'=>'progress','payload'=>json_encode(['level'=>'info','message'=>'做账任务已排队，等待后台 worker 启动','context'=>[]],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES),'created_at'=>$now]);
             $payload['_queued_batch_id']=$queuedId;
             $bodyFile=tempnam(sys_get_temp_dir(),'agent-import-job-');
             if($bodyFile===false) throw new \RuntimeException('后台任务临时文件不可用');
