@@ -84,6 +84,70 @@ final class BetAggregation
         return implode('',$digits);
     }
 
+    /** Return the three position digit sets used by a direct-number summary. */
+    private function directPositionDigits(array $items): array
+    {
+        $positions=['百'=>[],'十'=>[],'个'=>[]];
+        foreach($items as $item){
+            $number=preg_replace('/\D/','',(string)($item['selection']??''))??'';
+            if(strlen($number)!==3)continue;
+            foreach(['百','十','个'] as $index=>$label)$positions[$label][$number[$index]]=true;
+        }
+        foreach($positions as $label=>$digits){$values=array_keys($digits);rsort($values,SORT_STRING);$positions[$label]=implode('',$values);}
+        return $positions;
+    }
+
+    private function isDirectItem(array $item): bool
+    {
+        return in_array(trim((string)($item['play_type']??'')),['直','直选','单'],true);
+    }
+
+    /** Read one persisted 定位 fragment as a position and its digit set. */
+    private function positionItemParts(array $item): ?array
+    {
+        $selection=trim((string)($item['selection']??''));$position=trim((string)($item['position']??''));
+        if(preg_match('/^(百|十|个)\s*(?:位)?\s*([0-9]+)$/u',$selection,$match)===1)return ['position'=>$match[1],'digits'=>$this->sortedUniqueDigits($match[2])];
+        foreach(['百','十','个'] as $label)if(str_contains($position,$label)){
+            $digits=preg_replace('/\D/','',$selection)??'';
+            if($digits!=='')return ['position'=>$label,'digits'=>$this->sortedUniqueDigits($digits)];
+        }
+        return null;
+    }
+
+    /** Build one compact coloured row for 二码/三码定位 fragments. */
+    private function positionSummary(array $items): array
+    {
+        $first=$items[0];$records=[];$members=[];$sets=['百'=>[],'十'=>[],'个'=>[]];$exposure=[];$total=0.0;
+        foreach($items as $item){$parts=$this->positionItemParts($item);if($parts===null)continue;$sets[$parts['position']][$parts['digits']]=true;$total+=(float)$item['amount_value'];$records[(int)$item['bet_record_id']]=true;$members[(int)$item['user_id']]=true;$key=$parts['position'].'|'.$parts['digits'];$exposure[$key]=($exposure[$key]??0.0)+(float)$item['potential_value'];}
+        $positionDigits=[];foreach($sets as $label=>$values){$digits=array_keys($values);rsort($digits,SORT_STRING);if($digits!==[])$positionDigits[$label]=implode('',$digits);}
+        $positions=array_keys($positionDigits);$combinationCount=1;foreach($positionDigits as $digits)$combinationCount*=max(1,strlen($digits));$odds=(float)($first['odds']??0);$maxPotential=$combinationCount>0?($total/$combinationCount)*max(0,$odds):0.0;
+        return ['group_id'=>sha1(json_encode(['position-summary',(string)$first['lottery'],(string)$first['issue_no'],(string)$first['play_type'],number_format($odds,4,'.','')],JSON_UNESCAPED_UNICODE)),'summary_kind'=>'position','lottery'=>(string)$first['lottery'],'issue_no'=>(string)$first['issue_no'],'play_type'=>(string)$first['play_type'],'position'=>implode('、',$positions),'selection'=>'','position_digits'=>$positionDigits,'combination_count'=>$combinationCount,'summary_odds'=>number_format($odds,4,'.',''),'match_number'=>'','occurrence_count'=>count($items),'order_count'=>count($records),'member_count'=>count($members),'bet_amount_value'=>$total,'unit_amount_value'=>$total,'potential_value'=>$maxPotential];
+    }
+
+    /** Build one compact row for a long list of 直 numbers. */
+    private function directPositionSummary(array $items): array
+    {
+        $first=$items[0];$recordIds=[];$memberIds=[];$numberAmounts=[];$total=0.0;$unitTotal=0.0;
+        foreach($items as $item){
+            $amount=(float)$item['amount_value'];$total+=$amount;$unitTotal+=$amount;
+            $number=(string)$item['selection'];$numberAmounts[$number]=($numberAmounts[$number]??0.0)+$amount;
+            $recordIds[(int)$item['bet_record_id']]=true;$memberIds[(int)$item['user_id']]=true;
+        }
+        $odds=(float)($first['odds']??0);$maxNumberAmount=$numberAmounts===[]?0.0:max($numberAmounts);
+        return [
+            'group_id'=>sha1(json_encode(['direct-position',(string)$first['lottery'],(string)$first['issue_no'],number_format((float)($first['odds']??0),4,'.','')],JSON_UNESCAPED_UNICODE)),
+            'summary_kind'=>'direct_position','lottery'=>(string)$first['lottery'],'issue_no'=>(string)$first['issue_no'],
+            'play_type'=>'直','position'=>'百、十、个','selection'=>'','position_digits'=>$this->directPositionDigits($items),
+            'summary_odds'=>number_format($odds,4,'.',''),
+            'combination_count'=>array_product(array_map('strlen',$this->directPositionDigits($items))) ?: 1,
+            'match_number'=>'','occurrence_count'=>count($items),'order_count'=>count($recordIds),'member_count'=>count($memberIds),
+            'bet_amount_value'=>$total,'unit_amount_value'=>$unitTotal,
+            // One draw can only match one direct number. Sum duplicate stakes
+            // for the same number, then keep the largest exposure only.
+            'potential_value'=>$maxNumberAmount*max(0.0,$odds),
+        ];
+    }
+
     /** @return array{play_type:string,position:string,selection:string,match_number:string,match_source:string} */
     private function canonicalToken(string $token,string $playType,string $source): array
     {
@@ -197,8 +261,22 @@ final class BetAggregation
             }elseif(preg_match('/定位/u',$playType)===1){
                 $selection=strtoupper($selection);
             }
-            $amount=(float)($row['amount']??0);$odds=(float)($row['odds']??0);
-            $items[]=array_merge($row,['play_type'=>$playType!==''?$playType:'其他','position'=>'','selection'=>$selection,'match_number'=>$selection,'match_source'=>$source,'amount_value'=>$amount,'potential_value'=>$amount*max(0,$odds)]);
+            $amount=(float)($row['amount']??0);$odds=(float)($row['odds']??0);$resolvedPlay=$playType!==''?$playType:'其他';
+            if(preg_match('/定位/u',$resolvedPlay)===1&&preg_match_all('/(百|十|个)\s*(?:位)?\s*([0-9]+)/u',$raw,$positionMatches,PREG_SET_ORDER)>0){
+                $positionCount=count($positionMatches);$fragmentAmount=$positionCount>0?$amount/$positionCount:$amount;
+                foreach($positionMatches as $positionMatch){$digits=$this->sortedUniqueDigits((string)$positionMatch[2]);$items[]=array_merge($row,['play_type'=>$resolvedPlay,'position'=>(string)$positionMatch[1].'位','selection'=>$digits,'match_number'=>$digits,'match_source'=>$source,'amount_value'=>$fragmentAmount,'potential_value'=>$fragmentAmount*max(0,$odds)]);}
+                continue;
+            }
+            // Risk uses persisted rows, but a legacy 直 row can still carry a
+            // space-separated long list in one number_text field. Split only
+            // those explicit three-digit selections so the unit price and
+            // one-winning-number exposure remain correct without reparsing.
+            if($this->isDirectItem(['play_type'=>$resolvedPlay])&&preg_match_all('/(?<!\d)\d{3}(?!\d)/u',$raw,$numberMatches)>1){
+                $numbers=$numberMatches[0];$unit=$amount/count($numbers);
+                foreach($numbers as $number)$items[]=array_merge($row,['play_type'=>$resolvedPlay,'position'=>'','selection'=>$number,'match_number'=>$number.'直','match_source'=>$source,'amount_value'=>$unit,'potential_value'=>$unit*max(0,$odds)]);
+                continue;
+            }
+            $items[]=array_merge($row,['play_type'=>$resolvedPlay,'position'=>'','selection'=>$selection,'match_number'=>$selection,'match_source'=>$source,'amount_value'=>$amount,'potential_value'=>$amount*max(0,$odds)]);
         }
         return $items;
     }
@@ -267,14 +345,28 @@ final class BetAggregation
     /** @param array<int,array<string,mixed>> $items @return array<int,array<string,mixed>> */
     private function playSummary(array $items): array
     {
-        $groups=[];$allOccurrences=count($items);
+        $groups=[];$allOccurrences=count($items);$directBuckets=[];$positionBuckets=[];$directThreshold=8;
         foreach($items as $item){
+            if(($parts=$this->positionItemParts($item))!==null){$bucket=(string)$item['lottery'].'|'.(string)$item['issue_no'].'|'.(string)$item['play_type'].'|'.number_format((float)($item['odds']??0),4,'.','');$positionBuckets[$bucket][]=$item;continue;}
+            if($this->isDirectItem($item)&&preg_match('/^\d{3}$/',(string)($item['selection']??''))===1){
+                $bucket=(string)$item['lottery'].'|'.(string)$item['issue_no'].'|'.number_format((float)($item['odds']??0),4,'.','');
+                $directBuckets[$bucket][]=$item;continue;
+            }
             $id=$this->expressionId($item);
-            if(!isset($groups[$id]))$groups[$id]=['group_id'=>$id,'lottery'=>(string)$item['lottery'],'issue_no'=>(string)$item['issue_no'],'play_type'=>(string)$item['play_type'],'position'=>(string)$item['position'],'selection'=>(string)$item['selection'],'occurrence_count'=>0,'record_ids'=>[],'member_ids'=>[],'bet_amount_value'=>0.0,'potential_value'=>0.0];
+            if(!isset($groups[$id]))$groups[$id]=['group_id'=>$id,'summary_kind'=>'expression','lottery'=>(string)$item['lottery'],'issue_no'=>(string)$item['issue_no'],'play_type'=>(string)$item['play_type'],'position'=>(string)$item['position'],'selection'=>(string)$item['selection'],'occurrence_count'=>0,'record_ids'=>[],'member_ids'=>[],'bet_amount_value'=>0.0,'unit_amount_value'=>0.0,'potential_value'=>0.0];
             $groups[$id]['occurrence_count']++;$groups[$id]['record_ids'][(int)$item['bet_record_id']]=true;$groups[$id]['member_ids'][(int)$item['user_id']]=true;
-            $groups[$id]['bet_amount_value']+=(float)$item['amount_value'];$groups[$id]['potential_value']+=(float)$item['potential_value'];
+            $groups[$id]['bet_amount_value']+=(float)$item['amount_value'];$groups[$id]['unit_amount_value']+=(float)$item['amount_value'];$groups[$id]['potential_value']+=(float)$item['potential_value'];
         }
-        $result=[];foreach($groups as $group){$group['order_count']=count($group['record_ids']);$group['member_count']=count($group['member_ids']);unset($group['record_ids'],$group['member_ids']);$group['frequency_rate']=$allOccurrences>0?round($group['occurrence_count']*100/$allOccurrences,4):0;$group['bet_amount']=number_format($group['bet_amount_value'],2,'.','');$group['potential_win_amount']=number_format($group['potential_value'],2,'.','');unset($group['bet_amount_value'],$group['potential_value']);$result[]=$group;}
+        foreach($directBuckets as $bucket=>$bucketItems){
+            if(count($bucketItems)>=$directThreshold){$group=$this->directPositionSummary($bucketItems);$groups[$group['group_id']]=$group;continue;}
+            foreach($bucketItems as $item){$id=$this->expressionId($item);if(!isset($groups[$id]))$groups[$id]=['group_id'=>$id,'summary_kind'=>'expression','lottery'=>(string)$item['lottery'],'issue_no'=>(string)$item['issue_no'],'play_type'=>'直','position'=>'','selection'=>(string)$item['selection'],'occurrence_count'=>0,'record_ids'=>[],'member_ids'=>[],'bet_amount_value'=>0.0,'unit_amount_value'=>0.0,'potential_value'=>0.0];$groups[$id]['occurrence_count']++;$groups[$id]['record_ids'][(int)$item['bet_record_id']]=true;$groups[$id]['member_ids'][(int)$item['user_id']]=true;$groups[$id]['bet_amount_value']+=(float)$item['amount_value'];$groups[$id]['unit_amount_value']+=(float)$item['amount_value'];$groups[$id]['potential_value']+=(float)$item['potential_value'];}
+        }
+        foreach($positionBuckets as $bucket=>$bucketItems){
+            $positions=[];foreach($bucketItems as $item){$parts=$this->positionItemParts($item);if($parts!==null)$positions[$parts['position']]=true;}
+            if(count($positions)>=1&&count($bucketItems)>=2){$group=$this->positionSummary($bucketItems);$groups[$group['group_id']]=$group;continue;}
+            foreach($bucketItems as $item){$id=$this->expressionId($item);if(!isset($groups[$id]))$groups[$id]=['group_id'=>$id,'summary_kind'=>'expression','lottery'=>(string)$item['lottery'],'issue_no'=>(string)$item['issue_no'],'play_type'=>(string)$item['play_type'],'position'=>(string)$item['position'],'selection'=>(string)$item['selection'],'occurrence_count'=>0,'record_ids'=>[],'member_ids'=>[],'bet_amount_value'=>0.0,'unit_amount_value'=>0.0,'potential_value'=>0.0];$groups[$id]['occurrence_count']++;$groups[$id]['record_ids'][(int)$item['bet_record_id']]=true;$groups[$id]['member_ids'][(int)$item['user_id']]=true;$groups[$id]['bet_amount_value']+=(float)$item['amount_value'];$groups[$id]['unit_amount_value']+=(float)$item['amount_value'];$groups[$id]['potential_value']+=(float)$item['potential_value'];}
+        }
+        $result=[];foreach($groups as $group){$group['order_count']=count($group['record_ids']??[]);$group['member_count']=count($group['member_ids']??[]);unset($group['record_ids'],$group['member_ids']);$group['frequency_rate']=$allOccurrences>0?round($group['occurrence_count']*100/$allOccurrences,4):0;$unitCount=(int)($group['combination_count']??$group['occurrence_count']??0);$group['bet_amount']=number_format((float)($group['bet_amount_value']??0),2,'.','');$group['unit_amount']=number_format($unitCount>0?(float)($group['unit_amount_value']??0)/$unitCount:0,2,'.','');$group['potential_win_amount']=number_format((float)($group['potential_value']??0),2,'.','');unset($group['bet_amount_value'],$group['unit_amount_value'],$group['potential_value']);$result[]=$group;}
         return $result;
     }
 
@@ -286,25 +378,29 @@ final class BetAggregation
         // three-digit rows. Expanding it into every possible draw both makes
         // the report misleading and turns a full-page request into a 000-999
         // scan for every distinct ticket.
-        $groups=[];
+        $groups=[];$directBuckets=[];$positionBuckets=[];$directThreshold=8;
         foreach($items as $item){
+            if(($parts=$this->positionItemParts($item))!==null){$bucket=(string)$item['lottery'].'|'.(string)$item['issue_no'].'|'.(string)$item['play_type'].'|'.number_format((float)($item['odds']??0),4,'.','');$positionBuckets[$bucket][]=$item;continue;}
+            if($this->isDirectItem($item)&&preg_match('/^\d{3}$/',(string)($item['selection']??''))===1){$bucket=(string)$item['lottery'].'|'.(string)$item['issue_no'].'|'.number_format((float)($item['odds']??0),4,'.','');$directBuckets[$bucket][]=$item;continue;}
             $id=$this->expressionId($item);
             if(!isset($groups[$id]))$groups[$id]=[
-                'group_id'=>$id,'lottery'=>(string)$item['lottery'],'issue_no'=>(string)$item['issue_no'],
+                'group_id'=>$id,'summary_kind'=>'expression','lottery'=>(string)$item['lottery'],'issue_no'=>(string)$item['issue_no'],
                 'play_type'=>(string)$item['play_type'],'position'=>(string)$item['position'],'selection'=>(string)$item['selection'],
                 'match_number'=>(string)$item['match_number'],'occurrence_count'=>0,'record_ids'=>[],'member_ids'=>[],
-                'bet_amount_value'=>0.0,'potential_value'=>0.0,
+                'bet_amount_value'=>0.0,'unit_amount_value'=>0.0,'potential_value'=>0.0,
             ];
-            $groups[$id]['occurrence_count']++;$groups[$id]['record_ids'][(int)$item['bet_record_id']]=true;$groups[$id]['member_ids'][(int)$item['user_id']]=true;$groups[$id]['bet_amount_value']+=(float)$item['amount_value'];$groups[$id]['potential_value']+=(float)$item['potential_value'];
+            $groups[$id]['occurrence_count']++;$groups[$id]['record_ids'][(int)$item['bet_record_id']]=true;$groups[$id]['member_ids'][(int)$item['user_id']]=true;$groups[$id]['bet_amount_value']+=(float)$item['amount_value'];$groups[$id]['unit_amount_value']+=(float)$item['amount_value'];$groups[$id]['potential_value']+=(float)$item['potential_value'];
         }
-        $result=[];foreach($groups as $group){$group['order_count']=count($group['record_ids']);$group['member_count']=count($group['member_ids']);unset($group['record_ids'],$group['member_ids']);$group['bet_amount']=number_format($group['bet_amount_value'],2,'.','');$group['potential_win_amount']=number_format($group['potential_value'],2,'.','');unset($group['bet_amount_value'],$group['potential_value']);$result[]=$group;}
+        foreach($directBuckets as $bucket=>$bucketItems){if(count($bucketItems)>=$directThreshold){$group=$this->directPositionSummary($bucketItems);$groups[$group['group_id']]=$group;continue;}foreach($bucketItems as $item){$id=$this->expressionId($item);if(!isset($groups[$id]))$groups[$id]=['group_id'=>$id,'summary_kind'=>'expression','lottery'=>(string)$item['lottery'],'issue_no'=>(string)$item['issue_no'],'play_type'=>'直','position'=>'','selection'=>(string)$item['selection'],'match_number'=>(string)$item['selection'],'occurrence_count'=>0,'record_ids'=>[],'member_ids'=>[],'bet_amount_value'=>0.0,'unit_amount_value'=>0.0,'potential_value'=>0.0];$groups[$id]['occurrence_count']++;$groups[$id]['record_ids'][(int)$item['bet_record_id']]=true;$groups[$id]['member_ids'][(int)$item['user_id']]=true;$groups[$id]['bet_amount_value']+=(float)$item['amount_value'];$groups[$id]['unit_amount_value']+=(float)$item['amount_value'];$groups[$id]['potential_value']+=(float)$item['potential_value'];}}
+        foreach($positionBuckets as $bucket=>$bucketItems){$positions=[];foreach($bucketItems as $item){$parts=$this->positionItemParts($item);if($parts!==null)$positions[$parts['position']]=true;}if(count($positions)>=1&&count($bucketItems)>=2){$group=$this->positionSummary($bucketItems);$groups[$group['group_id']]=$group;continue;}foreach($bucketItems as $item){$id=$this->expressionId($item);if(!isset($groups[$id]))$groups[$id]=['group_id'=>$id,'summary_kind'=>'expression','lottery'=>(string)$item['lottery'],'issue_no'=>(string)$item['issue_no'],'play_type'=>(string)$item['play_type'],'position'=>(string)$item['position'],'selection'=>(string)$item['selection'],'match_number'=>(string)$item['selection'],'occurrence_count'=>0,'record_ids'=>[],'member_ids'=>[],'bet_amount_value'=>0.0,'unit_amount_value'=>0.0,'potential_value'=>0.0];$groups[$id]['occurrence_count']++;$groups[$id]['record_ids'][(int)$item['bet_record_id']]=true;$groups[$id]['member_ids'][(int)$item['user_id']]=true;$groups[$id]['bet_amount_value']+=(float)$item['amount_value'];$groups[$id]['unit_amount_value']+=(float)$item['amount_value'];$groups[$id]['potential_value']+=(float)$item['potential_value'];}}
+        $result=[];foreach($groups as $group){$group['order_count']=count($group['record_ids']??[]);$group['member_count']=count($group['member_ids']??[]);unset($group['record_ids'],$group['member_ids']);$unitCount=(int)($group['combination_count']??$group['occurrence_count']??0);$group['bet_amount']=number_format((float)($group['bet_amount_value']??0),2,'.','');$group['unit_amount']=number_format($unitCount>0?(float)($group['unit_amount_value']??0)/$unitCount:0,2,'.','');$group['potential_win_amount']=number_format((float)($group['potential_value']??0),2,'.','');unset($group['bet_amount_value'],$group['unit_amount_value'],$group['potential_value']);$result[]=$group;}
         return ['rows'=>$result,'unmapped'=>0];
     }
 
     /** @param array<int,array<string,mixed>> $rows */
     private function sortRows(array &$rows,string $mode,Request $request): void
     {
-        $numeric=['occurrence_count','order_count','member_count','frequency_rate','bet_amount','potential_win_amount'];
+        $numeric=['occurrence_count','order_count','member_count','frequency_rate','bet_amount','unit_amount','potential_win_amount'];
         $allowed=array_merge($numeric,['lottery','issue_no','play_type','position','selection','outcome']);
         $default=$mode==='risk'?'potential_win_amount':'occurrence_count';$field=trim((string)$request->param('sort_field',$default));$order=strtolower(trim((string)$request->param('sort_order','desc')));
         if($field==='')$field=$default;
@@ -328,6 +424,9 @@ final class BetAggregation
     private function itemMatchesDetail(array $item,string $mode,Request $request,BetSettlement $settlement): bool
     {
         if((string)$item['lottery']!==(string)$request->param('lottery','')||(string)$item['issue_no']!==(string)$request->param('issue_no',''))return false;
+        $summaryKind=(string)$request->param('summary_kind','');
+        if($summaryKind==='direct_position')return $this->isDirectItem($item)&&preg_match('/^\d{3}$/',(string)($item['selection']??''))===1&&number_format((float)($item['odds']??0),4,'.','')===(string)$request->param('summary_odds','');
+        if($summaryKind==='position')return $this->positionItemParts($item)!==null&&(string)$item['play_type']===(string)$request->param('play_type','')&&number_format((float)($item['odds']??0),4,'.','')===(string)$request->param('summary_odds','');
         if($mode==='risk') {
             // Risk rows are compact expressions, so details use the same
             // canonical grouping key as the summary instead of an expanded
@@ -346,14 +445,16 @@ final class BetAggregation
         try{
             $mode=strtolower(trim((string)$request->param('mode','play')));if(!in_array($mode,['play','risk'],true))throw new \InvalidArgumentException('汇总模式无效');
             $settlement=new BetSettlement();$matched=[];$sourceItems=$mode==='risk'?$this->persistedRiskItems($request):$this->items($request);foreach($sourceItems as$item)if($this->itemMatchesDetail($item,$mode,$request,$settlement))$matched[]=$item;
-            $members=[];$orders=[];
+            $members=[];$orders=[];$compactDirect=in_array((string)$request->param('summary_kind',''),['direct_position','position'],true);
             foreach($matched as $item){
                 $memberKey=(int)$item['site_id'].'#'.(int)$item['user_id'];
-                if(!isset($members[$memberKey]))$members[$memberKey]=['site_id'=>(int)$item['site_id'],'user_id'=>(int)$item['user_id'],'site_name'=>(string)($item['site_name']??'站点已删除'),'username'=>(string)($item['username']??'用户已删除'),'display_name'=>(string)($item['display_name']??''),'occurrence_count'=>0,'record_ids'=>[],'bet_amount_value'=>0.0,'potential_value'=>0.0];
-                $members[$memberKey]['occurrence_count']++;$members[$memberKey]['record_ids'][(int)$item['bet_record_id']]=true;$members[$memberKey]['bet_amount_value']+=(float)$item['amount_value'];$members[$memberKey]['potential_value']+=(float)$item['potential_value'];
+                if(!isset($members[$memberKey]))$members[$memberKey]=['site_id'=>(int)$item['site_id'],'user_id'=>(int)$item['user_id'],'site_name'=>(string)($item['site_name']??'站点已删除'),'username'=>(string)($item['username']??'用户已删除'),'display_name'=>(string)($item['display_name']??''),'occurrence_count'=>0,'record_ids'=>[],'bet_amount_value'=>0.0,'potential_value'=>0.0,'selection_potential'=>[]];
+                $members[$memberKey]['occurrence_count']++;$members[$memberKey]['record_ids'][(int)$item['bet_record_id']]=true;$members[$memberKey]['bet_amount_value']+=(float)$item['amount_value'];
+                if($compactDirect){$number=(string)$item['selection'];$members[$memberKey]['selection_potential'][$number]=($members[$memberKey]['selection_potential'][$number]??0.0)+(float)$item['potential_value'];}
+                else $members[$memberKey]['potential_value']+=(float)$item['potential_value'];
                 $orders[]=['record_id'=>(int)$item['bet_record_id'],'detail_id'=>(int)$item['detail_id'],'site_name'=>(string)($item['site_name']??''),'username'=>(string)($item['username']??''),'placed_at'=>(string)$item['placed_at'],'lottery'=>(string)$item['lottery'],'issue_no'=>(string)$item['issue_no'],'play_type'=>(string)$item['play_type'],'position'=>(string)$item['position'],'selection'=>(string)$item['selection'],'amount'=>number_format((float)$item['amount_value'],2,'.',''),'odds'=>number_format((float)$item['odds'],4,'.',''),'potential_win_amount'=>number_format((float)$item['potential_value'],2,'.',''),'source_text'=>(string)$item['source_text']];
             }
-            $memberRows=[];foreach($members as $member){$member['order_count']=count($member['record_ids']);unset($member['record_ids']);$member['bet_amount']=number_format($member['bet_amount_value'],2,'.','');$member['potential_win_amount']=number_format($member['potential_value'],2,'.','');unset($member['bet_amount_value'],$member['potential_value']);$memberRows[]=$member;}
+            $memberRows=[];foreach($members as $member){$member['order_count']=count($member['record_ids']);if($compactDirect)$member['potential_value']=$member['selection_potential']===[]?0.0:max($member['selection_potential']);unset($member['record_ids'],$member['selection_potential']);$member['bet_amount']=number_format($member['bet_amount_value'],2,'.','');$member['potential_win_amount']=number_format($member['potential_value'],2,'.','');unset($member['bet_amount_value'],$member['potential_value']);$memberRows[]=$member;}
             usort($memberRows,static fn(array $a,array $b):int=>(float)$b['potential_win_amount']<=>(float)$a['potential_win_amount']);
             usort($orders,static fn(array $a,array $b):int=>strcmp($b['placed_at'],$a['placed_at'])?:($b['record_id']<=>$a['record_id']));
             $page=max(1,(int)$request->param('detail_page',1));$pageSize=min(100,max(1,(int)$request->param('detail_page_size',30)));

@@ -291,12 +291,32 @@ function changeBetView(mode: BetViewMode) {
   }
 }
 function handleAggregationSort({ prop, order }: { prop: string; order: "ascending" | "descending" | null }) {
-  const allowed = ["occurrence_count", "order_count", "member_count", "frequency_rate", "bet_amount", "potential_win_amount"];
+  const allowed = ["occurrence_count", "order_count", "member_count", "frequency_rate", "bet_amount", "unit_amount", "potential_win_amount"];
   if (!allowed.includes(prop)) return;
   aggregationQuery.sort_field = order ? prop : "";
   aggregationQuery.sort_order = order === "ascending" ? "asc" : "desc";
   aggregationQuery.page = 1;
   void loadAggregation();
+}
+const positionSummaryMeta = [
+  { key: "百", color: "bai" },
+  { key: "十", color: "shi" },
+  { key: "个", color: "ge" },
+] as const;
+function positionSummaryParts(row: BetAggregationRow): { key: string; color: string; digits: string[] }[] {
+  const value = row.position_digits;
+  if (!value || typeof value !== "object") return [];
+  return positionSummaryMeta
+    .map((item) => ({ key: item.key, color: item.color, digits: String((value as Record<string, unknown>)[item.key] || "").split("").filter(Boolean) }))
+    .filter((item) => item.digits.length > 0);
+}
+function isPositionSummary(row: BetAggregationRow): boolean {
+  return ["direct_position", "position"].includes(String(row.summary_kind || "")) && positionSummaryParts(row).length > 0;
+}
+function aggregationSelectionLabel(row: BetAggregationRow | null): string {
+  if (!row) return "";
+  const parts = positionSummaryParts(row);
+  return parts.length ? parts.map((part) => `${part.key}：${part.digits.join("")}`).join(" ") : String(row.selection || "");
 }
 function aggregationDetailParams(row: BetAggregationRow) {
   return {
@@ -310,6 +330,8 @@ function aggregationDetailParams(row: BetAggregationRow) {
     play_type: row.play_type || "",
     position: row.position || "",
     selection: row.selection || "",
+    summary_kind: row.summary_kind || "",
+    summary_odds: row.summary_odds || "",
     outcome: row.outcome || "",
     detail_page: aggregationDetailPage.value,
     detail_page_size: aggregationDetailPageSize.value,
@@ -839,17 +861,38 @@ onBeforeUnmount(() => {
         <template v-if="betViewMode === 'play'">
           <el-table-column prop="play_type" label="玩法" min-width="130" />
           <el-table-column prop="position" label="位置" min-width="100"><template #default="scope">{{ scope.row.position || '-' }}</template></el-table-column>
-          <el-table-column prop="selection" label="标准号码" min-width="150" />
+          <el-table-column prop="selection" label="标准号码" min-width="230">
+            <template #default="scope">
+              <div v-if="isPositionSummary(scope.row)" class="position-summary-cell">
+                <span v-for="part in positionSummaryParts(scope.row)" :key="part.key" class="position-summary-part" :class="`position-${part.color}`">
+                  <b>{{ part.key }}：</b>
+                  <i v-for="digit in part.digits" :key="`${part.key}-${digit}`">{{ digit }}</i>
+                </span>
+              </div>
+              <span v-else>{{ scope.row.selection || '-' }}</span>
+            </template>
+          </el-table-column>
           <el-table-column prop="frequency_rate" label="频率" min-width="100" sortable="custom"><template #default="scope">{{ scope.row.frequency_rate }}%</template></el-table-column>
         </template>
         <template v-else>
           <el-table-column prop="play_type" label="玩法" min-width="120" />
-          <el-table-column prop="selection" label="号码表达式" min-width="170" />
+          <el-table-column prop="selection" label="号码表达式" min-width="230">
+            <template #default="scope">
+              <div v-if="isPositionSummary(scope.row)" class="position-summary-cell">
+                <span v-for="part in positionSummaryParts(scope.row)" :key="part.key" class="position-summary-part" :class="`position-${part.color}`">
+                  <b>{{ part.key }}：</b>
+                  <i v-for="digit in part.digits" :key="`${part.key}-${digit}`">{{ digit }}</i>
+                </span>
+              </div>
+              <span v-else>{{ scope.row.selection || '-' }}</span>
+            </template>
+          </el-table-column>
         </template>
         <el-table-column prop="occurrence_count" label="出现次数" min-width="105" sortable="custom" />
         <el-table-column prop="order_count" label="注单数" min-width="95" sortable="custom" />
         <el-table-column prop="member_count" label="会员数" min-width="95" sortable="custom" />
         <el-table-column prop="bet_amount" :label="betViewMode === 'risk' ? '涉及本金' : '总下注金额'" min-width="120" sortable="custom" />
+        <el-table-column prop="unit_amount" label="单价" min-width="95" sortable="custom" />
         <el-table-column prop="potential_win_amount" :label="betViewMode === 'risk' ? '预计赔付' : '预中奖金额'" min-width="130" sortable="custom" />
         <el-table-column label="操作" width="90" fixed="right"><template #default="scope"><el-button link type="primary" @click="openAggregationDetails(scope.row)">详情</el-button></template></el-table-column>
       </el-table>
@@ -1061,7 +1104,7 @@ onBeforeUnmount(() => {
       @current-change="load"
     /></div><el-drawer
       v-model="aggregationDetailDrawer"
-      :title="betViewMode === 'risk' ? `号码风险详情 · ${aggregationDetailRow?.play_type || ''} ${aggregationDetailRow?.selection || ''}` : `玩法汇总详情 · ${aggregationDetailRow?.play_type || ''} ${aggregationDetailRow?.selection || ''}`"
+      :title="betViewMode === 'risk' ? `号码风险详情 · ${aggregationDetailRow?.play_type || ''} ${aggregationSelectionLabel(aggregationDetailRow)}` : `玩法汇总详情 · ${aggregationDetailRow?.play_type || ''} ${aggregationSelectionLabel(aggregationDetailRow)}`"
       direction="rtl"
       size="min(1180px, 95vw)"
       ><div v-loading="aggregationDetailLoading" class="aggregation-detail">
@@ -1387,6 +1430,16 @@ onBeforeUnmount(() => {
 .aggregation-panel { display: flex; min-height: 0; flex: 1; overflow: hidden; flex-direction: column; gap: 12px; }
 .aggregation-panel :deep(.aggregation-table) { min-height: 0; flex: 1 1 auto; height: auto !important; }
 .aggregation-panel :deep(.el-table__body-wrapper) { overflow-y: auto; }
+.position-summary-cell { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; line-height: 1.8; }
+.position-summary-part { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
+.position-summary-part b { font-weight: 700; }
+.position-summary-part i { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 4px; border-radius: 4px; color: #fff; font-size: 12px; font-style: normal; font-variant-numeric: tabular-nums; line-height: 20px; }
+.position-bai b { color: #2563eb; }
+.position-bai i { background: #2563eb; }
+.position-shi b { color: #059669; }
+.position-shi i { background: #059669; }
+.position-ge b { color: #d97706; }
+.position-ge i { background: #d97706; }
 .aggregation-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 12px; border: 1px solid #e5eaf2; border-radius: 8px; background: #fff; }
 .aggregation-pagination { flex: 0 0 auto; min-height: 32px; justify-content: flex-end; padding-top: 4px; padding-bottom: 2px; }
 .aggregation-detail h3 { margin: 6px 0 12px; color: #334155; font-size: 15px; }

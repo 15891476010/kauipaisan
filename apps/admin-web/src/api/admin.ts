@@ -1051,7 +1051,7 @@ export const getRobotLogs = (id: number, params?: { after_id?: number; limit?: n
 // Bet-record aggregation API (kept explicit so the resource view and the
 // import UI share one typed client).
 export type BetAggregationMode = 'records' | 'number' | 'member' | string;
-export type BetAggregationRow = Record<string, any> & { lottery?: string; issue_no?: string; play_type?: string; position?: string; selection?: string; match_number?: string; outcome?: string };
+export type BetAggregationRow = Record<string, any> & { lottery?: string; issue_no?: string; play_type?: string; position?: string; selection?: string; match_number?: string; outcome?: string; summary_kind?: string; summary_odds?: string; position_digits?: Record<string, string>; unit_amount?: string };
 export type BetAggregationMember = Record<string, any>;
 export type BetAggregationOrder = Record<string, any>;
 export const getBetAggregation = (params?: Record<string, unknown>) => http.get<never, Envelope<{ list: BetAggregationRow[]; total: number; source_item_count?: number; unmapped_item_count?: number }>>('/admin/bet-records/aggregation', { params });
