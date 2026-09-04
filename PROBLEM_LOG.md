@@ -2211,3 +2211,8 @@
 - 修复：改用 `PoweroffOutlined` SVG，显式继承白色 `currentColor`，隐藏旧文字 Grid 节点以保证图标居中。
 - 防复发：核心操作图标不得依赖系统 Unicode 字形；应使用项目内 SVG 或组件图标。
 - 验证：430px 下按钮为 `39.4375×43px`，SVG 为 `23.21875×23.21875px`，坐标 `x=398.671875/y=9.890625`，在按钮内居中且 `fill=#fff`。
+# 2026-09-04：管理端下单汇总/风险入口缺少后端路由
+
+- 问题：点击管理端下单记录的“玩法汇总”或“号码风险”时，请求 `/admin/bet-records/aggregation` 未命中控制器，ThinkPHP 动态解析为不存在的 `app\\controller\\Api`，页面显示“控制器不存在”。汇总明细接口同样缺少显式路由。
+- 正确做法：在 `server/route/app.php`（并同步路由副本）显式注册 `BetAggregation/index`、`BetAggregation/details`，且置于下单记录集合路由之前并使用 `completeMatch()`，避免嵌套路径被集合/动态控制器吞掉。
+- 防复发检查：点击玩法汇总、号码风险及任一汇总行明细，分别验证 HTTP 200、统一 `code/message/data/request_id` 响应；不得回退为控制器不存在或 404。

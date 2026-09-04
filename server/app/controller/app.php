@@ -60,6 +60,8 @@ Route::group('api/v1', static function () {
     Route::post('admin/site-users', 'Resource/create')->append(['resource' => 'site-users']);
     Route::put('admin/site-users/:id', 'Resource/update')->append(['resource' => 'site-users']);
     Route::delete('admin/site-users/:id', 'Resource/delete')->append(['resource' => 'site-users']);
+    Route::get('admin/bet-records/aggregation', 'BetAggregation/index')->completeMatch();
+    Route::get('admin/bet-records/aggregation-details', 'BetAggregation/details')->completeMatch();
     Route::get('admin/bet-records', 'Resource/index')->append(['resource' => 'bet-records']);
     Route::get('admin/bet-record-details/:id', 'Resource/betDetails');
     Route::put('admin/bet-details/:id', 'Resource/updateBetDetail');

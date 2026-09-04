@@ -2845,13 +2845,131 @@ body {
 .rules-page .rules-content {
   position: relative;
   min-height: 320px;
-  padding: 20px 24px;
-  background: #fff;
+  padding: 0;
+  background: transparent;
 }
 .rules-page .rules-content > div {
+  width: 96%;
+  box-sizing: border-box;
+  min-height: 320px;
+  margin: 10px auto;
+  padding: 15px 10px;
+  background: #fff;
+  color: #111;
+}
+.rules-page .rules-content > .rule-plain-content {
   white-space: pre-wrap;
   font-size: 14px;
   line-height: 1.8;
+}
+.rules-page .rules-content > .rule-html-content {
+  white-space: normal;
+  font-size: 13px;
+  line-height: 22px;
+}
+.rules-page .rules-content > .rule-html-content > ul,
+.rules-page .rules-content > div > ul {
+  width: 82%;
+  box-sizing: border-box;
+  margin: 10px auto 0;
+  padding-left: 0;
+  list-style: none;
+}
+.rules-page .rules-content > .rule-html-content > ul > li,
+.rules-page .rules-content > div > ul > li {
+  margin: 0;
+  padding: 0;
+}
+.rules-page .rules-content > .rule-html-content > ul > li + li,
+.rules-page .rules-content > div > ul > li + li {
+  margin-top: 25px;
+}
+.rules-page .rules-content > .rule-html-content h4,
+.rules-page .rules-content > div > ul h4 {
+  width: 100%;
+  margin: 10px 0;
+  color: #111;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 24px;
+  text-align: center;
+}
+.rules-page .rules-content > .rule-html-content h5,
+.rules-page .rules-content > div > ul h5 {
+  margin: 0;
+  color: #111;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 22px;
+}
+.rules-page .rules-content > .rule-html-content p,
+.rules-page .rules-content > div > ul p {
+  margin: 12px 0 0;
+  color: #111;
+  font-size: 13px;
+  line-height: 22px;
+}
+.rules-page .rules-content > .rule-html-content > ul > li > div,
+.rules-page .rules-content > div > ul > li > div {
+  margin: 10px 0;
+  padding: 0 20px;
+  font-size: 13px;
+}
+.rules-page .rules-content > .rule-html-content .emphasize,
+.rules-page .rules-content > div > ul .emphasize {
+  color: #475ab3;
+}
+.rules-page .rules-content > .rule-html-content > ul > li > div > span,
+.rules-page .rules-content > div > ul > li > div > span {
+  display: block;
+  margin-bottom: 10px;
+}
+.rules-page .rules-content > .rule-html-content > ul > li > div > ul,
+.rules-page .rules-content > div > ul > li > div > ul {
+  margin: 0 0 15px;
+  padding: 0;
+  list-style: none;
+}
+.rules-page .rules-content > .rule-html-content > ul > li > div > ul > li,
+.rules-page .rules-content > div > ul > li > div > ul > li {
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding: 0;
+}
+.rules-page .rules-content > .rule-html-content > ul > li > div > ul > li > span,
+.rules-page .rules-content > div > ul > li > div > ul > li > span {
+  display: inline-block;
+  width: 50px;
+  height: 40px;
+  box-sizing: border-box;
+  border-right: 1px solid #929ed3;
+  border-bottom: 1px solid #929ed3;
+  color: #475ab3;
+  line-height: 40px;
+  text-align: center;
+}
+.rules-page .rules-content > .rule-html-content > ul > li > div > ul > li:first-child > span,
+.rules-page .rules-content > div > ul > li > div > ul > li:first-child > span {
+  border-top: 1px solid #929ed3;
+  color: #111;
+}
+.rules-page .rules-content > .rule-html-content > ul > li > div > ul > li > span:first-child,
+.rules-page .rules-content > div > ul > li > div > ul > li > span:first-child {
+  border-left: 1px solid #929ed3;
+}
+.rules-page .rules-content > .rule-html-content > ul > li > div > p > span,
+.rules-page .rules-content > div > ul > li > div > p > span {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+.rules-page .rules-content > .rule-html-content > ul > li > div > p > b,
+.rules-page .rules-content > div > ul > li > div > p > b {
+  display: block;
+  margin-bottom: 15px;
+  color: #475ab3;
+  font-weight: 600;
 }
 .rules-page .rules-content p {
   margin: 0 0 10px;

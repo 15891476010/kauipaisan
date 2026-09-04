@@ -233,8 +233,27 @@ export function QuickEntryPage({
     setGenerating(true);
     const requestId = ++previewRequestId.current;
     try {
-      const response = await previewQuickEntry({ text: sourceText, lottery, board_code: boardCode });
-      const data = response.data?.data || null;
+      let data: QuickPreview | null = null;
+      let lastError: unknown;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          const response = await previewQuickEntry({ text: sourceText, lottery, board_code: boardCode });
+          data = response.data?.data || null;
+          lastError = undefined;
+          const transientFailure = data?.lines?.length === 1
+            && data.lines[0]?.status === "failed"
+            && /识别服务暂时不可用|请点击[“\"]生成[”\"]重试/.test(data.lines[0]?.reason || "");
+          if (!transientFailure || attempt === 2) break;
+        } catch (error) {
+          lastError = error;
+          const detail = error as { code?: string; response?: { status?: number } };
+          const retryable = detail.code === "ECONNABORTED" || detail.code === "ETIMEDOUT"
+            || (typeof detail.response?.status === "number" && detail.response.status >= 500);
+          if (!retryable || attempt === 2) throw error;
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 250 * (attempt + 1)));
+      }
+      if (lastError) throw lastError;
       if (requestId !== previewRequestId.current) return data;
       setGeneratedLines(data?.lines || []);
       setGeneratedTotal({

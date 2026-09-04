@@ -831,7 +831,7 @@ onBeforeUnmount(() => {
         <el-button type="primary" @click="aggregationQuery.page = 1; loadAggregation()">查询</el-button>
         <el-button @click="loadAggregation">刷新</el-button>
       </div>
-      <el-alert v-if="betViewMode === 'risk'" title="号码风险按现有结算规则计算每个 000～999 开奖号码的覆盖次数与预计赔付；同一笔本金可能同时覆盖多个可能号码。" type="info" :closable="false" show-icon />
+      <el-alert v-if="betViewMode === 'risk'" title="号码风险按结算使用的同一套号码表达式合并统计；例如六123456作为一条风险注单汇总，不拆成多个三位号码。" type="info" :closable="false" show-icon />
       <el-alert v-if="betViewMode === 'risk' && aggregationUnmappedCount > 0" :title="`${aggregationUnmappedCount} 个历史投注项缺少可匹配表达式，未计入号码风险；玩法汇总仍会显示。`" type="warning" :closable="false" show-icon />
       <el-table v-loading="aggregationLoading" :data="aggregationRows" stripe border height="calc(100vh - 410px)" @sort-change="handleAggregationSort">
         <el-table-column prop="lottery" label="彩种" min-width="105" fixed="left" />
@@ -842,7 +842,10 @@ onBeforeUnmount(() => {
           <el-table-column prop="selection" label="标准号码" min-width="150" />
           <el-table-column prop="frequency_rate" label="频率" min-width="100" sortable="custom"><template #default="scope">{{ scope.row.frequency_rate }}%</template></el-table-column>
         </template>
-        <el-table-column v-else prop="outcome" label="假设开奖号码" min-width="125"><template #default="scope"><b class="risk-number">{{ scope.row.outcome }}</b></template></el-table-column>
+        <template v-else>
+          <el-table-column prop="play_type" label="玩法" min-width="120" />
+          <el-table-column prop="selection" label="号码表达式" min-width="170" />
+        </template>
         <el-table-column prop="occurrence_count" label="出现次数" min-width="105" sortable="custom" />
         <el-table-column prop="order_count" label="注单数" min-width="95" sortable="custom" />
         <el-table-column prop="member_count" label="会员数" min-width="95" sortable="custom" />
@@ -1053,7 +1056,7 @@ onBeforeUnmount(() => {
       @current-change="load"
     /><el-drawer
       v-model="aggregationDetailDrawer"
-      :title="betViewMode === 'risk' ? `号码风险详情 · ${aggregationDetailRow?.outcome || ''}` : `玩法汇总详情 · ${aggregationDetailRow?.play_type || ''} ${aggregationDetailRow?.selection || ''}`"
+      :title="betViewMode === 'risk' ? `号码风险详情 · ${aggregationDetailRow?.play_type || ''} ${aggregationDetailRow?.selection || ''}` : `玩法汇总详情 · ${aggregationDetailRow?.play_type || ''} ${aggregationDetailRow?.selection || ''}`"
       direction="rtl"
       size="min(1180px, 95vw)"
       ><div v-loading="aggregationDetailLoading" class="aggregation-detail">

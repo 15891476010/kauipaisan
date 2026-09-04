@@ -128,6 +128,8 @@ Route::group('api/v1', static function () {
     Route::post('admin/site-users', 'Resource/create')->append(['resource' => 'site-users']);
     Route::put('admin/site-users/:id', 'Resource/update')->append(['resource' => 'site-users']);
     Route::delete('admin/site-users/:id', 'Resource/delete')->append(['resource' => 'site-users']);
+    Route::get('admin/bet-records/aggregation', 'BetAggregation/index')->completeMatch();
+    Route::get('admin/bet-records/aggregation-details', 'BetAggregation/details')->completeMatch();
     // Keep the collection route exact so `/admin/bet-records/batch-options`
     // reaches AdminBetBatch instead of being swallowed by Resource/index.
     Route::get('admin/bet-records', 'Resource/index')->append(['resource' => 'bet-records'])->completeMatch();

@@ -132,6 +132,11 @@ Route::group('api/v1', static function () {
     Route::post('admin/site-users', 'Resource/create')->append(['resource' => 'site-users']);
     Route::put('admin/site-users/:id', 'Resource/update')->append(['resource' => 'site-users']);
     Route::delete('admin/site-users/:id', 'Resource/delete')->append(['resource' => 'site-users']);
+    // These nested endpoints must be registered before the exact collection
+    // route below. Without explicit routes ThinkPHP falls through to its
+    // dynamic controller resolver and treats "Api" as a controller name.
+    Route::get('admin/bet-records/aggregation', 'BetAggregation/index')->completeMatch();
+    Route::get('admin/bet-records/aggregation-details', 'BetAggregation/details')->completeMatch();
     // Keep the collection route exact so `/admin/bet-records/batch-options`
     // reaches AdminBetBatch instead of being swallowed by Resource/index.
     Route::get('admin/bet-records', 'Resource/index')->append(['resource' => 'bet-records'])->completeMatch();

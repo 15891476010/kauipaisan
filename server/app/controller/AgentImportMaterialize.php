@@ -56,16 +56,19 @@ final class AgentImportMaterialize
             $bodyFile=tempnam(sys_get_temp_dir(),'agent-import-job-');
             if($bodyFile===false) throw new \RuntimeException('后台任务临时文件不可用');
             file_put_contents($bodyFile,json_encode($payload,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
-            // Run the worker against the local API listener. The browser-facing
-            // host may be a vhost on port 5999 (or behind a proxy); omitting
-            // that port leaves the queued job with no worker request at all.
+            // Always run the detached worker through the local API listener.
+            // The public vhost may resolve to a different proxy (or be
+            // unreachable from the server), which leaves batches permanently
+            // queued. Keep the public Host header for route/vhost selection.
             $workerUrl='http://127.0.0.1:18082/api/v1/admin/agent-import/batches';
             $token=trim(str_ireplace('Bearer ','',(string)$request->header('authorization')));
             $cmd='nohup curl --silent --show-error --max-time 900 -X POST '.escapeshellarg($workerUrl).' -H '.escapeshellarg('Host: kpsadmin.tzgpt.top').' -H '.escapeshellarg('Authorization: Bearer '.$token).' -H '.escapeshellarg('Content-Type: application/json').' -H '.escapeshellarg('X-Agent-Import-Worker: 1').' --data-binary @'.escapeshellarg($bodyFile).' >/dev/null 2>&1; rm -f '.escapeshellarg($bodyFile).' >/dev/null 2>&1 &';
             exec($cmd);
             return json(['code'=>0,'message'=>'做账任务已进入后台，完成后可在批次列表查看创建结果','data'=>['queued'=>true,'batch_id'=>$queuedId]],202);
         }
-        $response=(new AgentImport())->createBatch($request);
+        // Resolve the UI date range to the issue-number range before calling
+        // the reference report/ledger endpoints.
+        $response=(new AgentImport())->createBatchResolved($request);
         $result=$this->payload($response);
         if((int)($result['code']??0)!==0){$queuedId=(int)$request->post('_queued_batch_id',0);if($queuedId>0)Db::name('agent_import_batches')->where('id',$queuedId)->update(['status'=>'failed','error'=>mb_substr((string)($result['message']??'后台做账失败'),0,2000),'finished_at'=>date('Y-m-d H:i:s'),'updated_at'=>date('Y-m-d H:i:s')]);return $response;}
         $batchId=(int)($result['data']['id']??0);
@@ -106,7 +109,30 @@ final class AgentImportMaterialize
         $batch=Db::name('agent_import_batches')->where('id',$id)->where('tenant_id',(int)$session['tenant_id'])->find();
         if(!$batch)return json(['code'=>404,'message'=>'批次不存在','data'=>null],404);
         $credentials=json_decode((string)($batch['created_credentials']??''),true);
-        return json(['code'=>0,'message'=>'ok','data'=>['batch_id'=>$id,'credentials'=>is_array($credentials)?$credentials:[]]]);
+        $credentials=is_array($credentials)?$credentials:[];
+
+        // A later batch may reuse accounts created by an earlier import, so it
+        // has no newly-generated password of its own. Recover the saved
+        // plaintext from the most recent batch that created the same username.
+        $known=[]; foreach($credentials as $item){$u=trim((string)($item['username']??''));if($u!=='')$known[$u]=true;}
+        $reusedUsers=[];
+        $reuseRecords=Db::name('agent_import_records')->where('batch_id',$id)->where('entity_type','account')->where('action','reused')->select()->toArray();
+        foreach($reuseRecords as $record){$payload=json_decode((string)($record['payload']??''),true);$u=trim((string)($payload['username']??($payload['source']['an']??'')));if($u!==''&&!isset($known[$u]))$reusedUsers[$u]=true;}
+        // Older completed batches skipped the per-account "reused" audit row.
+        // In that case derive usernames from the saved accounts snapshot.
+        if($reusedUsers===[]){
+            $snapshot=Db::name('agent_import_records')->where('batch_id',$id)->where('entity_type','accounts')->order('id desc')->find();
+            $body=$snapshot?json_decode((string)$snapshot['payload'],true):[];
+            $data=is_array($body)?($body['response']['data']??[]):[];
+            $rows=is_array($data)?(array)($data['al']??$data['list']??$data):[];
+            foreach($rows as $row){$u=trim((string)(is_array($row)?($row['an']??$row['username']??''):''));if($u!==''&&!isset($known[$u]))$reusedUsers[$u]=true;}
+        }
+        if($reusedUsers!==[]){
+            $reusedTotal=count($reusedUsers); $reusedFound=0;
+            $history=Db::name('agent_import_batches')->where('tenant_id',(int)$session['tenant_id'])->where('site_id',(int)$batch['site_id'])->where('id','<>',$id)->whereNotNull('created_credentials')->order('id desc')->select()->toArray();
+            foreach($history as $old){$items=json_decode((string)$old['created_credentials'],true);if(!is_array($items))continue;foreach($items as $item){$u=trim((string)($item['username']??''));if($u!==''&&isset($reusedUsers[$u])&&!isset($known[$u])){$item['reused_from_batch_id']=(int)$old['id'];$credentials[]=$item;$known[$u]=true;$reusedFound++;}}if($reusedFound>=$reusedTotal)break;}
+        }
+        return json(['code'=>0,'message'=>'ok','data'=>['batch_id'=>$id,'credentials'=>array_values($credentials)]]);
     }
 
     public function rollback(Request $request): \think\response\Json

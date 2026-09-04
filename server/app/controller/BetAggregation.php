@@ -238,28 +238,24 @@ final class BetAggregation
     /** @param array<int,array<string,mixed>> $items @return array{rows:array<int,array<string,mixed>>,unmapped:int} */
     private function riskSummary(array $items): array
     {
-        $settlement=new BetSettlement();$coverageCache=[];$groups=[];$unmapped=0;
+        // Risk must use the same compact expression that settlement uses. A
+        // ticket such as `六123456` is one exposure, not dozens of unrelated
+        // three-digit rows. Expanding it into every possible draw both makes
+        // the report misleading and turns a full-page request into a 000-999
+        // scan for every distinct ticket.
+        $groups=[];
         foreach($items as $item){
-            // Equivalent member inputs share one semantic expression id (for
-            // example 123456 and 365412 in 组三六码). Resolve its 000-999
-            // coverage once; stake text and member formatting must not defeat
-            // the cache and turn one report into millions of duplicate checks.
-            $cacheKey=$this->expressionId($item);
-            if(!isset($coverageCache[$cacheKey])){
-                $coverage=$this->fastCoverage($item);
-                if($coverage===null){$coverage=[];for($number=0;$number<=999;$number++){$draw=str_pad((string)$number,3,'0',STR_PAD_LEFT);if($settlement->numberMatches((string)$item['match_number'],$draw,(string)$item['match_source']))$coverage[]=$draw;}}
-                $coverageCache[$cacheKey]=$coverage;
-            }
-            if($coverageCache[$cacheKey]===[]){$unmapped++;continue;}
-            foreach($coverageCache[$cacheKey] as $draw){
-                $draw=str_pad((string)$draw,3,'0',STR_PAD_LEFT);
-                $id=sha1(json_encode([(string)$item['lottery'],(string)$item['issue_no'],$draw],JSON_UNESCAPED_UNICODE));
-                if(!isset($groups[$id]))$groups[$id]=['group_id'=>$id,'lottery'=>(string)$item['lottery'],'issue_no'=>(string)$item['issue_no'],'outcome'=>$draw,'occurrence_count'=>0,'record_ids'=>[],'member_ids'=>[],'bet_amount_value'=>0.0,'potential_value'=>0.0];
-                $groups[$id]['occurrence_count']++;$groups[$id]['record_ids'][(int)$item['bet_record_id']]=true;$groups[$id]['member_ids'][(int)$item['user_id']]=true;$groups[$id]['bet_amount_value']+=(float)$item['amount_value'];$groups[$id]['potential_value']+=(float)$item['potential_value'];
-            }
+            $id=$this->expressionId($item);
+            if(!isset($groups[$id]))$groups[$id]=[
+                'group_id'=>$id,'lottery'=>(string)$item['lottery'],'issue_no'=>(string)$item['issue_no'],
+                'play_type'=>(string)$item['play_type'],'position'=>(string)$item['position'],'selection'=>(string)$item['selection'],
+                'match_number'=>(string)$item['match_number'],'occurrence_count'=>0,'record_ids'=>[],'member_ids'=>[],
+                'bet_amount_value'=>0.0,'potential_value'=>0.0,
+            ];
+            $groups[$id]['occurrence_count']++;$groups[$id]['record_ids'][(int)$item['bet_record_id']]=true;$groups[$id]['member_ids'][(int)$item['user_id']]=true;$groups[$id]['bet_amount_value']+=(float)$item['amount_value'];$groups[$id]['potential_value']+=(float)$item['potential_value'];
         }
         $result=[];foreach($groups as $group){$group['order_count']=count($group['record_ids']);$group['member_count']=count($group['member_ids']);unset($group['record_ids'],$group['member_ids']);$group['bet_amount']=number_format($group['bet_amount_value'],2,'.','');$group['potential_win_amount']=number_format($group['potential_value'],2,'.','');unset($group['bet_amount_value'],$group['potential_value']);$result[]=$group;}
-        return ['rows'=>$result,'unmapped'=>$unmapped];
+        return ['rows'=>$result,'unmapped'=>0];
     }
 
     /** @param array<int,array<string,mixed>> $rows */
@@ -289,9 +285,15 @@ final class BetAggregation
     private function itemMatchesDetail(array $item,string $mode,Request $request,BetSettlement $settlement): bool
     {
         if((string)$item['lottery']!==(string)$request->param('lottery','')||(string)$item['issue_no']!==(string)$request->param('issue_no',''))return false;
-        if($mode==='risk'){
-            $outcome=preg_replace('/\D/','',(string)$request->param('outcome',''))??'';
-            return strlen($outcome)===3&&$settlement->numberMatches((string)$item['match_number'],$outcome,(string)$item['match_source']);
+        if($mode==='risk') {
+            // Risk rows are compact expressions, so details use the same
+            // canonical grouping key as the summary instead of an expanded
+            // hypothetical draw number.
+            return $this->expressionId($item) === sha1(json_encode([
+                (string)$item['lottery'], (string)$item['issue_no'],
+                trim((string)$request->param('play_type','')), trim((string)$request->param('position','')),
+                trim((string)$request->param('selection','')),
+            ], JSON_UNESCAPED_UNICODE));
         }
         return (string)$item['play_type']===(string)$request->param('play_type','')&&(string)$item['position']===(string)$request->param('position','')&&(string)$item['selection']===(string)$request->param('selection','');
     }
