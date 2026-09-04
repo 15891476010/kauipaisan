@@ -200,9 +200,15 @@ final class UserBusiness
                 $lotteryId=(int)($control['id']??0);
                 if ($lotteryId<1) $lotteryId=(int)Db::name('lotteries')->where('tenant_id',(int)$record['tenant_id'])->where('name',$lotteryName)->whereNull('deleted_at')->order('id','asc')->value('id');
                 if ($lotteryId<1) return $result;
-                $drawn=Db::name('lottery_histories')->where('lottery_id',$lotteryId)->where('code',(string)$record['issue_no'])->order('open_time','desc')->find();
-                if (is_array($drawn) && !empty($drawn['open_time']) && strtotime((string)$drawn['open_time']) <= time()) return $result;
-                $deadline=Db::name('lottery_histories')->where('lottery_id',$lotteryId)->where('next_code',(string)$record['issue_no'])->order('open_time','desc')->value('next_open_time');
+                $historyLotteryIds=Db::name('lotteries')->where('tenant_id',(int)$record['tenant_id'])->where('name',$lotteryName)->whereNull('deleted_at')->column('id');
+                if ($historyLotteryIds===[]) $historyLotteryIds=[$lotteryId];
+                $current=Db::name('lottery_histories')->whereIn('lottery_id',$historyLotteryIds)->where('code',(string)$record['issue_no'])->order('open_time','desc')->find();
+                if (is_array($current)) {
+                    if ((int)($current['is_opened']??1)===1) return $result;
+                    $deadline=$current['open_time']??null;
+                } else {
+                    $deadline=Db::name('lottery_histories')->whereIn('lottery_id',$historyLotteryIds)->where('next_code',(string)$record['issue_no'])->order('open_time','desc')->value('next_open_time');
+                }
                 if (!$deadline || strtotime((string)$deadline)<=time()) return $result;
                 $deadlines[]=(string)$deadline;
             }
@@ -228,10 +234,21 @@ final class UserBusiness
             $lotteryId=(int)($control['id']??0);
             if ($lotteryId<1) $lotteryId=(int)Db::name('lotteries')->where('tenant_id',(int)$record['tenant_id'])->where('name',$lotteryName)->whereNull('deleted_at')->order('id','asc')->value('id');
             if ($lotteryId<1) return $result;
+            $historyLotteryIds=Db::name('lotteries')->where('tenant_id',(int)$record['tenant_id'])->where('name',$lotteryName)->whereNull('deleted_at')->column('id');
+            if ($historyLotteryIds===[]) $historyLotteryIds=[$lotteryId];
             // 当前期会在开奖前预先写入开奖记录；只有到了实际开奖时间才算已开奖。
-            $drawn=Db::name('lottery_histories')->where('lottery_id',$lotteryId)->where('code',(string)$record['issue_no'])->order('open_time','desc')->find();
-            if (is_array($drawn) && !empty($drawn['open_time']) && strtotime((string)$drawn['open_time']) <= time()) return $result;
-            $deadline=Db::name('lottery_histories')->where('lottery_id',$lotteryId)->where('next_code',(string)$record['issue_no'])->order('open_time','desc')->value('next_open_time');
+            // 福体提交的外层 issue_no 只取第一彩种；从 stop-drop 明细
+            // 读取每个彩种自己的期号，避免福彩3D/排列三期号格式不同。
+            $issueNo=(string)($record['issue_no']??'');
+            $detailIssue=Db::name('user_stop_drops')->whereIn('bet_detail_id',$details)->where('lottery',$lotteryName)->order('id','asc')->value('issue_no');
+            if ($detailIssue!==null && trim((string)$detailIssue)!=='') $issueNo=(string)$detailIssue;
+            $current=Db::name('lottery_histories')->whereIn('lottery_id',$historyLotteryIds)->where('code',$issueNo)->order('open_time','desc')->find();
+            if (is_array($current)) {
+                if ((int)($current['is_opened']??1)===1) return $result;
+                $deadline=$current['open_time']??null;
+            } else {
+                $deadline=Db::name('lottery_histories')->whereIn('lottery_id',$historyLotteryIds)->where('next_code',$issueNo)->order('open_time','desc')->value('next_open_time');
+            }
             if (!$deadline || strtotime((string)$deadline)<=time()) return $result;
             $deadlines[]=(string)$deadline;
         }
@@ -541,9 +558,131 @@ final class UserBusiness
      * parser response, but when it is enabled these rows become the primary
      * preview so the user actually sees what the provider recognized.
      */
+    private function thirdPartyCatalogueLines(array $result, string $lottery): array
+    {
+        $atomic=[];
+        foreach ((array)($result['data']['cil']??[]) as $cilKey=>$lotteryRows) {
+            $lineCategory=((string)$cilKey==='3'?'体':((string)$cilKey==='4'?'福':($lottery==='排列三'?'体':'福')));
+            foreach ((array)($lotteryRows['codeList']??[]) as $type=>$entries) {
+                if (!is_array($entries)) continue;
+                foreach ($entries as $code=>$entry) {
+                    if (!is_array($entry)) continue;
+                    $amount=(float)($entry['amount']??0); $count=(int)($entry['totalCount']??1);
+                    if ($amount<=0 || $count<1) continue;
+                    $code=(string)$code; $type=(int)$type; $selection=''; $play=''; $source=''; $display=[];
+                    if ($type===1 || $type===2) {
+                        $display[]=$code; $play=$type===1?'口XX':'口口X'; $source=$code==''
+                            ? '' : (($type===1?'百':'百').preg_replace('/X$/','',(string)$code).'各'.$amount.'元');
+                        // Position catalogue keys are already concrete patterns;
+                        // keep them as display tokens and use the corresponding
+                        // identity source for the local odds row.
+                        if ($type===1) $source='百'.preg_replace('/X$/','',(string)$code).'各'.$amount.'元';
+                        else {
+                            $pattern=(string)$code; $xpos=strpos($pattern,'X');
+                            $source=($xpos===0?'X口口':($xpos===1?'口X口':'口口X')).'各'.$amount.'元';
+                        }
+                    } elseif ($type===3) {
+                        $selection=preg_replace('/\D/','',$code)??''; if ($selection==='') continue;
+                        $display[]=$selection.'直'; $play='直'; $source=$selection.'直各'.$amount.'元';
+                    } elseif ($type===4) {
+                        $selection=preg_replace('/\D/','',$code)??''; if ($selection==='') continue;
+                        $display[]=$selection.'胆'; $play='独胆'; $source='独胆'.$selection.'各'.$amount.'元';
+                    } elseif ($type===5) {
+                        $selection=str_pad($code,2,'0',STR_PAD_LEFT); $play=$selection[0]===$selection[1]?'对子':'双飞';
+                        $display[]=$selection.$play; $source=$selection.$play.'各'.$amount.'元';
+                    } elseif ($type===6) {
+                        $selection=preg_replace('/\D/','',$code)??''; if ($selection==='') continue;
+                        $play=count(array_unique(str_split($selection)))===2?'组三':'组六'; $display[]=$selection.$play; $source=$selection.$play.'各'.$amount.'元';
+                    } elseif ($type===7 || $type===8 || $type===9) {
+                        $selection=preg_replace('/^(?:z[36]m|fsm)/i','',$code)??$code; $selection=preg_replace('/\D/','',$selection)??''; if ($selection==='') continue;
+                        $family=$type===7?'组三':($type===8?'组六':'复式'); $words=['1'=>'一','2'=>'二','3'=>'三','4'=>'四','5'=>'五','6'=>'六','7'=>'七','8'=>'八','9'=>'九'];
+                        $play=$family.($family==='复式'?($words[(string)strlen($selection)]??strlen($selection)):' '.($words[(string)strlen($selection)]??strlen($selection))).'码';
+                        $play=str_replace(' ','',$play);
+                        $display[]=$selection.$play; $source=$selection.$play.'各'.$amount.'元';
+                    } elseif ($type===10 || $type===11) {
+                        if (preg_match('/^[a-z0-9]*?(\d)t(\d+)$/i',$code,$m)!==1) continue;
+                        $family=$type===10?'组三':'组六'; $play=$family.'胆拖'; $dragCount=strlen($m[2]); $display[]='胆'.$m[1].'拖'.$m[2].$play; $source=$play.' '.$m[1].'码拖'.$dragCount.' 胆'.$m[1].'拖'.$m[2].'各'.$amount.'元';
+                    } elseif ($type===12) {
+                        if (preg_match('/(\d)$/',$code,$m)!==1) continue; $play='跨度'.$m[1]; $display[]='跨'.$m[1]; $source=$play.'各'.$amount.'元';
+                    } elseif ($type===13) {
+                        $map=['hzda'=>'和大','hzx'=>'和小','hzdn'=>'和单','hzs'=>'和双']; $key=strtolower($code);
+                        if (isset($map[$key])) {$play=$map[$key];$display[]=$play;$source=$play.'各'.$amount.'元';}
+                        elseif (preg_match('/hz(\d{1,2})$/i',$key,$m)===1) {$play='和值'.$m[1];$display[]=$play;$source=$play.'各'.$amount.'元';}
+                    } elseif ($type===14) {$play='豹子全包';$display[]='豹包';$source=$play.$amount.'元';}
+                    elseif ($type===15 || $type===16) {
+                        $selection=preg_replace('/^lzz[36]/i','',$code)??$code; $selection=preg_replace('/\D/','',$selection)??''; if ($selection==='') continue;
+                        $family=$type===15?'组三':'组六'; $words=['1'=>'一','2'=>'二','3'=>'三','4'=>'四','5'=>'五','6'=>'六','7'=>'七','8'=>'八','9'=>'九']; $play=$family.'赖'; $display[]=$selection.$play; $source=$selection.($words[(string)strlen($selection)]??strlen($selection)).'码'.$family;
+                    } elseif ($type===17) {$play='对子全包';$display[]='对包';$source=$play.$amount.'元';}
+                    elseif ($type===18) {
+                        if (preg_match('/^[a-z0-9]*?(\d{2})t(\d+)$/i',$code,$m)!==1) continue; $play='组六2胆拖';$display[]='胆'.$m[1].'拖'.$m[2];$source=$play.' 2码拖'.strlen($m[2]).' 胆'.$m[1].'拖'.$m[2].'各'.$amount.'元';
+                    } elseif ($type===19) {
+                        if (preg_match('/^[a-z]*?(\d)t(\d+)$/i',$code,$m)!==1) continue; $play='单选全胆拖';$display[]='胆'.$m[1].'拖'.$m[2];$source=$play.' 1码拖'.strlen($m[2]).' 胆'.$m[1].'拖'.$m[2].'各'.$amount.'元';
+                    }
+                    if ($source==='' || $display===[]) continue;
+                    $atomicKey=$type.'|'.$play.'|'.number_format($amount/max(1,$count),4,'.','').'|'.$display[0];
+                    if (!isset($atomic[$atomicKey])) $atomic[$atomicKey]=['number'=>$display[0],'amount'=>0.0,'count'=>0,'source'=>$source,'play'=>$play,'type'=>$type,'categories'=>[]];
+                    $atomic[$atomicKey]['amount']+=$amount; $atomic[$atomicKey]['count']+=$count; $atomic[$atomicKey]['categories'][$lineCategory]=true;
+                }
+            }
+        }
+        $catalogue=[];
+        foreach ($atomic as $atom) {
+            $categories=array_keys($atom['categories']); sort($categories);
+            $category=in_array('福',$categories,true)&&in_array('体',$categories,true)?'福体':($categories[0]??($lottery==='排列三'?'体':'福'));
+            $unit=(float)$atom['amount']/max(1,(int)$atom['count']);
+            $groupKey=$category.'|'.$atom['type'].'|'.$atom['play'].'|'.number_format($unit,4,'.','');
+            if (!isset($catalogue[$groupKey])) $catalogue[$groupKey]=['numbers'=>[],'display'=>[],'amount'=>0.0,'count'=>0,'source'=>$atom['source'],'play'=>$atom['play'],'category'=>$category];
+            $catalogue[$groupKey]['numbers'][]=$atom['number']; $catalogue[$groupKey]['display'][]=$atom['number'];
+            $catalogue[$groupKey]['amount']+=(float)$atom['amount']; $catalogue[$groupKey]['count']+=(int)$atom['count'];
+        }
+        $lines=[]; $id=1;
+        foreach ($catalogue as $group) {
+            $numbers=implode(' ',array_values(array_unique($group['numbers']))); $source=$group['source'];
+            if (in_array($group['play'],['直','独胆','双飞','对子','组三','组六'],true)) {
+                $baseNumbers=implode(' ',array_map(static fn(string $value):string=>preg_replace('/(直|胆|双飞|对子|组三|组六)$/u','',$value)??$value,$group['numbers']));
+                $source=($group['play']==='独胆'?'独胆'.$baseNumbers:$baseNumbers.' '.$group['play']).'各'.rtrim(rtrim(number_format($group['amount']/max(1,$group['count']),2,'.',''),'0'),'.').'元';
+            }
+            $lines[]=['id'=>$id++,'raw_text'=>$source,'input_text'=>$source,'parse_text'=>$source,'status'=>'success','reason'=>null,
+                'number_text'=>$numbers,'display_number_text'=>$numbers,'expanded_number_text'=>$numbers,'category'=>(string)$group['category'],
+                'play_type'=>$group['play'],'settlement_text'=>$source,'amount'=>number_format($group['amount'],2,'.',''),'count'=>$group['count'],'stake_count'=>$group['count'],'code_count'=>$group['count'],'provider_catalogue'=>true];
+        }
+        return $lines;
+    }
+
+    private function providerLineForLottery(array $line,string $lottery): array
+    {
+        if ((string)($line['category']??'')!=='福体') { $line['category']=$lottery==='福彩3D'?'福':'体'; return $line; }
+        foreach (['count','stake_count','code_count'] as $field) {
+            if (!array_key_exists($field,$line)) continue;
+            $value=(int)$line[$field];
+            if ($value<1 || $value%2!==0) throw new \InvalidArgumentException('福体投注注数无法按彩种拆分');
+            $line[$field]=intdiv($value,2);
+        }
+        $line['amount']=number_format((float)($line['amount']??0)/2,2,'.',''); $line['category']=$lottery==='福彩3D'?'福':'体';
+        foreach (['raw_text','input_text','parse_text','settlement_text'] as $field) if (isset($line[$field])) $line[$field]=str_replace('福体',(string)$line['category'],(string)$line[$field]);
+        return $line;
+    }
+
     private function thirdPartyLines(array $result, string $lottery): array
     {
+        $catalogue=$this->thirdPartyCatalogueLines($result,$lottery);
         $rows=(array)($result['data']['rl']??[]); $lines=[]; $nextId=1;
+        if ($catalogue!==[]) {
+            // Keep provider-side validation failures beside successful
+            // catalogue rows.  A mixed ticket must remain visible as mixed
+            // and quickPlace will reject the whole ticket, instead of silently
+            // dropping the failed sentence and placing only its valid part.
+            foreach ($rows as $row) {
+                if (!is_array($row) || (int)($row['isSummary']??0)===1 || (int)($row['isSuccess']??1)!==0) continue;
+                $raw=trim((string)($row['txt']??$row['ftxt']??$row['ltxt']??''));
+                if ($raw==='') continue;
+                $lines[]=['id'=>count($catalogue)+count($lines)+1,'raw_text'=>$raw,'input_text'=>$raw,
+                    'parse_text'=>trim((string)($row['ltxt']??$raw)),'status'=>'failed','reason'=>$this->thirdPartyRowMessage($row),
+                    'number_text'=>'','display_number_text'=>'','expanded_number_text'=>'','category'=>$lottery==='福彩3D'?'福':'体',
+                    'play_type'=>'','settlement_text'=>'','amount'=>'0.00','count'=>0,'stake_count'=>0,'code_count'=>0];
+            }
+            return array_merge($catalogue,$lines);
+        }
 
         // A provider continuation ticket is returned as several amount-less
         // rows followed by one `ij` row containing the complete statement and
@@ -871,7 +1010,7 @@ final class UserBusiness
                 $providerParts=$providerAuthoritative && is_array($line['provider_parts']??null) && $line['provider_parts']!==[] ? $line['provider_parts'] : [$line];
                 foreach ($providerParts as $sourceLine) foreach ($this->lotteriesForLine($sourceLine,$lottery) as $lineLottery) {
                     $this->assertLotteryPermission($s,$lineLottery,true);
-                    $splitLine=$providerAuthoritative ? $sourceLine : $this->lineForLottery($sourceLine,$lineLottery,(int)$s['tenant_id']);
+                    $splitLine=$providerAuthoritative ? $this->providerLineForLottery($sourceLine,$lineLottery) : $this->lineForLottery($sourceLine,$lineLottery,(int)$s['tenant_id']);
                     $rule=$this->applyLineLimits($s,$lineLottery,$splitLine);
                     $groups[$lineLottery]['lines'][]=['line'=>$splitLine,'rule'=>$rule];
                     $groups[$lineLottery]['amount']=($groups[$lineLottery]['amount']??0)+(float)$rule['actual'];
