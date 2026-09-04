@@ -171,6 +171,38 @@ final class BetAggregation
         return $items;
     }
 
+    /**
+     * Build risk rows from the persisted detail records without invoking the
+     * quick-entry parser or expanding a ticket into hypothetical bets. The
+     * stored play_type/number_text are the already-confirmed submission
+     * result; only deterministic whitespace/order normalization is applied so
+     * equivalent grouped expressions can share one risk key.
+     * @return array<int,array<string,mixed>>
+     */
+    private function persistedRiskItems(Request $request): array
+    {
+        $filters=$this->filters($request);$rows=$this->detailRows($filters,$this->scopedSiteId($request));$items=[];
+        foreach($rows as $row){
+            $playType=trim((string)($row['play_type']??''));
+            $source=trim((string)($row['source_text']??''));
+            if($source==='')$source=trim((string)($row['record_source']??''));
+            $raw=preg_replace('/\s+/u',' ',trim((string)($row['number_text']??'')))??'';
+            $selection=$raw!==''?$raw:$source;
+            // Grouped selections are order-independent. This uses the stored
+            // play type only; it does not infer a new play or split amounts.
+            if(preg_match('/^(组三|组六)/u',$playType)===1&&$selection!==''){
+                $tokens=preg_split('/\s+/u',$selection)?:[$selection];$normalized=[];
+                foreach($tokens as $token){$digits=preg_replace('/\D/','',(string)$token)??'';if($digits===''){ $normalized[]=$token;continue; }$chars=str_split($digits);if(strlen($digits)===3)sort($chars,SORT_STRING);else{$chars=array_values(array_unique($chars));sort($chars,SORT_STRING);}$normalized[]=implode('',$chars);}
+                sort($normalized,SORT_STRING);$selection=implode(' ',$normalized);
+            }elseif(preg_match('/定位/u',$playType)===1){
+                $selection=strtoupper($selection);
+            }
+            $amount=(float)($row['amount']??0);$odds=(float)($row['odds']??0);
+            $items[]=array_merge($row,['play_type'=>$playType!==''?$playType:'其他','position'=>'','selection'=>$selection,'match_number'=>$selection,'match_source'=>$source,'amount_value'=>$amount,'potential_value'=>$amount*max(0,$odds)]);
+        }
+        return $items;
+    }
+
     private function expressionId(array $item): string
     {
         return sha1(json_encode([(string)$item['lottery'],(string)$item['issue_no'],(string)$item['play_type'],(string)$item['position'],(string)$item['selection']],JSON_UNESCAPED_UNICODE));
@@ -286,7 +318,7 @@ final class BetAggregation
     {
         try{
             $mode=strtolower(trim((string)$request->param('mode','play')));if(!in_array($mode,['play','risk'],true))throw new \InvalidArgumentException('汇总模式无效');
-            $items=$this->items($request);$unmapped=0;
+            $items=$mode==='risk'?$this->persistedRiskItems($request):$this->items($request);$unmapped=0;
             if($mode==='risk'){$summary=$this->riskSummary($items);$rows=$summary['rows'];$unmapped=$summary['unmapped'];}else$rows=$this->playSummary($items);
             $this->sortRows($rows,$mode,$request);$total=count($rows);$page=max(1,(int)$request->param('page',1));$pageSize=min(100,max(1,(int)$request->param('page_size',20)));
             return $this->reply(['list'=>array_slice($rows,($page-1)*$pageSize,$pageSize),'total'=>$total,'source_item_count'=>count($items),'unmapped_item_count'=>$unmapped]);
@@ -313,7 +345,7 @@ final class BetAggregation
     {
         try{
             $mode=strtolower(trim((string)$request->param('mode','play')));if(!in_array($mode,['play','risk'],true))throw new \InvalidArgumentException('汇总模式无效');
-            $settlement=new BetSettlement();$matched=[];foreach($this->items($request)as$item)if($this->itemMatchesDetail($item,$mode,$request,$settlement))$matched[]=$item;
+            $settlement=new BetSettlement();$matched=[];$sourceItems=$mode==='risk'?$this->persistedRiskItems($request):$this->items($request);foreach($sourceItems as$item)if($this->itemMatchesDetail($item,$mode,$request,$settlement))$matched[]=$item;
             $members=[];$orders=[];
             foreach($matched as $item){
                 $memberKey=(int)$item['site_id'].'#'.(int)$item['user_id'];

@@ -833,7 +833,7 @@ onBeforeUnmount(() => {
       </div>
       <el-alert v-if="betViewMode === 'risk'" title="号码风险按结算使用的同一套号码表达式合并统计；例如六123456作为一条风险注单汇总，不拆成多个三位号码。" type="info" :closable="false" show-icon />
       <el-alert v-if="betViewMode === 'risk' && aggregationUnmappedCount > 0" :title="`${aggregationUnmappedCount} 个历史投注项缺少可匹配表达式，未计入号码风险；玩法汇总仍会显示。`" type="warning" :closable="false" show-icon />
-      <el-table v-loading="aggregationLoading" :data="aggregationRows" stripe border height="calc(100vh - 410px)" @sort-change="handleAggregationSort">
+      <el-table v-loading="aggregationLoading" class="aggregation-table" :data="aggregationRows" stripe border height="calc(100vh - 410px)" @sort-change="handleAggregationSort">
         <el-table-column prop="lottery" label="彩种" min-width="105" fixed="left" />
         <el-table-column prop="issue_no" label="期号" min-width="120" fixed="left" />
         <template v-if="betViewMode === 'play'">
@@ -948,9 +948,14 @@ onBeforeUnmount(() => {
       <span>按金额：中奖 ¥{{ numberSimulation.win_amount }}（{{ numberSimulation.win_amount_probability }}%）</span>
       <span>未中奖 ¥{{ numberSimulation.lose_amount }}（{{ numberSimulation.lose_amount_probability }}%）</span>
     </div>
+    <div
+      v-if="resource !== 'bet-records' || betViewMode === 'records'"
+      class="resource-table-area"
+    >
     <el-table
       v-if="resource !== 'bet-records' || betViewMode === 'records'"
       v-loading="loading"
+      class="resource-table"
       :data="rows"
       stripe
       :row-class-name="betRowClassName"
@@ -1054,7 +1059,7 @@ onBeforeUnmount(() => {
       style="margin-top: 18px; justify-content: flex-end"
       @size-change="query.page = 1; load()"
       @current-change="load"
-    /><el-drawer
+    /></div><el-drawer
       v-model="aggregationDetailDrawer"
       :title="betViewMode === 'risk' ? `号码风险详情 · ${aggregationDetailRow?.play_type || ''} ${aggregationDetailRow?.selection || ''}` : `玩法汇总详情 · ${aggregationDetailRow?.play_type || ''} ${aggregationDetailRow?.selection || ''}`"
       direction="rtl"
@@ -1302,9 +1307,35 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 .bet-records-page-card {
+  display: flex;
+  flex-direction: column;
   height: 100%;
   min-height: 0;
   overflow: hidden;
+}
+.bet-records-page-card > .resource-table-area {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+.resource-table-area :deep(.resource-table) {
+  min-height: 0;
+  flex: 1 1 auto;
+  height: auto !important;
+}
+.resource-table-area :deep(.el-table__inner-wrapper),
+.resource-table-area :deep(.el-table__body-wrapper) {
+  min-height: 0;
+}
+.resource-table-area :deep(.el-table__body-wrapper) {
+  overflow-y: auto;
+}
+.resource-table-area :deep(.el-pagination) {
+  flex: 0 0 auto;
+  min-height: 32px;
+  margin-top: 12px !important;
+  padding-bottom: 2px;
 }
 .lottery-checkboxes {
   display: flex;
@@ -1353,9 +1384,11 @@ onBeforeUnmount(() => {
 .draw-status-label { color: #64748b; font-size: 13px; white-space: nowrap; }
 .bet-view-switch { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 14px; padding: 10px 12px; border: 1px solid #e5eaf2; border-radius: 8px; background: #f8fafc; }
 .bet-view-switch > span { color: #64748b; font-size: 13px; }
-.aggregation-panel { display: flex; min-height: 0; flex: 1; flex-direction: column; gap: 12px; }
+.aggregation-panel { display: flex; min-height: 0; flex: 1; overflow: hidden; flex-direction: column; gap: 12px; }
+.aggregation-panel :deep(.aggregation-table) { min-height: 0; flex: 1 1 auto; height: auto !important; }
+.aggregation-panel :deep(.el-table__body-wrapper) { overflow-y: auto; }
 .aggregation-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 12px; border: 1px solid #e5eaf2; border-radius: 8px; background: #fff; }
-.aggregation-pagination { justify-content: flex-end; padding-top: 4px; }
+.aggregation-pagination { flex: 0 0 auto; min-height: 32px; justify-content: flex-end; padding-top: 4px; padding-bottom: 2px; }
 .aggregation-detail h3 { margin: 6px 0 12px; color: #334155; font-size: 15px; }
 .aggregation-detail h3:not(:first-child) { margin-top: 22px; }
 .risk-number { color: #dc2626; font-size: 17px; letter-spacing: 2px; font-variant-numeric: tabular-nums; }

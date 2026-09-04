@@ -38,6 +38,15 @@ final class AgentImportMaterialize
         return [];
     }
 
+    /** Read the root and recursive account-tree snapshots saved by the worker. */
+    private function accountRows(int $batchId): array
+    {
+        $out=[];$seen=[];
+        $records=Db::name('agent_import_records')->where('batch_id',$batchId)->whereIn('entity_type',['accounts','account_tree'])->whereIn('action',['snapshot','snapshot_retry'])->order('id asc')->select()->toArray();
+        foreach($records as $record){$body=json_decode((string)$record['payload'],true);$data=$body['response']['data']??[];$rows=(array)($data['al']??$data['list']??[]);foreach($rows as $row){if(!is_array($row))continue;$id=trim((string)($row['ai']??$row['id']??''));if($id===''||isset($seen[$id]))continue;$seen[$id]=true;$out[]=$row;}}
+        return $out;
+    }
+
     public function createBatch(Request $request): \think\response\Json
     {
         $session=$this->session($request);
@@ -85,9 +94,7 @@ final class AgentImportMaterialize
         $batch=$batchId?Db::name('agent_import_batches')->where('id',$batchId)->where('tenant_id',(int)$session['tenant_id'])->find():null;
         if(!$batch||$batch['status']!=='completed') return $response;
 
-        $rows=[];
-        $snapshot=Db::name('agent_import_records')->where('batch_id',$batchId)->where('entity_type','accounts')->order('id desc')->find();
-        if($snapshot){$body=json_decode((string)$snapshot['payload'],true);$data=$body['response']['data']??[];$rows=(array)($data['al']??$data['list']??[]);}
+        $rows=$this->accountRows($batchId);
         if(!$rows)$rows=$this->retryAccounts($batch);
         try {
             $materialized=AgentImportAccountSync::import($batchId,(int)$batch['tenant_id'],(int)$batch['site_id'],(int)$batch['target_organization_id'],$rows);

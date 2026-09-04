@@ -140,12 +140,29 @@ final class AgentReport
         unset($row); return $rows;
     }
 
+    private function importedOrganizationMap(int $batchId,int $siteId): array
+    {
+        $map=[];$externalNodes=[];
+        foreach(Db::name('organization_nodes')->where('site_id',$siteId)->whereNull('deleted_at')->field('id,settings')->select()->toArray() as $node){$settings=json_decode((string)($node['settings']??''),true);$external=trim((string)($settings['external_id']??''));if($external!=='')$externalNodes[$external]=(int)$node['id'];}
+        $records=Db::name('agent_import_records')->where('batch_id',$batchId)->where('entity_type','account')->whereIn('action',['created_node','created_member','reused'])->order('id asc')->select()->toArray();
+        foreach($records as $record){
+            $external=trim((string)($record['external_id']??'')); if($external==='')continue;
+            $payload=json_decode((string)($record['payload']??''),true); $source=is_array($payload)?(array)($payload['source']??[]):[];
+            $local=(int)($record['local_id']??0); $action=(string)($record['action']??'');
+            $sourceType=(int)($source['tp']??0);
+            if($action==='created_member'||$sourceType>=6){$parentExternal=trim((string)($source['pi']??''));$org=(int)($externalNodes[$parentExternal]??0);if($org<1)$org=(int)($payload['organization_id']??0);if($org<1&&$local>0)$org=(int)Db::name('site_users')->where('id',$local)->where('site_id',$siteId)->value('organization_id');if($org>0)$map[$external]=$org;}
+            else { $org=$local; if($action==='reused')$org=(int)($source['organization_id']??Db::name('organization_accounts')->where('id',$local)->where('site_id',$siteId)->value('organization_id')); if($org>0)$map[$external]=$org; }
+        }
+        return $map;
+    }
+
     private function importedRows(array $session,string $from,string $to,array $lotteries): array
     {
         $siteId=(int)$session['site_id']; $target=(int)($session['organization_id']??0); $out=[]; $seen=[];
+        $allowed=$target>0?array_values(array_unique(array_merge([$target],array_map('intval',OrganizationHierarchy::descendantIds($target))))):[];
         $batches=Db::name('agent_import_batches')->where('tenant_id',(int)($session['tenant_id']??1))->where('site_id',$siteId)->where('status','completed')->where('from_date','<=',$to)->where('to_date','>=',$from);
-        if($target>0)$batches->where('target_organization_id',$target);
         foreach($batches->order('id desc')->limit(20)->select()->toArray() as $batch){
+            $organizationMap=$this->importedOrganizationMap((int)$batch['id'],$siteId);
             $records=Db::name('agent_import_records')->where('batch_id',(int)$batch['id'])->where('entity_type','report_overview')->order('id asc')->select()->toArray(); if(!$records)continue;
             foreach($records as $record){ $payload=json_decode((string)$record['payload'],true); $sourceRows=$payload['response']['data']['rl']??[]; if(!is_array($sourceRows))continue;
             foreach($sourceRows as $source){
@@ -157,7 +174,13 @@ final class AgentReport
                 // not winnings. Exclude it from the betting report and never
                 // feed that timestamp into the monetary columns.
                 if((int)($source['iw']??0)===1||$amount<=0||$count<=0)continue;
-                $out[]=['id'=>0,'user_id'=>$pseudo,'username'=>$name,'organization_id'=>$target,'share_rate'=>0,'issue_no'=>$issue,'number_text'=>'0','amount'=>$amount,'odds'=>null,'win_amount'=>0,'rebate'=>0,'placed_at'=>$placed,'lottery'=>'福彩3D','drop_odds'=>null,'import_bet_count'=>$count];
+                // `mi`/`ai` is the external member id. Resolve it to the
+                // local organization created from that member's `pi` parent;
+                // only old batches without a tree snapshot fall back to the
+                // selected target organization.
+                $organizationId=(int)($organizationMap[trim((string)($source['mi']??''))]??$target);
+                if($allowed!==[]&&!in_array($organizationId,$allowed,true))continue;
+                $out[]=['id'=>0,'user_id'=>$pseudo,'username'=>$name,'organization_id'=>$organizationId,'share_rate'=>0,'issue_no'=>$issue,'number_text'=>'0','amount'=>$amount,'odds'=>null,'win_amount'=>0,'rebate'=>0,'placed_at'=>$placed,'lottery'=>'福彩3D','drop_odds'=>null,'import_bet_count'=>$count];
             }}
         }
         return $out;

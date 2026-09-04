@@ -81,6 +81,25 @@ final class AgentImport
         }
         return ['from'=>$start,'to'=>$end,'dates'=>[$from,$to],'source'=>'lottery_histories+grdnbt'];
     }
+
+    /** Snapshot the complete account tree below the logged-in source account.
+     * `gal` returns direct children; passing `pi` walks one parent at a time.
+     * Keeping each response makes the external parent relationship available
+     * later when accounts are materialized under any local target level.
+     */
+    private function snapshotAccountTree(string $base,string $ak,int $batchId,array $rootRows): int
+    {
+        $queue=[]; foreach($rootRows as $row){if(is_array($row)&&trim((string)($row['ai']??''))!=='')$queue[]=(string)$row['ai'];}
+        $seen=[];$total=0;$depth=0;
+        while($queue!==[]&&$depth<12){$next=[];foreach($queue as $parent){if(isset($seen[$parent]))continue;$seen[$parent]=true;
+            try{$page=1;$pages=1;do{$result=$this->call($base,$ak,'ag.ac','gal',['pn'=>$page,'ps'=>100,'lt'=>4,'pi'=>$parent]);$response=$result['response'];$data=$response['data']??[];$rows=(array)($data['al']??$data['list']??[]);
+                Db::name('agent_import_records')->insert(['batch_id'=>$batchId,'entity_type'=>'account_tree','external_id'=>$parent,'local_id'=>null,'action'=>'snapshot','payload'=>json_encode(['parent_external_id'=>$parent,'request'=>$result['request'],'response'=>$response],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES),'created_at'=>date('Y-m-d H:i:s')]);
+                $total+=count($rows); foreach($rows as $row){if(!is_array($row))continue;$type=(int)($row['tp']??6);$child=trim((string)($row['ai']??''));if($child!==''&&$type<6)$next[]=$child;} $tc=(int)($data['tc']??$data['total']??0);$pages=$tc>0?(int)ceil($tc/100):($rows!==[]?$page:0);$page++;
+            }while($page<=$pages&&$page<=200);
+            }catch(\Throwable $e){Db::name('agent_import_records')->insert(['batch_id'=>$batchId,'entity_type'=>'account_tree','external_id'=>$parent,'local_id'=>null,'action'=>'error','payload'=>json_encode(['parent_external_id'=>$parent,'error'=>$e->getMessage()],JSON_UNESCAPED_UNICODE),'created_at'=>date('Y-m-d H:i:s')]);}
+        }$queue=$next;$depth++;}
+        return $total;
+    }
     public function probe(Request $r): \think\response\Json { $s=$this->session($r); $id=(int)$r->post('profile_id'); $p=Db::name('agent_import_profiles')->where('id',$id)->where('tenant_id',(int)$s['tenant_id'])->find(); if(!$p)return $this->reply(null,'配置不存在',404); try{$login=$this->login($p); $ak=$login['ak']; $range=$this->resolveIssueRange($p['base_url'],$ak,date('Y-m-d'),date('Y-m-d'),4); $calls=[]; foreach([['ag.tz','gbl',['lt'=>4,'pn'=>1,'ps'=>1]],['ag.tz','gblr',['lt'=>4,'dnf'=>$range['from'],'dnt'=>$range['to'],'pn'=>1,'ps'=>1]],['ag.cd','gpbd',['lt'=>4,'dn'=>0]],['ag.cd','gdbd',['lt'=>4,'dn'=>0]],['ag.dr','grdnbt',['lt'=>4,'tp'=>0,'hc'=>1]]] as $spec){try{$calls[]=$this->call($p['base_url'],$ak,$spec[0],$spec[1],$spec[2]);}catch(\Throwable $e){$calls[]=['request'=>['a'=>$spec[0],'m'=>$spec[1]],'error'=>$e->getMessage()];}} Db::name('agent_import_profiles')->where('id',$id)->update(['last_login_at'=>date('Y-m-d H:i:s'),'last_probe_at'=>date('Y-m-d H:i:s'),'last_probe_status'=>'ok','last_probe_error'=>null]); return $this->reply(['profile_id'=>$id,'issue_range'=>$range,'calls'=>$calls],'接口探测完成');}catch(\Throwable $e){Db::name('agent_import_profiles')->where('id',$id)->update(['last_probe_at'=>date('Y-m-d H:i:s'),'last_probe_status'=>'failed','last_probe_error'=>mb_substr($e->getMessage(),0,500)]); return $this->reply(null,'探测失败：'.$e->getMessage(),502);} }
     /** Same batch crawl as the legacy method, with date values translated to issues. */
     public function createBatchResolved(Request $r): \think\response\Json
@@ -102,6 +121,8 @@ final class AgentImport
                     $counts[$type]=$count; continue;
                 }
                 $result=$this->call($profile['base_url'],$ak,$a,$m,$params);$response=$result['response'];$data=$response['data']??[];$rows=is_array($data)?(array)($data['rl']??$data['list']??$data['al']??$data):[];$counts[$type]=is_array($rows)?count($rows):0;Db::name('agent_import_records')->insert(['batch_id'=>$id,'entity_type'=>$type,'external_id'=>null,'local_id'=>null,'action'=>'snapshot','payload'=>json_encode(['request'=>$result['request'],'response'=>$response],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES),'created_at'=>date('Y-m-d H:i:s')]);}catch(\Throwable $e){$counts[$type]=0;Db::name('agent_import_records')->insert(['batch_id'=>$id,'entity_type'=>$type,'action'=>'error','payload'=>json_encode(['error'=>$e->getMessage()],JSON_UNESCAPED_UNICODE),'created_at'=>date('Y-m-d H:i:s')]);}}
+            $rootRecord=Db::name('agent_import_records')->where('batch_id',$id)->where('entity_type','accounts')->order('id desc')->find();
+            if($rootRecord){$rootPayload=json_decode((string)$rootRecord['payload'],true);$rootData=$rootPayload['response']['data']??[];$rootRows=(array)($rootData['al']??$rootData['list']??[]);$counts['account_tree']=$this->snapshotAccountTree($profile['base_url'],$ak,$id,$rootRows);}
             Db::name('agent_import_batches')->where('id',$id)->update(['status'=>'completed','external_counts'=>json_encode($counts,JSON_UNESCAPED_UNICODE),'finished_at'=>date('Y-m-d H:i:s'),'updated_at'=>date('Y-m-d H:i:s')]);
             return $this->reply(['id'=>$id,'counts'=>$counts,'issue_range'=>$range],'做账批次已完成，日期已转换为期号');
         } catch(\Throwable $e) { Db::name('agent_import_batches')->where('id',$id)->update(['status'=>'failed','error'=>mb_substr($e->getMessage(),0,2000),'finished_at'=>date('Y-m-d H:i:s'),'updated_at'=>date('Y-m-d H:i:s')]); return $this->reply(['id'=>$id],'做账失败：'.$e->getMessage(),502); }
