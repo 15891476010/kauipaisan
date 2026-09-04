@@ -372,6 +372,13 @@ final class UserBusiness
             if (str_contains($value,'组六')) return '组六胆拖';
             if (str_contains($value,'组三')) return '组三胆拖';
         }
+        // 定位玩法在明细中会被展开成三位号码，但其来源仍保留百/十/个
+        // 三个位置。优先按原始文本恢复定位级别，避免误标为直选。
+        $locatorCount=0;
+        foreach (['百','十','个'] as $locatorPosition) {
+            if (preg_match('/'.$locatorPosition.'位?\s*[0-9０-９]/u',$sourceText)===1) $locatorCount++;
+        }
+        if ($locatorCount>0) return [1=>'一码定位',2=>'二码定位',3=>'三码定位'][$locatorCount]??$locatorCount.'码定位';
         if (str_contains($value,'直选')||$value==='直') return '直';
         if ($value==='胆') return '独胆';
         if (str_contains($value,'组三')||str_contains($value,'组六')||str_contains($value,'组选')) {

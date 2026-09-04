@@ -96,13 +96,19 @@ export function SideBetRecords({
     if (value === "体") return "排列三";
     return value || "福彩3D";
   };
+  const rawPlayName = (detail: BetDetail) =>
+    String(detail.play_label || detail.play_type || detail.category || "投注").trim();
   const playName = (detail: BetDetail) => {
-    const raw = String(detail.play_label || detail.play_type || detail.category || "投注");
-    // The API may return 直/直选 (or a direct-play subtype) for the same
-    // catalog play. Keep them in one section so the detail table has one
-    // heading instead of splitting the same direct bets into separate blocks.
-    if (raw === "直" || raw.startsWith("直")) return "直";
-    if (raw === "组" || raw === "组选") return "组选";
+    const raw = rawPlayName(detail);
+    const source = String(detail.source_text || detail.original_source_text || detail.parsed_source_text || "");
+    const locatorCount = ["百", "十", "个"].filter((position) =>
+      new RegExp(`${position}位?\\s*[0-9０-９]`, "u").test(source),
+    ).length;
+    if (locatorCount > 0 && (raw === "直" || raw === "直选")) return (["", "一", "二", "三"] as const)[locatorCount] + "码定位";
+    // 参考站把直选作为完整分组标题；仅归一化精确的直选标签，避免把“直组”
+    // 或定位类玩法误并到直选分组中。
+    if (raw === "直" || raw === "直选") return "直选";
+    if (["组", "组选", "组三", "组六", "组3", "组6"].includes(raw)) return "组选";
     return raw;
   };
   const compactDetailNumber = (detail: BetDetail, play: string, source: string) => {
@@ -123,12 +129,24 @@ export function SideBetRecords({
   const displayDetailNumber = (detail: BetDetail) => {
     const source = detail.source_text || "";
     const play = playName(detail);
+    const rawPlay = rawPlayName(detail);
     const compact = compactDetailNumber(detail, play, source);
     if (compact) return compact;
     const sticky = source.match(/(\d{4,10})\s*(组三|组六)六码/u);
     if (sticky) return `${sticky[2] === "组三" ? "三" : "六"}${sticky[1]}`;
-    if (play.includes("组3") || play.includes("组6") || play.includes("组选")) {
-      return (detail.number_text || "").replace(/^[三六]/u, "");
+    if (play === "组选" || /^(组|组三|组六|组3|组6)$/u.test(rawPlay)) {
+      const value = String(detail.number_text || "")
+        .replace(/^(?:三|六)/u, "")
+        .replace(/(?:组三|组六|组选|组)$/u, "");
+      return value ? `${value}组` : "组";
+    }
+    if (play === "直选") {
+      const value = String(detail.number_text || "")
+        .replace(/直$/u, "");
+      return value ? `${value}直` : "直";
+    }
+    if (/^[一二三]码定位$/u.test(play)) {
+      return String(detail.number_text || "").replace(/直$/u, "") || "-";
     }
     if (play.includes("双飞") || source.includes("对子")) {
       const number = (detail.number_text || "")
@@ -140,6 +158,12 @@ export function SideBetRecords({
     if (detail.number_text === "000" && play.startsWith("和值")) return play;
     const value = detail.number_text || "";
     return /^\d{3}$/.test(value) ? String(Number(value)) : value || "-";
+  };
+  const renderDetailNumber = (detail: BetDetail) => {
+    const value = displayDetailNumber(detail);
+    const marked = value.match(/^(.*?)(直|组)$/u);
+    if (!marked) return <span>{value}</span>;
+    return <><span>{marked[1]}</span><em>{marked[2]}</em></>;
   };
   const orderedDetails = [...details].sort((left, right) => {
     const leftNumber = Number(displayDetailNumber(left).replace(/\D/g, ""));
@@ -347,7 +371,7 @@ export function SideBetRecords({
                         const cells = Array.from({ length: showLabels ? 5 : 6 }, (_, index) => chunk[index] || null);
                         const labelCell = (label: string) => showLabels ? <div className="record-detail-grid-label">{label}</div> : null;
                         return <div className={`record-detail-grid${showLabels ? "" : " continuation"}`} key={`${lottery}-${play}-${chunkIndex}`} style={{ gridTemplateColumns: "repeat(6, minmax(112px, 1fr))" }}>
-                          {labelCell("号码")}{cells.map((detail, index) => <div className={`record-detail-grid-value number${detail ? "" : " placeholder"}`} key={`number-${detail?.id || "empty"}-${index}`}>{detail ? <><span>{displayDetailNumber(detail)}</span>{!/(胆拖|包$)/u.test(play) && <em>{play}</em>}</> : null}</div>)}
+                          {labelCell("号码")}{cells.map((detail, index) => <div className={`record-detail-grid-value number${detail ? "" : " placeholder"}`} key={`number-${detail?.id || "empty"}-${index}`}>{detail ? renderDetailNumber(detail) : null}</div>)}
                           {labelCell("金额")}{cells.map((detail, index) => <div className={`record-detail-grid-value amount${detail ? "" : " placeholder"}`} key={`amount-${detail?.id || "empty"}-${index}`}>{detail?.amount || null}</div>)}
                           {labelCell("赔率")}{cells.map((detail, index) => <div className={`record-detail-grid-value odds${detail ? "" : " placeholder"}`} key={`odds-${detail?.id || "empty"}-${index}`}>{detail?.odds || null}</div>)}
                           {labelCell("中奖")}{cells.map((detail, index) => <div className={`record-detail-grid-value win${detail ? "" : " placeholder"}`} key={`win-${detail?.id || "empty"}-${index}`}>{detail && Number(detail.win_amount || 0) > 0 ? detail.win_amount : null}</div>)}

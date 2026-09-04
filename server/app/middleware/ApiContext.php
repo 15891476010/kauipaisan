@@ -13,6 +13,30 @@ use app\service\OrganizationHierarchy;
 
 final class ApiContext
 {
+    /**
+     * Read the shared Redis token store and transparently promote a token
+     * left in the legacy file store during the cache migration.
+     */
+    private function tokenSession(string $token): ?array
+    {
+        if ($token === '') return null;
+        $key = 'token:'.$token;
+        $session = Cache::get($key);
+        if (is_array($session)) return $session;
+        if (strtolower((string)env('CACHE_DRIVER','')) !== 'redis') return null;
+        try {
+            $legacy = Cache::store('file')->get($key);
+            if (is_array($legacy)) {
+                Cache::set($key, $legacy, (int)env('TOKEN_TTL',7200));
+                return $legacy;
+            }
+        } catch (\Throwable $e) {
+            // A missing legacy cache must not turn an authenticated request
+            // into a server error; the normal 401 path handles it.
+        }
+        return null;
+    }
+
     private function cors(Response $response): Response
     {
         return $response->header([
@@ -34,13 +58,13 @@ final class ApiContext
         if (str_contains($path, 'admin/') && !str_ends_with($path, 'admin/auth/login') && !str_ends_with($path, 'admin/auth/refresh')) {
             $authorization = (string)$request->header('authorization');
             $token = trim(str_ireplace('Bearer ', '', $authorization));
-            $session = $token !== '' ? Cache::get('token:' . $token) : null;
+            $session = $this->tokenSession($token);
             if (!is_array($session) || ($session['scope'] ?? '') !== 'admin') {
                 return $this->cors(json(['code'=>401,'message'=>'未登录或登录已过期','data'=>null,'request_id'=>bin2hex(random_bytes(8))], 401));
             }
         }
         if (str_starts_with($path, 'api/v1/agent/') && !str_contains($path, '/auth/') && !str_ends_with($path, '/agreement') && !str_ends_with($path, '/announcement') && !str_ends_with($path, '/lotteries')) {
-            $authorization = (string)$request->header('authorization'); $token = trim(str_ireplace('Bearer ', '', $authorization)); $agentSession = $token !== '' ? Cache::get('token:'.$token) : null;
+            $authorization = (string)$request->header('authorization'); $token = trim(str_ireplace('Bearer ', '', $authorization)); $agentSession = $this->tokenSession($token);
             if (!is_array($agentSession) || ($agentSession['scope']??'')!=='agent') return $this->cors(json(['code'=>401,'message'=>'未登录或登录已过期','data'=>null,'request_id'=>bin2hex(random_bytes(8))],401));
             if (in_array((string)($agentSession['account_table']??''),['site_admins','sites'],true)) {
                 if($token!=='')Cache::delete('token:'.$token);
@@ -79,7 +103,7 @@ final class ApiContext
         }
         $authorization = (string)$request->header('authorization');
         $token = trim(str_ireplace('Bearer ', '', $authorization));
-        $activeSession = $token !== '' ? Cache::get('token:'.$token) : null;
+        $activeSession = $this->tokenSession($token);
         // Keep the token alive while it is actively used. TOKEN_TTL is the
         // inactivity timeout (7200 seconds by default), so each authenticated
         // request, including heartbeat, slides the expiry window forward.
@@ -100,7 +124,7 @@ final class ApiContext
         }
         $authorization = (string)$request->header('authorization');
         $token = trim(str_ireplace('Bearer ', '', $authorization));
-        $session = $token !== '' ? Cache::get('token:' . $token) : null;
+        $session = $this->tokenSession($token);
         if (is_array($session)) AccountPresence::touch($token,$session);
         $method = strtoupper($request->method(true));
         $isNoise = str_contains($path, 'health') || str_contains($path, '/auth/heartbeat') || str_contains($path, '/wait') || str_contains($path, 'line-options') || str_contains($path, 'captcha') || str_contains($path, 'audit-logs') || str_contains($path, 'bet-details');
