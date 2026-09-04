@@ -88,6 +88,17 @@ final class BetAggregation
     private function canonicalToken(string $token,string $playType,string $source): array
     {
         $token=trim($token);$playType=trim($playType);$compact=preg_replace('/\s+/u','',$token)??$token;
+        // Some legacy/provider rows store the selected digits without the
+        // compact prefix (for example number_text=`654321`, play_type=`组三六码`).
+        // Grouped bets are order-independent, so restore the same canonical
+        // expression used by settlement and sort the selection before making
+        // the aggregation key. Direct bets intentionally do not enter this
+        // branch and keep their positional order.
+        if(preg_match('/^[0-9]{2,10}$/',$compact)===1&&preg_match('/^(组三|组六)(?:[一二两三四五六七八九1-9]码)?$/u',$playType,$groupPlay)===1){
+            $family=$groupPlay[1]==='组三'?'三':'六';
+            $digits=strlen($compact)===3?$this->sortedDigits($compact):$this->sortedUniqueDigits($compact);
+            return ['play_type'=>$playType,'position'=>'','selection'=>$digits,'match_number'=>$family.$digits,'match_source'=>$source];
+        }
         if(preg_match('/^(三赖|六赖|三|六|复|豹)([0-9]{1,10})$/u',$compact,$match)){
             $digits=$this->sortedUniqueDigits($match[2]);
             return ['play_type'=>$playType!==''?$playType:match($match[1]){'三','三赖'=>'组三','六','六赖'=>'组六','复'=>'复式','豹'=>'豹子'},'position'=>'','selection'=>$digits,'match_number'=>$match[1].$digits,'match_source'=>$source];

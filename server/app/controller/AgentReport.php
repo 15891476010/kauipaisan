@@ -86,6 +86,10 @@ final class AgentReport
         OrganizationHierarchy::applyUserScope($query,$session,'d.user_id');
         if($lotteries!==[]) $query->whereIn('s.lottery',$lotteries);
         $rows=$query->field('d.id,d.user_id,u.username,u.organization_id,u.interception_rate AS share_rate,d.issue_no,d.number_text,d.amount,d.odds,d.win_amount,d.rebate,d.placed_at,s.lottery,s.drop_odds')->select()->toArray();
+        // Imported batches keep the reference report snapshot until it is
+        // materialized into local bet tables. Include those rows so a newly
+        // created总代理 immediately sees the selected date range and members.
+        $rows=array_merge($rows,$this->importedRows($session,$from,$to,$lotteries));
         if($rows===[]) return [];
         $detailIds=array_map(static fn(array $row): int=>(int)$row['id'],$rows);
         $interceptions=Db::name('agent_interceptions')->whereIn('bet_detail_id',$detailIds)->whereNull('released_at')->field('bet_detail_id,SUM(intercepted_amount) AS intercepted_amount,SUM(bet_amount) AS intercepted_base')->group('bet_detail_id')->select()->toArray();
@@ -127,13 +131,36 @@ final class AgentReport
             $agentProfit=$shareProfit;
             $numbers=preg_split('/[\s,，]+/u',trim((string)$row['number_text']),-1,PREG_SPLIT_NO_EMPTY)?:[];
             $houseProfit=-$memberProfit;
-            $row['metrics']=['bet_count'=>max(1,count($numbers)),'amount'=>$amount,'win_amount'=>$win,'water'=>$rebate,'member_profit'=>$memberProfit,'share_amount'=>$occupationAmount,'share_profit'=>$shareProfit,'offline_water'=>0.0,'agent_water'=>$water,'agent_profit'=>$agentProfit,'platform_amount'=>max(0,$amount-$intercepted),'platform_profit'=>$houseProfit-$shareProfit,
+            $row['metrics']=['bet_count'=>max(1,(int)($row['import_bet_count']??count($numbers))),'amount'=>$amount,'win_amount'=>$win,'water'=>$rebate,'member_profit'=>$memberProfit,'share_amount'=>$occupationAmount,'share_profit'=>$shareProfit,'offline_water'=>0.0,'agent_water'=>$water,'agent_profit'=>$agentProfit,'platform_amount'=>max(0,$amount-$intercepted),'platform_profit'=>$houseProfit-$shareProfit,
                 // Hidden aggregation inputs: occupation is calculated on the
                 // member's net P/L after grouping, never by summing absolute
                 // P/L for individual bet lines.
                 'share_base'=>$allocationAmount,'share_rate'=>(float)($allocations[0]['share_rate']??0),'water_rate'=>$waterRate,'has_share'=>$hasShare?1:0];
         }
         unset($row); return $rows;
+    }
+
+    private function importedRows(array $session,string $from,string $to,array $lotteries): array
+    {
+        $siteId=(int)$session['site_id']; $target=(int)($session['organization_id']??0); $out=[]; $seen=[];
+        $batches=Db::name('agent_import_batches')->where('tenant_id',(int)($session['tenant_id']??1))->where('site_id',$siteId)->where('status','completed')->where('from_date','<=',$to)->where('to_date','>=',$from);
+        if($target>0)$batches->where('target_organization_id',$target);
+        foreach($batches->order('id desc')->limit(20)->select()->toArray() as $batch){
+            $records=Db::name('agent_import_records')->where('batch_id',(int)$batch['id'])->where('entity_type','report_overview')->order('id asc')->select()->toArray(); if(!$records)continue;
+            foreach($records as $record){ $payload=json_decode((string)$record['payload'],true); $sourceRows=$payload['response']['data']['rl']??[]; if(!is_array($sourceRows))continue;
+            foreach($sourceRows as $source){
+                if(!is_array($source))continue; $issue=trim((string)($source['dn']??$source['issue']??'')); $external=trim((string)($source['bli']??$source['bn']??''));
+                $key=$issue.'|'.$external; if($external!==''&&isset($seen[$key]))continue; if($external!=='')$seen[$key]=true;
+                $stamp=(int)($source['at']??0); if($stamp>20000000000)$stamp=(int)floor($stamp/1000); $placed=$stamp>0?date('Y-m-d H:i:s',$stamp):((string)$batch['from_date'].' 00:00:00'); $day=substr($placed,0,10); if($day<$from||$day>$to)continue;
+                $name=trim((string)($source['an']??'外部会员')); $pseudo=-abs(crc32($siteId.'|'.$name)); $amount=(float)($source['am']??0); $count=(int)($source['bc']??0);
+                // iw=1 is a withdrawn row and wt is its withdrawal timestamp,
+                // not winnings. Exclude it from the betting report and never
+                // feed that timestamp into the monetary columns.
+                if((int)($source['iw']??0)===1||$amount<=0||$count<=0)continue;
+                $out[]=['id'=>0,'user_id'=>$pseudo,'username'=>$name,'organization_id'=>$target,'share_rate'=>0,'issue_no'=>$issue,'number_text'=>'0','amount'=>$amount,'odds'=>null,'win_amount'=>0,'rebate'=>0,'placed_at'=>$placed,'lottery'=>'福彩3D','drop_odds'=>null,'import_bet_count'=>$count];
+            }}
+        }
+        return $out;
     }
 
     /** @param array<int,array<int,array<string,mixed>>> $cache */
