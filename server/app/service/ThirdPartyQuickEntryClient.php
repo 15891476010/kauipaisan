@@ -14,6 +14,10 @@ final class ThirdPartyQuickEntryClient
 {
     private const CACHE_PREFIX = 'quick-entry:third-party:';
     private const STATS_TTL = 7776000;
+    private const RECOGNIZE_TIMEOUT_MS = 1200;
+    private const MAX_RECOGNIZE_ROUNDS = 2;
+    private const MAX_RECOGNIZE_WALL_MS = 5000;
+    private const HEALTH_WORKER_LOCK_TTL = 180;
 
     public function __construct(private readonly array $config, private readonly ?ThirdPartyCaptchaRecognizer $captcha = null)
     {
@@ -25,10 +29,8 @@ final class ThirdPartyQuickEntryClient
     {
         $accounts = array_values(array_filter((array)($this->config['accounts'] ?? []), static fn($a): bool => is_array($a) && trim((string)($a['username'] ?? '')) !== '' && (string)($a['password'] ?? '') !== ''));
         if ($accounts === []) throw new \RuntimeException('三方账号池为空');
-        // Reuse authenticated accounts first. Previously every request
-        // shuffled the complete pool, so it often selected an account without
-        // a cached AK and spent 15+ seconds fetching/OCRing a captcha even
-        // though another account already had a valid token.
+        // Reuse authenticated accounts first and rotate the starting position
+        // so concurrent users do not all hammer the first account.
         usort($accounts, function(array $left, array $right): int {
             $leftKey=$this->accountKey($left);$rightKey=$this->accountKey($right);
             $leftToken=$this->cachedToken($leftKey)!==null?0:1;$rightToken=$this->cachedToken($rightKey)!==null?0:1;
@@ -36,59 +38,51 @@ final class ThirdPartyQuickEntryClient
             $leftStats=$this->stats($leftKey);$rightStats=$this->stats($rightKey);
             return (float)($leftStats['last_used_microtime']??0)<=>(float)($rightStats['last_used_microtime']??0);
         });
-        $lastError = null;
-        $deadline=microtime(true)+max(20,min(40,(int)($this->config['request_timeout']??15)*2+10));
-        $loginAttempts=0;
-        while (microtime(true)<$deadline) {
-            $earliest = null;
-            foreach ($accounts as $account) {
-                if(microtime(true)>=$deadline)break;
-                $accountKey = $this->accountKey($account);
-                $token = $this->cachedToken($accountKey);
-                if ($token === null) {
-                    if($loginAttempts>=2)continue;
-                    $loginAttempts++;
-                    $loginStarted=microtime(true);
-                    try { $token = $this->login($account, $accountKey); $this->markLogin($accountKey,$account,$token,$loginStarted); }
-                    catch (\Throwable $e) { $this->markLoginFailure($accountKey,$account,$e,$loginStarted);$lastError = $e; continue; }
+        $offset=$this->nextAccountOffset(count($accounts));
+        if($offset>0)$accounts=array_merge(array_slice($accounts,$offset),array_slice($accounts,0,$offset));
+        $lastReasons=[];$hadToken=false;$requestStarted=microtime(true);
+        // Try one account at a time. The provider applies a per-account and
+        // sometimes per-IP request interval; fanning out the whole pool at
+        // once causes its anti-flood gate to delay every request. Rotation is
+        // still fast because each attempt is capped at 1.2s and the API now
+        // runs with multiple workers.
+        for($round=0;$round<self::MAX_RECOGNIZE_ROUNDS;$round++) {
+            foreach($accounts as $account){
+                if ((microtime(true)-$requestStarted)*1000 >= self::MAX_RECOGNIZE_WALL_MS) { $lastReasons[]='本次识别达到总时限'; break 2; }
+                $accountKey=$this->accountKey($account);$token=$this->cachedToken($accountKey);
+                if($token===null){
+                    // Login is deliberately kept out of the user request.
+                    // The health worker refreshes expired accounts.
+                    $this->scheduleBackgroundHealthCheck();$lastReasons[]=(string)$account['username'].'：AK 不在线，已转后台登录';continue;
                 }
-                $wait = $this->throttleWait($accountKey, $account);
-                if ($wait > 0) {
-                    $earliest = $earliest === null ? $wait : min($earliest, $wait);
-                    continue;
+                $hadToken=true;$wait=$this->throttleWait($accountKey,$account);
+                if($wait>0){$lastReasons[]=(string)$account['username'].'：请求频率受限';continue;}
+                $started=microtime(true);$this->markAttempt($accountKey,$account,$token);
+                try{$result=$this->recognizeWithToken($token,$text,$dlt,self::RECOGNIZE_TIMEOUT_MS);}
+                catch(\Throwable $e){$this->markFailure($accountKey,$account,$e->getMessage(),$started);$lastReasons[]=(string)$account['username'].'：'.$e->getMessage();continue;}
+                if(ThirdPartyQuickEntryUtils::tokenRejected($result)){
+                    $this->forgetToken($accountKey);$this->markFailure($accountKey,$account,'token_rejected',$started);
+                    $this->scheduleBackgroundHealthCheck();$lastReasons[]=(string)$account['username'].'：AK 已失效，已转后台登录';continue;
                 }
-                try {
-                    $started=microtime(true);$this->markAttempt($accountKey,$account,$token);
-                    $result = $this->recognizeWithToken($token, $text, $dlt);
-                    if (ThirdPartyQuickEntryUtils::tokenRejected($result)) {
-                        $this->markFailure($accountKey,$account,'AK 已失效，正在重新登录',$started);
-                        $this->forgetToken($accountKey);
-                        $loginStarted=microtime(true);
-                        $token = $this->login($account, $accountKey);
-                        $this->markLogin($accountKey,$account,$token,$loginStarted);
-                        $started=microtime(true);$this->markAttempt($accountKey,$account,$token);
-                        $result = $this->recognizeWithToken($token, $text, $dlt);
-                    }
-                    // A provider-side frequency limit is transport capacity,
-                    // not a betting-text error. Rotate to another account;
-                    // if every account is limited, the caller handles this as
-                    // an unavailable provider and keeps the message hidden.
-                    if (ThirdPartyQuickEntryUtils::rateLimited($result)) {
-                        $this->markFailure($accountKey,$account,'三方识别请求频率受限',$started);
-                        $lastError = new \RuntimeException('三方识别请求频率受限');
-                        continue;
-                    }
-                    $this->markCall($accountKey, $account);
-                    $this->markSuccess($accountKey,$account,$token,$started);
-                    $result['_account']=['id'=>(string)($account['id']??''),'username'=>(string)$account['username'],'ak'=>$token];
-                    return $result;
-                } catch (\Throwable $e) { $this->markFailure($accountKey,$account,$e->getMessage(),$started??microtime(true));$lastError = $e; }
+                if(ThirdPartyQuickEntryUtils::rateLimited($result)){$this->markFailure($accountKey,$account,'三方识别请求频率受限',$started);$lastReasons[]=$account['username'].'：三方识别请求频率受限';continue;}
+                $this->markCall($accountKey,$account);$this->markSuccess($accountKey,$account,$token,$started);$result['_account']=['id'=>(string)($account['id']??''),'username'=>(string)$account['username'],'ak'=>$token];return $result;
             }
-            if ($earliest === null) throw $lastError ?? new \RuntimeException('三方识别调用失败');
-            $sleep=min(3.0,max(0.001,$earliest),max(0.0,$deadline-microtime(true)));
-            if($sleep>0)usleep((int)($sleep*1000000));
+            if(!$hadToken){$this->scheduleBackgroundHealthCheck();}
         }
-        throw new \RuntimeException('三方识别总耗时超过40秒'.($lastError?'：'.$lastError->getMessage():''));
+        $reason='三方识别服务暂时繁忙，请稍后重试';
+        if($lastReasons!==[]){
+            $details=implode('；',array_values(array_unique(array_map('strval',$lastReasons))));
+            // Keep account/AK rotation diagnostics server-side. The user
+            // only needs an actionable recognition prompt, never credentials,
+            // token state, account names, or upstream timeout details.
+            error_log('third-party quick recognition exhausted: '.mb_substr($details,0,500));
+        }
+        // Return a provider-shaped failure instead of throwing after all
+        // accounts are exhausted. Existing user preview code can therefore
+        // render the precise reason and never fall back to a misleading local
+        // parse or leave the page waiting on a synchronous login.
+        $visible='识别服务暂时不可用，请点击“生成”重试';
+        return ['code'=>503,'message'=>$visible,'data'=>['rl'=>[['isSuccess'=>0,'txt'=>$visible,'message'=>$visible,'reason'=>$visible]],'ta'=>0,'tc'=>0]];
     }
 
     /** @return array{accounts:array<int,array<string,mixed>>,current_account:?array<string,mixed>} */
@@ -224,17 +218,17 @@ final class ThirdPartyQuickEntryClient
     }
 
     /** @return array<string,mixed> */
-    private function recognizeWithToken(string $token, string $text, int $dlt): array
+    private function recognizeWithToken(string $token, string $text, int $dlt, ?int $timeoutMs = null): array
     {
         $bt = ThirdPartyQuickEntryUtils::encodeBetText($text);
-        return $this->postEnvelope((string)($this->config['recognize_endpoint'] ?? '/mb/'), ['a'=>'mb.tz','m'=>'dct','ak'=>$token,'dlt'=>$dlt,'bt'=>$bt]);
+        return $this->postEnvelope((string)($this->config['recognize_endpoint'] ?? '/mb/'), ['a'=>'mb.tz','m'=>'dct','ak'=>$token,'dlt'=>$dlt,'bt'=>$bt], null, $timeoutMs);
     }
 
     /** @return array<string,mixed> */
-    private function postEnvelope(string $endpoint, array $payload, ?string $cookieJar = null): array
+    private function postEnvelope(string $endpoint, array $payload, ?string $cookieJar = null, ?int $timeoutMs = null): array
     {
         $body = ThirdPartyQuickEntryUtils::encodeEnvelope($payload);
-        $response = $this->request('POST', $this->url($endpoint), $body, ['Content-Type: application/x-www-form-urlencoded'], $cookieJar);
+        $response = $this->request('POST', $this->url($endpoint), $body, ['Content-Type: application/x-www-form-urlencoded'], $cookieJar, $timeoutMs);
         if ($response['status'] < 200 || $response['status'] >= 300) {
             throw new \RuntimeException('三方接口 HTTP 状态异常: '.(int)$response['status']);
         }
@@ -242,11 +236,13 @@ final class ThirdPartyQuickEntryClient
     }
 
     /** @return array{status:int,body:string} */
-    private function request(string $method, string $url, ?string $body, array $headers, ?string $cookieJar = null): array
+    private function request(string $method, string $url, ?string $body, array $headers, ?string $cookieJar = null, ?int $timeoutMs = null): array
     {
         $ch = curl_init($url);
         if ($ch === false) throw new \RuntimeException('无法初始化三方请求');
-        $options = [CURLOPT_RETURNTRANSFER=>true, CURLOPT_FOLLOWLOCATION=>true, CURLOPT_TIMEOUT=>(int)$this->config['request_timeout'], CURLOPT_CONNECTTIMEOUT=>5, CURLOPT_HTTPHEADER=>$headers];
+        $options = [CURLOPT_RETURNTRANSFER=>true, CURLOPT_FOLLOWLOCATION=>true, CURLOPT_HTTPHEADER=>$headers];
+        if($timeoutMs!==null){$options[CURLOPT_TIMEOUT_MS]=max(100,$timeoutMs);$options[CURLOPT_CONNECTTIMEOUT_MS]=min(1200,max(100,$timeoutMs));}
+        else {$options[CURLOPT_TIMEOUT]=(int)$this->config['request_timeout'];$options[CURLOPT_CONNECTTIMEOUT]=5;}
         if ($method === 'POST') { $options[CURLOPT_POST] = true; $options[CURLOPT_POSTFIELDS] = $body ?? ''; }
         if ($cookieJar) { $options[CURLOPT_COOKIEJAR] = $cookieJar; $options[CURLOPT_COOKIEFILE] = $cookieJar; }
         curl_setopt_array($ch, $options); $responseBody = curl_exec($ch); $status = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE); $error = curl_error($ch); curl_close($ch);
@@ -263,6 +259,19 @@ final class ThirdPartyQuickEntryClient
     private function accountKey(array $account): string
     {
         return hash('sha256', (string)$this->config['base_url'].'|'.(string)$account['username'].'|'.(string)$account['password']);
+    }
+    private function nextAccountOffset(int $count): int
+    {
+        if($count<2)return 0;
+        $path=rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.'quick-entry-account-cursor-'.hash('sha256',(string)$this->config['base_url']);
+        $handle=@fopen($path,'c+');
+        if($handle===false)return random_int(0,$count-1);
+        $offset=0;
+        if(@flock($handle,LOCK_EX)){
+            $raw=stream_get_contents($handle);$current=is_string($raw)?(int)trim($raw):0;$offset=$current%$count;
+            ftruncate($handle,0);rewind($handle);fwrite($handle,(string)($current+1));fflush($handle);flock($handle,LOCK_UN);
+        }
+        fclose($handle);return $offset;
     }
     private function cachedToken(string $accountKey): ?string { $value=$this->tokenInfo($accountKey);return $value!==null?(string)$value['ak']:null; }
     private function tokenInfo(string $accountKey): ?array { $value=Cache::get(self::CACHE_PREFIX.'token:'.$accountKey);return is_array($value)&&(int)($value['expires_at']??0)>time()?$value:null; }
@@ -346,6 +355,15 @@ final class ThirdPartyQuickEntryClient
     {
         $stats=$this->stats($accountKey);
         $stats['last_health_at']=date('Y-m-d H:i:s');$stats['last_health_status']=$status;$stats['last_health_error']=$status==='failed'?mb_substr($message,0,200):'';$stats['last_health_duration_ms']=(int)round((microtime(true)-$started)*1000);$this->saveStats($accountKey,$stats);
+    }
+    private function scheduleBackgroundHealthCheck(): void
+    {
+        // A full pool check may include several captcha/login attempts. Keep
+        // the deduplication lock for the whole expected run so a burst of
+        // user requests does not fork many identical health workers.
+        $lock=self::CACHE_PREFIX.'health-worker';if(Cache::get($lock))return;Cache::set($lock,1,self::HEALTH_WORKER_LOCK_TTL);
+        $think=dirname(__DIR__,2).DIRECTORY_SEPARATOR.'think';$php=is_file('/www/server/php/82/bin/php')?'/www/server/php/82/bin/php':PHP_BINARY;
+        $command='nohup '.escapeshellarg($php).' '.escapeshellarg($think).' quick-entry:health-check >/dev/null 2>&1 &';@shell_exec($command);
     }
     private function throttleState(string $accountKey,array $account): array
     {

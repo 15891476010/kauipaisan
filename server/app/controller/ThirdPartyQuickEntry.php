@@ -87,7 +87,8 @@ final class ThirdPartyQuickEntry
         if(!in_array($lottery,['福彩3D','排列三'],true))return $this->reply(null,'彩种无效',422);
         $config=ThirdPartyQuickEntryConfig::load((int)$session['tenant_id'],(int)$session['site_id']);
         if(!(bool)$config['enabled'])return $this->reply(null,'三方快速录入未启用',409);
-        $result=(new ThirdPartyQuickEntryClient($config))->recognize($text,$lottery==='排列三'?3:4);
+        try{$result=(new ThirdPartyQuickEntryClient($config))->recognize($text,$lottery==='排列三'?3:4);}
+        catch(\Throwable $error){$reason='识别服务暂时不可用，请点击“生成”重试';return $this->reply(['provider'=>'third_party','code'=>-1,'message'=>$reason,'result_list'=>[],'total_amount'=>0,'total_count'=>0],$reason,503);}
         $data=(array)($result['data']??[]);
         return $this->reply(['provider'=>'third_party','code'=>ThirdPartyQuickEntryUtils::responseCode($result),'message'=>(string)($result['message']??''),'code_info_list'=>$data['cil']??[],'text_statistics'=>$data['ts']??[],'blur_code_info_list'=>$data['bcil']??[],'result_list'=>$data['rl']??[],'total_amount'=>$data['ta']??0,'total_count'=>$data['tc']??0]);
     }

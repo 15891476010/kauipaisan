@@ -6,6 +6,7 @@ Route::group('api/v1', static function () {
     Route::get('branding', 'Branding/index');
     Route::get('security-policy', 'SecuritySettings/policy');
     Route::post('admin/auth/login', 'Auth/adminLogin');
+    Route::post('admin/auth/refresh', 'Auth/refresh');
     Route::post('admin/auth/logout', 'Auth/logout');
     Route::post('admin/auth/heartbeat', 'Auth/heartbeat');
     Route::get('admin/auth/menus', 'Auth/menus');
@@ -14,11 +15,13 @@ Route::group('api/v1', static function () {
     Route::get('admin/system-settings/branding', 'Branding/adminSettings');
     Route::put('admin/system-settings/branding', 'Branding/saveAdminSettings');
     Route::post('user/auth/login', 'Auth/userLogin');
+    Route::post('user/auth/refresh', 'Auth/refresh');
     Route::post('user/auth/logout', 'Auth/logout');
     Route::post('user/auth/heartbeat', 'Auth/heartbeat');
     Route::get('user/auth/captcha', 'Auth/captcha');
     Route::post('user/auth/captcha/verify', 'Auth/verifyCaptcha');
     Route::post('agent/auth/login', 'Auth/agentLogin');
+    Route::post('agent/auth/refresh', 'Auth/refresh');
     Route::post('agent/auth/logout', 'Auth/logout');
     Route::post('agent/auth/heartbeat', 'Auth/heartbeat');
     Route::post('agent/auth/password', 'Auth/changeAgentPassword');
@@ -131,8 +134,6 @@ Route::group('api/v1', static function () {
     Route::delete('admin/site-users/:id', 'Resource/delete')->append(['resource' => 'site-users']);
     // Keep the collection route exact so `/admin/bet-records/batch-options`
     // reaches AdminBetBatch instead of being swallowed by Resource/index.
-    Route::get('admin/bet-aggregation', 'BetAggregation/index')->completeMatch();
-    Route::get('admin/bet-aggregation/details', 'BetAggregation/details')->completeMatch();
     Route::get('admin/bet-records', 'Resource/index')->append(['resource' => 'bet-records'])->completeMatch();
     Route::get('admin/bet-details/batch-options', 'AdminBetBatch/options');
     Route::put('admin/bet-details/batch-replace', 'AdminBetBatch/replace');
@@ -178,6 +179,17 @@ Route::group('api/v1', static function () {
     Route::post('admin/system-settings/third-party-quick-entry/accounts/login', 'ThirdPartyQuickEntry/loginAccount');
     Route::post('admin/system-settings/third-party-quick-entry/accounts/:accountId/login', 'ThirdPartyQuickEntry/loginAccount')
         ->pattern(['accountId'=>'[A-Za-z0-9_.-]+']);
+    Route::get('admin/agent-import/profiles', 'AgentImport/profiles');
+    Route::post('admin/agent-import/profiles', 'AgentImport/saveProfile');
+    Route::post('admin/agent-import/probe', 'AgentImport/probe');
+    // Keep the credential detail route ahead of the collection route and
+    // require an exact match for the collection path. Otherwise ThinkPHP
+    // treats /batches/:id/credentials as /batches and returns data.list.
+    Route::get('admin/agent-import/batches/:id/credentials', 'AgentImportMaterialize/credentials')
+        ->pattern(['id'=>'\\d+']);
+    Route::get('admin/agent-import/batches', 'AgentImport/batches')->completeMatch();
+    Route::post('admin/agent-import/batches', 'AgentImportMaterialize/createBatch');
+    Route::post('admin/agent-import/rollback', 'AgentImportMaterialize/rollback');
     Route::get('admin/lottery-history/:id', 'Lottery/history');
     Route::put('admin/lottery-history/:id', 'Lottery/updateHistory');
     Route::post('admin/lotteries/:id/copy-odds', 'Lottery/copyOdds');

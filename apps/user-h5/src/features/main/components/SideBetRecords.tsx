@@ -60,12 +60,29 @@ export function SideBetRecords({
     setDetailRecord(record);
     setDetailLoading(true);
     try {
-      const result = await getBetDetails({
+      const detailQuery = {
         submission_id: record.id,
-        page: 1,
         page_size: 100,
-      });
-      setDetails(result.data?.data?.list || []);
+      };
+      const firstResult = await getBetDetails({ ...detailQuery, page: 1 });
+      const firstPage = firstResult.data?.data?.list || [];
+      const total = Number(firstResult.data?.data?.total || firstPage.length);
+      const pageSize = Math.max(1, Number(firstResult.data?.data?.page_size || detailQuery.page_size));
+      const pageCount = Math.ceil(total / pageSize);
+      if (pageCount <= 1 || firstPage.length >= total) {
+        setDetails(firstPage.slice(0, total));
+        return;
+      }
+      const remainingPages = await Promise.all(
+        Array.from({ length: pageCount - 1 }, (_, index) =>
+          getBetDetails({ ...detailQuery, page: index + 2 }),
+        ),
+      );
+      const allDetails = [
+        ...firstPage,
+        ...remainingPages.flatMap((pageResponse) => pageResponse.data?.data?.list || []),
+      ];
+      setDetails(allDetails.slice(0, total));
     } catch (error) {
       setDetails([]);
       message.error(apiErrorMessage(error, "注单详情加载失败"));
@@ -123,7 +140,8 @@ export function SideBetRecords({
     }
     if (detail.number_text === "000" && play.startsWith("跨度")) return `跨${play.slice(2)}`;
     if (detail.number_text === "000" && play.startsWith("和值")) return play;
-    const value = detail.number_text || "";
+    let value = detail.number_text || "";
+    if (play === "直" || play.startsWith("直")) value = value.replace(/直$/u, "");
     return /^\d{3}$/.test(value) ? String(Number(value)) : value || "-";
   };
   const orderedDetails = [...details].sort((left, right) => {

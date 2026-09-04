@@ -18,3 +18,13 @@ server/runtime/
 server/vendor/
 apps/*/node_modules/
 apps/*/dist/
+
+# Backup files and directories (all levels)
+**/*[Bb][Aa][Cc][Kk][Uu][Pp]*
+**/*备份*
+*.bak*
+*.backup*
+*.orig*
+*.old*
+*.save*
+*~

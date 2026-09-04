@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Empty, Modal, Switch } from "antd";
+import { App as AntdApp, Empty, Modal, Switch } from "antd";
 import { InfoCircleOutlined, SearchOutlined } from "@ant-design/icons";
 import { getBetDetails, getBetRecords, type BetDetail, type BetRecord } from "../../../api/user";
 import { apiErrorMessage } from "../../../utils/request";
@@ -47,6 +47,7 @@ function groupPlayDetails(details: BetDetail[]) {
 }
 
 export function RecordsPage() {
+  const { message } = AntdApp.useApp();
   const dates = useMemo(() => dateOptions(), []);
   const [records, setRecords] = useState<BetRecord[]>([]);
   const [source, setSource] = useState("");
@@ -66,15 +67,25 @@ export function RecordsPage() {
   const [textRecord, setTextRecord] = useState<BetRecord | null>(null);
   const [textMode, setTextMode] = useState<"original" | "formatted">("original");
 
-  const loadRecords = (nextPage = 1) => {
+  const loadRecords = (
+    nextPage = 1,
+    range?: { from: string; to: string },
+  ) => {
+    const queryFrom = range?.from ?? from;
+    const queryTo = range?.to ?? to;
+    if (queryFrom > queryTo) {
+      setError("起始时间不能晚于结束时间");
+      message.error("起始时间不能晚于结束时间");
+      return;
+    }
     const tableWrap = document.querySelector<HTMLElement>(".records-page-table-wrap");
     if (tableWrap) tableWrap.scrollTop = 0;
     setLoading(true);
     setError("");
     getBetRecords({
       source,
-      from,
-      to,
+      from: queryFrom,
+      to: queryTo,
       status: status === "all" ? undefined : status,
       page: nextPage,
       page_size: PAGE_SIZE,
@@ -130,12 +141,32 @@ export function RecordsPage() {
     setDetailWinningOnly(winningOnly);
     setDetailLoading(true);
     setDetails([]);
-    getBetDetails({
+    const detailQuery = {
       submission_id: record.submission_id ?? record.id,
-      page: 1,
       page_size: 100,
-    })
-      .then((response) => setDetails(response.data?.data?.list || []))
+    };
+    getBetDetails({ ...detailQuery, page: 1 })
+      .then(async (response) => {
+        const data = response.data?.data;
+        const firstPage = data?.list || [];
+        const total = Number(data?.total || firstPage.length);
+        const pageSize = Math.max(1, Number(data?.page_size || detailQuery.page_size));
+        const pageCount = Math.ceil(total / pageSize);
+        if (pageCount <= 1 || firstPage.length >= total) {
+          setDetails(firstPage.slice(0, total));
+          return;
+        }
+        const remainingPages = await Promise.all(
+          Array.from({ length: pageCount - 1 }, (_, index) =>
+            getBetDetails({ ...detailQuery, page: index + 2 }),
+          ),
+        );
+        const allDetails = [
+          ...firstPage,
+          ...remainingPages.flatMap((pageResponse) => pageResponse.data?.data?.list || []),
+        ];
+        setDetails(allDetails.slice(0, total));
+      })
       .catch(() => setDetails([]))
       .finally(() => setDetailLoading(false));
   };
@@ -187,7 +218,11 @@ export function RecordsPage() {
           <select
             id="records-from"
             value={from}
-            onChange={(event) => setFrom(event.target.value)}
+            onChange={(event) => {
+              const nextFrom = event.target.value;
+              setFrom(nextFrom);
+              loadRecords(1, { from: nextFrom, to });
+            }}
           >
             {dates.map((date) => <option key={`from-${date}`} value={date}>{date}</option>)}
           </select>
@@ -195,7 +230,11 @@ export function RecordsPage() {
           <select
             id="records-to"
             value={to}
-            onChange={(event) => setTo(event.target.value)}
+            onChange={(event) => {
+              const nextTo = event.target.value;
+              setTo(nextTo);
+              loadRecords(1, { from, to: nextTo });
+            }}
           >
             {dates.map((date) => <option key={`to-${date}`} value={date}>{date}</option>)}
           </select>

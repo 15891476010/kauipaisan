@@ -29,6 +29,7 @@ final class AccountPresence
                 'location'=>$location,
                 'device'=>self::device((string)$request->header('user-agent')),
                 'user_agent'=>mb_substr((string)$request->header('user-agent'),0,500),
+                'session_data'=>json_encode($session, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES),
                 'login_at'=>$loginAt?:$now,
                 'last_seen_at'=>$now,
             ]);

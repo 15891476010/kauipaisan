@@ -8,7 +8,7 @@
     "dev:admin": "npm --prefix apps/admin-web run dev -- --host 0.0.0.0 --port 5173",
     "dev:user": "npm --prefix apps/user-web run dev -- --host 0.0.0.0 --port 5174",
     "dev:agent": "npm --prefix apps/agent-web run dev -- --host 0.0.0.0 --port 5176",
-    "build": "npm --prefix apps/admin-web run build && npm --prefix apps/user-web run build && npm --prefix apps/agent-web run build",
+    "build": "npm --prefix apps/admin-web run build && npm --prefix apps/user-web run build && npm --prefix apps/user-pc run build && npm --prefix apps/user-h5 run build && npm --prefix apps/agent-web run build",
     "db:status": "./scripts/php think migrate:status",
     "db:upgrade": "./scripts/php think migrate:run"
   },

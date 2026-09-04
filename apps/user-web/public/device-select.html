@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <title>选择访问版本</title>
+  <style>
+    *{box-sizing:border-box}html,body{width:100%;height:100%;margin:0}
+    body{font-family:Arial,"Microsoft YaHei",sans-serif;background:#fff}
+    html:not(.show-device-select) body{visibility:hidden}
+    .device-select{display:flex;flex-direction:column;width:100vw;height:100dvh;min-height:480px}
+    .device-select a{display:flex;flex:1;flex-direction:column;align-items:center;justify-content:center;gap:18px;text-decoration:none;font-size:clamp(32px,10vw,54px);transition:filter .15s ease}
+    .device-select a:active{filter:brightness(.9)}
+    .device-select a:first-child{color:#106eb4;background:#e3f5fd}
+    .device-select a:last-child{color:#fff;background:#00008b}
+    .device-select .icon{width:clamp(48px,15vw,72px);height:clamp(48px,15vw,72px);fill:currentColor}
+    .device-select b{font-weight:400}
+    @media (min-width:700px){.device-select{max-width:700px;margin:0 auto}.device-select a{font-size:42px}.device-select .icon{width:62px;height:62px}}
+  </style>
+</head>
+<body>
+  <div class="device-select" aria-label="选择访问版本">
+    <a href="/h5/#/kb" aria-label="进入手机版">
+      <svg class="icon" viewBox="64 64 896 896" aria-hidden="true"><path d="M744 62H280c-35.3 0-64 28.7-64 64v768c0 35.3 28.7 64 64 64h464c35.3 0 64-28.7 64-64V126c0-35.3-28.7-64-64-64zm-8 824H288V134h448v752zM472 784a40 40 0 1080 0 40 40 0 10-80 0z"/></svg>
+      <b>手机版</b>
+    </a>
+    <a href="/pc/#/kb" aria-label="进入电脑版">
+      <svg class="icon" viewBox="64 64 896 896" aria-hidden="true"><path d="M928 140H96c-17.7 0-32 14.3-32 32v496c0 17.7 14.3 32 32 32h380v112H304c-8.8 0-16 7.2-16 16v48c0 4.4 3.6 8 8 8h432c4.4 0 8-3.6 8-8v-48c0-8.8-7.2-16-16-16H548V700h380c17.7 0 32-14.3 32-32V172c0-17.7-14.3-32-32-32zm-40 488H136V212h752v416z"/></svg>
+      <b>电脑版</b>
+    </a>
+  </div>
+  <script>
+    (() => {
+      const userAgentMobile = /Android|iPhone|iPad|iPod|Mobile|Windows Phone/i.test(navigator.userAgent);
+      const touchTablet = navigator.maxTouchPoints > 1
+        && Math.min(window.screen?.width || window.innerWidth, window.screen?.height || window.innerHeight) <= 1024;
+      if (userAgentMobile || touchTablet) {
+        document.documentElement.classList.add('show-device-select');
+      } else {
+        location.replace('/pc/#/kb');
+      }
+    })();
+  </script>
+</body>
+</html>

@@ -1,7 +1,7 @@
 import { DoubleRightOutlined } from '@ant-design/icons';
 import { App as AntdApp, DatePicker, Select, Spin } from 'antd';
 import dayjs from 'dayjs';
-import { useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { getAgentMonthlyReport, getAgentReport, getAgentReportIssues, type AgentMonthlyReportRow, type AgentReportIssue, type AgentReportLevel, type AgentReportMemberRow, type AgentReportMetrics } from '../../api/user';
 import { apiErrorMessage } from '../../utils/request';
@@ -23,10 +23,16 @@ function dateRange(type: 'today'|'yesterday'|'week'|'lastWeek') {
 }
 const show=(value:string|number)=>Number.isFinite(Number(value))?String(Number(value)):'0';
 
-export function ReportsPage({lottery}:{lottery:string}) {
+export const ReportsPage = memo(function ReportsPage({lottery}:{lottery:string}) {
   const {message}=AntdApp.useApp(); const today=localDate(new Date());
   const permissions=(()=>{try{const value=JSON.parse(localStorage.getItem('agent_permissions')||'["*"]');return Array.isArray(value)?value.map(String):['*']}catch{return['*']}})(); const canSummary=permissions.includes('*')||permissions.includes('reports'); const canMonthly=permissions.includes('*')||permissions.includes('monthly_reports');
   const [mode,setMode]=useState<ReportMode>(()=>canSummary?'summary':'monthly'); const [from,setFrom]=useState(today); const [to,setTo]=useState(today);
+  // The shell refreshes its countdown once per second. Keep each calendar's
+  // browsed month independent so that refresh does not snap it back to value.
+  const [fromPickerValue,setFromPickerValue]=useState(()=>dayjs(today));
+  const [toPickerValue,setToPickerValue]=useState(()=>dayjs(today));
+  useEffect(()=>{setFromPickerValue(current=>from?(current.format('YYYY-MM-DD')===from?current:dayjs(from)):dayjs(today))},[from,today]);
+  useEffect(()=>{setToPickerValue(current=>to?(current.format('YYYY-MM-DD')===to?current:dayjs(to)):dayjs(today))},[to,today]);
   const [lotteries,setLotteries]=useState(['福彩3D','排列三']); const [summary,setSummary]=useState(emptyMetrics); const [rows,setRows]=useState<AgentMonthlyReportRow[]>([]); const [memberRows,setMemberRows]=useState<AgentReportMemberRow[]>([]); const [reportLevels,setReportLevels]=useState<AgentReportLevel[]>([]); const [loading,setLoading]=useState(true);
   const [issues,setIssues]=useState<AgentReportIssue[]>([]); const [fromIssue,setFromIssue]=useState(''); const [toIssue,setToIssue]=useState('');
   const reportMonth=(from||today).slice(0,7);
@@ -38,12 +44,12 @@ export function ReportsPage({lottery}:{lottery:string}) {
   const monthTitle=`${from.slice(0,4)}年${from.slice(5,7)}月`;
   return <section className="agent-reports-page">
     <div className="agent-reports-location"><div className="agent-reports-path"><strong>位置</strong><DoubleRightOutlined/><span>报表</span><DoubleRightOutlined/><span>{mode==='summary'?'综合报表':'月报表'}</span></div><nav className="agent-reports-tabs">{canSummary&&<button className={mode==='summary'?'active':''} onClick={()=>setMode('summary')} type="button">综合报表</button>}{canMonthly&&<button className={mode==='monthly'?'active':''} onClick={()=>setMode('monthly')} type="button">月报表</button>}</nav></div>
-    {mode==='summary'&&<div className="agent-reports-filters">{lotteryOptions.map(item=><label key={item.value}><input type="checkbox" checked={lotteries.includes(item.value)} onChange={event=>toggleLottery(item.value,event.target.checked)}/>{item.label}</label>)}<DatePicker size="small" aria-label="开始日期" value={from?dayjs(from):null} onChange={date=>setFrom(date?date.format('YYYY-MM-DD'):'')} placeholder="开始日期"/><span>至</span><DatePicker size="small" aria-label="结束日期" value={to?dayjs(to):null} onChange={date=>setTo(date?date.format('YYYY-MM-DD'):'')} placeholder="结束日期"/></div>}
+    {mode==='summary'&&<div className="agent-reports-filters">{lotteryOptions.map(item=><label key={item.value}><input type="checkbox" checked={lotteries.includes(item.value)} onChange={event=>toggleLottery(item.value,event.target.checked)}/>{item.label}</label>)}<DatePicker size="small" aria-label="开始日期" value={from?dayjs(from):null} pickerValue={fromPickerValue} onPanelChange={value=>setFromPickerValue(value)} onChange={date=>{setFrom(date?date.format('YYYY-MM-DD'):'');if(date)setFromPickerValue(date)}} placeholder="开始日期"/><span>至</span><DatePicker size="small" aria-label="结束日期" value={to?dayjs(to):null} pickerValue={toPickerValue} onPanelChange={value=>setToPickerValue(value)} onChange={date=>{setTo(date?date.format('YYYY-MM-DD'):'');if(date)setToPickerValue(date)}} placeholder="结束日期"/></div>}
     <div className="agent-reports-band"><strong>{mode==='summary'?'综合报表':'月报表'}</strong><b>{monthTitle}</b>{mode==='monthly'&&<button type="button" onClick={()=>{if(!issues.length)return;const start=issues[issues.length-1];const end=issues[0];setFromIssue(start.issue_no);setToIssue(end.issue_no);setFrom(start.date);setTo(end.date)}}>全部</button>}<button type="button" className="today" onClick={()=>chooseRange('today')}>今天</button><button type="button" onClick={()=>chooseRange('yesterday')}>昨天</button><button type="button" onClick={()=>chooseRange('week')}>本周</button><button type="button" onClick={()=>chooseRange('lastWeek')}>上周</button></div>
     {mode==='monthly'&&<div className="agent-reports-month-range"><Select className="reports-issue-select" size="small" aria-label="月报开始期号" value={fromIssue} onChange={value=>{const issue=issues.find(item=>item.issue_no===value);setFromIssue(value);if(issue)setFrom(issue.date)}} options={issues.map(item=>({value:item.issue_no,label:`${Number(item.date.slice(5,7))}-${Number(item.date.slice(8,10))}(${item.issue_no})`}))}/><span>至</span><Select className="reports-issue-select" size="small" aria-label="月报结束期号" value={toIssue} onChange={value=>{const issue=issues.find(item=>item.issue_no===value);setToIssue(value);if(issue)setTo(issue.date)}} options={issues.map(item=>({value:item.issue_no,label:`${Number(item.date.slice(5,7))}-${Number(item.date.slice(8,10))}(${item.issue_no})`}))}/></div>}
     <div className="agent-reports-card">{loading?<div className="agent-reports-loading"><Spin/></div>:<ReportTable mode={mode} rows={rows} memberRows={memberRows} summary={summary} reportLevels={reportLevels}/>}</div>
   </section>;
-}
+});
 
 function ReportTable({mode,rows,memberRows,summary,reportLevels}:{mode:ReportMode;rows:AgentMonthlyReportRow[];memberRows:AgentReportMemberRow[];summary:AgentReportMetrics;reportLevels:AgentReportLevel[]}) {
   const levels=reportLevels.length?reportLevels:[{key:'agent',label:'代理',relation:'self' as const}];

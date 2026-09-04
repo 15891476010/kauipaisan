@@ -466,22 +466,39 @@ final class UserBusiness
         $metric=(string)$request->param('metric','odds');$metric=in_array($metric,['odds','amount'],true)?$metric:'odds';$min=$request->param('min');$max=$request->param('max');
         if($min!==null&&$min!==''&&is_numeric($min))$query->where('d.'.$metric,'>=',(float)$min);if($max!==null&&$max!==''&&is_numeric($max))$query->where('d.'.$metric,'<=',(float)$max);if((string)$request->param('winning','')==='1')$query->where('d.status','won');
         $sort=(string)$request->param('sort','desc')==='asc'?'asc':'desc';
-        $fields='d.id,d.bet_record_id,d.issue_no,d.number_text,d.category,d.amount,d.odds,d.win_amount,d.rebate,d.status,d.placed_at,d.source_text AS detail_source,s.play_type,s.lottery,s.drop_odds,r.submission_id,r.source_text AS record_source,r.status AS record_status';
-        if($hasSubmissions)$fields.=',b.id AS submission_row_id';
+        $fields='d.id,d.bet_record_id,d.issue_no,d.number_text,d.category,d.amount,d.odds,d.win_amount,d.rebate,d.status,d.placed_at,d.source_text AS detail_source,s.play_type,s.lottery,s.drop_odds,r.submission_id,r.source_text AS record_source,r.formatted_text AS record_formatted_text,r.status AS record_status';
+        if($hasSubmissions)$fields.=',b.id AS submission_row_id,b.source_text AS submission_source,b.formatted_text AS submission_formatted_text';
         $detailRows=$query->field($fields)->order('d.placed_at',$sort)->order('d.id',$sort)->select()->toArray(); $expanded=[];$draws=$this->detailDrawMap($detailRows,(int)$s['tenant_id']);$matcher=new BetSettlement();
         foreach($detailRows as $row){
-            $source=(string)($row['detail_source']??'');if($source==='')$source=(string)($row['record_source']??'');$storedNumberText=trim((string)($row['number_text']??''));$tokens=$this->detailNumberTokens($storedNumberText);$matchTokens=$tokens;
+            $recordSource=(string)($row['record_source']??'');
+            $source=(string)($row['detail_source']??'');if($source==='')$source=$recordSource;
+            $originalSource=(string)($row['submission_source']??'');if($originalSource==='')$originalSource=$recordSource;if($originalSource==='')$originalSource=$source;
+            $parsedText=trim((string)($row['submission_formatted_text']??''))!==''?(string)$row['submission_formatted_text']:(string)($row['record_formatted_text']??'');if(trim($parsedText)==='')$parsedText=$source;
+            $storedNumberText=trim((string)($row['number_text']??''));$tokens=$this->detailNumberTokens($storedNumberText);$matchTokens=$tokens;
+            // Full-package wording lives on the parent submission while the
+            // detail row may contain parser atoms such as `三 3`. Keep one
+            // provider row and expose the package label instead of leaking
+            // those internal atoms into the detail table.
+            $packageLabel='';
+            if(preg_match('/(?:组三|组3)\s*(?:全包|包)/u',$recordSource)===1)$packageLabel='组三全包';
+            elseif(preg_match('/(?:组六|组6)\s*(?:全包|包)/u',$recordSource)===1)$packageLabel='组六全包';
+            if($packageLabel!==''){$tokens=[str_starts_with($packageLabel,'组六')?'六包':'三包'];$matchTokens=[];}
             $compactGroupPackage=$this->compactGroupPackageForDetail($row,$tokens);
             if($compactGroupPackage!==null){$tokens=[$compactGroupPackage];$matchTokens=$tokens;}
             // 复式包在数据库中继续使用 000 作为结算占位，但明细页面应显示
             // 一条真实的复式选号（例如“复024567”），不能显示 000。
             if(count($tokens)===1&&$tokens[0]==='000'&&preg_match('/(?<!\d)(\d{1,10})\s+复式[一二两三四五六七八九1-9]码/u',$source,$package))$tokens=['复'.$package[1]];
-            if($tokens===[])$tokens=['-'];if($sort==='desc')$tokens=array_reverse($tokens);$count=count($tokens);
+            if($tokens===[])$tokens=['-'];
+            // Keep hit indexes aligned with the visual order. The previous
+            // code reversed only `$tokens`, so a hit such as X54 was rendered
+            // on another row (for example X39) in descending views.
+            if($sort==='desc'){ $tokens=array_reverse($tokens); $matchTokens=array_reverse($matchTokens); }
+            $count=count($tokens);
             $amounts=$this->splitDetailMoney((float)$row['amount'],$count);$wins=$this->splitDetailMoney((float)$row['win_amount'],$count);$rebates=$this->splitDetailMoney((float)$row['rebate'],$count);$offlineTotal=round((float)$row['amount']*max(0,(float)($row['drop_odds']??0)),2);$offlineRebates=$this->splitDetailMoney($offlineTotal,$count);$orderNo=$this->detailOrderNumber($row);$resolved=(float)$row['win_amount']<=0;$winningIndexes=[];
             $draw=$draws[(string)($row['lottery']??'').'|'.(string)($row['issue_no']??'')]??'';
             if((float)$row['win_amount']>0&&$draw!==''){$winningIndexes=array_keys(array_filter($matchTokens,static fn(string $token):bool=>$matcher->numberMatches($token,$draw,$source)));if($winningIndexes!==[]){$wins=array_fill(0,$count,'0');$winningParts=$this->splitDetailMoney((float)$row['win_amount'],count($winningIndexes));foreach($winningIndexes as $winningIndex=>$tokenIndex)$wins[$tokenIndex]=$winningParts[$winningIndex];$resolved=true;}}
             $groupPackage=$this->isExpandedGroupPackage($matchTokens,$source);$displayOdds=$row['odds']===null?null:(float)$row['odds']*($groupPackage?$count:1);$oddsText=$displayOdds===null?'-':rtrim(rtrim(number_format($displayOdds,3,'.',''),'0'),'.');
-            foreach($tokens as $index=>$token){$amount=(float)$amounts[$index];$win=(float)$wins[$index];$rebate=(float)$rebates[$index];$offlineRebate=(float)$offlineRebates[$index];$tokenStatus=(string)($row['status']??$row['record_status']??'pending');if($resolved&&$tokenStatus==='won')$tokenStatus=$win>0?'won':'unwon';$groupFirst=$index===0;$expanded[]=['id'=>(int)$row['id'],'row_key'=>(int)$row['id'].'-'.$index,'detail_group_id'=>(int)$row['id'],'detail_group_index'=>$index,'detail_group_size'=>$count,'group_first'=>$groupFirst,'is_group_first'=>$groupFirst,'show_text_button'=>$groupFirst,'bet_record_id'=>(int)($row['bet_record_id']??0),'submission_id'=>(int)($row['submission_id']??0)?:null,'order_no'=>$orderNo,'issue_no'=>(string)$row['issue_no'],'number_text'=>$token,'stored_number_text'=>$storedNumberText,'category'=>(string)($row['category']??''),'play_type'=>(string)($row['play_type']??''),'play_label'=>$this->detailPlayLabel($row['play_type']??'',$row['category']??''),'lottery'=>(string)($row['lottery']??''),'amount'=>$amounts[$index],'odds'=>$oddsText,'win_amount'=>$wins[$index],'is_winning_number'=>in_array($index,$winningIndexes,true),'win_projection_resolved'=>$resolved,'rebate'=>$rebates[$index],'offline_rebate'=>$this->detailMoney($offlineRebate),'profit'=>$this->detailMoney($win-$amount+$rebate+$offlineRebate),'status'=>$tokenStatus,'placed_at'=>(string)$row['placed_at'],'source_text'=>$source];}
+            foreach($tokens as $index=>$token){$amount=(float)$amounts[$index];$win=(float)$wins[$index];$rebate=(float)$rebates[$index];$offlineRebate=(float)$offlineRebates[$index];$tokenStatus=(string)($row['status']??$row['record_status']??'pending');if($resolved&&$tokenStatus==='won')$tokenStatus=$win>0?'won':'unwon';$groupFirst=$index===0;$expanded[]=['id'=>(int)$row['id'],'row_key'=>(int)$row['id'].'-'.$index,'detail_group_id'=>(int)$row['id'],'detail_group_index'=>$index,'detail_group_size'=>$count,'group_first'=>$groupFirst,'is_group_first'=>$groupFirst,'show_text_button'=>$groupFirst,'bet_record_id'=>(int)($row['bet_record_id']??0),'submission_id'=>(int)($row['submission_id']??0)?:null,'order_no'=>$orderNo,'issue_no'=>(string)$row['issue_no'],'number_text'=>$token,'stored_number_text'=>$storedNumberText,'category'=>(string)($row['category']??''),'play_type'=>$packageLabel!==''?$packageLabel:(string)($row['play_type']??''),'play_label'=>$packageLabel!==''?$packageLabel:$this->detailPlayLabel($row['play_type']??'',$row['category']??''),'lottery'=>(string)($row['lottery']??''),'amount'=>$amounts[$index],'odds'=>$oddsText,'win_amount'=>$wins[$index],'is_winning_number'=>in_array($index,$winningIndexes,true),'win_projection_resolved'=>$resolved,'rebate'=>$rebates[$index],'offline_rebate'=>$this->detailMoney($offlineRebate),'profit'=>$this->detailMoney($win-$amount+$rebate+$offlineRebate),'status'=>$tokenStatus,'placed_at'=>(string)$row['placed_at'],'source_text'=>$originalSource,'record_source'=>$recordSource,'original_source_text'=>$originalSource,'parsed_source_text'=>$parsedText];}
         }
         $total=count($expanded);$page=max(1,(int)$request->param('page',1));
         $requestedPageSize=trim((string)$request->param('page_size','40'));
@@ -631,7 +648,7 @@ final class UserBusiness
                         $family=$type===7?'组三':($type===8?'组六':'复式'); $words=['1'=>'一','2'=>'二','3'=>'三','4'=>'四','5'=>'五','6'=>'六','7'=>'七','8'=>'八','9'=>'九'];
                         $play=$family.($family==='复式'?($words[(string)strlen($selection)]??strlen($selection)):' '.($words[(string)strlen($selection)]??strlen($selection))).'码';
                         $play=str_replace(' ','',$play);
-                        $display[]=$selection.$play; $source=$selection.$play.'各'.$amount.'元';
+                        $display[]=(($family==='组三'?'三':'六').' '.$selection); $source=$selection.$play.'各'.$amount.'元';
                     } elseif ($type===10 || $type===11) {
                         if (preg_match('/^[a-z0-9]*?(\d)t(\d+)$/i',$code,$m)!==1) continue;
                         $family=$type===10?'组三':'组六'; $play=$family.'胆拖'; $dragCount=strlen($m[2]); $display[]='胆'.$m[1].'拖'.$m[2].$play; $source=$play.' '.$m[1].'码拖'.$dragCount.' 胆'.$m[1].'拖'.$m[2].'各'.$amount.'元';
@@ -670,15 +687,63 @@ final class UserBusiness
         }
         $lines=[]; $id=1;
         foreach ($catalogue as $group) {
-            $numbers=implode(' ',array_values(array_unique($group['numbers']))); $source=$group['source'];
+            $numbers=implode(' ',array_values(array_unique($group['numbers']))); $source=$group['source']; $displaySource=$source;
             if (in_array($group['play'],['直','独胆','双飞','对子','组三','组六'],true)) {
                 $baseNumbers=implode(' ',array_map(static fn(string $value):string=>preg_replace('/(直|胆|双飞|对子|组三|组六)$/u','',$value)??$value,$group['numbers']));
                 $source=($group['play']==='独胆'?'独胆'.$baseNumbers:$baseNumbers.' '.$group['play']).'各'.rtrim(rtrim(number_format($group['amount']/max(1,$group['count']),2,'.',''),'0'),'.').'元';
+                $prefix=$group['play']==='直'?'直':($group['play']==='组三'?'三':($group['play']==='组六'?'六':''));
+                $displaySource=$prefix!==''?$prefix.' '.$baseNumbers.'各'.rtrim(rtrim(number_format($group['amount']/max(1,$group['count']),2,'.',''),'0'),'.').'元':$source;
+            } elseif (preg_match('/^(组三|组六)[一二两三四五六七八九]码$/u',(string)$group['play'],$multiPlay)===1) {
+                // Keep the full play name in settlement_text for odds lookup,
+                // while the user-facing row uses the reference notation:
+                // “三 123456” / “六 123456”.
+                $prefix=$multiPlay[1]==='组三'?'三':'六';
+                $baseNumbers=implode(' ',array_map(static fn(string $value):string=>preg_replace('/^[三六]\s*/u','',$value)??$value,$group['numbers']));
+                $unit=rtrim(rtrim(number_format($group['amount']/max(1,$group['count']),2,'.',''),'0'),'.');
+                $displaySource=$prefix.' '.$baseNumbers.'各'.$unit.'元';
             }
-            $lines[]=['id'=>$id++,'raw_text'=>$source,'input_text'=>$source,'parse_text'=>$source,'status'=>'success','reason'=>null,
+            $lines[]=['id'=>$id++,'raw_text'=>$displaySource,'input_text'=>$displaySource,'parse_text'=>$source,'status'=>'success','reason'=>null,
                 'number_text'=>$numbers,'display_number_text'=>$numbers,'expanded_number_text'=>$numbers,'category'=>(string)$group['category'],
                 'play_type'=>$group['play'],'settlement_text'=>$source,'amount'=>number_format($group['amount'],2,'.',''),'count'=>$group['count'],'stake_count'=>$group['count'],'code_count'=>$group['count'],'provider_catalogue'=>true];
         }
+        // The provider keeps a sentence such as “... 福一直一组” as one
+        // catalogue row.  The catalogue itself contains separate odds atoms
+        // for 直 and 组 so that placement can still apply each play's odds,
+        // but the preview must preserve the provider's single-row shape.
+        // Keep the atoms in a private field for quickPlace and collapse only
+        // the mixed direct/group display rows here.
+        $mixed=[];
+        foreach ($lines as $index=>$line) {
+            $play=(string)($line['play_type']??'');
+            if ($play!=='直' && !in_array($play,['组三','组六'],true)) continue;
+            $key=(string)($line['category']??'').'|'.number_format((float)$line['amount']/max(1,(int)$line['count']),4,'.','');
+            $mixed[$key][]=$index;
+        }
+        $rawStatement='';
+        foreach ((array)($result['data']['rl']??[]) as $row) {
+            if (!is_array($row) || ($row['ij']??false)!==true || (int)($row['isSuccess']??0)!==1) continue;
+            $candidate=trim((string)($row['txt']??$row['ftxt']??$row['ltxt']??''));
+            if ($candidate!=='') { $rawStatement=$candidate; break; }
+        }
+        foreach ($mixed as $indexes) {
+            $plays=[]; foreach ($indexes as $index) $plays[(string)($lines[$index]['play_type']??'')]=true;
+            if (!isset($plays['直']) || count($plays)<2) continue;
+            $parts=[]; $amount=0.0; $count=0; $numbers=[]; $category=(string)$lines[$indexes[0]]['category'];
+            foreach ($indexes as $index) {
+                $part=$lines[$index]; $parts[]=$part; $amount+=(float)$part['amount']; $count+=(int)$part['count'];
+                foreach (preg_split('/\s+/u',trim((string)$part['number_text']),-1,PREG_SPLIT_NO_EMPTY)?:[] as $number) {
+                    $number=preg_replace('/(直|组三|组六)$/u','',$number)??$number; if ($number!=='') $numbers[$number]=true;
+                }
+            }
+            $displaySource=$rawStatement!==''?$rawStatement:implode(' ',array_map(static fn(array $part):string=>(string)$part['raw_text'],$parts));
+            $collapsed=['id'=>0,'raw_text'=>$displaySource,'input_text'=>$displaySource,'parse_text'=>$displaySource,'status'=>'success','reason'=>null,
+                'number_text'=>implode(' ',array_keys($numbers)),'display_number_text'=>implode(' ',array_keys($numbers)),'expanded_number_text'=>implode(' ',array_keys($numbers)),
+                'category'=>$category,'play_type'=>'直组','settlement_text'=>$displaySource,'amount'=>number_format($amount,2,'.',''),'count'=>$count,'stake_count'=>$count,'code_count'=>$count,
+                'provider_catalogue'=>true,'provider_place_parts'=>$parts];
+            $firstIndex=$indexes[0]; $lines[$firstIndex]=$collapsed;
+            foreach (array_slice($indexes,1) as $index) unset($lines[$index]);
+        }
+        $lines=array_values($lines); foreach ($lines as $index=>&$line) $line['id']=$index+1; unset($line);
         return $lines;
     }
 
@@ -706,11 +771,14 @@ final class UserBusiness
             // and quickPlace will reject the whole ticket, instead of silently
             // dropping the failed sentence and placing only its valid part.
             foreach ($rows as $row) {
-                if (!is_array($row) || (int)($row['isSummary']??0)===1 || (int)($row['isSuccess']??1)!==0) continue;
+                if (!is_array($row) || (int)($row['isSummary']??0)===1 || !array_key_exists('isSuccess',$row) || (int)$row['isSuccess']===1) continue;
                 $raw=trim((string)($row['txt']??$row['ftxt']??$row['ltxt']??''));
+                $reasons=$this->thirdPartyRowMessages($row);
+                if ($raw==='') $raw=implode('；',$reasons);
                 if ($raw==='') continue;
                 $lines[]=['id'=>count($catalogue)+count($lines)+1,'raw_text'=>$raw,'input_text'=>$raw,
                     'parse_text'=>trim((string)($row['ltxt']??$raw)),'status'=>'failed','reason'=>$this->thirdPartyRowMessage($row),
+                    'reasons'=>$reasons,
                     'number_text'=>'','display_number_text'=>'','expanded_number_text'=>'','category'=>$lottery==='福彩3D'?'福':'体',
                     'play_type'=>'','settlement_text'=>'','amount'=>'0.00','count'=>0,'stake_count'=>0,'code_count'=>0];
             }
@@ -773,8 +841,9 @@ final class UserBusiness
             elseif(preg_match('/组/u',$display,$m))$play='组';
             $status=(int)($row['isSuccess']??0)===1?'success':'failed';
             $amount=number_format((float)($row['ta']??0),2,'.',''); $count=(int)($row['tc']??0);
+            $reasons=$status==='success'?[]:$this->thirdPartyRowMessages($row);
             $line=['id'=>$nextId++,'raw_text'=>$raw,'input_text'=>$raw,'parse_text'=>$display,'status'=>$status,
-                'reason'=>$status==='success'?null:$this->thirdPartyRowMessage($row),
+                'reason'=>$status==='success'?null:implode('；',$reasons),'reasons'=>$reasons,
                 'number_text'=>implode(' ',$numbers),'display_number_text'=>implode(' ',$numbers),
                 'expanded_number_text'=>implode(' ',$numbers),'category'=>$lottery==='福彩3D'?'福':'体','play_type'=>$play,
                 'settlement_text'=>$display,'amount'=>$amount,'count'=>$count,'stake_count'=>$count,'code_count'=>$count,
@@ -844,12 +913,48 @@ final class UserBusiness
     /** Extract the provider's own validation text without rewriting it. */
     private function thirdPartyRowMessage(array $row): string
     {
-        $message=$this->providerText($row);
-        if ($message!==null) return $message;
+        $messages=$this->thirdPartyRowMessages($row);
+        if ($messages!==[]) return $messages[0];
         // The reference protocol reports this validation failure as numeric
         // row codes (for example rc/ftp = -102); its UI renders the standard
         // sentence below when no textual field is present.
         return '语句存在问题，无法识别';
+    }
+
+    /** Return every provider-side validation message for one result row. */
+    private function thirdPartyRowMessages(array $row): array
+    {
+        $messages=[];
+        $preferred=['message','msg','error','err','errmsg','error_message','errorMessage','st','status_text','statusText','detail','reason','tips','tip','notice','description','desc','提示','错误','说明','ec'];
+        $collect=function(mixed $value) use (&$collect,&$messages): void {
+            if (is_string($value)) {
+                $text=trim($value);
+                if ($text!=='' && preg_match('/无法识别|不能识别|未识别|语句.*(问题|错误|失败)|金额.*(不一致|错误)|人工确认|未断行|错误|失败|无效|超出|超过/u',$text)===1) $messages[]=$text;
+                return;
+            }
+            if (is_array($value)) foreach ($value as $item) $collect($item);
+        };
+        foreach ($preferred as $key) if (array_key_exists($key,$row)) $collect($row[$key]);
+        // wt=6 is the reference protocol's manual-review marker.
+        if ((int)($row['wt']??0)===6) $messages[]='请进行人工确认';
+        $messages=array_values(array_unique(array_filter(array_map(static fn(string $value):string=>trim($value),$messages),static fn(string $value):bool=>$value!=='')));
+        return $messages!==[]?$messages:['语句存在问题，无法识别'];
+    }
+
+    /** Collect all provider validation messages when no usable row exists. */
+    private function thirdPartyMessages(array $result): array
+    {
+        $messages=[];
+        foreach ((array)($result['data']['rl']??[]) as $row) {
+            if (!is_array($row) || (int)($row['isSummary']??0)===1 || (int)($row['isSuccess']??0)===1) continue;
+            foreach ($this->thirdPartyRowMessages($row) as $message) $messages[]=$message;
+        }
+        if ($messages===[]) {
+            $message=$this->providerText($result);
+            if ($message!==null) $messages[]=$message;
+        }
+        $messages=array_values(array_unique($messages));
+        return $messages!==[]?$messages:['语句存在问题，无法识别'];
     }
 
     /** Extract the provider's own validation text without rewriting it. */
@@ -867,15 +972,16 @@ final class UserBusiness
     {
         $sourceLines=$this->thirdPartyLines($result,$lottery); $lines=[];
         foreach ($sourceLines as $sourceLine) {
-            $parts=is_array($sourceLine['provider_parts']??null) && $sourceLine['provider_parts']!==[] ? $sourceLine['provider_parts'] : [$sourceLine];
-            foreach ($parts as $part) { $part['id']=count($lines)+1; $lines[]=$part; }
+            // provider_parts/provider_place_parts are private placement
+            // metadata.  Never expand them in the user-facing preview.
+            $sourceLine['id']=count($lines)+1; $lines[]=$sourceLine;
         }
         $code=ThirdPartyQuickEntryUtils::responseCode($result);
         if ($code===200 && $lines!==[]) return $lines;
         if ($lines!==[]) return $lines;
         return [[
             'id'=>1,'raw_text'=>'','input_text'=>'','parse_text'=>'','status'=>'failed',
-            'reason'=>$this->thirdPartyMessage($result),'number_text'=>'','display_number_text'=>'',
+            'reason'=>implode('；',$this->thirdPartyMessages($result)),'reasons'=>$this->thirdPartyMessages($result),'number_text'=>'','display_number_text'=>'',
             'expanded_number_text'=>'','category'=>$lottery==='福彩3D'?'福':'体','play_type'=>'',
             'settlement_text'=>'','amount'=>'0.00','count'=>0,'stake_count'=>0,'code_count'=>0,
         ]];
@@ -895,6 +1001,37 @@ final class UserBusiness
             if(($candidate['status']??'')!=='success')continue;
             $candidateSignature=(string)($candidate['play_type']??'').'|'.(string)($candidate['number_text']??'');
             if($candidateSignature===$signature)$matches[]=$candidate;
+        }
+        // A mixed direct/group preview is intentionally displayed as one
+        // `直组` row, while the local parser still returns two atomic rows
+        // (`直` and `组`). Rebuild that display row from the two atoms before
+        // applying the uniqueness guard.
+        if($matches===[] && trim((string)($line['play_type']??''))==='直组'){
+            $targetNumbers=array_values(array_filter(preg_split('/\s+/u',trim((string)($line['number_text']??'')),-1,PREG_SPLIT_NO_EMPTY)?:[],static fn(string $n):bool=>$n!==''));
+            $targetKey=implode(' ',array_map(static fn(string $n):string=>preg_replace('/(直|组|组三|组六)$/u','',$n)??$n,$targetNumbers));
+            $parts=[];
+            foreach($this->quickLines($raw,$lottery,$tenantId) as $candidate){
+                if(($candidate['status']??'')!=='success' || !in_array((string)($candidate['play_type']??''),['直','组'],true))continue;
+                $candidateNumbers=preg_split('/\s+/u',trim((string)($candidate['number_text']??'')),-1,PREG_SPLIT_NO_EMPTY)?:[];
+                $candidateKey=implode(' ',array_map(static fn(string $n):string=>preg_replace('/(直|组|组三|组六)$/u','',$n)??$n,$candidateNumbers));
+                if($candidateKey===$targetKey)$parts[]=$candidate;
+            }
+            $playKinds=[]; foreach($parts as $part)$playKinds[(string)$part['play_type']]=true;
+            if(isset($playKinds['直'])&&isset($playKinds['组'])){
+                $combined=$parts[0]; $combined['play_type']='直组';
+                $combined['amount']=number_format(array_sum(array_map(static fn(array $part):float=>(float)($part['amount']??0),$parts)),2,'.','');
+                foreach(['count','stake_count','code_count'] as $field) if(array_key_exists($field,$combined))$combined[$field]=array_sum(array_map(static fn(array $part):int=>(int)($part[$field]??0),$parts));
+                $combined['number_text']=(string)($line['number_text']??''); $combined['display_number_text']=$combined['number_text']; $combined['expanded_number_text']=$combined['number_text'];
+                $matches=[$combined];
+            }
+        }
+        if(count($matches)>1){
+            $unique=[];
+            foreach($matches as $candidate){
+                $key=(string)($candidate['play_type']??'').'|'.(string)($candidate['number_text']??'').'|'.number_format((float)($candidate['amount']??0),2,'.','').'|'.(int)($candidate['count']??0);
+                $unique[$key]=$candidate;
+            }
+            $matches=array_values($unique);
         }
         if(count($matches)!==1)throw new \InvalidArgumentException('投注行无法按'.$lottery.'的单注金额唯一重算，已禁止下注');
         $line=$matches[0];
@@ -1040,7 +1177,9 @@ final class UserBusiness
         $amount=0.0; $count=0; $groups=[];
         try {
             foreach ($lines as $line) {
-                $providerParts=$providerAuthoritative && is_array($line['provider_parts']??null) && $line['provider_parts']!==[] ? $line['provider_parts'] : [$line];
+                $providerParts=$providerAuthoritative
+                    ? (is_array($line['provider_place_parts']??null) && $line['provider_place_parts']!==[] ? $line['provider_place_parts'] : (is_array($line['provider_parts']??null) && $line['provider_parts']!==[] ? $line['provider_parts'] : [$line]))
+                    : [$line];
                 foreach ($providerParts as $sourceLine) foreach ($this->lotteriesForLine($sourceLine,$lottery) as $lineLottery) {
                     $this->assertLotteryPermission($s,$lineLottery,true);
                     $splitLine=$providerAuthoritative ? $this->providerLineForLottery($sourceLine,$lineLottery) : $this->lineForLottery($sourceLine,$lineLottery,(int)$s['tenant_id']);

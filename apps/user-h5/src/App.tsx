@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { App as AntdApp } from "antd";
 import { HashRouter, Route, Routes } from "react-router-dom";
 import { Agreement, defaultAgreement, type AgreementData } from "./features/agreement/Agreement";
@@ -24,6 +24,7 @@ export default function App() {
     return Boolean(token && localStorage.getItem("user_name") && localStorage.getItem("user_must_change_password") !== "1" && sessionStorage.getItem("agreement_accepted_token") !== token);
   });
   const [agreement, setAgreement] = useState<AgreementData>(defaultAgreement);
+  const unauthorizedModalOpen = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -62,6 +63,8 @@ export default function App() {
 
   useEffect(() => {
     const handleUnauthorized = () => {
+      if (unauthorizedModalOpen.current) return;
+      unauthorizedModalOpen.current = true;
       modal.confirm({
         title: "登录已过期",
         content: "请重新登录",
@@ -70,6 +73,7 @@ export default function App() {
         maskClosable: false,
         closable: false,
         onOk: () => {
+          unauthorizedModalOpen.current = false;
           clearSession();
           window.location.hash = "#/kb";
         },

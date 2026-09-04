@@ -259,7 +259,9 @@ final class Resource
         $query = Db::name($this->table($resource));
         if ($resource === 'agents') $query->where('level', 1);
         if (in_array($resource, ['sub-agents','sub_agents'], true)) $query->where('level', 2);
-        if (in_array($resource,['admins','site-admins','site-users','agent-center'],true)) $query->whereNull('deleted_at');
+        // Exclude soft-deleted sites from all site selectors, including the
+        // “总代理做账” selector. A deleted duplicate must not be selectable.
+        if (in_array($resource,['admins','site-admins','site-users','agent-center','sites'],true)) $query->whereNull('deleted_at');
         return $query;
     }
 

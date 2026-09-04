@@ -31,7 +31,7 @@ final class ApiContext
         $path = trim((string)$request->pathinfo(), '/');
         $startedAt = microtime(true);
         if ($request->method(true) === 'OPTIONS') return $this->cors(response('', 204));
-        if (str_contains($path, 'admin/') && !str_ends_with($path, 'admin/auth/login')) {
+        if (str_contains($path, 'admin/') && !str_ends_with($path, 'admin/auth/login') && !str_ends_with($path, 'admin/auth/refresh')) {
             $authorization = (string)$request->header('authorization');
             $token = trim(str_ireplace('Bearer ', '', $authorization));
             $session = $token !== '' ? Cache::get('token:' . $token) : null;

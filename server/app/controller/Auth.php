@@ -26,7 +26,8 @@ final class Auth
         AuditLogger::write($context, $action, $resource, $payload, (string)$request->ip());
     }
     private function reply(mixed $data = null, string $message = 'ok', int $code = 0): \think\response\Json { return json(['code'=>$code,'message'=>$message,'data'=>$data,'request_id'=>bin2hex(random_bytes(8))]); }
-    private function token(int $userId, string $scope, array $context=[]): string { $token=bin2hex(random_bytes(32)); Cache::set('token:'.$token,array_merge(['user_id'=>$userId,'scope'=>$scope],$context),(int)env('TOKEN_TTL',7200)); return $token; }
+    private function tokenTtl(): int { return max(7200, min(604800, (int)env('TOKEN_TTL',7200))); }
+    private function token(int $userId, string $scope, array $context=[]): string { $token=bin2hex(random_bytes(32)); Cache::set('token:'.$token,array_merge(['user_id'=>$userId,'scope'=>$scope],$context),$this->tokenTtl()); return $token; }
     private function sessionToken(Request $request, int $userId, string $scope, array $context, string $accountType): string {
         $token=$this->token($userId,$scope,$context);
         AccountPresence::login($request,$token,array_merge(['user_id'=>$userId,'scope'=>$scope],$context),$accountType,$userId);
@@ -62,7 +63,7 @@ final class Auth
             $token=$this->sessionToken($request,(int)$user['id'],'admin',['admin_role'=>'platform','tenant_id'=>$user['tenant_id']??null,'site_id'=>null,'account_table'=>'admins','username'=>$user['username']],'platform_admin');
             Db::name('admins')->where('id',$user['id'])->update(['last_login_at'=>date('Y-m-d H:i:s')]);
             $this->log($request,['tenant_id'=>$user['tenant_id']??null,'user_id'=>$user['id'],'username'=>$user['username']], 'login_success', 'admin');
-            return $this->reply(['token'=>$token,'expires_at'=>date(DATE_ATOM,time()+(int)env('TOKEN_TTL',7200)),'user'=>['id'=>$user['id'],'username'=>$user['username'],'display_name'=>$user['display_name'],'tenant_id'=>$user['tenant_id'],'agent_id'=>null,'site_id'=>null,'role'=>'platform'],'menus'=>$this->menuTree(true)]);
+            return $this->reply(['token'=>$token,'expires_at'=>date(DATE_ATOM,time()+$this->tokenTtl()),'user'=>['id'=>$user['id'],'username'=>$user['username'],'display_name'=>$user['display_name'],'tenant_id'=>$user['tenant_id'],'agent_id'=>null,'site_id'=>null,'role'=>'platform'],'menus'=>$this->menuTree(true)]);
         }
         $siteAdmin=Db::name('site_admins')->where('username',$username)->where('status',1)->whereNull('deleted_at')->find();
         if (!$siteAdmin || !password_verify($password,(string)($siteAdmin['password']??''))) { $this->log($request,['username'=>$username], 'login_failed', 'admin'); return $this->reply(null,'账号或密码错误',401); }
@@ -70,7 +71,7 @@ final class Auth
         $token=$this->sessionToken($request,(int)$siteAdmin['id'],'admin',['admin_role'=>'site','tenant_id'=>$siteAdmin['tenant_id']??null,'site_id'=>(int)$siteAdmin['site_id'],'agent_id'=>$agentId,'account_table'=>'site_admins','username'=>$siteAdmin['username']],'site_admin');
         Db::name('site_admins')->where('id',$siteAdmin['id'])->update(['last_login_at'=>date('Y-m-d H:i:s')]);
         $this->log($request,['tenant_id'=>$siteAdmin['tenant_id']??null,'agent_id'=>$agentId,'user_id'=>$siteAdmin['id'],'username'=>$siteAdmin['username']], 'login_success', 'site_admin');
-        return $this->reply(['token'=>$token,'expires_at'=>date(DATE_ATOM,time()+(int)env('TOKEN_TTL',7200)),'user'=>['id'=>$siteAdmin['id'],'username'=>$siteAdmin['username'],'display_name'=>$siteAdmin['display_name'],'tenant_id'=>$siteAdmin['tenant_id'],'agent_id'=>null,'site_id'=>(int)$siteAdmin['site_id'],'role'=>'site'],'menus'=>$this->menuTree(false)]);
+        return $this->reply(['token'=>$token,'expires_at'=>date(DATE_ATOM,time()+$this->tokenTtl()),'user'=>['id'=>$siteAdmin['id'],'username'=>$siteAdmin['username'],'display_name'=>$siteAdmin['display_name'],'tenant_id'=>$siteAdmin['tenant_id'],'agent_id'=>null,'site_id'=>(int)$siteAdmin['site_id'],'role'=>'site'],'menus'=>$this->menuTree(false)]);
     }
 
     public function agentLogin(Request $request): \think\response\Json
@@ -151,7 +152,7 @@ final class Auth
         $token=$this->sessionToken($request,(int)$account['id'],'agent',['tenant_id'=>(int)$account['tenant_id'],'agent_id'=>$agentId,'site_id'=>$siteId,'organization_id'=>$organizationId?:null,'organization_level'=>$organizationLevel?:null,'account_table'=>$accountTable,'username'=>(string)$account['username'],'is_subaccount'=>$isSubaccount?1:0,'must_change_password'=>$mustChangePassword?1:0,'permissions'=>$permissions,'lottery_permissions'=>$lotteryPermissions,'report_limit_enabled'=>(int)($account['report_limit_enabled']??0),'report_from_issue'=>$account['report_from_issue']??null,'report_to_issue'=>$account['report_to_issue']??null],$accountType);
         if ($accountTable !== 'sites') Db::name($accountTable)->where('id',$account['id'])->update(['last_login_at'=>date('Y-m-d H:i:s')]);
         $this->log($request,['tenant_id'=>$account['tenant_id']??null,'agent_id'=>$agentId,'organization_id'=>$organizationId?:null,'user_id'=>$account['id'],'username'=>$account['username']], 'login_success', 'agent');
-        return $this->reply(['token'=>$token,'expires_at'=>date(DATE_ATOM,time()+(int)env('TOKEN_TTL',7200)),'user'=>['id'=>$account['id'],'username'=>$account['username'],'display_name'=>$account['display_name'],'tenant_id'=>$account['tenant_id'],'agent_id'=>$agentId,'site_id'=>$siteId,'organization_id'=>$organizationId?:null,'organization_level'=>$organizationLevel?:null,'level_label'=>$organizationLevel?(OrganizationHierarchy::LABELS[$organizationLevel]??$organizationLevel):'代理','is_subaccount'=>$isSubaccount,'must_change_password'=>$mustChangePassword],'permissions'=>$permissions,'lottery_permissions'=>$lotteryPermissions]);
+        return $this->reply(['token'=>$token,'expires_at'=>date(DATE_ATOM,time()+$this->tokenTtl()),'user'=>['id'=>$account['id'],'username'=>$account['username'],'display_name'=>$account['display_name'],'tenant_id'=>$account['tenant_id'],'agent_id'=>$agentId,'site_id'=>$siteId,'organization_id'=>$organizationId?:null,'organization_level'=>$organizationLevel?:null,'level_label'=>$organizationLevel?(OrganizationHierarchy::LABELS[$organizationLevel]??$organizationLevel):'代理','is_subaccount'=>$isSubaccount,'must_change_password'=>$mustChangePassword],'permissions'=>$permissions,'lottery_permissions'=>$lotteryPermissions]);
     }
     public function userLogin(Request $request): \think\response\Json
     {
@@ -178,7 +179,7 @@ final class Auth
         $token=$this->sessionToken($request,(int)$user['id'],'user',$context,'site_user');
         Db::name('site_users')->where('id',$user['id'])->update(['last_login_at'=>date('Y-m-d H:i:s')]);
         $this->log($request,['tenant_id'=>$user['tenant_id'],'agent_id'=>$userAgentId,'organization_id'=>$user['organization_id']??null,'user_id'=>$user['id'],'username'=>$user['username']], 'login_success', 'user');
-        return $this->reply(['token'=>$token,'user'=>['id'=>$user['id'],'username'=>$user['username'],'must_change_password'=>$mustChangePassword]]);
+        return $this->reply(['token'=>$token,'expires_at'=>date(DATE_ATOM,time()+$this->tokenTtl()),'user'=>['id'=>$user['id'],'username'=>$user['username'],'must_change_password'=>$mustChangePassword]]);
     }
     public function logout(Request $request): \think\response\Json { $header=(string)$request->header('authorization'); $token=trim(str_ireplace('Bearer ','',$header)); $session=$token!==''?Cache::get('token:'.$token):null; if (is_array($session)) $this->log($request,$session,'logout',(string)($session['scope']??'auth')); AccountPresence::logout($token); if($token!=='') Cache::delete('token:'.$token); return $this->reply(); }
     public function heartbeat(Request $request): \think\response\Json {
@@ -187,7 +188,45 @@ final class Auth
         if (!is_array($session)) return $this->reply(null,'未登录或登录已过期',401);
         AccountPresence::resume($request,$token,$session);
         AccountPresence::touch($token,$session,true);
+        // Refresh the session TTL on every heartbeat. This keeps active users
+        // signed in even when the cache backend or an old environment file
+        // applies a short initial expiration.
+        Cache::set('token:'.$token,$session,$this->tokenTtl());
         return $this->reply(['online'=>true,'server_time'=>date(DATE_ATOM)]);
+    }
+    /** Re-issue a bearer token without asking the user to log in again. */
+    public function refresh(Request $request): \think\response\Json {
+        $oldToken=trim(str_ireplace('Bearer ','',(string)$request->header('authorization')));
+        if ($oldToken==='') return $this->reply(null,'未登录或登录已过期',401);
+        $row=Db::name('account_sessions')->where('token_hash',hash('sha256',$oldToken))->whereNull('logged_out_at')->find();
+        $session=Cache::get('token:'.$oldToken);
+        if (!is_array($session) && is_array($row)) {
+            $encoded=(string)($row['session_data']??'');
+            $session=$encoded!==''?json_decode($encoded,true):null;
+        }
+        if (!is_array($session) && is_array($row)) $session=$this->sessionFromPresenceRow($row);
+        if (!is_array($session) || !isset($session['scope'],$session['user_id'])) return $this->reply(null,'未登录或登录已过期',401);
+        $newToken=$this->token((int)$session['user_id'],(string)$session['scope'],$session);
+        $accountType=(string)($row['account_type']??'');
+        if ($accountType==='') $accountType=(string)($session['scope']==='user'?'site_user':($session['scope']==='admin'?(($session['admin_role']??'platform')==='site'?'site_admin':'platform_admin'):($session['account_table']??'agent_admin')));
+        AccountPresence::login($request,$newToken,$session,$accountType,(int)$session['user_id']);
+        return $this->reply(['token'=>$newToken,'expires_at'=>date(DATE_ATOM,time()+$this->tokenTtl())]);
+    }
+    private function sessionFromPresenceRow(array $row): ?array {
+        $type=(string)($row['account_type']??''); $id=(int)($row['account_id']??0); if($id<1)return null;
+        $map=['platform_admin'=>['admin','admins'],'site_admin'=>['admin','site_admins'],'site_user'=>['user','site_users'],'agent_admin'=>['agent','agent_admins'],'agent_subaccount'=>['agent','agent_subaccounts'],'organization_account'=>['agent','organization_accounts'],'legacy_site_admin'=>['agent','sites']];
+        if(!isset($map[$type]))return null; [$scope,$table]=$map[$type];
+        $account=Db::name($table)->where('id',$id)->whereNull('deleted_at')->find(); if(!$account)return null;
+        $session=['user_id'=>$id,'scope'=>$scope,'tenant_id'=>isset($row['tenant_id'])?(int)$row['tenant_id']:null,'agent_id'=>isset($row['agent_id'])?(int)$row['agent_id']:null,'site_id'=>isset($row['site_id'])?(int)$row['site_id']:null,'username'=>(string)($account['username']??''),'account_table'=>$table];
+        if($scope==='admin'){$session['admin_role']=$type==='site_admin'?'site':'platform';return $session;}
+        if($scope==='user'){$session['user_type']='site-user';$session['must_change_password']=(int)($account['must_change_password']??0);return $session;}
+        $session['organization_id']=isset($account['organization_id'])?(int)$account['organization_id']:null;
+        $session['is_subaccount']=$type==='agent_subaccount'?1:0;
+        if($session['organization_id']){$session['organization_level']=(string)Db::name('organization_nodes')->where('id',$session['organization_id'])->value('level');$session['permissions']=OrganizationHierarchy::effectivePermissions($session['organization_id'],OrganizationHierarchy::decodePermissions($account['permissions']??null));}
+        else $session['permissions']=['*'];
+        $session['lottery_permissions']=$type==='agent_subaccount'?(json_decode((string)($account['lottery_permissions']??''),true)?:[]):['*'];
+        $session['must_change_password']=(int)($account['must_change_password']??0);
+        return $session;
     }
     public function userProfile(Request $request): \think\response\Json
     {
@@ -251,7 +290,7 @@ final class Auth
         if ($password !== $confirm) return $this->reply(null,'两次输入的新密码不一致',422);
         try { PasswordPolicy::assertValid($password,(string)$user['username'],(string)$user['password']); } catch (\InvalidArgumentException $error) { return $this->reply(null,$error->getMessage(),422); }
         Db::name('site_users')->where('id',$user['id'])->update(['password'=>password_hash($password,PASSWORD_DEFAULT),'must_change_password'=>0,'updated_at'=>date('Y-m-d H:i:s')]);
-        $session['must_change_password']=0; Cache::set('token:'.$token,$session,(int)env('TOKEN_TTL',7200));
+        $session['must_change_password']=0; Cache::set('token:'.$token,$session,$this->tokenTtl());
         return $this->reply(null,'密码修改成功');
     }
     public function changeAgentPassword(Request $request): \think\response\Json {

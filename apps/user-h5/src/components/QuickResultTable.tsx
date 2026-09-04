@@ -53,6 +53,8 @@ type DisplayLine = QuickEntryLine & {
   __sourceIds?: number[];
   __detailLines?: QuickEntryLine[];
   __blank?: boolean;
+  __hideSummary?: boolean;
+  __hideDetail?: boolean;
 };
 
 function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onConfirmMismatch }: QuickResultTableProps) {
@@ -73,11 +75,69 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
   const sourcePhysical = _sourceText ? _sourceText.split(/\r?\n/u) : [];
   const hasPhysicalBlank = sourcePhysical.some((raw) => raw.trim() === "");
   const physicalExpanded = sourcePhysical.length > lines.length && lines.length > 0;
+  // The provider collapses a multi-line ticket into one row per lottery and
+  // keeps the concrete play rows in provider_place_parts. Rebuild the same
+  // physical layout as the reference UI: explicit 福/体 rows first, followed
+  // by the aggregate “共…米” row, and preserve a trailing blank input row.
+  const providerGrouped = lines.filter((line) => Array.isArray(line.provider_place_parts) && line.provider_place_parts.length > 0);
+  if (providerGrouped.length > 0 && sourcePhysical.length > 0) {
+    const byCategory = new Map<string, QuickEntryLine>();
+    providerGrouped.forEach((line) => {
+      const category = String(line.category || "");
+      if (category && !byCategory.has(category)) byCategory.set(category, line);
+    });
+    const fallbackLine = providerGrouped[0];
+    sourcePhysical.forEach((raw, physicalIndex) => {
+      const trimmed = raw.trim();
+      if (!trimmed) {
+        const blank: QuickEntryLine = { id: physicalIndex + 1, raw_text: raw, input_text: raw, status: "new", number_text: "", amount: "0", count: 0, category: null, reason: null };
+        expandedLines.push({ ...blank, __blank: true });
+        return;
+      }
+      const explicitCategory = /^(福|体)(?:[，,\s]|$)/u.exec(trimmed)?.[1];
+      const isAggregate = !explicitCategory;
+      const sourceLine = (explicitCategory ? byCategory.get(explicitCategory) : byCategory.get("体") || fallbackLine) || fallbackLine;
+      const detailLines = sourceLine.provider_place_parts || [sourceLine];
+      if (isAggregate) {
+        expandedLines.push({
+          ...sourceLine,
+          id: physicalIndex + 1,
+          raw_text: raw,
+          input_text: raw,
+          __sourceIds: [sourceLine.id],
+          __detailLines: detailLines,
+          batch_id: sourceLine.batch_id || `provider-${sourceLine.id}`,
+          batch_index: 1,
+          batch_size: 1,
+          batch_end: true,
+          batch_valid: true,
+          batch_count: Number(sourceLine.count || 0),
+          batch_stake_count: Number(sourceLine.stake_count ?? sourceLine.count ?? 0),
+          batch_amount: sourceLine.amount,
+        });
+      } else {
+        expandedLines.push({
+          ...sourceLine,
+          id: physicalIndex + 1,
+          raw_text: raw,
+          input_text: raw,
+          __sourceIds: [sourceLine.id],
+          __detailLines: detailLines,
+          amount: explicitCategory === "体" ? "0.00" : sourceLine.amount,
+          count: explicitCategory === "体" ? 0 : sourceLine.count,
+          stake_count: explicitCategory === "体" ? 0 : sourceLine.stake_count,
+          code_count: explicitCategory === "体" ? 0 : sourceLine.code_count,
+          __hideSummary: explicitCategory === "体",
+          __hideDetail: explicitCategory === "体",
+        });
+      }
+    });
+  }
   // The preview API omits empty input lines. Rebuild those physical rows in
   // the table so the user's original layout remains visible, while mapping
   // each non-empty row to the next parsed result instead of turning it into
   // a misleading “新” row.
-  if (hasPhysicalBlank) {
+  if (expandedLines.length === 0 && hasPhysicalBlank) {
     const fallbackBlank: QuickEntryLine = { id: 0, raw_text: "", status: "new", number_text: "", amount: "0", count: 0, category: null, reason: null };
     let semanticIndex = 0;
     sourcePhysical.forEach((raw, physicalIndex) => {
@@ -105,7 +165,7 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
       const candidate = lines[semanticIndex++];
       expandedLines.push({ ...candidate, __sourceIds: [candidate.id], __detailLines: [candidate] });
     }
-  } else if (physicalExpanded) {
+  } else if (expandedLines.length === 0 && physicalExpanded) {
     const physicalBatchId = lines.find((item) => item.batch_id)?.batch_id || `physical-${lines.map((item) => item.id).join("-")}`;
     const physicalMergedText = lines.find((item) => item.batch_merged_text)?.batch_merged_text
       || sourcePhysical.filter((raw) => raw.trim()).join(" ").replace(/\s+/gu, " ").trim();
@@ -136,7 +196,7 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
       });
     });
   }
-  for (let index = hasPhysicalBlank || physicalExpanded ? lines.length : 0; index < lines.length; ) {
+  for (let index = expandedLines.length > 0 || hasPhysicalBlank || physicalExpanded ? lines.length : 0; index < lines.length; ) {
     const source = lines[index].input_text || lines[index].raw_text || "";
     const members: QuickEntryLine[] = [];
     while (index < lines.length && (lines[index].input_text || lines[index].raw_text || "") === source) {
@@ -418,7 +478,7 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
               return candidateSource === sourceKey || candidateSource.includes(sourceKey) || sourceKey.includes(candidateSource);
             });
         const isLastRelatedGroup = !hasLaterRelatedGroup;
-        const showDetailButton = isLastRelatedGroup && ((group.some((item) => item.status === "success") && (!isBatch || isBatchEnd)) || mismatchGroup);
+        const showDetailButton = !line.__hideDetail && isLastRelatedGroup && ((group.some((item) => item.status === "success") && (!isBatch || isBatchEnd)) || mismatchGroup);
         const displayCategory = line.category || lines.find((item) => {
           const itemSource = item.input_text || item.raw_text || "";
           return item.category && (itemSource === sourceKey || itemSource.includes(sourceKey) || sourceKey.includes(itemSource));
@@ -479,7 +539,7 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
             />
             {line.status === "success" ? (
               !isBatch ? (
-                <div className="quick-result-detail">
+                !line.__hideSummary && <div className="quick-result-detail">
                   <span>笔数：</span><b>{groupCount}</b>
                   <span>金额：</span><b>{formatAmount(groupAmount.toFixed(2))}</b>
                 </div>
