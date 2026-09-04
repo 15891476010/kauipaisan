@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace app\controller;
 
 use app\service\AgentImportAccountSync;
+use app\service\AgentImportOverviewSync;
 use think\Request;
 use think\facade\Cache;
 use think\facade\Db;
@@ -60,7 +61,7 @@ final class AgentImportMaterialize
             if(!Db::name('sites')->where('id',$siteId)->where('tenant_id',(int)$session['tenant_id'])->whereNull('deleted_at')->count())return json(['code'=>404,'message'=>'站点不存在','data'=>null],404);
             if(!Db::name('agent_import_profiles')->where('id',$profileId)->where('site_id',$siteId)->where('tenant_id',(int)$session['tenant_id'])->count())return json(['code'=>404,'message'=>'数据源不存在','data'=>null],404);
             if(!Db::name('organization_nodes')->where('id',$targetId)->where('site_id',$siteId)->where('tenant_id',(int)$session['tenant_id'])->whereNull('deleted_at')->count())return json(['code'=>404,'message'=>'写入目标组织不存在','data'=>null],404);
-            $now=date('Y-m-d H:i:s');$queuedId=(int)Db::name('agent_import_batches')->insertGetId(['tenant_id'=>(int)$session['tenant_id'],'site_id'=>$siteId,'profile_id'=>$profileId,'target_organization_id'=>$targetId,'from_date'=>$from,'to_date'=>$to,'types'=>json_encode($payload['types']??['reports','ledger','orders','results'],JSON_UNESCAPED_UNICODE),'status'=>'queued','external_counts'=>null,'created_counts'=>null,'created_credentials'=>null,'started_at'=>null,'finished_at'=>null,'created_at'=>$now,'updated_at'=>$now]);
+            $now=date('Y-m-d H:i:s');$queuedId=(int)Db::name('agent_import_batches')->insertGetId(['tenant_id'=>(int)$session['tenant_id'],'site_id'=>$siteId,'profile_id'=>$profileId,'target_organization_id'=>$targetId,'from_date'=>$from,'to_date'=>$to,'types'=>json_encode(['report_overview','accounts','account_tree','sync_log'],JSON_UNESCAPED_UNICODE),'status'=>'queued','external_counts'=>null,'created_counts'=>null,'created_credentials'=>null,'started_at'=>null,'finished_at'=>null,'created_at'=>$now,'updated_at'=>$now]);
             $payload['_queued_batch_id']=$queuedId;
             $bodyFile=tempnam(sys_get_temp_dir(),'agent-import-job-');
             if($bodyFile===false) throw new \RuntimeException('后台任务临时文件不可用');
@@ -71,7 +72,10 @@ final class AgentImportMaterialize
             // queued. Keep the public Host header for route/vhost selection.
             $workerUrl='http://127.0.0.1:18082/api/v1/admin/agent-import/batches';
             $token=trim(str_ireplace('Bearer ','',(string)$request->header('authorization')));
-            $cmd='nohup curl --silent --show-error --max-time 900 -X POST '.escapeshellarg($workerUrl).' -H '.escapeshellarg('Host: kpsadmin.tzgpt.top').' -H '.escapeshellarg('Authorization: Bearer '.$token).' -H '.escapeshellarg('Content-Type: application/json').' -H '.escapeshellarg('X-Agent-Import-Worker: 1').' --data-binary @'.escapeshellarg($bodyFile).' >/dev/null 2>&1; rm -f '.escapeshellarg($bodyFile).' >/dev/null 2>&1 &';
+            // Background the complete curl-and-cleanup compound command so
+            // the HTTP request returns immediately even while the worker is
+            // logging in, crawling pages, and materializing records.
+            $cmd='(nohup curl --silent --show-error --max-time 900 -X POST '.escapeshellarg($workerUrl).' -H '.escapeshellarg('Host: kpsadmin.tzgpt.top').' -H '.escapeshellarg('Authorization: Bearer '.$token).' -H '.escapeshellarg('Content-Type: application/json').' -H '.escapeshellarg('X-Agent-Import-Worker: 1').' --data-binary @'.escapeshellarg($bodyFile).' >/dev/null 2>&1; rm -f '.escapeshellarg($bodyFile).' >/dev/null 2>&1) >/dev/null 2>&1 &';
             exec($cmd);
             return json(['code'=>0,'message'=>'做账任务已进入后台，完成后可在批次列表查看创建结果','data'=>['queued'=>true,'batch_id'=>$queuedId]],202);
         }
@@ -94,12 +98,20 @@ final class AgentImportMaterialize
         $batch=$batchId?Db::name('agent_import_batches')->where('id',$batchId)->where('tenant_id',(int)$session['tenant_id'])->find():null;
         if(!$batch||$batch['status']!=='completed') return $response;
 
+        // The snapshot phase marks the source crawl completed, but local
+        // account/bet materialization is still running. Keep the batch in a
+        // visible running state until both phases finish.
+        Db::name('agent_import_batches')->where('id',$batchId)->update(['status'=>'running','updated_at'=>date('Y-m-d H:i:s')]);
+        Db::name('agent_import_records')->insert(['batch_id'=>$batchId,'entity_type'=>'sync_log','external_id'=>null,'local_id'=>null,'action'=>'progress','payload'=>json_encode(['level'=>'info','message'=>'开始写入本地账号和总货概览数据','context'=>[]],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES),'created_at'=>date('Y-m-d H:i:s')]);
         $rows=$this->accountRows($batchId);
         if(!$rows)$rows=$this->retryAccounts($batch);
         try {
             $materialized=AgentImportAccountSync::import($batchId,(int)$batch['tenant_id'],(int)$batch['site_id'],(int)$batch['target_organization_id'],$rows);
-            $createdCounts=$materialized['stats'];
-            Db::name('agent_import_batches')->where('id',$batchId)->update(['created_counts'=>json_encode($createdCounts,JSON_UNESCAPED_UNICODE),'created_credentials'=>json_encode($materialized['credentials'],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES),'updated_at'=>date('Y-m-d H:i:s')]);
+            $profile=Db::name('agent_import_profiles')->where('id',(int)$batch['profile_id'])->find();
+            if(!$profile) throw new \RuntimeException('数据源配置不存在');
+            $overview=AgentImportOverviewSync::run($batchId,$batch,$profile);
+            $createdCounts=$materialized['stats'];$createdCounts['overview_sync']=$overview;
+            Db::name('agent_import_batches')->where('id',$batchId)->update(['status'=>'completed','finished_at'=>date('Y-m-d H:i:s'),'created_counts'=>json_encode($createdCounts,JSON_UNESCAPED_UNICODE),'created_credentials'=>json_encode($materialized['credentials'],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES),'updated_at'=>date('Y-m-d H:i:s')]);
             $result['data']['created_counts']=$createdCounts;
             $result['data']['credentials']=$materialized['credentials'];
             $result['message']='做账完成，已创建本地代理/会员账号';
@@ -151,5 +163,14 @@ final class AgentImportMaterialize
         $removed=AgentImportAccountSync::rollback($batchId,(int)$session['tenant_id']);
         Db::name('agent_import_batches')->where('id',$batchId)->update(['status'=>'rolled_back','updated_at'=>date('Y-m-d H:i:s')]);
         return json(['code'=>0,'message'=>'批次及本地账号已回滚','data'=>['batch_id'=>$batchId,'removed'=>$removed]]);
+    }
+
+    public function logs(Request $request,int $id): \think\response\Json
+    {
+        $session=$this->session($request);$batch=Db::name('agent_import_batches')->where('id',$id)->where('tenant_id',(int)$session['tenant_id'])->find();
+        if(!$batch)return json(['code'=>404,'message'=>'批次不存在','data'=>null],404);
+        $after=(int)$request->param('after_id',0);$query=Db::name('agent_import_records')->where('batch_id',$id)->where('entity_type','sync_log')->where('id','>',$after)->order('id asc')->limit(200);$rows=[];
+        foreach($query->select()->toArray() as $row){$payload=json_decode((string)($row['payload']??''),true);$rows[]=['id'=>(int)$row['id'],'created_at'=>(string)$row['created_at'],'level'=>(string)($payload['level']??'info'),'message'=>(string)($payload['message']??''),'context'=>(array)($payload['context']??[])];}
+        return json(['code'=>0,'message'=>'ok','data'=>['batch_id'=>$id,'status'=>$batch['status'],'list'=>$rows]]);
     }
 }

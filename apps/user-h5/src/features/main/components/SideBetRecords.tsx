@@ -124,9 +124,26 @@ export function SideBetRecords({
     if (raw === "组" || raw === "组选") return "组选";
     return raw;
   };
+  const compactDetailNumber = (detail: BetDetail, play: string, source: string) => {
+    const combined = `${detail.number_text || ""} ${source}`.replace(/\s+/gu, "");
+    const context = `${play}${combined}`;
+    const isDantuo = /胆拖/u.test(context);
+    const isPack = /(组三|组六|组3|组6)包/u.test(context);
+    if (!isDantuo && !isPack) return "";
+    const kind = /(组六|组6)/u.test(context) ? "六" : "三";
+    if (isDantuo) {
+      const match = combined.match(/胆?([0-9]+)拖([0-9]+)/u);
+      if (match) return `${kind}${match[1]}拖${match[2]}`;
+      const fallback = combined.replace(/(?:组三|组六|组3|组6)胆拖/gu, "").replace(/^胆/u, "");
+      return `${kind}${fallback}`;
+    }
+    return `${kind}包`;
+  };
   const displayDetailNumber = (detail: BetDetail) => {
     const source = detail.source_text || "";
     const play = playName(detail);
+    const compact = compactDetailNumber(detail, play, source);
+    if (compact) return compact;
     const sticky = source.match(/(\d{4,10})\s*(组三|组六)六码/u);
     if (sticky) return `${sticky[2] === "组三" ? "三" : "六"}${sticky[1]}`;
     if (play.includes("组3") || play.includes("组6") || play.includes("组选")) {
@@ -326,7 +343,7 @@ export function SideBetRecords({
                             <span>
                               <span className="record-detail-number">
                                 <label>{displayDetailNumber(detail)}</label>
-                                {detail.play_type ? <em>{detail.play_type.replace(/\d+/g, "")}</em> : null}
+                                {detail.play_type && !/(胆拖|包$)/u.test(playName(detail)) ? <em>{detail.play_type.replace(/\d+/g, "")}</em> : null}
                               </span>
                             </span>
                             <span>{detail.amount || "0"}</span>

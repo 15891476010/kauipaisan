@@ -49,7 +49,7 @@ export function BetDetailsPage({ lotteries, selectedLotteryId }: { lotteries: Lo
   const { message } = AntdApp.useApp();
   const [rows, setRows] = useState<BetDetail[]>([]);
   const [previewRow, setPreviewRow] = useState<BetDetail>();
-  const [previewMode, setPreviewMode] = useState<"original" | "parsed">("original");
+  const [previewMode, setPreviewMode] = useState<"original" | "parsed" | "numbers">("original");
   const [number, setNumber] = useState("");
   const [metric, setMetric] = useState("odds");
   const [min, setMin] = useState("");
@@ -135,14 +135,14 @@ export function BetDetailsPage({ lotteries, selectedLotteryId }: { lotteries: Lo
             {issues.length ? issues.map((item) => <option key={item.code} value={item.code}>{item.draw_day ? dayjs(item.draw_day).format("M-D") : "--"}({item.code})</option>) : <option value="">暂无期号</option>}
           </select>
         </div>
-        <BetDetailsTable rows={rows} totals={pageTotals} loading={loading} onPreview={(row) => { setPreviewRow(row); setPreviewMode("original"); }} />
+        <BetDetailsTable rows={rows} totals={pageTotals} loading={loading} onPreview={(row) => { setPreviewRow(row); setPreviewMode("original"); }} onPreviewNumber={(row) => { setPreviewRow(row); setPreviewMode("numbers"); }} />
         <div className="bet-detail-pagination" aria-label="下注明细分页">
           <span className="bet-detail-total-count">总计：<b>{total}</b> 条数据</span><button type="button" onClick={() => goPage(page - 1)} disabled={page <= 1}>‹</button>
           {pageList.map((item) => item === "ellipsis-left" || item === "ellipsis-right" ? <span className="bet-page-ellipsis" key={item}>•••</span> : <button type="button" className={item === page ? "active" : ""} key={item} onClick={() => goPage(item)}>{item}</button>)}
           <button type="button" onClick={() => goPage(page + 1)} disabled={page >= pageCount}>›</button><span className="bet-page-size">{DETAIL_PAGE_SIZE} 条/页</span><span>跳至</span><input aria-label="跳至页" value={jumpPage} onChange={(event) => setJumpPage(event.target.value.replace(/\D/g, ""))} onKeyDown={(event) => { if (event.key === "Enter") goJumpPage(); }} /><span>页</span><button type="button" className="bet-page-jump" onClick={goJumpPage}>跳 转</button>
         </div>
-        <Modal className="record-detail-modal" open={Boolean(previewRow)} title={previewRow ? `文本详情 · 注单 ${previewRow.order_no || previewRow.bet_record_id || previewRow.id}` : ""} footer={null} onCancel={() => setPreviewRow(undefined)} width={760}>
-          {previewRow ? <>
+        <Modal className="record-detail-modal" open={Boolean(previewRow)} title={previewRow ? `${previewMode === "numbers" ? "投注号码" : "文本详情"} · 注单 ${previewRow.order_no || previewRow.bet_record_id || previewRow.id}` : ""} footer={null} onCancel={() => setPreviewRow(undefined)} width={760}>
+          {previewRow && previewMode === "numbers" ? <div className="bet-number-preview">{(previewRow.number_text || "").split(/[\s,，、]+/).filter(Boolean).map((value, index) => <i key={`${value}-${index}`}>{value}</i>)}</div> : previewRow ? <>
             <div className="bet-text-tabs" role="tablist" aria-label="投注文本类型">
               <button type="button" role="tab" aria-selected={previewMode === "original"} className={previewMode === "original" ? "active" : ""} onClick={() => setPreviewMode("original")}>原始文本</button>
               <button type="button" role="tab" aria-selected={previewMode === "parsed"} className={previewMode === "parsed" ? "active" : ""} onClick={() => setPreviewMode("parsed")}>文本</button>

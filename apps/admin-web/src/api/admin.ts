@@ -731,6 +731,8 @@ export type AgentImportCredential = { type: 'agent' | 'member'; username: string
 export const createAgentImportBatch = (payload: Partial<AgentImportBatch> & { site_id: number; profile_id: number; target_organization_id: number; from_date: string; to_date: string }) => http.post<never, Envelope<{ id: number; counts?: Record<string, unknown>; created_counts?: Record<string, unknown>; credentials?: AgentImportCredential[] }>>('/admin/agent-import/batches', payload);
 export const rollbackAgentImportBatch = (batch_id: number) => http.post<never, Envelope<{ batch_id: number }>>('/admin/agent-import/rollback', { batch_id });
 export const getAgentImportCredentials = (batch_id: number) => http.get<never, Envelope<{ batch_id: number; credentials: AgentImportCredential[] }>>(`/admin/agent-import/batches/${batch_id}/credentials`);
+export type AgentImportLog = { id: number; created_at: string; level: string; message: string; context?: Record<string, unknown> };
+export const getAgentImportLogs = (batch_id: number, after_id = 0) => http.get<never, Envelope<{ batch_id: number; status: string; list: AgentImportLog[] }>>(`/admin/agent-import/batches/${batch_id}/logs`, { params: { after_id } });
 export type LotteryConfigTest = {
   base_url: string;
   url: string;
@@ -1051,7 +1053,7 @@ export const getRobotLogs = (id: number, params?: { after_id?: number; limit?: n
 // Bet-record aggregation API (kept explicit so the resource view and the
 // import UI share one typed client).
 export type BetAggregationMode = 'records' | 'number' | 'member' | string;
-export type BetAggregationRow = Record<string, any> & { lottery?: string; issue_no?: string; play_type?: string; position?: string; selection?: string; match_number?: string; outcome?: string; summary_kind?: string; summary_odds?: string; position_digits?: Record<string, string>; unit_amount?: string };
+export type BetAggregationRow = Record<string, any> & { lottery?: string; issue_no?: string; play_type?: string; position?: string; selection?: string; outcome?: string; summary_kind?: string; summary_odds?: string; summary_signature?: string; position_digits?: Record<string, string>; combination_count?: number; unit_amount?: string };
 export type BetAggregationMember = Record<string, any>;
 export type BetAggregationOrder = Record<string, any>;
 export const getBetAggregation = (params?: Record<string, unknown>) => http.get<never, Envelope<{ list: BetAggregationRow[]; total: number; source_item_count?: number; unmapped_item_count?: number }>>('/admin/bet-records/aggregation', { params });

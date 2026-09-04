@@ -1,0 +1,30 @@
+<?php
+declare(strict_types=1);
+namespace app\service;
+use think\facade\Db;
+
+/** Imports only the reference site's total overview into local bet tables. */
+final class AgentImportOverviewSync
+{
+    public static function run(int $batchId,array $batch,array $profile): array
+    {
+        $controller=new \app\controller\AgentImport();$loginMethod=new \ReflectionMethod($controller,'login');$loginMethod->setAccessible(true);$callMethod=new \ReflectionMethod($controller,'call');$callMethod->setAccessible(true);
+        $login=$loginMethod->invoke($controller,$profile);$ak=$login['ak'];$from=(string)$batch['from_date'];$to=(string)$batch['to_date'];
+        $resolve=new \ReflectionMethod($controller,'resolveIssueRange');$resolve->setAccessible(true);$range=$resolve->invoke($controller,$profile['base_url'],$ak,$from,$to,4);
+        $userMap=[];$records=Db::name('agent_import_records')->where('batch_id',$batchId)->where('entity_type','account')->whereIn('action',['created_member','reused'])->select()->toArray();
+        foreach($records as $record){$ext=trim((string)($record['external_id']??''));$local=(int)($record['local_id']??0);if($ext==='')continue;$payload=json_decode((string)($record['payload']??''),true);$source=$payload['source']??[];if((int)($source['tp']??6)<6)continue;$user=Db::name('site_users')->where('id',$local)->where('site_id',(int)$batch['site_id'])->whereNull('deleted_at')->find();if($user)$userMap[$ext]=(int)$user['id'];}
+        $stats=['pages'=>0,'overview_rows'=>0,'inserted_records'=>0,'inserted_details'=>0,'skipped_duplicate'=>0,'skipped_unknown_member'=>0,'failed_details'=>0];$page=1;$pages=1;
+        self::log($batchId,'开始获取总货概览', ['from_issue'=>$range['from'],'to_issue'=>$range['to']]);
+        do{$result=$callMethod->invoke($controller,$profile['base_url'],$ak,'ag.tz','gblr',['lt'=>4,'dnf'=>$range['from'],'dnt'=>$range['to'],'pn'=>$page,'ps'=>40]);$response=$result['response'];$data=$response['data']??[];$rows=(array)($data['rl']??$data['list']??[]);$stats['pages']=$page;$stats['overview_rows']+=count($rows);$tc=(int)($data['tc']??$data['total']??0);$pages=$tc>0?(int)ceil($tc/40):($rows!==[]?$page:0);self::log($batchId,'已获取总货概览第 '.$page.' 页',['rows'=>count($rows),'total'=>$tc]);
+            foreach($rows as $source){if(!is_array($source))continue;$bli=trim((string)($source['bli']??''));$mi=trim((string)($source['mi']??''));$amount=(float)($source['am']??0);$count=(int)($source['bc']??0);if($bli===''||$amount<=0||$count<=0)continue;$userId=(int)($userMap[$mi]??0);if($userId<1){$stats['skipped_unknown_member']++;self::log($batchId,'跳过未匹配会员的主单',['bli'=>$bli,'mi'=>$mi],'warning');continue;}$fingerprint=hash('sha256','agent-import|'.(int)$batch['site_id'].'|'.$bli);if(Db::name('bet_records')->where('site_id',(int)$batch['site_id'])->where('submission_fingerprint',$fingerprint)->count()){ $stats['skipped_duplicate']++;continue; }
+                $placed=self::dateTime((int)($source['at']??0));$details=[];$win=0.0;try{$detailResult=$callMethod->invoke($controller,$profile['base_url'],$ak,'ag.tz','gbl',['lt'=>4,'bli'=>$bli]);$detailData=$detailResult['response']['data']??[];$detailRows=(array)($detailData['bl']??[]);foreach($detailRows as $d){if(!is_array($d))continue;$dAmount=(float)($d['am']??0);$dWin=(float)($d['za']??0);$win+=$dWin;$details[]=['number_text'=>(string)($d['nm']??$d['bn']??$bli),'category'=>(string)($d['nm']??''),'amount'=>number_format($dAmount,2,'.',''),'odds'=>isset($d['rt'])?number_format((float)$d['rt'],3,'.',''):null,'win_amount'=>number_format($dWin,2,'.',''),'matched_count'=>(int)($d['dv']??0),'rebate'=>'0.00','status'=>((int)($d['st']??3)===0?'refunded':'pending'),'placed_at'=>self::dateTime((int)($d['bt']??$source['at']??0)),'source_text'=>(string)($d['nm']??'')];}}catch(\Throwable $e){$stats['failed_details']++;self::log($batchId,'主单详情获取失败',['bli'=>$bli,'error'=>$e->getMessage()],'error');}
+                if($details===[])$details=[['number_text'=>(string)($source['bn']??$bli),'category'=>'总货概览','amount'=>number_format($amount,2,'.',''),'odds'=>null,'win_amount'=>'0.00','matched_count'=>$count,'rebate'=>'0.00','status'=>'pending','placed_at'=>$placed,'source_text'=>(string)($source['bn']??$bli)]];
+                Db::startTrans();try{$recordId=(int)Db::name('bet_records')->insertGetId(['submission_id'=>null,'tenant_id'=>(int)$batch['tenant_id'],'site_id'=>(int)$batch['site_id'],'user_id'=>$userId,'issue_no'=>(string)($source['dn']??''),'source_text'=>'参考站总货概览主单 '.(string)($source['bn']??$bli),'formatted_text'=>'参考站总货概览','submission_fingerprint'=>$fingerprint,'bet_count'=>$count,'amount'=>number_format($amount,2,'.',''),'win_amount'=>number_format($win,2,'.',''),'status'=>'pending','sealed'=>0,'placed_at'=>$placed,'refunded_at'=>null,'created_at'=>$placed,'board_code'=>'A']);foreach($details as $detail){$detail['tenant_id']=(int)$batch['tenant_id'];$detail['site_id']=(int)$batch['site_id'];$detail['user_id']=$userId;$detail['bet_record_id']=$recordId;$detail['issue_no']=(string)($source['dn']??'');$detail['board_code']='A';Db::name('bet_details')->insert($detail);$stats['inserted_details']++;}$stats['inserted_records']++;Db::commit();}catch(\Throwable $e){Db::rollback();self::log($batchId,'本地主单写入失败',['bli'=>$bli,'error'=>$e->getMessage()],'error');}
+            }
+            $page++;
+        }while($page<=$pages&&$page<=200);
+        self::log($batchId,'总货概览同步完成',$stats);return $stats;
+    }
+    private static function dateTime(int $stamp): string {if($stamp>20000000000)$stamp=(int)floor($stamp/1000);return $stamp>0?date('Y-m-d H:i:s',$stamp):date('Y-m-d H:i:s');}
+    private static function log(int $batchId,string $message,array $context=[],string $level='info'): void {Db::name('agent_import_records')->insert(['batch_id'=>$batchId,'entity_type'=>'sync_log','external_id'=>null,'local_id'=>null,'action'=>'progress','payload'=>json_encode(['level'=>$level,'message'=>$message,'context'=>$context],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES),'created_at'=>date('Y-m-d H:i:s')]);}
+}

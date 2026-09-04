@@ -26,7 +26,13 @@ function displayNumber(row: BetDetail): string {
   if (play.includes("双飞") || source.includes("对子")) {
     return value.replace(/^0(?=\d{2}(?:飞)?$)/, "").replace(/飞$/, "");
   }
-  if (play.includes("组3") || play.includes("组6") || row.play_label === "组") return value.replace(/^[三六]/u, "");
+  if (play.includes("组3") || play.includes("组6") || row.play_label === "组") {
+    return value.replace(/^[三六]\s*/u, "").replace(/(?:组三|组六)[一二两三四五六七八九]码$/u, "").trim();
+  }
+  if (play.includes("独胆")) return value.replace(/胆$/u, "");
+  // Sum/size/parity plays are already their own label (e.g. 和大、和单、和值10).
+  // Do not print the same text twice in the number and play columns.
+  if (row.play_label && (value === row.play_label || value === row.play_type)) return "";
   return value.replace(/直+$/u, "直").replace(/组+$/u, "组");
 }
 
@@ -39,11 +45,13 @@ export function BetDetailsTable({
   totals,
   loading,
   onPreview,
+  onPreviewNumber,
 }: {
   rows: BetDetail[];
   totals: DetailTotals;
   loading: boolean;
   onPreview: (row: BetDetail) => void;
+  onPreviewNumber: (row: BetDetail) => void;
 }) {
   return (
     <div className="bet-detail-table">
@@ -52,9 +60,9 @@ export function BetDetailsTable({
         const sameOrder = index > 0 && detailOrderKey(rows[index - 1]) === detailOrderKey(row);
         const rowClass = ["bet-detail-row", index % 2 === 0 ? "stripe" : "plain", row.status === "refunded" ? "refunded" : ""].filter(Boolean).join(" ");
         return <div className={rowClass} key={row.row_key || `${row.id}-${index}`}>
-          <span className="bet-order-no">{row.order_no || row.bet_record_id || row.id}</span>
-          <span className="bet-placed-at">{row.placed_at}</span>
-          <span className="bet-number-link"><b>{displayNumber(row) || "-"}</b>{row.play_label ? <em>{row.play_label}</em> : null}</span>
+          <span className="bet-order-no">{sameOrder ? "" : row.order_no || row.bet_record_id || row.id}</span>
+          <span className="bet-placed-at">{sameOrder ? "" : row.placed_at}</span>
+          <button type="button" className="bet-number-link" onClick={() => onPreviewNumber(row)}><b>{displayNumber(row) || (row.play_label ? "" : "-")}</b>{row.play_label ? <em>{row.play_label}</em> : null}</button>
           <span className="bet-money">{row.amount}</span><span className="bet-odds">{row.odds || "-"}</span><span>{row.win_amount}</span><span>{row.rebate}</span><span>{rowProfit(row)}</span><span>{statusLabels[row.status] || "未知状态"}</span>
           {sameOrder ? <span className="bet-same-order">同上</span> : <button type="button" className="bet-text-link" disabled={!row.source_text && !row.parsed_source_text} title="查看投注文本" onClick={() => onPreview(row)}><FileTextOutlined /></button>}
         </div>;

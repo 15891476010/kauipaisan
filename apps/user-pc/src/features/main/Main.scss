@@ -2990,76 +2990,111 @@ body {
 .password-page {
   position: relative;
   min-height: calc(100vh - 147px);
-  padding: 17px 0 40px;
-  background: #fff;
+  box-sizing: border-box;
+  padding: 10px 0 46px;
+  background: #dcecff;
   color: #000;
 }
 .password-fields {
-  display: block;
-  width: min(960px, calc(100% - 32px));
+  display: flex;
+  width: 91%;
+  min-height: 150px;
   margin: 0 auto;
+  padding: 14px 0 15px;
+  box-sizing: border-box;
   background: #fff;
 }
 .password-field {
   position: relative;
   display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 60px;
-  margin: 13px 0;
+  min-width: 0;
+  padding: 0 24px;
+  box-sizing: border-box;
 }
 .password-field label {
-  position: absolute;
-  z-index: 1;
-  top: -9px;
-  left: calc(50% - 430px);
-  padding: 0 5px;
-  background: #fff;
+  display: block;
+  margin: 0 0 8px;
   color: #000;
-  font-size: 14px;
-  line-height: 22px;
+  font-size: 16px;
+  line-height: 24px;
+  text-align: center;
 }
 .password-fields input {
   display: block;
-  width: min(86vw, 740px);
-  height: 34px;
-  margin-top: 9px;
-  padding: 4px 11px;
-  border: 1px solid #d9d9d9;
-  border-radius: 4px;
+  width: min(172px, 100%);
+  height: 32px;
+  box-sizing: border-box;
+  margin: 0 auto;
+  padding: 3px 9px;
+  border: 1px solid #8a8a8a;
+  border-radius: 2px;
   outline: 0;
-  color: rgba(0, 0, 0, 0.65);
-  font-size: 16px;
-  line-height: 32px;
-}
-.password-fields p {
-  margin: 0;
-  padding: 0 13px;
-  color: #136f8f;
+  color: #333;
+  background: #fff;
   font-size: 14px;
+  line-height: 22px;
+}
+.password-new input {
+  width: min(248px, 100%);
+}
+.password-field + .password-field {
+  border-left: 1px dashed #6684c4;
+}
+.password-new small {
+  display: block;
+  width: min(248px, 100%);
+  margin-top: 7px;
+  color: #f08300;
+  font-size: 12px;
+  line-height: 19px;
+  text-align: left;
+}
+.password-forbidden {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 4px;
+  width: fit-content;
+  max-width: calc(100% - 120px);
+  box-sizing: border-box;
+  margin: 15px 0 0 4%;
+  padding: 8px 14px;
+  border-radius: 18px;
+  background: #ffffa8;
+  color: #333;
+  font-size: 13px;
+  line-height: 20px;
+  text-align: left;
+}
+.password-forbidden strong {
+  color: #e4392f;
   font-weight: 700;
-  line-height: 25px;
 }
 .password-save {
   display: block;
-  width: 69px;
-  height: 31px;
+  width: 82px;
+  height: 30px;
   margin: 15px auto 0;
-  padding: 0 7px;
-  border: 0;
-  border-radius: 4px;
-  background: #00008b;
+  padding: 0;
+  border: 1px solid #777;
+  border-radius: 0;
+  background: #171e9e;
   color: #fff;
-  font-size: 14px;
-  line-height: 21px;
+  font-size: 15px;
+  line-height: 28px;
   cursor: pointer;
 }
 .password-save:hover,
 .password-save:focus,
 .password-save:active {
-  border: 0;
+  border: 1px solid #777;
   outline: 0;
-  background: #00008b;
+  background: #171e9e;
   color: #fff;
   box-shadow: none;
 }
@@ -3068,6 +3103,32 @@ body {
   margin: 10px auto 0;
   color: #b00000;
   font-size: 14px;
+}
+@media (max-width: 700px) {
+  .password-page {
+    min-height: calc(100vh - 95px);
+    padding: 10px 0 34px;
+  }
+  .password-fields {
+    width: calc(100% - 20px);
+    display: block;
+    padding: 18px 16px;
+  }
+  .password-field {
+    padding: 0 0 18px;
+  }
+  .password-field + .password-field {
+    padding-top: 18px;
+    border-top: 1px dashed #6684c4;
+    border-left: 0;
+  }
+  .password-new small {
+    width: min(248px, 100%);
+  }
+  .password-forbidden {
+    max-width: calc(100% - 20px);
+    margin-left: 10px;
+  }
 }
 .entry {
   background: #dcecff;

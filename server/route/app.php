@@ -132,9 +132,6 @@ Route::group('api/v1', static function () {
     Route::post('admin/site-users', 'Resource/create')->append(['resource' => 'site-users']);
     Route::put('admin/site-users/:id', 'Resource/update')->append(['resource' => 'site-users']);
     Route::delete('admin/site-users/:id', 'Resource/delete')->append(['resource' => 'site-users']);
-    // These nested endpoints must be registered before the exact collection
-    // route below. Without explicit routes ThinkPHP falls through to its
-    // dynamic controller resolver and treats "Api" as a controller name.
     Route::get('admin/bet-records/aggregation', 'BetAggregation/index')->completeMatch();
     Route::get('admin/bet-records/aggregation-details', 'BetAggregation/details')->completeMatch();
     // Keep the collection route exact so `/admin/bet-records/batch-options`
@@ -191,6 +188,8 @@ Route::group('api/v1', static function () {
     // require an exact match for the collection path. Otherwise ThinkPHP
     // treats /batches/:id/credentials as /batches and returns data.list.
     Route::get('admin/agent-import/batches/:id/credentials', 'AgentImportMaterialize/credentials')
+        ->pattern(['id'=>'\\d+']);
+    Route::get('admin/agent-import/batches/:id/logs', 'AgentImportMaterialize/logs')
         ->pattern(['id'=>'\\d+']);
     Route::get('admin/agent-import/batches', 'AgentImport/batches')->completeMatch();
     Route::post('admin/agent-import/batches', 'AgentImportMaterialize/createBatch');

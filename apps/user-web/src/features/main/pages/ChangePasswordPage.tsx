@@ -25,48 +25,51 @@ export function ChangePasswordPage({ forced = false, onPasswordChanged }: { forc
         setMessage(error instanceof Error ? error.message : "密码修改失败"),
       );
   };
-
   return (
     <div className="password-page">
       <div className="password-fields">
-        <div className="password-field">
-          <label htmlFor="old-password">原密码：</label>
+        <label>
+          <span>原密码</span>
           <input
-            id="old-password"
             type="password"
             maxLength={20}
             value={oldPassword}
             onChange={(e) => setOldPassword(e.target.value)}
             placeholder="请输入原密码"
           />
-        </div>
-        <div className="password-field">
-          <label htmlFor="new-password">新密码：</label>
+        </label>
+        <label className="password-new">
+          <span>新密码</span>
           <input
-            id="new-password"
             type="password"
             maxLength={20}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             placeholder="请输入密码"
           />
-        </div>
-        <div className="password-field">
-          <label htmlFor="confirm-password">确认新密码：</label>
+          <small>
+            1. 新密码不能跟账号和原密码相同
+            <br />
+            2. 必须是数字和字母组合，至少6位以上
+          </small>
+        </label>
+        <label>
+          <span>确认新密码</span>
           <input
-            id="confirm-password"
             type="password"
             maxLength={20}
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
             placeholder="请确认新密码"
           />
-        </div>
-        <p>1. 必须是至少3个大小写字母与至少3个数字的组合，不能包含任何字符</p>
-        <p>2. 相连5位及以上的连续数字或字母会降低强度，如密码中包含：12345, 65432, Abcde</p>
+        </label>
+      </div>
+      <div className="password-forbidden">
+        <span>系统禁止不可用密码：</span>
+        <span>a12345,ab1234,abc123,a1b2c3,aaa111,123qwe</span>
       </div>
       <button type="button" className="password-save" onClick={submit}>
-        提 交
+        保 存
       </button>
       {message && <p className="password-message">{message}</p>}
       {forced && <p className="password-message">首次登录必须先修改密码，修改完成后才能进入系统。</p>}

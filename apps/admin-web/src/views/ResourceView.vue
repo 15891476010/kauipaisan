@@ -332,6 +332,7 @@ function aggregationDetailParams(row: BetAggregationRow) {
     selection: row.selection || "",
     summary_kind: row.summary_kind || "",
     summary_odds: row.summary_odds || "",
+    summary_signature: row.summary_signature || "",
     outcome: row.outcome || "",
     detail_page: aggregationDetailPage.value,
     detail_page_size: aggregationDetailPageSize.value,

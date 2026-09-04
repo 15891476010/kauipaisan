@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace app\service;
 
 use think\facade\Db;
+use app\service\ScoreTransfer;
 
 /**
  * Materializes the account snapshot produced by AgentImport into the local
@@ -64,9 +65,22 @@ final class AgentImportAccountSync
                 continue;
             }
 
-            $orgAccount = Db::name('organization_accounts')->where('site_id', $siteId)->where('username', $username)->whereNull('deleted_at')->find();
-            $siteUser = Db::name('site_users')->where('site_id', $siteId)->where('username', $username)->whereNull('deleted_at')->find();
+            // Include soft-deleted rows: the import cleanup keeps the unique
+            // username reservation, so inserting a fresh row would fail with
+            // a duplicate-key error. Reactivate and reuse the old row instead.
+            $orgAccount = Db::name('organization_accounts')->where('site_id', $siteId)->where('username', $username)->order('id desc')->find();
+            $siteUser = Db::name('site_users')->where('site_id', $siteId)->where('username', $username)->order('id desc')->find();
             if ($orgAccount || $siteUser) {
+                if ($orgAccount && !empty($orgAccount['deleted_at'])) {
+                    Db::name('organization_accounts')->where('id',(int)$orgAccount['id'])->update(['deleted_at'=>null,'status'=>1,'updated_at'=>$now]);
+                    $orgNodeId=(int)($orgAccount['organization_id']??0);
+                    if($orgNodeId>0) Db::name('organization_nodes')->where('id',$orgNodeId)->where('tenant_id',$tenantId)->where('site_id',$siteId)->update(['deleted_at'=>null,'status'=>1,'updated_at'=>$now]);
+                    $orgAccount['deleted_at']=null;
+                }
+                if ($siteUser && !empty($siteUser['deleted_at'])) {
+                    Db::name('site_users')->where('id',(int)$siteUser['id'])->update(['deleted_at'=>null,'status'=>1,'account_state'=>'enabled','updated_at'=>$now]);
+                    $siteUser['deleted_at']=null;
+                }
                 $stats['existing']++;
                 $existingLocal=(int)($orgAccount['organization_id']??$siteUser['organization_id']??0);
                 if($sourceType>=6 && $siteUser && $parentId>0 && (int)$siteUser['organization_id']!==$parentId && str_contains((string)($siteUser['remark']??''),'做账导入')){
@@ -90,7 +104,10 @@ final class AgentImportAccountSync
                         'tenant_id'=>$tenantId, 'site_id'=>$siteId, 'parent_id'=>$parentId,
                         'level'=>$level, 'depth'=>(int)$target['depth']+1, 'path'=>'',
                         'name'=>$username, 'code'=>'IMP-'.$siteId.'-'.$batchId.'-'.preg_replace('/[^A-Za-z0-9_-]/','', $externalId),
-                        'credit_limit'=>'0.00', 'balance'=>'0.00',
+                        // `ob` is the source account's credit quota. Keep it
+                        // on the corresponding local node so the hierarchy
+                        // view and later score allocation use the same value.
+                        'credit_limit'=>number_format(max(0,(float)($source['ob']??0)),2,'.',''), 'balance'=>'0.00',
                         'permissions'=>json_encode(AgentAuthorization::sitePermissions($siteId,$level), JSON_UNESCAPED_UNICODE),
                         'settings'=>json_encode(['import_batch_id'=>$batchId,'external_id'=>$externalId], JSON_UNESCAPED_UNICODE),
                         'status'=>(int)($source['st'] ?? 1) === 0 ? 0 : 1, 'created_at'=>$now, 'updated_at'=>$now,
@@ -98,6 +115,13 @@ final class AgentImportAccountSync
                     $nodeId=(int)Db::name('organization_nodes')->insertGetId($nodeData);
                     $node=array_merge($nodeData,['id'=>$nodeId]);
                     OrganizationHierarchy::rebuildPath($nodeId);
+                    $shareRate=max(0,(float)($source['or']??0));
+                    Db::name('organization_profit_shares')->insert(['tenant_id'=>$tenantId,'site_id'=>$siteId,'parent_organization_id'=>$parentId,'child_organization_id'=>$nodeId,'max_share_rate'=>number_format(max($shareRate,(float)($source['mr']??$shareRate)),4,'.',''),'share_rate'=>number_format($shareRate,4,'.',''),'status'=>1,'effective_at'=>$now,'created_at'=>$now,'updated_at'=>$now]);
+                    $credit=(float)($source['ob']??0);
+                    if($credit>0){
+                        try { self::ensureOrganizationBalance($parentId,$credit,$tenantId,$siteId); ScoreTransfer::organizationAllocation($node,$credit,['source'=>'agent_import','batch_id'=>$batchId]); }
+                        catch(\Throwable $allocationError){ Db::name('agent_import_records')->insert(['batch_id'=>$batchId,'entity_type'=>'account','external_id'=>$externalId,'local_id'=>$nodeId,'action'=>'allocation_error','payload'=>json_encode(['credit_limit'=>$credit,'error'=>$allocationError->getMessage()],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES),'created_at'=>$now]); }
+                    }
                     $password=PasswordPolicy::initial('', $username);
                     $accountId=(int)Db::name('organization_accounts')->insertGetId([
                         'tenant_id'=>$tenantId,'site_id'=>$siteId,'organization_id'=>$nodeId,'username'=>$username,
@@ -135,6 +159,14 @@ final class AgentImportAccountSync
     {
         $map=[1=>'director',2=>'shareholder',3=>'small_shareholder',4=>'general_agent',5=>'agent'];
         return $map[$type]??($targetLevel==='agent'?'agent':'agent');
+    }
+
+    private static function ensureOrganizationBalance(int $organizationId,float $amount,int $tenantId,int $siteId,array $visited=[]): void
+    {
+        if($organizationId<1||$amount<=0)return;if(isset($visited[$organizationId]))throw new \RuntimeException('组织层级存在循环');$visited[$organizationId]=true;
+        $parent=Db::name('organization_nodes')->where('id',$organizationId)->where('tenant_id',$tenantId)->where('site_id',$siteId)->whereNull('deleted_at')->find();if(!$parent)throw new \RuntimeException('上级组织不存在');$missing=max(0,$amount-(float)$parent['balance']);if($missing<=0)return;
+        $parentId=(int)$parent['parent_id'];if($parentId>0)self::ensureOrganizationBalance($parentId,$missing,$tenantId,$siteId,$visited);
+        ScoreTransfer::organizationAllocation($parent,$missing,['source'=>'agent_import']);
     }
 
     public static function rollback(int $batchId, int $tenantId): array
