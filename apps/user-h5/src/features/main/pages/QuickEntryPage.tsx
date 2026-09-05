@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { App as AntdApp, Input, Modal, Switch, Tooltip } from "antd";
 import {
@@ -72,6 +72,8 @@ export function QuickEntryPage({
   });
   const [resultHeight, setResultHeight] = useState(0);
   const [generating, setGenerating] = useState(false);
+  const [recognizedText, setRecognizedText] = useState("");
+  const [recognitionError, setRecognitionError] = useState("");
   const [betNotices, setBetNotices] = useState<Array<{
     id: number;
     type: "info" | "success";
@@ -80,6 +82,24 @@ export function QuickEntryPage({
   const betNoticeId = useRef(0);
   const betNoticeTimers = useRef<number[]>([]);
   const previewRequestId = useRef(0);
+  const lastShiftAt = useRef(0);
+  const recognitionPrompt = "文本有问题，请手动识别（点击【识别】按钮）";
+  const clearGeneratedPreview = () => {
+    setRecognizedText("");
+    setGeneratedLines([]);
+    setGeneratedTotal({ count: 0, codeCount: 0, amount: "0.00" });
+  };
+  const handleEntryKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key !== "Shift" || event.repeat || generating) return;
+    const now = Date.now();
+    if (now - lastShiftAt.current <= 450) {
+      lastShiftAt.current = 0;
+      event.preventDefault();
+      void generateText(text);
+      return;
+    }
+    lastShiftAt.current = now;
+  };
   const quickSettingsLoaded = useRef(false);
   const defaultLotteryFallbackNotice = useRef("");
   useEffect(() => {
@@ -227,10 +247,13 @@ export function QuickEntryPage({
     showMessage = true,
   ): Promise<QuickPreview | null> => {
     if (!sourceText.trim()) {
+      setRecognizedText("");
+      setRecognitionError(recognitionPrompt);
       if (showMessage) message.warning("请输入投注文本");
       return null;
     }
     setGenerating(true);
+    setRecognitionError("");
     const requestId = ++previewRequestId.current;
     try {
       let data: QuickPreview | null = null;
@@ -255,28 +278,41 @@ export function QuickEntryPage({
       }
       if (lastError) throw lastError;
       if (requestId !== previewRequestId.current) return data;
-      setGeneratedLines(data?.lines || []);
+      const lines = data?.lines || [];
+      const hasFailedLines = !data || lines.length === 0 || lines.some((line) => line.status !== "success");
+      const providerFailed = lines.some((line) => /识别服务|请求间隔|间隔时间|网络|超时|接口不可用|无法调通|重试/u.test(line.reason || ""));
+      setGeneratedLines(lines);
       setGeneratedTotal({
         count: data?.count || 0,
         codeCount: data?.code_count ?? data?.count ?? 0,
         amount: data?.amount || "0.00",
       });
+      setRecognizedText(sourceText);
+      setRecognitionError(hasFailedLines && (providerFailed || !lines.some((line) => line.status === "success")) ? recognitionPrompt : "");
       const warning = Number(warningAmount);
       if (warning > 0 && Number(data?.amount || 0) >= warning)
         message.warning(
           `总金额已达到预警金额 ¥${displayAmount(warningAmount)}`,
         );
       return data;
-    } catch (error) {
+    } catch {
+      if (requestId !== previewRequestId.current) return null;
       setGeneratedLines([]);
       setGeneratedTotal({ count: 0, codeCount: 0, amount: "0.00" });
-      modal.error({ title: "生成失败", content: apiErrorMessage(error, "生成失败"), okText: "确认" });
+      setRecognizedText(sourceText);
+      setRecognitionError(recognitionPrompt);
       return null;
     } finally {
       if (requestId === previewRequestId.current) setGenerating(false);
     }
   };
   const generate = () => void generateText(text);
+  const canPlace = timing.canBet
+    && !generating
+    && text.trim() !== ""
+    && recognizedText === text
+    && generatedLines.length > 0
+    && generatedLines.every((line) => line.status === "success");
   useEffect(() => {
     if (suppressResultRecognition.current) {
       suppressResultRecognition.current = false;
@@ -484,6 +520,8 @@ export function QuickEntryPage({
                     cancelText: "取 消",
                     onOk: () => {
                       setText(replaceUndoText);
+                      setRecognitionError("");
+                      clearGeneratedPreview();
                       setReplaceUndoText(null);
                     },
                   });
@@ -538,7 +576,11 @@ export function QuickEntryPage({
                       type="button"
                       className="tag-name"
                       onClick={() => {
-                        if (!tagDeleting) setText(tag.name);
+                        if (!tagDeleting) {
+                          setText(tag.name);
+                          setRecognitionError("");
+                          clearGeneratedPreview();
+                        }
                       }}
                     >
                       {tag.name}
@@ -582,9 +624,12 @@ export function QuickEntryPage({
           >
             <textarea
               value={text}
+              onKeyDown={handleEntryKeyDown}
               onChange={(e) => {
                 setReplaceUndoText(null);
                 setText(e.target.value.slice(0, 10000));
+                setRecognitionError("");
+                clearGeneratedPreview();
               }}
               onPaste={(event) => {
                 const pasted = event.clipboardData
@@ -596,6 +641,8 @@ export function QuickEntryPage({
                 // recognition while editing, not whether paste works.
                 suppressResultRecognition.current = true;
                 setText(pasted);
+                setRecognitionError("");
+                clearGeneratedPreview();
                 window.setTimeout(() => {
                   void generateText(pasted, options[0] && timing.canBet).then((preview) => {
                     if (preview && options[0] && timing.canBet)
@@ -611,7 +658,11 @@ export function QuickEntryPage({
                 type="button"
                 className="clear-text"
                 disabled={!text}
-                onClick={() => setText("")}
+                onClick={() => {
+                  setText("");
+                  setRecognitionError("");
+                  clearGeneratedPreview();
+                }}
               >
                 <RestOutlined /><span>清空</span>
               </button>
@@ -620,13 +671,14 @@ export function QuickEntryPage({
                 <button type="button" className="mobile-identify" onClick={generate} disabled={generating}>
                   {generating ? "识别中" : "识 别"}
                 </button>
-                <button type="button" className="mobile-place" onClick={place} disabled={!timing.canBet}>
+                <button type="button" className="mobile-place" onClick={place} disabled={!canPlace}>
                   下 注
                 </button>
                 <span className="mobile-entry-total">共 ¥ <b>{displayAmount(generatedTotal.amount)}</b></span>
               </div>
             </div>
           </div>
+          {recognitionError && <div className="recognition-error" role="alert">{recognitionError}</div>}
           <div className="options">
             {optionNames.map((name, index) => (
               <label className={`option-card option-card-${index}`} key={name}>
@@ -673,6 +725,8 @@ export function QuickEntryPage({
                         return;
                       }
                       setLottery(target.name);
+                      setRecognitionError("");
+                      clearGeneratedPreview();
                       persistPreferences(options, target.name);
                     }}
                   />
@@ -681,7 +735,7 @@ export function QuickEntryPage({
             </label>
           </div>
           <div className="actions">
-            <button type="button" className="desktop-entry-action" onClick={place} disabled={!timing.canBet}>
+            <button type="button" className="desktop-entry-action" onClick={place} disabled={!canPlace}>
               {timing.canBet ? "下 注" : timing.status || "暂不可下注"}
             </button>
             <button
@@ -748,6 +802,8 @@ export function QuickEntryPage({
               }, []);
               const nextText = sourceLines.join("\n");
               setText(nextText);
+              setRecognizedText("");
+              setRecognitionError("");
               setGeneratedLines(lines);
               const successful = lines.filter(
                 (line) => line.status === "success",
@@ -797,6 +853,9 @@ export function QuickEntryPage({
                 if (nextText !== text) {
                   setReplaceUndoText(text);
                   setText(nextText);
+                  setRecognizedText("");
+                  setRecognitionError("");
+                  clearGeneratedPreview();
                 }
               }
               setReplaceOpen(false);

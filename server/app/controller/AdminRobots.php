@@ -210,7 +210,32 @@ final class AdminRobots
 
     public function status(Request $request,int $id): \think\response\Json
     {
-        $session=$this->session($request);$robot=Db::name('robot_accounts')->where('id',$id)->whereNull('converted_at')->find();if(!$robot)throw new \InvalidArgumentException('机器人不存在');$siteId=$this->siteId($request,$session);if($siteId!==null&&(int)$robot['site_id']!==$siteId)throw new \RuntimeException('无权操作该机器人');$status=(string)$request->post('status','');if(!in_array($status,['running','stopped'],true))throw new \InvalidArgumentException('机器人状态无效');$now=date('Y-m-d H:i:s');$next=$status==='running'?strtotime((string)$robot['start_at']):null;Db::name('robot_accounts')->where('id',$id)->update(['status'=>$status,'next_run_at'=>$next?date('Y-m-d H:i:s',$next):null,'updated_at'=>$now]);$this->appendRunLog((int)$id,'info','manual',$status==='running'?'机器人已启动':'机器人已停止',['execution_at'=>$now,'scheduled_at'=>$next?date('Y-m-d H:i:s',$next):$now,'next_run_at'=>$next?date('Y-m-d H:i:s',$next):null]);return $this->reply(null,$status==='running'?'机器人已启动':'机器人已停止');
+        $session=$this->session($request);
+        $robot=Db::name('robot_accounts')->where('id',$id)->whereNull('converted_at')->find();
+        if(!$robot)throw new \InvalidArgumentException('机器人不存在');
+        $siteId=$this->siteId($request,$session);
+        if($siteId!==null&&(int)$robot['site_id']!==$siteId)throw new \RuntimeException('无权操作该机器人');
+        $status=(string)$request->post('status','');
+        if(!in_array($status,['running','stopped'],true))throw new \InvalidArgumentException('机器人状态无效');
+        $now=date('Y-m-d H:i:s');
+        $start=strtotime((string)$robot['start_at'])?:time();
+        $next=$status==='running'?max(time(),$start):null;
+        $update=['status'=>$status,'next_run_at'=>$next?date('Y-m-d H:i:s',$next):null,'updated_at'=>$now];
+        if($status==='running'){
+            // A fresh start belongs to the current business day.  Do not
+            // replay a deferred ticket left by the legacy historical worker.
+            $update=array_merge($update,[
+                'pending_ticket_text'=>null,'pending_ticket_lottery'=>null,
+                'pending_ticket_target_issue'=>null,'pending_ticket_target_draw'=>null,
+                'pending_ticket_created_at'=>null,'pending_ticket_scheduled_at'=>null,
+            ]);
+        }
+        Db::name('robot_accounts')->where('id',$id)->update($update);
+        $this->appendRunLog((int)$id,'info','manual',$status==='running'?'机器人已启动':'机器人已停止',[
+            'execution_at'=>$now,'scheduled_at'=>$next?date('Y-m-d H:i:s',$next):$now,
+            'next_run_at'=>$next?date('Y-m-d H:i:s',$next):null,
+        ]);
+        return $this->reply(null,$status==='running'?'机器人已启动':'机器人已停止');
     }
 
     /** Return the most recent bounded scheduler log, oldest first. */

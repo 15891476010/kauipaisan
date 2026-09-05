@@ -203,9 +203,9 @@ export function SideBetRecords({
       if (/(组三|组3|三组)/u.test(multiSource)) return "组三胆拖";
     }
     const multiFamily = groupFamily(detail);
-    const multiDigits = String(detail.number_text || "").replace(/\s+/gu, "").match(/^[三六]?(\d{4,10})/u)?.[1]
-      || multiSource.match(/(?<!\d)\d{4,10}(?!\d)/u)?.[0];
-    if (multiFamily && multiDigits && !/全包|胆拖|赖|沾边|连/u.test(multiSource)) return `${multiFamily}多码`;
+    const rowHasMultiPlay = /^(?:组三|组六|组3|组6)[一二两三四五六七八九1-9]码$/u.test(rowMeta.replace(/\s+/gu, ""));
+    const multiDigits = String(detail.number_text || "").replace(/\s+/gu, "").match(/^[三六]?(\d{1,10})/u)?.[1];
+    if (multiFamily && multiDigits && rowHasMultiPlay && !/全包|胆拖|赖|沾边|连/u.test(multiSource)) return `${multiFamily}多码`;
     const genericGroupSource = /(?:^|\s)组(?:各|每|共|合计|计|$)/u.test(multiSource)
       && !/(组三|组六|组3|组6)/u.test(multiSource);
     const genericLeopard = genericGroupSource && String(detail.number_text || "").split(/[\s,，、]+/u).some((token) => {
@@ -254,8 +254,7 @@ export function SideBetRecords({
     const compact = compactDetailNumber(detail, play, source);
     if (compact) return compact;
     const family = groupFamily(detail);
-    const multiDigits = String(detail.number_text || "").replace(/\s+/gu, "").match(/^[三六]?(\d{4,10})/u)?.[1]
-      || source.match(/(?<!\d)(\d{4,10})(?!\d)/u)?.[1];
+    const multiDigits = String(detail.number_text || "").replace(/\s+/gu, "").match(/^[三六]?(\d{1,10})/u)?.[1];
     if ((play === "组三多码" || play === "组六多码") && multiDigits) return `${family === "组六" ? "六" : "三"}${multiDigits}`;
     const sticky = source.match(/(\d{4,10})\s*(组三|组六)六码/u);
     if (sticky) return `${sticky[2] === "组三" ? "三" : "六"}${sticky[1]}`;

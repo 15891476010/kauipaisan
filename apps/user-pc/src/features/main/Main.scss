@@ -2591,6 +2591,7 @@ body {
 }
 .bill-total {
   display: grid;
+  /* Match the six bill columns used by the header and data rows. */
   grid-template-columns: 1.2fr 0.8fr 1fr 1fr 1fr 1fr;
   min-height: 36px;
   align-items: center;
@@ -3436,6 +3437,18 @@ body {
   height: 30px;
   margin-left: 10px;
   line-height: 30px;
+}
+.recognition-error {
+  box-sizing: border-box;
+  display: inline-flex;
+  width: auto;
+  margin: 0 0 0 12px;
+  padding: 0;
+  color: #d00000;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.5;
+  white-space: nowrap;
 }
 .options {
   display: flex;

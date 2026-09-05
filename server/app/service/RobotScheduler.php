@@ -65,8 +65,11 @@ final class RobotScheduler
                 'next_run_at' => date('Y-m-d H:i:s', $now + 3600),
                 'updated_at' => date('Y-m-d H:i:s', $now),
             ]);
-            $scheduled = strtotime((string)$robot['next_run_at']) ?: $now;
-            $robot['_catchup'] = $scheduled < $now;
+            // Daily-budget robots always run against the current business
+            // day.  A stale next_run_at from the legacy monthly scheduler
+            // must not replay months of historical tickets one per second.
+            $scheduled = max($now, strtotime((string)$robot['next_run_at']) ?: $now);
+            $robot['_catchup'] = false;
             $robot['_scheduled_at'] = $scheduled;
             return $robot;
         });
@@ -160,20 +163,37 @@ final class RobotScheduler
                 ? ['issue'=>(string)$robot['pending_ticket_target_issue'],'draw'=>(string)($robot['pending_ticket_target_draw']??'')]
                 : null)
             : $this->historicalTarget($lottery, !empty($robot['_catchup']) ? (int)$robot['_scheduled_at'] : null);
-        $scheduleConfig=$this->monthlyConfig($robot, $scheduleTime);
-        $monthlyCap=(float)($scheduleConfig['max_amount']??0);
-        $periodSpent=($scheduleConfig['_period']??'week')==='month'
-            ? $this->monthlySpent((int)$robot['user_id'], $scheduleTime)
-            : $this->weeklySpent((int)$robot['user_id'], $scheduleTime);
-        // max_amount is a monthly balancing target, not a hard stop. Once the
-        // target is reached, continue placing tickets and use an even 50/50
-        // win/loss split so the month stays close to equilibrium.
-        $balanceReached=$monthlyCap>0 && $periodSpent >= $monthlyCap-0.000001;
-        $remaining=($monthlyCap>0 && !$balanceReached) ? max(0,$monthlyCap-$periodSpent) : null;
-        $winWeight=$balanceReached ? 50.0 : (float)($scheduleConfig['win_weight']??($robot['win_weight']??50));
+        // The robot's configured score is a daily hard ceiling.  It is the
+        // fixed score allocation on the robot member account (cash plus
+        // credit); winnings never increase it.  DailyScoreUsage resets the
+        // member's usage after midnight, so the same ceiling is available on
+        // the next business day without touching historical bets.
+        $user=Db::name('site_users')->where('id',(int)$robot['user_id'])
+            ->where('site_id',(int)$robot['site_id'])->whereNull('deleted_at')->find();
+        if(!$user) return ['status'=>'failed','message'=>'机器人会员账户不存在'];
+        $user=DailyScoreUsage::normalize($user);
+        $dailyLimit=max(0,round((float)($user['balance']??0)+(float)($user['credit_balance']??0),2));
+        $dailySpent=$this->dailySpent((int)$robot['user_id'],$now,(float)($user['used_balance']??0));
+        $remaining=max(0,round($dailyLimit-$dailySpent,2));
+        if($dailyLimit<=0) {
+            $this->settleDailyEnd($robot,$ids,$now);
+            return ['status'=>'skipped','message'=>'机器人未分配分数，今日不下注','skip_until'=>$this->nextBusinessDay($now),'daily_exhausted'=>true];
+        }
+        if($remaining<=0.000001) {
+            $this->settleDailyEnd($robot,$ids,$now);
+            return ['status'=>'skipped','message'=>'机器人今日分数已用完，已核对当前奖期并完成可结算注单','skip_until'=>$this->nextBusinessDay($now),'daily_exhausted'=>true];
+        }
+        $winWeight=(float)($robot['win_weight']??50);
         $wantWin=$pending ? null : ($target!==null ? (random_int(1,10000) <= (int)round($winWeight*100) ) : null);
         $minAmount=(float)($robot['min_amount']??1);$maxAmount=(float)($robot['max_amount']??$minAmount);
-        if($remaining!==null){$maxAmount=min($maxAmount,$remaining);$minAmount=min($minAmount,$maxAmount);}
+        // Never submit a batch that would cross the daily ceiling.  If the
+        // remaining amount is below the configured minimum, finish the day
+        // and let the next business day reset usage instead of exceeding it.
+        if($remaining<$minAmount-0.000001){
+            $this->settleDailyEnd($robot,$ids,$now);
+            return ['status'=>'skipped','message'=>'机器人今日剩余分数不足一批，已核对当前奖期并完成可结算注单','skip_until'=>$this->nextBusinessDay($now),'daily_exhausted'=>true];
+        }
+        $maxAmount=min($maxAmount,$remaining);$minAmount=min($minAmount,$maxAmount);
         $texts = $pending
             ? [$pendingText]
             : $this->generateTexts($robot, $lottery, count($ids) > 1, $target['draw']??null, $wantWin, $minAmount, $maxAmount);
@@ -579,6 +599,38 @@ final class RobotScheduler
         }
     }
 
+    /**
+     * Return today's actual betting usage.  The usage column is the fast
+     * path maintained by the normal betting transaction; the aggregate is a
+     * safety check for older/imported rows that may not have updated it.
+     */
+    private function dailySpent(int $userId, int $timestamp, float $usageColumn): float
+    {
+        $day=date('Y-m-d',$timestamp);
+        $sum=(float)Db::name('bet_records')->where('user_id',$userId)
+            ->whereIn('status',['pending','won','unwon'])
+            ->whereBetween('placed_at',[$day.' 00:00:00',$day.' 23:59:59'])->sum('amount');
+        return max(0,round(max($usageColumn,$sum),2));
+    }
+
+    /** Check/open due system issues and settle all currently opened issues. */
+    private function settleDailyEnd(array $robot,array $lotteryIds,int $timestamp): void
+    {
+        foreach($lotteryIds as $lotteryId){
+            $lottery=Db::name('lotteries')->where('id',(int)$lotteryId)->where('status',1)->whereNull('deleted_at')->find();
+            if(!$lottery)continue;
+            if((string)($lottery['source_type']??'official')==='system'){
+                try{(new SystemLotteryService())->runLottery($lottery);}catch(\Throwable $error){Log::warning('robot daily settlement draw failed lottery='.$lotteryId.': '.$error->getMessage());}
+            }
+            $this->settlePrevious($lottery,null);
+        }
+    }
+
+    private function nextBusinessDay(int $timestamp): int
+    {
+        return strtotime(date('Y-m-d 00:00:00',$timestamp))+86400;
+    }
+
     /** Find the first already-opened issue after a historical bet timestamp. */
     private function historicalTarget(array $lottery, ?int $scheduledAt): ?array
     {
@@ -709,10 +761,14 @@ final class RobotScheduler
             'execution_at'=>date('Y-m-d H:i:s',$now),
             'scheduled_at'=>date('Y-m-d H:i:s',$scheduledAt),
         ];
-        if(($outcome['status']??'')==='failed' && preg_match('/余额不足|可用分数不足|会员可用分数不足|分数不足|信用余额不足|余额和信用余额/u',$message)){
-            $this->appendRunLog($robot,'warning',$status,$message,array_merge($logContext,['stopped'=>true]));
+        if(($outcome['daily_exhausted']??false)===true || (($outcome['status']??'')==='failed' && preg_match('/余额不足|可用分数不足|会员可用分数不足|分数不足|信用余额不足|余额和信用余额/u',$message))){
+            // Exhausting today's score is not a permanent robot failure. Keep
+            // it running and wake it at the next local midnight, after the
+            // normal daily usage reset.
+            $nextDay=$this->nextBusinessDay($now);
+            $this->appendRunLog($robot,'info','skipped',$message,array_merge($logContext,['daily_exhausted'=>true,'next_run_at'=>date('Y-m-d H:i:s',$nextDay)]));
             Db::name('robot_accounts')->where('id',(int)$robot['id'])->where('status','running')->update([
-                'status'=>'stopped','next_run_at'=>null,'updated_at'=>date('Y-m-d H:i:s',$now), ...$diagnostics,
+                'next_run_at'=>date('Y-m-d H:i:s',$nextDay),'updated_at'=>date('Y-m-d H:i:s',$now), ...$diagnostics,
             ]);
             return;
         }

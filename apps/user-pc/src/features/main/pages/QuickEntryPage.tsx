@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { App as AntdApp, Input, Modal, Switch, Tooltip } from "antd";
 import {
   DeleteOutlined,
@@ -59,7 +59,27 @@ export function QuickEntryPage({
     amount: "0.00",
   });
   const [generating, setGenerating] = useState(false);
+  const [recognizedText, setRecognizedText] = useState("");
+  const [recognitionError, setRecognitionError] = useState("");
   const previewRequestId = useRef(0);
+  const lastShiftAt = useRef(0);
+  const recognitionPrompt = "文本有问题，请手动识别（双击Shift或点击【识别文本】按钮）";
+  const clearGeneratedPreview = () => {
+    setRecognizedText("");
+    setGeneratedLines([]);
+    setGeneratedTotal({ count: 0, codeCount: 0, amount: "0.00" });
+  };
+  const handleEntryKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key !== "Shift" || event.repeat || generating) return;
+    const now = Date.now();
+    if (now - lastShiftAt.current <= 450) {
+      lastShiftAt.current = 0;
+      event.preventDefault();
+      void generateText(text);
+      return;
+    }
+    lastShiftAt.current = now;
+  };
   const splitTicketBlocks = (source: string) => {
     const blocks: string[] = []; let current: string[] = []; let blankRun = 0;
     const flush = () => { const value = current.join("\n").trim(); if (value) blocks.push(value); current = []; };
@@ -135,10 +155,13 @@ export function QuickEntryPage({
     showMessage = true,
   ): Promise<QuickPreview | null> => {
     if (!sourceText.trim()) {
+      setRecognizedText("");
+      setRecognitionError(recognitionPrompt);
       if (showMessage) message.warning("请输入投注文本");
       return null;
     }
     setGenerating(true);
+    setRecognitionError("");
     const requestId = ++previewRequestId.current;
     try {
       let data: QuickPreview | null = null;
@@ -163,28 +186,41 @@ export function QuickEntryPage({
       }
       if (lastError) throw lastError;
       if (requestId !== previewRequestId.current) return data;
-      setGeneratedLines(data?.lines || []);
+      const lines = data?.lines || [];
+      const hasFailedLines = !data || lines.length === 0 || lines.some((line) => line.status !== "success");
+      const providerFailed = lines.some((line) => /识别服务|请求间隔|间隔时间|网络|超时|接口不可用|无法调通|重试/u.test(line.reason || ""));
+      setGeneratedLines(lines);
       setGeneratedTotal({
         count: data?.count || 0,
         codeCount: data?.code_count ?? data?.count ?? 0,
         amount: data?.amount || "0.00",
       });
+      setRecognizedText(sourceText);
+      setRecognitionError(hasFailedLines && (providerFailed || !lines.some((line) => line.status === "success")) ? recognitionPrompt : "");
       const warning = Number(warningAmount);
       if (warning > 0 && Number(data?.amount || 0) >= warning)
         message.warning(
           `总金额已达到预警金额 ¥${displayAmount(warningAmount)}`,
         );
       return data;
-    } catch (error) {
+    } catch {
+      if (requestId !== previewRequestId.current) return null;
       setGeneratedLines([]);
       setGeneratedTotal({ count: 0, codeCount: 0, amount: "0.00" });
-      modal.error({ title: "生成失败", content: apiErrorMessage(error, "生成失败"), okText: "确认" });
+      setRecognizedText(sourceText);
+      setRecognitionError(recognitionPrompt);
       return null;
     } finally {
       if (requestId === previewRequestId.current) setGenerating(false);
     }
   };
   const generate = () => void generateText(text);
+  const canPlace = timing.canBet
+    && !generating
+    && text.trim() !== ""
+    && recognizedText === text
+    && generatedLines.length > 0
+    && generatedLines.every((line) => line.status === "success");
   useEffect(() => {
     if (suppressResultRecognition.current) {
       suppressResultRecognition.current = false;
@@ -345,8 +381,11 @@ export function QuickEntryPage({
             <button
               type="button"
               onClick={() => {
-                if (replaceFrom)
+                if (replaceFrom) {
                   setText((value) => value.split(replaceFrom).join(replaceTo));
+                  setRecognitionError("");
+                  clearGeneratedPreview();
+                }
               }}
             >
               替换
@@ -362,7 +401,11 @@ export function QuickEntryPage({
               <div className="tag-list">
                 {tags.map((tag) => (
                   <span key={tag.id}>
-                    <button type="button" onClick={() => setText(tag.name)}>
+                    <button type="button" onClick={() => {
+                      setText(tag.name);
+                      setRecognitionError("");
+                      clearGeneratedPreview();
+                    }}>
                       {tag.name}
                     </button>
                     <button
@@ -391,7 +434,13 @@ export function QuickEntryPage({
           >
             <textarea
               value={text}
-              onChange={(e) => setText(e.target.value.slice(0, 10000))}
+              onKeyDown={handleEntryKeyDown}
+              onChange={(e) => {
+                const nextText = e.target.value.slice(0, 10000);
+                setText(nextText);
+                setRecognitionError("");
+                clearGeneratedPreview();
+              }}
               onPaste={(event) => {
                 const pasted = event.clipboardData
                   .getData("text")
@@ -400,6 +449,8 @@ export function QuickEntryPage({
                 if (options[0] && options[1])
                   suppressResultRecognition.current = true;
                 setText(pasted);
+                setRecognitionError("");
+                clearGeneratedPreview();
                 if (options[0] && timing.canBet)
                   window.setTimeout(() => {
                     void generateText(pasted).then((preview) => {
@@ -415,11 +466,16 @@ export function QuickEntryPage({
                 type="button"
                 className="clear-text"
                 disabled={!text}
-                onClick={() => setText("")}
+                onClick={() => {
+                  setText("");
+                  setRecognitionError("");
+                  clearGeneratedPreview();
+                }}
               >
                 <DeleteOutlined /> 清空
               </button>
               <span>{text.length.toLocaleString()}/10,000</span>
+              {recognitionError && <span className="recognition-error" role="alert">{recognitionError}</span>}
             </div>
           </div>
           <div className="options">
@@ -453,7 +509,9 @@ export function QuickEntryPage({
                     key={item.id}
                     className={`lottery-choice lottery-choice-${tone}${lottery === item.name ? " selected" : ""}`}
                     onClick={() => {
-                      setLottery(item.name);
+                    setLottery(item.name);
+                      setRecognitionError("");
+                      clearGeneratedPreview();
                       persistPreferences(options, item.name);
                     }}
                   >
@@ -464,7 +522,7 @@ export function QuickEntryPage({
             </label>
           </div>
           <div className="actions">
-            <button type="button" onClick={place} disabled={!timing.canBet}>
+            <button type="button" onClick={place} disabled={!canPlace}>
               {timing.canBet ? "下 注" : timing.status || "暂不可下注"}
             </button>
             <button
@@ -473,7 +531,7 @@ export function QuickEntryPage({
               onClick={generate}
               disabled={generating}
             >
-              {generating ? "生成中" : "生 成"}
+              {generating ? "识别文本中" : "识别文本"}
             </button>
             <button
               type="button"
@@ -482,7 +540,7 @@ export function QuickEntryPage({
             >
               规则说明
             </button>
-            <label className="action-board-label">盘口<select aria-label="盘口" value={boardCode} onChange={(event) => { setBoardCode(event.target.value); setGeneratedLines([]); }} disabled={boardOptions.length <= 1}>{boardOptions.map((item) => <option key={item.code} value={item.code}>{item.name} - {item.code}</option>)}</select></label>
+            <label className="action-board-label">盘口<select aria-label="盘口" value={boardCode} onChange={(event) => { setBoardCode(event.target.value); setRecognitionError(""); clearGeneratedPreview(); }} disabled={boardOptions.length <= 1}>{boardOptions.map((item) => <option key={item.code} value={item.code}>{item.name} - {item.code}</option>)}</select></label>
             <span className="action-separator" aria-hidden="true" />
             <span className="action-total">
               <span>
@@ -549,6 +607,8 @@ export function QuickEntryPage({
               }, []);
               const nextText = sourceLines.join("\n");
               setText(nextText);
+              setRecognizedText("");
+              setRecognitionError("");
               setGeneratedLines(lines);
               const successful = lines.filter(
                 (line) => line.status === "success",
