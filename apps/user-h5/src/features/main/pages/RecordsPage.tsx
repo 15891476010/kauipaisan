@@ -56,6 +56,38 @@ function groupPlayDetails(details: BetDetail[]) {
   return Array.from(groups.entries());
 }
 
+function normalizeDetailRows(input: BetDetail[]): BetDetail[] {
+  const explicitLeopards = new Set<string>();
+  input.forEach((detail) => {
+    const source = String(detail.source_text || "");
+    if (!source.includes("豹子") || source.includes("豹子全包")) return;
+    String(detail.number_text || "").split(/[\s,，、]+/u).forEach((token) => {
+      const match = token.match(/^(\d{3})/u);
+      if (match && new Set(match[1]).size === 1) explicitLeopards.add(match[1]);
+    });
+  });
+  const result: BetDetail[] = [];
+  input.forEach((detail) => {
+    const source = String(detail.source_text || "");
+    const tokens = String(detail.number_text || "").split(/[\s,，、]+/u).filter(Boolean);
+    const rawPlay = String(detail.play_type || detail.play_label || "");
+    const isDirect = rawPlay === "直" && tokens.every((token) => /^\d{3}直$/u.test(token));
+    const isExplicitLeopard = source.includes("豹子") && !source.includes("豹子全包");
+    if (isExplicitLeopard) { result.push({ ...detail, odds: "800" }); return; }
+    if (!isDirect || tokens.length < 2) { result.push(detail); return; }
+    const leopard = tokens.filter((token) => {
+      const number = token.slice(0, 3);
+      return new Set(number).size === 1 && (explicitLeopards.size === 0 || explicitLeopards.has(number));
+    });
+    const normal = tokens.filter((token) => !leopard.includes(token));
+    if (leopard.length === 0) { result.push(detail); return; }
+    const perAmount = Number(detail.amount || 0) / tokens.length;
+    if (normal.length > 0) result.push({ ...detail, number_text: normal.join(" "), amount: (perAmount * normal.length).toFixed(2) });
+    if (explicitLeopards.size === 0) result.push({ ...detail, number_text: leopard.join(" "), amount: (perAmount * leopard.length).toFixed(2), odds: "800", source_text: `${leopard.map((token) => token.slice(0, 3)).join(" ")}直豹子各${perAmount}元` });
+  });
+  return result;
+}
+
 function displayDetailNumber(detail: BetDetail, play: string) {
   const source = String(detail.source_text || "");
   const raw = String(detail.play_type || detail.play_label || "");
@@ -71,9 +103,25 @@ function displayDetailNumber(detail: BetDetail, play: string) {
   if (isPack) return /(组六|组6)/u.test(context) ? "六包" : "三包";
   const sticky = source.match(/(\d{4,10})\s*(组三|组六)六码/u);
   if (sticky) return `${sticky[2] === "组三" ? "三" : "六"}${sticky[1]}`;
+  const sourceContext = `${source} ${detail.original_source_text || ""} ${detail.record_source || ""}`;
+  const genericGroup = /(?:^|\s)组(?:各|每|共|合计|计|$)/u.test(sourceContext)
+    && !/(组三|组六|组3|组6)/u.test(sourceContext);
+  if (genericGroup) {
+    return String(detail.number_text || "")
+      .replace(/^[三六]/u, "")
+      .replace(/(?:组三|组六|组3|组6)组?$|组$/u, "") || "-";
+  }
   let value = String(detail.number_text || "");
-  if (/组3|组6|组三|组六|组选/u.test(raw)) value = value.replace(/^[三六]/u, "").replace(/(?:直|组|组三|组六)$/u, "");
-  if (/直/u.test(raw)) value = value.replace(/直+$/u, "");
+  if (/复式/u.test(`${play} ${raw}`)) {
+    value = value.replace(/复式(?:[一二三四五六七八九\d]+码|多码)?$/u, "");
+    return value || "-";
+  }
+  if (/组3|组6|组三|组六|组选/u.test(raw)) {
+    // Keep a meaningful `组三`/`组六` suffix and drop only a duplicated
+    // trailing `组` (the red marker is rendered separately).
+    value = value.replace(/^[三六]/u, "").replace(/组$/u, "");
+  }
+  if (/直/u.test(raw) || /码定位$/u.test(play)) value = value.replace(/直+$/u, "");
   if (/^独胆$/u.test(play) || /^独胆$/u.test(raw)) value = value.replace(/胆$/u, "");
   if (play.endsWith("码定位")) value = value.replace(/(?:口口X|口X口|X口口)$/iu, "");
   return value || "-";
@@ -83,11 +131,23 @@ function detailPlayMark(detail: BetDetail, play: string) {
   const raw = String(detail.play_type || detail.play_label || "");
   if (/码定位/u.test(`${play} ${raw} ${detail.play_label || ""} ${detail.category || ""}`)) return "";
   const context = `${raw} ${detail.number_text || ""} ${detail.source_text || ""} ${detail.original_source_text || ""}`;
+  if (/复式/u.test(`${play} ${context}`)) return "";
   if (/胆拖|和值|豹子|包/u.test(context) || /\d{4,10}/u.test(context) && /(?:组三|组六|组3|组6)/u.test(context)) return "";
   if (/口|X/i.test(raw) && !raw.includes("直")) return "";
   if (/直/u.test(raw)) return "直";
   if (/组三|组六|组3|组6|组选|组/u.test(raw)) return "组";
   return play === "独胆" ? "独胆" : raw;
+}
+
+function displayDetailOdds(detail: BetDetail): string {
+  const context = `${detail.play_type || ""} ${detail.play_label || ""} ${detail.source_text || ""} ${detail.original_source_text || ""}`;
+  if (/豹子全包/u.test(context)) return detail.odds || "---";
+  const leopard = String(detail.number_text || "").split(/[\s,，、]+/u).some((token) => {
+    const number = token.match(/^(\d{3})/)?.[1];
+    return Boolean(number && new Set(number).size === 1);
+  });
+  if (leopard || /豹子/u.test(context)) return "800";
+  return detail.odds || "---";
 }
 
 export function RecordsPage() {
@@ -197,7 +257,7 @@ export function RecordsPage() {
         const pageSize = Math.max(1, Number(data?.page_size || detailQuery.page_size));
         const pageCount = Math.ceil(total / pageSize);
         if (pageCount <= 1 || firstPage.length >= total) {
-          setDetails(firstPage.slice(0, total));
+          setDetails(normalizeDetailRows(firstPage.slice(0, total)));
           return;
         }
         const remainingPages = await Promise.all(
@@ -209,7 +269,7 @@ export function RecordsPage() {
           ...firstPage,
           ...remainingPages.flatMap((pageResponse) => pageResponse.data?.data?.list || []),
         ];
-        setDetails(allDetails.slice(0, total));
+        setDetails(normalizeDetailRows(allDetails.slice(0, total)));
       })
       .catch(() => setDetails([]))
       .finally(() => setDetailLoading(false));
@@ -400,7 +460,7 @@ export function RecordsPage() {
                               </span>
                             </span>
                             <span>{detail.amount || "0"}</span>
-                            <span>{detail.odds || "---"}</span>
+                            <span>{displayDetailOdds(detail)}</span>
                             <span>{Number(detail.win_amount || 0) > 0 ? detail.win_amount : "---"}</span>
                           </div>
                         ))}

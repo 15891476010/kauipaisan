@@ -110,6 +110,162 @@
   resize: vertical;
 }
 
+/* The reference mobile layout treats each result as two stacked lines:
+   controls (m-div) followed by the editable source text. Keep this scoped
+   to the phone breakpoint so the desktop preview remains compact. */
+@media (max-width: 599px) {
+  .quick-result {
+    width: 100%;
+    gap: .2rem;
+  }
+
+  .quick-result-row,
+  .quick-result-summary {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 3rem;
+    margin: 0 0 .2rem;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .quick-result-row.fu { background: #a7e1ce; }
+  .quick-result-row.ti { background: #b8e8aa; }
+  .quick-result-row.futi { background: #d8d8d8; }
+  .quick-result-row.blank { background: #f7f7f7; }
+  .quick-result-row.mismatch { background: #ffd18a; }
+
+  .quick-result-main {
+    box-sizing: border-box;
+    width: 100%;
+    height: 3rem;
+    min-height: 3rem;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0;
+    border-bottom: .2rem dashed #fff;
+  }
+
+  .quick-result-remove,
+  .quick-result-add,
+  .quick-result-more,
+  .quick-result-combine,
+  .quick-result-confirm {
+    box-sizing: border-box;
+    flex: 0 0 2.6rem;
+    width: 2.6rem;
+    height: 2.6rem;
+    min-width: 2.6rem;
+    margin: 0 0 0 .4rem;
+    padding: 0;
+    border: 0;
+    border-radius: .2rem;
+    background: rgba(255,255,255,.72);
+    color: #333;
+    font-size: 1.6rem;
+    line-height: 2.6rem;
+    text-align: center;
+    cursor: pointer;
+  }
+
+  .quick-result-remove::before { content: "−"; }
+  .quick-result-add::before { content: "+"; }
+  .quick-result-more::before { content: "详"; color: #036564; }
+  .quick-result-combine { font-size: 1.35rem; }
+  .quick-result-combine::before { content: "合"; }
+
+  .quick-result-index {
+    box-sizing: border-box;
+    flex: 0 0 5rem;
+    width: 5rem;
+    min-width: 5rem;
+    height: 2.9rem;
+    line-height: 2.9rem;
+    text-align: center;
+    font-size: 1.6rem;
+  }
+
+  .quick-result-detail-slot {
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+  }
+
+  .quick-result-status {
+    box-sizing: border-box;
+    flex: 0 0 auto;
+    width: 4rem;
+    min-width: 4rem;
+    height: 2.9rem;
+    margin-left: .5rem;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: .2rem;
+    font-size: 1.6rem;
+    line-height: 2.9rem;
+    color: #fff;
+  }
+
+  .quick-result-status.fu { background: #7a2bc3; }
+  .quick-result-status.ti { background: #00724d; }
+  .quick-result-status.futi { background: #111; }
+  .quick-result-status.failed { background: #d90000; }
+
+  .quick-result-text {
+    box-sizing: border-box;
+    display: block;
+    width: 100%;
+    height: 3rem;
+    min-height: 3rem;
+    margin: 0;
+    padding: 0 .6rem;
+    border: 0;
+    border-bottom: 1px solid transparent;
+    border-radius: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 1.6rem;
+    line-height: 2.8rem;
+    resize: none;
+    overflow: hidden;
+  }
+
+  .quick-result-detail {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 3rem;
+    margin: 0;
+    padding: 0 1rem;
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    font-size: 1.6rem;
+    line-height: 3rem;
+  }
+
+  .quick-result-summary {
+    height: 3rem;
+    min-height: 3rem;
+    padding: 0 1rem;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: .4rem;
+    border-bottom: 1px dashed #3f3f3f;
+    background: transparent;
+    font-size: 1.6rem;
+    line-height: 3rem;
+  }
+}
+
 .quick-result-detail {
   display: flex;
   gap: 4px;
