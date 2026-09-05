@@ -52,6 +52,8 @@ type DisplayLine = QuickEntryLine & {
   __detailLines?: QuickEntryLine[];
   __blank?: boolean;
   __physicalOnly?: boolean;
+  __groupKey?: string;
+  __groupEnd?: boolean;
 };
 
 function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onConfirmMismatch }: QuickResultTableProps) {
@@ -101,14 +103,23 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
   const multilineCandidates = lines
     .map((line) => ({ line, parts: sourceOf(line).split(/\r?\n/u).map(normalizeSource).filter(Boolean) }))
     .filter(({ parts }) => parts.length > 1);
-  const addPhysicalOnly = (raw: string, physicalIndex: number, related?: QuickEntryLine, inheritedCategory?: string | null) => {
+  const addPhysicalOnly = (raw: string, physicalIndex: number, related?: QuickEntryLine, inheritedCategory?: string | null, groupEnd = false) => {
     expandedLines.push({
       ...fallbackLine,
       id: physicalIndex + 1,
       raw_text: raw,
       input_text: raw,
+      status: related?.status || fallbackLine.status,
+      number_text: related?.number_text || "",
+      play_type: related?.play_type,
+      amount: related?.amount || "0",
+      count: related?.count || 0,
       category: categoryFromRaw(raw) || inheritedCategory || related?.category || null,
       __physicalOnly: true,
+      __sourceIds: related ? [related.id] : undefined,
+      __detailLines: related ? [related] : undefined,
+      __groupKey: related ? `source-${related.id}` : undefined,
+      __groupEnd: groupEnd,
     });
   };
   const addSemantic = (raw: string, physicalIndex: number, members: QuickEntryLine[]) => {
@@ -125,12 +136,14 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
       input_text: raw,
       __sourceIds: members.map((member) => member.id),
       __detailLines: members,
+      __groupKey: `source-${semantic.id}`,
     });
   };
 
   if (sourcePhysical.length > 0) {
     let previousCategory: string | null = null;
     let pendingAggregate: { line: QuickEntryLine; batchId: string } | null = null;
+    let activeSemantic: QuickEntryLine | null = null;
     sourcePhysical.forEach((raw, physicalIndex) => {
       if (raw.trim() === "") {
         expandedLines.push({ ...fallbackLine, id: physicalIndex + 1, raw_text: raw, input_text: raw, __blank: true });
@@ -185,6 +198,7 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
         } else {
           addSemantic(raw, physicalIndex, exactMembers);
         }
+        activeSemantic = semantic;
         previousCategory = semantic.category || previousCategory;
         return;
       }
@@ -196,9 +210,10 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
         const lastPartIndex = multiline.parts.length - 1;
         const currentPartIndex = multiline.parts.indexOf(key);
         if (currentPartIndex < lastPartIndex) {
-          addPhysicalOnly(raw, physicalIndex, multiline.line, previousCategory);
+          addPhysicalOnly(raw, physicalIndex, multiline.line, previousCategory, currentPartIndex === lastPartIndex - 1);
         } else {
           addSemantic(raw, physicalIndex, [multiline.line]);
+          activeSemantic = multiline.line;
           previousCategory = multiline.line.category || previousCategory;
         }
         return;
@@ -222,12 +237,15 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
             batch_end: false,
             batch_valid: true,
           }]);
+          activeSemantic = semanticForRow;
         } else {
           addSemantic(raw, physicalIndex, [semanticForRow]);
+          activeSemantic = semanticForRow;
         }
         previousCategory = semanticForRow.category || previousCategory;
       } else {
-        addPhysicalOnly(raw, physicalIndex, nextSemantic, previousCategory);
+        const groupEnd = physicalIndex === sourcePhysical.length - 1;
+        addPhysicalOnly(raw, physicalIndex, activeSemantic || nextSemantic, previousCategory, groupEnd);
       }
     });
     lines.forEach((line) => {
@@ -446,16 +464,16 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
         const amountMismatch = Boolean(mismatchLine);
         const mismatchGroup = amountMismatch || mismatchSources.has(sourceKey) || mismatchTexts.some((text) => text.includes(sourceKey) || sourceKey.includes(text));
         const hasLaterRelatedGroup = mismatchGroup
-          ? displayGroups.slice(groupIndex + 1).some((candidate) => mismatchTexts.some((text) => {
+          ? displayGroups.slice(groupIndex + 1).some((candidate) => candidate[0]?.__groupKey === groupKey || mismatchTexts.some((text) => {
               const candidateSource = candidate[0]?.input_text || candidate[0]?.raw_text || "";
               return candidateSource !== "" && text.includes(candidateSource);
             }))
-          : displayGroups.slice(groupIndex + 1).some((candidate) => {
+          : displayGroups.slice(groupIndex + 1).some((candidate) => candidate[0]?.__groupKey === groupKey || (() => {
               const candidateSource = candidate[0]?.input_text || candidate[0]?.raw_text || "";
               return candidateSource === sourceKey || candidateSource.includes(sourceKey) || sourceKey.includes(candidateSource);
-            });
+            })());
         const isLastRelatedGroup = !hasLaterRelatedGroup;
-        const showDetailButton = !isPhysicalOnly && isLastRelatedGroup && ((group.some((item) => item.status === "success") && (!isBatch || isBatchEnd)) || mismatchGroup);
+        const showDetailButton = isLastRelatedGroup && ((group.some((item) => item.status === "success") && (!isBatch || isBatchEnd)) || mismatchGroup) && (!isPhysicalOnly || line.__groupEnd === true);
         const displayCategory = line.category || lines.find((item) => {
           const itemSource = item.input_text || item.raw_text || "";
           return item.category && (itemSource === sourceKey || itemSource.includes(sourceKey) || sourceKey.includes(itemSource));
@@ -531,7 +549,7 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
               </div>
             ) : null}
           </div>
-          {!isPhysicalOnly && line.status === "success" && (!isBatch || isBatchEnd) && (
+          {!isPhysicalOnly && line.status === "success" && (!isBatch || isBatchEnd) && isLastRelatedGroup && (
             <div className="quick-result-summary">
               <span>笔数：</span><b>{groupCount}</b>
               <span>金额：</span><b>{formatAmount(groupAmount.toFixed(2))}</b>
