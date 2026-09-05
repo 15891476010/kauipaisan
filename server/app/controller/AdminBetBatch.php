@@ -339,7 +339,11 @@ final class AdminBetBatch
             if (is_array($odds) && array_key_exists('odds',$odds) && is_numeric($odds['odds'])) $detailUpdate['odds']=number_format((float)$odds['odds'],4,'.','');
             Db::name('bet_details')->where('id',(int)$detail['id'])->update($detailUpdate);
             $stopQuery=Db::name('user_stop_drops')->where('bet_detail_id',(int)$detail['id'])->where('lottery',$lotteryName);
-            $stopRows=$stopQuery->lock(true)->select()->toArray();
+            // The stop/drop row is updated in this transaction immediately
+            // below. Reading it without FOR UPDATE avoids a driver-specific
+            // syntax failure on this table while the subsequent UPDATE still
+            // takes the row lock.
+            $stopRows=$stopQuery->select()->toArray();
             $stop=$stopRows[0]??null;
             if ($stop) {
                 $stopUpdate=['number_text'=>$numberText,'play_type'=>$play,'source_text'=>$settlementText,
@@ -409,7 +413,7 @@ final class AdminBetBatch
                 $detailRows=$query->field('d.id,d.number_text,d.bet_record_id,r.source_text AS record_source_text,r.formatted_text AS record_formatted_text,r.submission_id')->lock(true)->select()->toArray();
                 $detail=$detailRows[0]??null;
                 if (!$detail) throw new \RuntimeException('选中的号码已不可修改，请刷新后重试');
-                $stopRows=Db::name('user_stop_drops')->where('bet_detail_id',$detailId)->where('lottery',(string)$lottery['name'])->lock(true)->select()->toArray();
+                $stopRows=Db::name('user_stop_drops')->where('bet_detail_id',$detailId)->where('lottery',(string)$lottery['name'])->select()->toArray();
                 $stop=$stopRows[0]??null;
                 if (!$stop) throw new \RuntimeException('选中的号码不属于当前彩种');
                 $editableTokens=$this->editableNumberTokens((string)$detail['number_text']);
