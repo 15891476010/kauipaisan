@@ -298,7 +298,7 @@ final class AdminBetBatch
     {
         $query=Db::name('bet_records')->where('id',$recordId)->where('issue_no',$issue)->where('status','pending')->where('sealed',0);
         if ($siteId!==null) $query->where('site_id',$siteId);
-        $recordRows=$query->field('id,tenant_id,site_id,user_id,submission_id,source_text,formatted_text')->lock(true)->select()->toArray();
+        $recordRows=$query->field('id,tenant_id,site_id,user_id,submission_id,board_code,placed_at,source_text,formatted_text')->lock(true)->select()->toArray();
         $record=$recordRows[0]??null;
         if (!$record) throw new \RuntimeException('原始注单已不可修改，请刷新后重试');
         $sourceText=trim($sourceText); if ($sourceText==='') throw new \InvalidArgumentException('原始注单不能为空');
@@ -307,62 +307,66 @@ final class AdminBetBatch
         $lines=array_values(array_filter($lines,static fn(array $line): bool=>(string)($line['status']??'')==='success'));
         if ($lines===[]) throw new \InvalidArgumentException('原始注单未识别到有效投注内容');
         $details=Db::name('bet_details')->where('bet_record_id',$recordId)->order('id asc')->select()->toArray();
-        // Provider tickets such as “福一直一组” are stored as one detail
-        // even though the local parser exposes two atomic play lines. Keep
-        // the original detail shape and recompute its combined number/amount.
-        if (count($details)===1 && count($lines)>1) {
-            $first=$lines[0]; $numbers=[]; $amount=0.0; $count=0;
-            foreach ($lines as $line) {
-                foreach (preg_split('/\s+/u',trim((string)($line['number_text']??'')),-1,PREG_SPLIT_NO_EMPTY)?:[] as $number) $numbers[]=$number;
-                $amount+=(float)($line['amount']??0); $count+=(int)($line['count']??0);
-            }
-            $first['number_text']=implode(' ',$numbers); $first['amount']=number_format($amount,2,'.',''); $first['count']=$count;
-            $first['stake_count']=$count; $first['play_type']='直组'; $first['settlement_text']=$sourceText; $lines=[$first];
-        }
-        if (count($lines)!==count($details)) throw new \InvalidArgumentException('修改后的原始注单拆分数量发生变化，请保持原玩法结构后再保存');
-        $settlement=new BetSettlement(); $total=0.0; $count=0;
-        foreach ($details as $index=>$detail) {
-            $line=$lines[$index]; $numberText=trim((string)($line['number_text']??'')); if ($numberText==='') throw new \InvalidArgumentException('原始注单包含无法生成号码的内容');
-            $oldTokens=$this->editableNumberTokens((string)($detail['number_text']??'')); $newTokens=$this->editableNumberTokens($numberText);
-            $oldCount=max(1,count($oldTokens)); $newCount=max(1,count($newTokens)); $ratio=$newCount/$oldCount;
-            // A pure number replacement must not discard the existing stop/drop
-            // calculation. Preserve the actual amount when the token count is
-            // unchanged; only use the parser amount when the edited ticket
-            // deliberately changes its number count.
-            $parsedAmount=(float)($line['amount']??0);
-            $newAmount=number_format($newCount===$oldCount?(float)($detail['amount']??0):($parsedAmount>0?$parsedAmount:(float)($detail['amount']??0)*$ratio),2,'.','');
+        /*
+         * An edited raw ticket is a new calculation of the whole pending
+         * submission.  The parser is allowed to produce a different number
+         * of play lines (for example one combined line becoming two lines),
+         * so the old one-to-one line-count guard must not reject it.
+         * Release the old interception reservations first, then replace the
+         * detail/stop rows and allocate reservations for the new rows.
+         */
+        $lotteryId=(int)Db::name('lotteries')->where('tenant_id',(int)$record['tenant_id'])->where('name',$lotteryName)->where('status',1)->whereNull('deleted_at')->value('id');
+        if ($lotteryId<1) throw new \RuntimeException('当前彩种不存在或已停用');
+        (new \app\service\InterceptionAllocator())->releaseForRecord($recordId);
+        Db::name('agent_interceptions')->where('bet_record_id',$recordId)->delete();
+        $detailIds=array_values(array_map('intval',array_column($details,'id')));
+        if ($detailIds!==[]) Db::name('user_stop_drops')->whereIn('bet_detail_id',$detailIds)->delete();
+        if ($detailIds!==[]) Db::name('bet_details')->whereIn('id',$detailIds)->delete();
+        $settlement=new BetSettlement(); $total=0.0; $count=0; $boardCode=(string)($record['board_code']??'A');
+        foreach ($lines as $index=>$line) {
+            $numberText=trim((string)($line['number_text']??'')); if ($numberText==='') throw new \InvalidArgumentException('原始注单包含无法生成号码的内容');
             $settlementText=trim((string)($line['settlement_text']??$line['parse_text']??$line['raw_text']??$numberText));
-            $category=(string)($line['category']??$detail['category']??''); $play=(string)($line['play_type']??$category);
-            $lotteryId=(int)Db::name('lotteries')->where('tenant_id',(int)$record['tenant_id'])->where('name',$lotteryName)->where('status',1)->whereNull('deleted_at')->value('id');
-            $odds=$lotteryId>0?$settlement->oddsRowFor($lotteryId,$settlementText):null;
-            $detailUpdate=['number_text'=>$numberText,'category'=>$category,'amount'=>$newAmount,'source_text'=>$settlementText];
-            if (is_array($odds) && array_key_exists('odds',$odds) && is_numeric($odds['odds'])) $detailUpdate['odds']=number_format((float)$odds['odds'],4,'.','');
-            Db::name('bet_details')->where('id',(int)$detail['id'])->update($detailUpdate);
-            $stopQuery=Db::name('user_stop_drops')->where('bet_detail_id',(int)$detail['id'])->where('lottery',$lotteryName);
-            // The stop/drop row is updated in this transaction immediately
-            // below. Reading it without FOR UPDATE avoids a driver-specific
-            // syntax failure on this table while the subsequent UPDATE still
-            // takes the row lock.
-            $stopRows=$stopQuery->select()->toArray();
-            $stop=$stopRows[0]??null;
-            if ($stop) {
-                $stopUpdate=['number_text'=>$numberText,'play_type'=>$play,'source_text'=>$settlementText,
-                    'original_amount'=>number_format((float)($stop['original_amount']??$detail['amount'])*$ratio,2,'.',''),
-                    'actual_amount'=>$newAmount,'stop_amount'=>number_format((float)($stop['stop_amount']??0)*$ratio,2,'.','')];
-                if (is_array($odds) && array_key_exists('odds',$odds) && is_numeric($odds['odds'])) {
-                    $stopUpdate['original_odds']=number_format((float)$odds['odds'],4,'.','');
-                    $stopUpdate['actual_odds']=number_format((float)$odds['odds'],4,'.','');
-                }
-                $stopQuery->update($stopUpdate);
+            $category=(string)($line['category']??''); $play=(string)($line['play_type']??$category);
+            $amount=number_format(max(0,(float)($line['amount']??0)),2,'.','');
+            if ((float)$amount<=0) continue;
+            $odds=$settlement->oddsRowFor($lotteryId,$settlementText,$boardCode);
+            if (!is_array($odds) || !array_key_exists('odds',$odds) || !is_numeric($odds['odds'])) {
+                throw new \InvalidArgumentException('修改后的玩法无法唯一匹配赔率，请检查玩法和盘口设置');
             }
-            $interceptions=Db::name('agent_interceptions')->where('bet_detail_id',(int)$detail['id'])->order('id asc')->select()->toArray();
-            if (count($interceptions)===count($newTokens)) foreach ($interceptions as $interceptionIndex=>$interception) Db::name('agent_interceptions')->where('id',(int)$interception['id'])->update(['number_key'=>(string)$newTokens[$interceptionIndex]['value'],'bet_amount'=>number_format((float)($interception['bet_amount']??0)*$ratio,2,'.','')]);
-            $total+=(float)$newAmount; $count+=$newCount;
+            $oddsValue=is_array($odds)&&array_key_exists('odds',$odds)&&is_numeric($odds['odds'])?number_format((float)$odds['odds'],4,'.',''):null;
+            $detailData=['tenant_id'=>(int)$record['tenant_id'],'site_id'=>(int)$record['site_id'],'user_id'=>(int)$record['user_id'],'bet_record_id'=>$recordId,
+                'board_code'=>$boardCode,'issue_no'=>$issue,'number_text'=>$numberText,'category'=>$category,'amount'=>$amount,'odds'=>$oddsValue,
+                'win_amount'=>'0.00','rebate'=>'0.00','status'=>'pending','matched_count'=>0,'placed_at'=>(string)($record['placed_at']??date('Y-m-d H:i:s')),'source_text'=>$settlementText];
+            $detailId=(int)Db::name('bet_details')->insertGetId($detailData);
+            Db::name('user_stop_drops')->insert(['tenant_id'=>(int)$record['tenant_id'],'site_id'=>(int)$record['site_id'],'user_id'=>(int)$record['user_id'],'bet_detail_id'=>$detailId,
+                'board_code'=>$boardCode,'lottery'=>$lotteryName,'issue_no'=>$issue,'number_text'=>$numberText,'play_type'=>$play,'stop_type'=>'none',
+                'original_amount'=>$amount,'actual_amount'=>$amount,'stop_amount'=>'0.00','original_odds'=>$oddsValue,'actual_odds'=>$oddsValue,'drop_odds'=>'0.0000',
+                'source_text'=>$settlementText,'placed_at'=>(string)($record['placed_at']??date('Y-m-d H:i:s')),'created_at'=>date('Y-m-d H:i:s')]);
+            (new \app\service\InterceptionAllocator())->allocate(['tenant_id'=>(int)$record['tenant_id'],'site_id'=>(int)$record['site_id'],'user_id'=>(int)$record['user_id'],'lottery_id'=>$lotteryId,
+                'board_code'=>$boardCode,'issue_no'=>$issue,'bet_record_id'=>$recordId,'bet_detail_id'=>$detailId,'number_text'=>$numberText,'amount'=>(float)$amount,'odds'=>$odds]);
+            $total+=(float)$amount; $count+=(int)($line['count']??$line['stake_count']??1);
         }
+        if ($count<1) throw new \InvalidArgumentException('原始注单未生成有效投注明细');
         $formatted=(new QuickEntryParser())->formatText($sourceText);
         Db::name('bet_records')->where('id',$recordId)->update(['source_text'=>$sourceText,'formatted_text'=>$formatted,'amount'=>number_format($total,2,'.',''),'bet_count'=>$count]);
         $submissionId=(int)($record['submission_id']??0);
-        if ($submissionId>0 && Db::query("SHOW TABLES LIKE 'bet_submissions'")!==[]) Db::name('bet_submissions')->where('id',$submissionId)->update(['source_text'=>$sourceText,'formatted_text'=>$formatted,'amount'=>number_format($total,2,'.',''),'bet_count'=>$count]);
+        if ($submissionId>0 && Db::query("SHOW TABLES LIKE 'bet_submissions'")!==[]) {
+            $submissionRows=Db::name('bet_records')->where('submission_id',$submissionId)->select()->toArray();
+            $submissionAmount=0.0; $submissionCount=0; $submissionWin=0.0; $submissionSealed=0; $submissionStatus='pending';
+            foreach ($submissionRows as $submissionRow) {
+                $submissionAmount+=(float)($submissionRow['amount']??0); $submissionCount+=(int)($submissionRow['bet_count']??0);
+                $submissionWin+=(float)($submissionRow['win_amount']??0); $submissionSealed=max($submissionSealed,(int)($submissionRow['sealed']??0));
+                $rowStatus=(string)($submissionRow['status']??'pending');
+                if ($rowStatus==='refunded') $submissionStatus='refunded';
+                elseif ($submissionStatus==='pending' && $rowStatus==='won') $submissionStatus='won';
+                elseif ($submissionStatus==='pending' && $rowStatus==='unwon') $submissionStatus='unwon';
+                if ($rowStatus==='pending') $submissionStatus='pending';
+            }
+            if ($submissionStatus!=='refunded' && $submissionWin>0) $submissionStatus='won';
+            Db::name('bet_submissions')->where('id',$submissionId)->update(['source_text'=>$sourceText,'formatted_text'=>$formatted,
+                'amount'=>number_format($submissionAmount,2,'.',''),'bet_count'=>$submissionCount,'win_amount'=>number_format($submissionWin,2,'.',''),
+                'status'=>$submissionStatus,'sealed'=>$submissionSealed]);
+        }
     }
 
     public function replace(Request $request): \think\response\Json

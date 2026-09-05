@@ -108,8 +108,36 @@ export function SideBetRecords({
     if (/(组三\s*(?:全包|包)|组3\s*(?:全包|包))/u.test(text)) return "组三全包";
     return "";
   };
+  const detailContext = (detail: BetDetail) => `${detail.play_label || ""} ${detail.play_type || ""} ${detail.category || ""} ${detail.number_text || ""} ${detail.source_text || ""} ${detail.original_source_text || ""} ${detail.record_source || ""}`;
+  const groupFamily = (detail: BetDetail) => {
+    // The row-level play/category is authoritative. The original sentence
+    // can contain both 组三 and 组六 and must only be used as a fallback.
+    for (const value of [detail.play_type, detail.play_label, detail.category]) {
+      const text = String(value || "");
+      if (/组六|组6/u.test(text)) return "组六";
+      if (/组三|组3/u.test(text)) return "组三";
+    }
+    const numberPrefix = String(detail.number_text || "").match(/^([三六])(?=\d)/u)?.[1];
+    if (numberPrefix) return numberPrefix === "六" ? "组六" : "组三";
+    const source = `${detail.source_text || ""} ${detail.original_source_text || ""} ${detail.record_source || ""}`;
+    const families = Array.from(source.matchAll(/(组三|组六|组3|组6)/gu), (match) => match[1]);
+    const unique = Array.from(new Set(families));
+    if (unique.length === 1) return /组六|组6/u.test(unique[0]) ? "组六" : "组三";
+    return "";
+  };
+  const spanDigit = (detail: BetDetail) => detailContext(detail).match(/(?:跨度|跨)\s*([0-9])/u)?.[1] || "";
+  const compoundDigits = (detail: BetDetail) => {
+    const value = String(detail.number_text || "").replace(/\s+/gu, "");
+    const fromValue = value.match(/^复?([0-9]{3,10})$/u)?.[1];
+    if (fromValue && fromValue !== "000") return fromValue;
+    const source = `${detail.source_text || ""} ${detail.original_source_text || ""} ${detail.record_source || ""}`;
+    return source.match(/(?<!\d)([0-9]{3,10})\s*复式(?:[一二三四五六七八九十\d]+码|多码)?/u)?.[1] || "";
+  };
   const playName = (detail: BetDetail) => {
     const raw = String(detail.play_label || detail.play_type || detail.category || "投注");
+    if (spanDigit(detail)) return "跨度";
+    const rowMeta = `${detail.play_label || ""} ${detail.play_type || ""} ${detail.category || ""}`;
+    if (/复式/u.test(rowMeta) || (!/(组三|组六|组3|组6|组选)/u.test(rowMeta) && /复式/u.test(detailContext(detail)))) return "复式多码";
     const packageType = packagePlay(detail);
     if (packageType) return packageType;
     const dragSource = `${raw} ${detail.number_text || ""} ${detail.source_text || ""}`;
@@ -120,10 +148,11 @@ export function SideBetRecords({
     // 组三/组六的多码是一个业务玩法。码数属于选号内容，不应把
     // 表头拆成“组三五码/组三六码”等内部规格；参考站统一显示为
     // “组三多码/组六多码”，号码单元格保留三/六前缀。
-    const multiSource = `${raw} ${detail.number_text || ""} ${detail.source_text || ""} ${detail.original_source_text || ""} ${detail.record_source || ""}`;
-    const multiFamily = /组六|组6/u.test(multiSource) ? "组六" : /组三|组3/u.test(multiSource) ? "组三" : "";
-    const multiDigits = multiSource.match(/(?<!\d)\d{4,10}(?!\d)/u)?.[0];
-    if (multiFamily && multiDigits && !/全包|胆拖/u.test(multiSource)) return `${multiFamily}多码`;
+    const multiSource = detailContext(detail);
+    const multiFamily = groupFamily(detail);
+    const multiDigits = String(detail.number_text || "").replace(/\s+/gu, "").match(/^[三六]?(\d{4,10})/u)?.[1]
+      || multiSource.match(/(?<!\d)\d{4,10}(?!\d)/u)?.[0];
+    if (multiFamily && multiDigits && !/全包|胆拖|赖|沾边|连/u.test(multiSource)) return `${multiFamily}多码`;
     const genericGroupSource = /(?:^|\s)组(?:各|每|共|合计|计|$)/u.test(multiSource)
       && !/(组三|组六|组3|组6)/u.test(multiSource);
     const genericLeopard = genericGroupSource && String(detail.number_text || "").split(/[\s,，、]+/u).some((token) => {
@@ -143,14 +172,15 @@ export function SideBetRecords({
   };
   const playMark = (detail: BetDetail) => {
     const raw = String(detail.play_type || detail.play_label || "");
+    if (spanDigit(detail) || /复式/u.test(detailContext(detail))) return "";
     if (/胆拖/u.test(`${raw} ${detail.number_text || ""} ${detail.source_text || ""}`)) return "";
     if (/^和/u.test(raw) || /^和值/u.test(raw)) return "";
     if (/豹子/u.test(`${raw} ${detail.number_text || ""} ${detail.source_text || ""}`)) return "";
     if (/复式/u.test(`${playName(detail)} ${raw} ${detail.number_text || ""} ${detail.source_text || ""}`)) return "";
     if (packagePlay(detail)) return "";
-    const multiContext = `${raw} ${detail.number_text || ""} ${detail.source_text || ""} ${detail.original_source_text || ""}`;
+    const multiContext = detailContext(detail);
     if (playName(detail) === "直选" && String(detail.number_text || "").match(/\d{3}/u) && new Set(String(detail.number_text || "").match(/\d{3}/u)![0]).size === 1) return "直";
-    if (/\d{4,10}/u.test(multiContext) && /(?:组三|组六|组3|组6)/u.test(multiContext)) return "";
+    if (/\d{4,10}/u.test(multiContext) && groupFamily(detail) && !/赖|沾边|连/u.test(multiContext)) return "";
     if (/口|X/i.test(raw) && !raw.includes("直")) return "";
     if (raw === "直" || raw === "直选" || raw.startsWith("直")) return "直";
     if (raw === "组" || raw === "组三" || raw === "组六" || raw === "组3" || raw === "组6" || raw === "组选") return "组";
@@ -196,6 +226,12 @@ export function SideBetRecords({
     const source = detail.source_text || "";
     const play = playName(detail);
     const rawPlay = String(detail.play_type || detail.play_label || "");
+    const span = spanDigit(detail);
+    if (span) return `跨${span}`;
+    if (play === "复式多码") {
+      const digits = compoundDigits(detail);
+      return digits ? `复式 ${digits}` : "复式";
+    }
     // 胆拖的内部号码保存为“胆1拖2345678”，标题已经携带具体的
     // 组六/组三语义；详情号码按用户约定显示为“六拖…”或“三拖…”。
     const dragFamily = play.match(/^(组六|组三)胆拖/u)?.[1];
@@ -206,6 +242,10 @@ export function SideBetRecords({
       const drag = stored.match(/^[三六](\d{2,9})(?:(?:组三|组六|组3|组6)胆拖)?$/u)?.[1];
       if (drag) return `${dragFamily === "组六" ? "六" : "三"} 拖 ${drag}`;
     }
+    const family = groupFamily(detail);
+    const multiDigits = String(detail.number_text || "").replace(/\s+/gu, "").match(/^[三六]?(\d{4,10})/u)?.[1]
+      || source.match(/(?<!\d)(\d{4,10})(?!\d)/u)?.[1];
+    if ((play === "组三多码" || play === "组六多码") && multiDigits) return `${family === "组六" ? "六" : "三"}${multiDigits}`;
     const sticky = source.match(/(\d{4,10})\s*(组三|组六)六码/u);
     if (sticky) return `${sticky[2] === "组三" ? "三" : "六"}${sticky[1]}`;
     const sourceContext = `${source} ${detail.original_source_text || ""} ${detail.record_source || ""}`;
@@ -217,9 +257,9 @@ export function SideBetRecords({
         .replace(/(?:组三|组六|组3|组6)组?$|组$/u, "");
     }
     if (rawPlay.includes("组3") || rawPlay.includes("组6") || rawPlay === "组" || rawPlay === "组三" || rawPlay === "组六" || rawPlay === "组选") {
-      return (detail.number_text || "").replace(/^[三六]/u, "").replace(/(直|组|组三|组六)$/u, "");
+      return (detail.number_text || "").replace(/^[三六]/u, "").replace(/(?:直|组|组三|组六|组3|组6)+$/u, "");
     }
-    if (rawPlay.includes("直")) return (detail.number_text || "").replace(/直+$/u, "").replace(/(组|组三|组六)$/u, "");
+    if (rawPlay.includes("直")) return (detail.number_text || "").replace(/直+$/u, "").replace(/(?:组|组三|组六|组3|组6)+$/u, "");
     if (play.includes("双飞") || source.includes("对子")) {
       const number = (detail.number_text || "")
         .replace(/^0(?=\d{2}(?:飞)?$)/, "")
