@@ -10,6 +10,7 @@ use app\service\AccountPresence;
 use app\service\CreditLedger;
 use app\service\ScoreTransfer;
 use app\service\PasswordPolicy;
+use app\service\DailyScoreUsage;
 
 final class Resource
 {
@@ -402,23 +403,9 @@ final class Resource
         if ($resource === 'bet-records') {
             $lottery = trim((string)$request->param('lottery', ''));
             if ($lottery !== '') {
-                // Keep the lottery filter inside SQL.  The previous
-                // implementation materialized every matching detail ID and
-                // then every matching record ID in PHP before applying the
-                // record pagination.  With a large history this created a
-                // huge IN (...) expression and made a 20-row page request
-                // behave like an unbounded export.
-                $lotterySiteId = $scopedSiteId ?? ((int)$request->param('site_id', 0) > 0 ? (int)$request->param('site_id', 0) : null);
-                $query->whereIn('id', function ($subQuery) use ($lottery, $lotterySiteId) {
-                    $subQuery->table('bet_details')->alias('d')
-                        ->join('user_stop_drops s', 's.bet_detail_id=d.id')
-                        ->where('s.lottery', $lottery);
-                    if ($lotterySiteId !== null) $subQuery->where('s.site_id', $lotterySiteId);
-                    $subQuery
-                        // IN semantics already removes duplicate record IDs;
-                        // avoid DISTINCT's temporary table on large histories.
-                        ->field('d.bet_record_id');
-                });
+                $ids = Db::name('user_stop_drops')->where('lottery', $lottery)->column('bet_detail_id');
+                $recordIds = $ids ? Db::name('bet_details')->whereIn('id', $ids)->column('bet_record_id') : [];
+                $query->whereIn('id', $recordIds ?: [0]);
             }
             $drawStatus = strtolower(trim((string)$request->param('draw_status', 'all')));
             if (!in_array($drawStatus, ['all', 'opened', 'pending'], true)) throw new \InvalidArgumentException('开奖状态筛选值无效');
@@ -503,6 +490,7 @@ final class Resource
             $roots=$ids?Db::name('organization_nodes')->whereIn('site_id',$ids)->where('parent_id',0)->where('level','director')->whereNull('deleted_at')->field('id,site_id,name')->select()->toArray():[];
             $rootsBySite=[];foreach($roots as $root)$rootsBySite[(int)$root['site_id']]=$root;
             foreach ($list as &$siteUser) {
+                $siteUser=DailyScoreUsage::normalize($siteUser);
                 $siteId=(int)$siteUser['site_id'];$organizationId=(int)($siteUser['organization_id']??0);
                 $siteUser['site_name']=$siteNames[$siteId] ?? '站点已删除';
                 $siteUser['organization_name']=$organizationId>0?($organizationNames[$organizationId]??'所属层级已删除'):'未归属（结算归根总监）';
@@ -880,7 +868,7 @@ final class Resource
             $data['username']=$username; $data['display_name']=trim((string)($data['display_name']??''))?:$username;
         }
         if ($resource === 'site-users' && $scopedSiteId !== null) { unset($data['site_id']); $update->where('site_id',$scopedSiteId); }
-        if ($resource === 'site-users') { unset($data['total_balance'],$data['available_balance'],$data['organization_id']); $current=Db::name('site_users')->where('id',$id)->find(); if (!$current) throw new \InvalidArgumentException('用户不存在'); $this->normalizeBalances($data,$current); }
+        if ($resource === 'site-users') { unset($data['total_balance'],$data['available_balance'],$data['organization_id']); $current=Db::name('site_users')->where('id',$id)->find(); if (!$current) throw new \InvalidArgumentException('用户不存在'); $current=DailyScoreUsage::normalize($current); $this->normalizeBalances($data,$current); }
         if($resource==='site-users'&&isset($current)){
             $operator=$this->scoreOperator($request);
             Db::transaction(function()use($update,$data,$current,$operator):void{

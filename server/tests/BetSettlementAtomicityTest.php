@@ -60,7 +60,9 @@ try{
     assertNear((float)$record['win_amount'],300.0,'主单赔付未使用下注时赔率');
     assertNear((float)$detail['odds'],3.0,'结算覆盖了下注时锁定赔率');
     assertNear((float)$stop['actual_odds'],3.0,'结算覆盖了停押降水锁定赔率');
-    assertNear((float)$userAfter['balance'],(float)$userBefore['balance']+200.0,'用户结算余额错误');
+    assertNear((float)$userAfter['balance'],(float)$userBefore['balance'],'结算不应改变用户余额');
+    assertNear((float)$userAfter['credit_balance'],(float)$userBefore['credit_balance'],'结算不应改变用户信用额度');
+    assertNear((float)$userAfter['used_balance'],(float)$userBefore['used_balance']+100.0,'结算不应释放当日投注使用量');
     $ledgerCount=(int)Db::name('organization_credit_ledger')->where('related_bet_record_id',$recordId)->count();
     $second=$service->settleForHistory(['code'=>$issue,'numbers'=>'999'],$lottery);
     if($second!==['records'=>0,'won'=>0])throw new RuntimeException('重复结算没有被幂等拦截');

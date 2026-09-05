@@ -6,6 +6,7 @@ namespace app\controller;
 use app\service\OrganizationHierarchy;
 use app\service\PasswordPolicy;
 use app\service\ScoreTransfer;
+use app\service\DailyScoreUsage;
 use think\Request;
 use think\facade\Cache;
 use think\facade\Db;
@@ -148,8 +149,11 @@ final class AdminRobots
     {
         $session=$this->session($request); $siteId=$this->siteId($request,$session); $query=Db::name('robot_accounts')->alias('r')->join('site_users u','u.id=r.user_id')->join('sites s','s.id=r.site_id')->join('organization_nodes n','n.id=r.organization_id')->whereNull('r.converted_at');
         if($siteId!==null)$query->where('r.site_id',$siteId);
-        $rows=$query->field('r.*,u.balance,u.credit_balance,u.used_balance,s.name site_name,n.name organization_name')->order('r.id desc')->select()->toArray();
-        foreach($rows as &$row){$row['available_score']=number_format(max(0,(float)$row['balance']+(float)$row['credit_balance']-(float)$row['used_balance']),2,'.','');$decoded=json_decode((string)($row['lottery_configs']??'[]'),true)?:[];$row['lottery_configs']=array_values(array_filter(array_map(static fn($item)=>is_array($item)?['lottery_id'=>(int)($item['lottery_id']??0),'enabled'=>(int)($item['enabled']??1)===1]:null,$decoded),static fn($item)=>is_array($item)&&$item['lottery_id']>0));$row['skip_windows']=json_decode((string)($row['skip_windows']??'[]'),true)?:[];$row['win_weight']=number_format((float)($row['win_weight']??50),2,'.','');$row['loss_weight']=number_format(100-(float)($row['win_weight']??50),2,'.','');$row['monthly_rules']=json_decode((string)($row['monthly_rules']??'[]'),true)?:[];$row['hourly_weights']=json_decode((string)($row['hourly_weights']??'[]'),true)?:[];$row['plain_password']=(string)$row['plain_password'];}unset($row);
+        $rows=$query->field('r.*,u.id user_id,u.balance,u.credit_balance,u.used_balance,u.used_balance_date,s.name site_name,n.name organization_name')->order('r.id desc')->select()->toArray();
+        foreach($rows as &$row){
+            $member=DailyScoreUsage::normalize(['id'=>(int)$row['user_id'],'used_balance'=>$row['used_balance']??0,'used_balance_date'=>$row['used_balance_date']??null]);
+            $row['used_balance']=$member['used_balance'];$row['used_balance_date']=$member['used_balance_date'];
+            $row['available_score']=number_format(max(0,(float)$row['balance']+(float)$row['credit_balance']-(float)$row['used_balance']),2,'.','');$decoded=json_decode((string)($row['lottery_configs']??'[]'),true)?:[];$row['lottery_configs']=array_values(array_filter(array_map(static fn($item)=>is_array($item)?['lottery_id'=>(int)($item['lottery_id']??0),'enabled'=>(int)($item['enabled']??1)===1]:null,$decoded),static fn($item)=>is_array($item)&&$item['lottery_id']>0));$row['skip_windows']=json_decode((string)($row['skip_windows']??'[]'),true)?:[];$row['win_weight']=number_format((float)($row['win_weight']??50),2,'.','');$row['loss_weight']=number_format(100-(float)($row['win_weight']??50),2,'.','');$row['monthly_rules']=json_decode((string)($row['monthly_rules']??'[]'),true)?:[];$row['hourly_weights']=json_decode((string)($row['hourly_weights']??'[]'),true)?:[];$row['plain_password']=(string)$row['plain_password'];}unset($row);
         return $this->reply(['list'=>$rows,'total'=>count($rows)]);
     }
 
@@ -190,6 +194,7 @@ final class AdminRobots
                 if($targetAvailable<0)throw new \InvalidArgumentException('机器人分数必须为非负数字');
                 $user=Db::name('site_users')->where('id',(int)$robot['user_id'])->find();
                 if(!$user)throw new \RuntimeException('机器人会员账户不存在');
+                $user=DailyScoreUsage::normalize($user);
                 $used=(float)($user['used_balance']??0);
                 $targetTotal=round($targetAvailable+$used,2);
                 // Preserve existing cash first; any extra allocation is
@@ -283,6 +288,7 @@ final class AdminRobots
             if($type==='user'){
                 $row=Db::name('site_users')->where('id',$account)->lock(true)->find();
                 if(!$row)continue;
+                $row=DailyScoreUsage::normalize($row);
                 $balance=(float)$row['balance'];$credit=(float)$row['credit_balance'];
                 // Pending bets release their used balance as part of a clear.
                 $available=$balance+$credit-(float)($row['used_balance']??0)+($account===$pendingUserId?$pendingRefund:0.0);
@@ -316,6 +322,7 @@ final class AdminRobots
             'balance'=>number_format(max(0,$allocated),2,'.',''),
             'credit_balance'=>'0.00',
             'used_balance'=>'0.00',
+            'used_balance_date'=>DailyScoreUsage::today(),
             'updated_at'=>date('Y-m-d H:i:s'),
         ]);
     }
@@ -357,10 +364,11 @@ final class AdminRobots
                 if((string)($row['account_type']??'')==='user')continue;
                 $key=(string)$row['account_type'].':'.(int)$row['account_id'];$delta=((string)($row['direction']??'out')==='in'?1:-1)*(float)($row['amount']??0);$deltas[$key]=($deltas[$key]??0)+$delta;
             }
-            $pendingAmount=0.0;foreach($records as $record)if((string)($record['status']??'pending')==='pending')$pendingAmount+=(float)$record['amount'];
+            $today=DailyScoreUsage::today();
+            $pendingAmount=0.0;foreach($records as $record)if((string)($record['status']??'pending')==='pending'&&substr((string)($record['placed_at']??''),0,10)===$today)$pendingAmount+=(float)$record['amount'];
             $this->assertRollbackAvailable($deltas,$pendingAmount,(int)$robot['user_id']);
             foreach($deltas as $key=>$delta){[$type,$account]=explode(':',$key,2);$account=(int)$account;if(abs($delta)<0.000001)continue;$change=number_format($delta,2,'.','');if($type==='user')$this->applyUserAccountDelta($account,-$delta);elseif($type==='organization')Db::name('organization_nodes')->where('id',$account)->update(['balance'=>Db::raw('balance - '.$change),'updated_at'=>date('Y-m-d H:i:s')]);elseif($type==='platform')Db::name('platform_credit_accounts')->where('id',$account)->update(['balance'=>Db::raw('balance - '.$change),'updated_at'=>date('Y-m-d H:i:s')]);elseif($type==='site')Db::name('site_credit_accounts')->where('id',$account)->update(['balance'=>Db::raw('balance - '.$change),'updated_at'=>date('Y-m-d H:i:s')]);}
-            if($pendingAmount>0)Db::name('site_users')->where('id',(int)$robot['user_id'])->update(['used_balance'=>Db::raw('GREATEST(used_balance - '.number_format($pendingAmount,2,'.','').',0)'),'updated_at'=>date('Y-m-d H:i:s')]);
+            if($pendingAmount>0)DailyScoreUsage::change((int)$robot['user_id'], -$pendingAmount);
             // Robot accounts are dedicated members. Once their historical
             // bets are removed, restore the account to its allocation
             // baseline.  Settlement can move part of the baseline between

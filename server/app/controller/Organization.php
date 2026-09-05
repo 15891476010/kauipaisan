@@ -8,6 +8,7 @@ use app\service\OrganizationHierarchy;
 use app\service\PasswordPolicy;
 use app\service\AgentAuthorization;
 use app\service\ScoreTransfer;
+use app\service\DailyScoreUsage;
 use think\Request;
 use think\facade\Cache;
 use think\facade\Db;
@@ -206,10 +207,11 @@ final class Organization
             $parent=Db::name('organization_nodes')->where('id',$parentId)->where('site_id',$siteId)->whereNull('deleted_at')->find();
             if ($parent && (string)$parent['level']==='agent') {
                 $members=Db::name('site_users')->where('site_id',$siteId)->where('organization_id',$parentId)->whereNull('deleted_at')
-                    ->field('id,organization_id,username,display_name,phone,balance,credit_balance,used_balance,status,last_login_at,last_login_ip,last_login_location,created_at')
+                    ->field('id,organization_id,username,display_name,phone,balance,credit_balance,used_balance,used_balance_date,status,last_login_at,last_login_ip,last_login_location,created_at')
                     ->order('id asc')->select()->toArray();
                 AccountPresence::append($members,'site_user');
                 foreach($members as &$member){
+                    $member=DailyScoreUsage::normalize($member);
                     $member['balance']=number_format((float)($member['balance']??0),2,'.','');
                     $member['credit_balance']=number_format((float)($member['credit_balance']??0),2,'.','');
                     $member['used_balance']=number_format((float)($member['used_balance']??0),2,'.','');

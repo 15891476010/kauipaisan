@@ -258,24 +258,29 @@ final class AdminBetBatch
             ->whereIn('r.status',['pending','won','unwon'])->whereIn('d.status',['pending','won','unwon']);
         if ($siteId!==null) $query->where('d.site_id',$siteId);
         if ($requestedUsers!==[]) $query->whereIn('d.user_id',$requestedUsers);
-        $rows=$query->field('d.id,d.user_id,d.site_id,d.number_text,d.amount,d.source_text,r.id AS record_id,r.source_text AS record_source_text,r.formatted_text AS record_formatted_text,r.submission_id,u.username,u.display_name,st.name AS site_name')
+        $rows=$query->field('d.id,d.user_id,d.site_id,d.number_text,d.amount,d.source_text,r.id AS record_id,r.amount AS record_amount,r.bet_count AS record_bet_count,r.source_text AS record_source_text,r.formatted_text AS record_formatted_text,r.submission_id,u.username,u.display_name,st.name AS site_name')
             ->order('d.site_id asc')->order('d.user_id asc')->order('d.id asc')->select()->toArray();
         $users=[];
+        $seenRecords=[];
         foreach ($rows as $row) {
-            $numbers=array_map(static fn(array $item): string=>(string)$item['value'],$this->editableNumberTokens((string)($row['number_text']??'')));
-            if ($numbers===[]) continue;
             $userKey=(int)$row['site_id'].'-'.(int)$row['user_id'];
             if (!isset($users[$userKey])) $users[$userKey]=[
                 'key'=>$userKey,'user_id'=>(int)$row['user_id'],'site_id'=>(int)$row['site_id'],
                 'username'=>(string)($row['username']??'未知用户'),'display_name'=>(string)($row['display_name']??''),
                 'site_name'=>(string)($row['site_name']??''),'number_count'=>0,'numbers'=>[],
             ];
-            $unitAmount=(float)($row['amount']??0)/max(1,count($numbers));
-            $users[$userKey]['number_count'] += count($numbers);
+            // The batch editor works on the original ticket as one unit. Do
+            // not expose or parse its generated detail numbers here: one
+            // placeholder row per main record is enough for selecting and
+            // editing the complete raw text (including 复式/和值/跨度/沾边赖).
+            $recordId=(int)($row['record_id']??0);
+            if ($recordId<1 || isset($seenRecords[$userKey][$recordId])) continue;
+            $seenRecords[$userKey][$recordId]=true;
+            $users[$userKey]['number_count']++;
             if ($requestedUsers===[]) continue;
-            foreach ($numbers as $index=>$number) $users[$userKey]['numbers'][]=[
-                'key'=>(int)$row['id'].'-'.$index,'record_id'=>(int)$row['record_id'],'detail_id'=>(int)$row['id'],'number_index'=>$index,
-                'value'=>$number,'amount'=>number_format($unitAmount,2,'.',''),'source_text'=>(string)($row['source_text']??''),
+            $users[$userKey]['numbers'][]=[
+                'key'=>$recordId.'-raw','record_id'=>$recordId,'detail_id'=>(int)($row['id']??0),'number_index'=>-1,
+                'value'=>'原始注单','amount'=>number_format((float)($row['record_amount']??0),2,'.',''),'source_text'=>(string)($row['source_text']??''),
                 'record_source_text'=>(string)($row['record_source_text']??''),'record_formatted_text'=>(string)($row['record_formatted_text']??''),
             ];
         }

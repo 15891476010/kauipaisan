@@ -46,6 +46,7 @@ final class ScoreTransfer
         if($userId<1||$siteId<1||$tenantId<1)throw new \InvalidArgumentException('用户账户信息不完整');
         $lockedUser=Db::name('site_users')->where('id',$userId)->where('site_id',$siteId)->where('tenant_id',$tenantId)->whereNull('deleted_at')->lock(true)->find();
         if(!$lockedUser)throw new \InvalidArgumentException('用户不存在或已停用');
+        $lockedUser=DailyScoreUsage::normalize($lockedUser);
         $organizationId=(int)($lockedUser['organization_id']??0);if($organizationId<1)throw new \InvalidArgumentException('用户尚未归属代理');
         $agent=Db::name('organization_nodes')->where('id',$organizationId)->where('tenant_id',$tenantId)->where('site_id',$siteId)->where('level','agent')->where('status',1)->whereNull('deleted_at')->lock(true)->find();if(!$agent)throw new \InvalidArgumentException('用户所属代理不存在或已停用');
         if($delta>0&&(float)$agent['balance']+0.000001<$delta)throw new \InvalidArgumentException('代理可用分数不足，无法分配给用户');
@@ -67,6 +68,7 @@ final class ScoreTransfer
         if($balance<0||$creditBalance<0)throw new \InvalidArgumentException('余额和信用余额必须为非负数字');
         $locked=Db::name('site_users')->where('id',$userId)->where('site_id',$siteId)->where('tenant_id',$tenantId)->whereNull('deleted_at')->lock(true)->find();
         if(!$locked)throw new \RuntimeException('会员不存在或已停用');
+        $locked=DailyScoreUsage::normalize($locked);
         $organizationId=(int)($locked['organization_id']??0);
         $oldTotal=(float)$locked['balance']+(float)$locked['credit_balance'];$newTotal=round($balance+$creditBalance,2);$delta=round($newTotal-$oldTotal,2);
         if($organizationId<1) {

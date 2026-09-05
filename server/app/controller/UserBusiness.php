@@ -7,10 +7,10 @@ use app\service\CreditLedger;
 use app\service\BetSettlement;
 use app\service\LotteryHistorySync;
 use app\service\SystemLotteryService;
-use app\service\QuickEntryParser;
 use app\service\ThirdPartyQuickEntryClient;
 use app\service\ThirdPartyQuickEntryConfig;
 use app\service\ThirdPartyQuickEntryUtils;
+use app\service\DailyScoreUsage;
 use think\Request;
 use think\facade\Cache;
 use think\facade\Db;
@@ -147,11 +147,13 @@ final class UserBusiness
         $minimum=(float)($odds['min_bet']??0);$perNumber=$requested/$count;
         if($minimum>0&&$perNumber+0.000001<$minimum)throw new \InvalidArgumentException('每个号码最小下注金额为 '.rtrim(rtrim(number_format($minimum,2,'.',''),'0'),'.'));
         $singleBet=(float)($odds['single_bet_limit']??0); $singleItem=(float)($odds['single_item_limit']??0);
-        // Both limits are expressed per generated number.  A compact line
-        // such as “500 numbers, each 10元” must therefore be checked against
-        // the per-number limit multiplied by its stake count.  The previous
-        // code applied single_item_limit to the whole line and silently
-        // truncated a 5000元 ticket to 1500元.
+        // Limits apply to each generated number/stake in this line. A
+        // provider catalogue row may contain hundreds of different direct
+        // selections, so its total amount must scale with the reported
+        // stake_count instead of being capped at one fixed 1500-yuan value.
+        // Reject the complete line when its per-number amount exceeds either
+        // configured limit; never silently truncate the user's requested
+        // amount and leave the preview/order totals inconsistent.
         if ($singleBet>0 && $requested > $singleBet*$count + 0.000001) {
             throw new \InvalidArgumentException('玩法“'.(string)($line['play_type']??$line['category']??'当前玩法').'”超过单注上限：最多 '.number_format($singleBet*$count,2,'.','').' 元，当前输入 '.number_format($requested,2,'.','').' 元，请修改后再提交');
         }
@@ -306,7 +308,7 @@ final class UserBusiness
                     Db::name('bet_records')->where('id',$id)->update(['status'=>'refunded','sealed'=>1,'refunded_at'=>$now]);
                     Db::name('bet_details')->where('bet_record_id',$id)->update(['status'=>'refunded']);
                     (new InterceptionAllocator())->releaseForRecord($id);
-                    Db::name('site_users')->where('id',$s['user_id'])->where('site_id',$s['site_id'])->update(['used_balance'=>Db::raw('GREATEST(used_balance - '.number_format($amount,2,'.','').', 0)'),'updated_at'=>$now]);
+                    DailyScoreUsage::changeForPlacedAt((int)$s['user_id'], -$amount, (string)($record['placed_at'] ?? $record['created_at'] ?? ''));
                     return $amount;
                 });
             } catch (\InvalidArgumentException $e) { return $this->reply(null,$e->getMessage(),404); }
@@ -327,7 +329,7 @@ final class UserBusiness
                 Db::name('bet_records')->whereIn('id',$recordIds)->update(['status'=>'refunded','sealed'=>1,'refunded_at'=>$now]);
                 Db::name('bet_details')->whereIn('bet_record_id',$recordIds)->update(['status'=>'refunded']);
                 foreach ($recordIds as $recordId) (new InterceptionAllocator())->releaseForRecord((int)$recordId);
-                Db::name('site_users')->where('id',$s['user_id'])->where('site_id',$s['site_id'])->update(['used_balance'=>Db::raw('GREATEST(used_balance - '.number_format($amount,2,'.','').', 0)'),'updated_at'=>$now]);
+                DailyScoreUsage::changeForPlacedAt((int)$s['user_id'], -$amount, (string)($record['placed_at'] ?? $record['created_at'] ?? ''));
                 return $amount;
             });
         } catch (\InvalidArgumentException $e) { return $this->reply(null,$e->getMessage(),404); }
@@ -774,8 +776,8 @@ final class UserBusiness
         $query=Db::name('bills')->where('site_id',$s['site_id'])->where('user_id',$s['user_id']);
         if ($from) $query->where('bill_date','>=',$from); if ($to) $query->where('bill_date','<=',$to);
         // bills is a daily site/user summary and has no lottery column. When
-        // a lottery is selected, rebuild the daily result from tagged detail
-        // rows instead of returning the unfiltered all-lottery total.
+        // a彩种 is selected, rebuild the daily result from lottery-tagged
+        // detail rows instead of returning the unfiltered all-lottery total.
         $list=[];
         if ($lotteryFilter!=='') {
             $detailQuery=Db::name('bet_details')->alias('d')->leftJoin('user_stop_drops s','s.bet_detail_id=d.id')
@@ -872,12 +874,6 @@ final class UserBusiness
             if ($attempt<15) usleep(500000);
         }
         return $this->reply(['changed'=>false,'signature'=>$signature]);
-    }
-
-    private function quickLines(string $text, string $lottery, int $tenantId=1): array
-    {
-        $unitStake=(float)Db::name('lotteries')->where('tenant_id',$tenantId)->where('name',$lottery)->where('status',1)->whereNull('deleted_at')->value('unit_stake');
-        return (new QuickEntryParser())->parse($text, $lottery, $unitStake>0?$unitStake:2.0);
     }
 
     /** Convert the provider's result rows to the line shape used by the UI.
@@ -1085,7 +1081,9 @@ final class UserBusiness
             $groupText=trim((string)($row['ftxt']??''));
             if($groupText==='' || !str_contains($groupText,"
 "))continue;
-            $parsed=$this->quickLines($groupText,$lottery);
+            // Provider continuation rows are kept provider-authoritative.
+            // Do not reconstruct them through the local parser.
+            $parsed=[];
             if($parsed===[])continue;
             $parsedCount=0; $parsedAmount=0.0; $valid=true;
             foreach($parsed as $parsedLine){
@@ -1373,98 +1371,35 @@ final class UserBusiness
     {
         $s=$this->session($request); $text=trim((string)$request->post('text','')); if (mb_strlen($text)>10000) return $this->reply(null,'投注文本不能超过10000个字符',422); $lottery=trim((string)$request->post('lottery','福彩3D')); if (!in_array($lottery,['福彩3D','排列三'],true)) return $this->reply(null,'彩种无效',422);
         if ($text==='') return $this->reply(['lines'=>[],'count'=>0,'amount'=>'0.00'],'请输入投注文本',422);
-        $thirdParty=null;
         $thirdPartyConfig=ThirdPartyQuickEntryConfig::load((int)$s['tenant_id'],(int)$s['site_id']);
-        if ((bool)$thirdPartyConfig['enabled']) {
-            try {
-                $thirdParty=(new ThirdPartyQuickEntryClient($thirdPartyConfig))->recognize($text,$lottery==='排列三'?3:4);
-            }
-            catch (\Throwable $e) { Log::warning('third-party quick preview unavailable: '.$e->getMessage()); $thirdParty=null; }
+        if (!(bool)$thirdPartyConfig['enabled']) {
+            return $this->reply(null,'识别服务暂未启用，请联系管理员',503);
         }
-        // A decoded provider response is authoritative, even when it contains
-        // a validation error. Only transport/login/decode exceptions use the
-        // existing local parser fallback.
-        if ($thirdParty !== null) {
-            $providerLines=$this->providerPreviewLines($thirdParty,$lottery);
-            $providerHasSuccess=array_reduce($providerLines,static fn(bool $found,array $line):bool=>$found || ($line['status']??'')==='success',false);
-            // A decoded provider response that only contains AK/login/timeout
-            // failures must not block a valid local ticket. Keep provider
-            // errors for genuinely invalid text, but fall back transparently
-            // when the local parser can recognize the same input.
-            if ($providerHasSuccess) {
-                return $this->reply(['lines'=>$providerLines,'count'=>(int)($thirdParty['data']['tc']??0),'code_count'=>(int)($thirdParty['data']['tc']??0),'amount'=>number_format((float)($thirdParty['data']['ta']??0),2,'.',''),'formatted_text'=>(new QuickEntryParser())->formatText($text)]);
-            }
+        try {
+            $thirdParty=(new ThirdPartyQuickEntryClient($thirdPartyConfig))->recognize($text,$lottery==='排列三'?3:4);
+        } catch (\Throwable $e) {
+            Log::warning('third-party quick preview unavailable: '.$e->getMessage());
+            return $this->reply(null,'识别服务暂时不可用，请点击“生成”重试',503);
         }
-        $lines=$this->quickLines($text,$lottery,(int)$s['tenant_id']); $count=0; $codeCount=0; $amount=0.0;
-        foreach ($lines as &$line) if ($line['status']==='success') {
-            $lineLotteries=$this->lotteriesForLine($line,$lottery);$oddsReady=true;
-            $lineAmount=0.0;$lineCount=0;
-            $lineCodeCount=(int)($line['code_count']??$line['count']??0);
-            try{foreach($lineLotteries as $lineLottery){$this->assertLotteryPermission($s,$lineLottery);$splitLine=$this->lineForLottery($line,$lineLottery,(int)$s['tenant_id']);if(!$this->lineOdds($s,$lineLottery,$splitLine))$oddsReady=false;$lineAmount+=(float)$splitLine['amount'];$lineCount+=(int)$splitLine['count'];}}
-            catch(\InvalidArgumentException $e){$oddsReady=false;$line['reason']=$e->getMessage();}
-            if (!$oddsReady) { $line['status']='failed'; $line['reason']=$line['reason']??'当前玩法无法唯一匹配赔率'; $line['amount']='0.00'; $line['count']=0; continue; }
-            $line['amount']=number_format($lineAmount,2,'.','');$line['count']=$lineCount;$line['code_count']=$lineCodeCount;if(isset($line['ast']))$line['ast']['amount']=$lineAmount;
-            $count+=$lineCount; $codeCount+=$lineCodeCount; $amount+=$lineAmount;
-        }
-        unset($line);
-        $batchStats=[];
-        foreach($lines as $line){
-            $batchId=(string)($line['batch_id']??'');if($batchId==='')continue;
-            if(!isset($batchStats[$batchId]))$batchStats[$batchId]=['valid'=>true,'rows'=>0,'expected'=>(int)($line['batch_size']??0),'numbers'=>[],'seen'=>[],'occurrences'=>[],'frequency'=>[],'category_multiplier'=>1,'stake_count'=>0,'amount'=>0.0];
-            $batchStats[$batchId]['rows']++;$batchStats[$batchId]['expected']=max((int)$batchStats[$batchId]['expected'],(int)($line['batch_size']??0));
-            if(($line['status']??'')!=='success'){$batchStats[$batchId]['valid']=false;continue;}
-            $numbers=preg_split('/\s+/',trim((string)($line['number_text']??'')))?:[];
-            foreach($numbers as $number){if(preg_match('/^\d{3}$/',$number)!==1)continue;$key='n'.$number;$batchStats[$batchId]['occurrences'][]=$number;$batchStats[$batchId]['frequency'][$key]=($batchStats[$batchId]['frequency'][$key]??0)+1;if(!isset($batchStats[$batchId]['seen'][$key])){$batchStats[$batchId]['seen'][$key]=true;$batchStats[$batchId]['numbers'][]=$number;}}
-            $batchStats[$batchId]['category_multiplier']=max((int)$batchStats[$batchId]['category_multiplier'],count($this->lotteriesForLine($line,$lottery)));$batchStats[$batchId]['stake_count']+=(int)($line['stake_count']??$line['count']??0);$batchStats[$batchId]['amount']+=(float)($line['amount']??0);
-        }
-        foreach($lines as &$line){
-            $batchId=(string)($line['batch_id']??'');if($batchId===''||($line['batch_end']??false)!==true)continue;$stats=$batchStats[$batchId]??null;
-            $valid=is_array($stats)&&($stats['valid']??false)===true&&(int)($stats['rows']??0)===(int)($stats['expected']??-1);$line['batch_valid']=$valid;
-            if(!$valid){unset($line['batch_count'],$line['batch_stake_count'],$line['batch_amount'],$line['batch_number_text'],$line['batch_occurrence_text'],$line['batch_has_duplicates'],$line['batch_duplicate_numbers']);continue;}
-            $duplicates=[];foreach($stats['frequency'] as $key=>$frequency)if((int)$frequency>1)$duplicates[]=substr((string)$key,1);
-            $line['batch_count']=count($stats['numbers'])*(int)$stats['category_multiplier'];$line['batch_stake_count']=(int)$stats['stake_count'];$line['batch_amount']=number_format((float)$stats['amount'],2,'.','');$line['batch_number_text']=implode(' ',$stats['numbers']);$line['batch_occurrence_text']=implode(' ',$stats['occurrences']);$line['batch_has_duplicates']=$duplicates!==[];$line['batch_duplicate_numbers']=$duplicates;
-        }
-        unset($line);
-        $count=0;$codeCount=0;$amount=0.0;
-        foreach($lines as $line){
-            $batchId=(string)($line['batch_id']??'');
-            if($batchId!==''){if(($line['batch_end']??false)===true&&($line['batch_valid']??false)===true){$batchCount=(int)($line['batch_count']??0);$count+=$batchCount;$codeCount+=$batchCount;$amount+=(float)($line['batch_amount']??0);}continue;}
-            if(($line['status']??'')!=='success')continue;$lineCount=(int)($line['count']??0);$count+=$lineCount;$codeCount+=(int)($line['code_count']??$lineCount);$amount+=(float)($line['amount']??0);
-        }
-        return $this->reply(['lines'=>$lines,'count'=>$count,'code_count'=>$codeCount,'amount'=>number_format($amount,2,'.',''),'formatted_text'=>(new QuickEntryParser())->formatText($text)]);
+        $providerLines=$this->providerPreviewLines($thirdParty,$lottery);
+        return $this->reply(['lines'=>$providerLines,'count'=>(int)($thirdParty['data']['tc']??0),'code_count'=>(int)($thirdParty['data']['tc']??0),'amount'=>number_format((float)($thirdParty['data']['ta']??0),2,'.',''),'formatted_text'=>$text]);
     }
     public function quickPlace(Request $request): \think\response\Json
     {
         $s=$this->session($request); if (!(bool)$request->post('confirmed',false)) return $this->reply(null,'请确认下注内容后再提交',422);
         if ((string)Db::name('site_users')->where('id',$s['user_id'])->where('site_id',$s['site_id'])->value('account_state')==='bet_paused') return $this->reply(null,'当前账号已暂停下注',403);
         $text=trim((string)$request->post('text','')); if ($text==='' || mb_strlen($text)>10000) return $this->reply(null,'投注文本无效',422); $lottery=trim((string)$request->post('lottery','福彩3D')); if (!in_array($lottery,['福彩3D','排列三'],true)) return $this->reply(null,'彩种无效',422);
-        $parser=new QuickEntryParser(); $formattedText=$parser->formatText($text);
-        $providerAuthoritative=false; $providerResult=null;
-        // Robot-generated tickets are already produced from the local odds
-        // catalogue and must stay on the local parser path. This avoids
-        // consuming third-party account tokens/AK quota for automated bets.
-        // Normal member quick entry keeps the configured provider behavior.
-        if (!(bool)($s['robot_scheduler']??false)) {
-            $thirdPartyConfig=ThirdPartyQuickEntryConfig::load((int)$s['tenant_id'],(int)$s['site_id']);
-            if ((bool)$thirdPartyConfig['enabled']) {
-                try { $providerResult=(new ThirdPartyQuickEntryClient($thirdPartyConfig))->recognize($text,$lottery==='排列三'?3:4); $providerAuthoritative=true; }
-                catch (\Throwable $e) { Log::warning('third-party quick place unavailable: '.$e->getMessage()); }
-            }
+        $thirdPartyConfig=ThirdPartyQuickEntryConfig::load((int)$s['tenant_id'],(int)$s['site_id']);
+        if (!(bool)$thirdPartyConfig['enabled']) return $this->reply(null,'识别服务暂未启用，请联系管理员',503);
+        try {
+            $providerResult=(new ThirdPartyQuickEntryClient($thirdPartyConfig))->recognize($text,$lottery==='排列三'?3:4);
+        } catch (\Throwable $e) {
+            Log::warning('third-party quick place unavailable: '.$e->getMessage());
+            return $this->reply(null,'识别服务暂时不可用，请点击“生成”重试',503);
         }
-        $lines=$providerAuthoritative ? $this->providerPreviewLines($providerResult,$lottery) : $this->quickLines($text,$lottery,(int)$s['tenant_id']);
-        if ($providerAuthoritative) {
-            $providerHasSuccess=array_reduce($lines,static fn(bool $found,array $line):bool=>$found || ($line['status']??'')==='success',false);
-            if (!$providerHasSuccess) {
-                $localLines=$this->quickLines($text,$lottery,(int)$s['tenant_id']);
-                $localHasSuccess=array_reduce($localLines,static fn(bool $found,array $line):bool=>$found || ($line['status']??'')==='success',false);
-                if ($localHasSuccess) {
-                    $providerAuthoritative=false;
-                    $providerResult=null;
-                    $lines=$localLines;
-                    Log::info('quick place fell back to local parser after provider returned no successful lines');
-                }
-            }
-        }
+        $providerAuthoritative=true;
+        $formattedText=$text;
+        $lines=$this->providerPreviewLines($providerResult,$lottery);
         if (!$lines) return $this->reply(null,'没有可下注的有效内容',422);
         foreach ($lines as $line) if (($line['status']??'')!=='success') {
             return $this->reply(null, $providerAuthoritative ? (string)($line['reason']??$this->thirdPartyMessage($providerResult??[])) : '存在未识别或金额不一致的内容，已取消整单下注', 422);
@@ -1527,14 +1462,16 @@ final class UserBusiness
         } catch (\InvalidArgumentException $e) { return $this->reply(null,$e->getMessage(),422); }
         $submissionFingerprint=$this->submissionFingerprint($s,$groups);
         if ($amount<=0) return $this->reply(null,'当前投注已全部停押，暂不能下注',422);
-        $user=Db::name('site_users')->where('id',$s['user_id'])->where('site_id',$s['site_id'])->whereNull('deleted_at')->field('balance,credit_balance,used_balance')->find();
+        $user=Db::name('site_users')->where('id',$s['user_id'])->where('site_id',$s['site_id'])->whereNull('deleted_at')->field('id,balance,credit_balance,used_balance,used_balance_date')->find();
         if (!$user) return $this->reply(null,'用户不存在或已停用',404);
+        $user=DailyScoreUsage::normalize($user);
         $available=(float)$user['balance']+(float)$user['credit_balance']-(float)$user['used_balance']; if ($amount>$available) return $this->reply(null,'可用余额不足，无法下注',422);
         if (!$this->betSubmissionsAvailable()) {
             try {
                 $transactionResult=Db::transaction(function () use ($s,$text,$formattedText,$groups,$amount,$now,$submissionFingerprint): array {
                     $lockedUser=Db::name('site_users')->where('id',(int)$s['user_id'])->where('site_id',(int)$s['site_id'])->lock(true)->find();
                     if (!$lockedUser) throw new \RuntimeException('用户不存在或已停用');
+                    $lockedUser=DailyScoreUsage::normalize($lockedUser);
                     $duplicates=$this->recentDuplicateRecords($s,$submissionFingerprint);
                     if($duplicates!==[]){return ['duplicate'=>true,'record_ids'=>array_map(static fn(array $row):int=>(int)$row['id'],$duplicates),'count'=>array_sum(array_map(static fn(array $row):int=>(int)$row['bet_count'],$duplicates)),'amount'=>array_sum(array_map(static fn(array $row):float=>(float)$row['amount'],$duplicates))];}
                     $before=(float)$lockedUser['balance']+(float)$lockedUser['credit_balance']-(float)$lockedUser['used_balance'];
@@ -1555,7 +1492,7 @@ final class UserBusiness
                         CreditLedger::userBet($s,(int)$s['user_id'],$recordAmount,$ledgerBefore,$recordId,$issueNo);
                         $ledgerBefore-=$recordAmount;
                     }
-                    Db::name('site_users')->where('id',$s['user_id'])->where('site_id',$s['site_id'])->update(['used_balance'=>Db::raw('used_balance + '.number_format($amount,2,'.',''))]);
+                    DailyScoreUsage::change((int)$s['user_id'], $amount);
                     return ['duplicate'=>false,'record_ids'=>$recordIds];
                 });
             } catch (\Throwable $e) {
@@ -1572,6 +1509,7 @@ final class UserBusiness
             $transactionResult=Db::transaction(function () use ($s,$text,$formattedText,$groups,$amount,$count,$now,$submissionFingerprint): array {
                 $lockedUser=Db::name('site_users')->where('id',(int)$s['user_id'])->where('site_id',(int)$s['site_id'])->lock(true)->find();
                 if (!$lockedUser) throw new \RuntimeException('用户不存在或已停用');
+                $lockedUser=DailyScoreUsage::normalize($lockedUser);
                 $duplicates=$this->recentDuplicateRecords($s,$submissionFingerprint);
                 if($duplicates!==[]){return ['duplicate'=>true,'record_ids'=>array_map(static fn(array $row):int=>(int)$row['id'],$duplicates),'count'=>array_sum(array_map(static fn(array $row):int=>(int)$row['bet_count'],$duplicates)),'amount'=>array_sum(array_map(static fn(array $row):float=>(float)$row['amount'],$duplicates))];}
                 $before=(float)$lockedUser['balance']+(float)$lockedUser['credit_balance']-(float)$lockedUser['used_balance'];
@@ -1608,7 +1546,7 @@ final class UserBusiness
                     CreditLedger::userBet($s,(int)$s['user_id'],$recordAmount,$ledgerBefore,$submissionId,$issueNo);
                     $ledgerBefore-=$recordAmount;
                 }
-                Db::name('site_users')->where('id',$s['user_id'])->where('site_id',$s['site_id'])->update(['used_balance'=>Db::raw('used_balance + '.number_format($amount,2,'.',''))]);
+                DailyScoreUsage::change((int)$s['user_id'], $amount);
                 return ['duplicate'=>false,'record_ids'=>$recordIds,'submission_id'=>$submissionId];
             });
         } catch (\Throwable $e) {

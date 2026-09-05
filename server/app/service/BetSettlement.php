@@ -84,35 +84,9 @@ final class BetSettlement
                 $amount = (float)$lockedRecord['amount'];
                 $user = Db::name('site_users')->where('id', $userId)->where('site_id', $siteId)->lock(true)->find();
                 if (!$user) throw new \RuntimeException('结算用户不存在');
-                $before = (float)$user['balance'];
-                $creditBefore = (float)$user['credit_balance'];
-                $availableBefore = $before + $creditBefore - (float)$user['used_balance'];
-                $balanceChange = $totalWin - $amount;
-                // Keep both account fields non-negative. A loss is applied to
-                // cash first, then to the credit balance; a win is added to
-                // cash. This preserves the account total while preventing the
-                // negative balances that made score edits impossible.
-                $balanceAfter = $before;
-                $creditAfter = $creditBefore;
-                if ($balanceChange >= 0) {
-                    $balanceAfter = round($before + $balanceChange, 2);
-                } else {
-                    $loss = abs($balanceChange);
-                    $cashReduction = min(max(0, $before), $loss);
-                    $balanceAfter = round($before - $cashReduction, 2);
-                    $creditAfter = round($creditBefore - ($loss - $cashReduction), 2);
-                    if ($creditAfter < -0.000001) {
-                        throw new \RuntimeException('结算后账户信用余额不足');
-                    }
-                    $creditAfter = max(0, $creditAfter);
-                }
-                Db::name('site_users')->where('id', $userId)->where('site_id', $siteId)->update([
-                    'balance' => number_format($balanceAfter, 2, '.', ''),
-                    'credit_balance' => number_format($creditAfter, 2, '.', ''),
-                    'used_balance' => Db::raw('GREATEST(used_balance - '.number_format($amount, 2, '.', '').', 0)'),
-                    'updated_at' => date('Y-m-d H:i:s'),
-                ]);
-                CreditLedger::userSettlement(array_merge($lockedRecord, ['organization_id'=>$user['organization_id'] ?? null]), $totalWin, $availableBefore, $availableBefore + $totalWin);
+                // Settlement is a reporting event only. The fixed credit
+                // allocation and today's betting usage remain unchanged until
+                // the next business day reset.
                 $houseProfit = $amount - $totalWin - $totalRebate;
                 $this->allocateOrganizationProfit($lockedRecord, $user, $houseProfit);
                 $billDate = substr((string)$lockedRecord['placed_at'], 0, 10);
@@ -268,9 +242,8 @@ final class BetSettlement
         foreach(SequentialProfitShare::allocate($houseProfit,$chain,$siteCap) as $allocation){
             $node=$allocation['node'];$amount=$allocation['amount'];
             if(abs($amount)<0.005)continue;
-            $before=(float)$node['balance'];Db::name('organization_nodes')->where('id',(int)$node['id'])->update(['balance'=>Db::raw('balance + '.number_format($amount,2,'.','')),'updated_at'=>date('Y-m-d H:i:s')]);
             CreditLedger::organizationSettlement(
-                $record,(int)$node['id'],$amount,$before,$before+$amount,
+                $record,(int)$node['id'],$amount,(float)$node['balance'],(float)$node['balance'],
                 $amount>=0?'本期投注盈利占成':'本期投注亏损承担',
                 [
                     'allocation_method'=>'sequential_remainder',

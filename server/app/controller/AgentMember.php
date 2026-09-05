@@ -7,6 +7,7 @@ use app\service\AgentAuthorization;
 use app\service\OrganizationHierarchy;
 use app\service\PasswordPolicy;
 use app\service\ScoreTransfer;
+use app\service\DailyScoreUsage;
 use think\Request;
 use think\facade\Cache;
 use think\facade\Db;
@@ -133,9 +134,10 @@ final class AgentMember
         if ($code !== '') $query->whereLike('display_name','%'.$code.'%');
         if ($status !== '') $query->where('status',(int)$status);
         $page=max(1,(int)$request->param('page',1)); $pageSize=min(100,max(1,(int)$request->param('page_size',40))); $total=(clone $query)->count();
-        $list=$query->field('id,username,display_name,phone,balance,credit_balance,used_balance,status,last_login_at,last_login_ip,last_login_location,created_at')->order('id desc')->page($page,$pageSize)->select()->toArray();
+        $list=$query->field('id,username,display_name,phone,balance,credit_balance,used_balance,used_balance_date,status,last_login_at,last_login_ip,last_login_location,created_at')->order('id desc')->page($page,$pageSize)->select()->toArray();
         AccountPresence::append($list,'site_user');
         foreach ($list as &$row) {
+            $row=DailyScoreUsage::normalize($row);
             $row['available_balance']=number_format(max(0,(float)$row['balance']+(float)$row['credit_balance']-(float)$row['used_balance']),2,'.','');
             $row['type']='会员';
         }
@@ -173,8 +175,9 @@ final class AgentMember
     {
         $session=$this->session($request); $siteId=(int)$session['site_id']; $tenantId=(int)($session['tenant_id']??1); $id=(int)$request->param('id'); $boardCode=$this->boardCode($request,$session);
         OrganizationHierarchy::assertVisibleUser($session,$id);
-        $member=Db::name('site_users')->where('id',$id)->where('site_id',$siteId)->whereNull('deleted_at')->field('id,organization_id,username,display_name,remark,phone,balance,credit_balance,used_balance,interception_rate,status,account_state,last_login_at,last_login_ip,last_login_location,created_at')->find();
+        $member=Db::name('site_users')->where('id',$id)->where('site_id',$siteId)->whereNull('deleted_at')->field('id,organization_id,username,display_name,remark,phone,balance,credit_balance,used_balance,used_balance_date,interception_rate,status,account_state,last_login_at,last_login_ip,last_login_location,created_at')->find();
         if (!$member) throw new \InvalidArgumentException('会员不存在');
+        $member=DailyScoreUsage::normalize($member);
         $memberRows=[$member]; AccountPresence::append($memberRows,'site_user'); $member=$memberRows[0];
         $member['permissions']=$this->permissions($siteId,$tenantId,$id);
         $member['odds']=$this->memberOdds($siteId,$tenantId,(int)($session['agent_id']??0),$id,$boardCode); $member['board_code']=$boardCode;

@@ -8,6 +8,7 @@ use app\service\AuditLogger;
 use app\service\AccountPresence;
 use app\service\OrganizationHierarchy;
 use app\service\PasswordPolicy;
+use app\service\DailyScoreUsage;
 
 final class Auth
 {
@@ -240,6 +241,7 @@ final class Auth
         $tenantId=(int)($session['tenant_id']??1);
         $user=Db::name('site_users')->where('id',$userId)->where('site_id',$siteId)->whereNull('deleted_at')->find();
         if (!$user) return $this->reply(null,'用户不存在或已停用',404);
+        $user=DailyScoreUsage::normalize($user);
 
         $overrides=[];
         foreach (Db::name('user_lottery_odds')->where('site_id',$siteId)->where('user_id',$userId)->select()->toArray() as $override) {

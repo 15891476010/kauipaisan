@@ -98,13 +98,13 @@ onMounted(() => loadOptions({ issue: String(route.query.issue_no || ''), recordI
 <template>
   <div class="batch-page" v-loading="loading">
     <section class="batch-head">
-      <div><h1>批量修改</h1><p>先选择彩种和未开奖期，再选择用户，直接编辑需要调整的原始注单。</p></div>
+      <div><h1>批量修改</h1><p>选择彩种、期号和用户，直接编辑需要调整的原始注单。</p></div>
       <div class="head-actions"><el-button :icon="Refresh" @click="loadOptions({ lotteryId, issue: issueNo, userIds: selectedUsers.map(user => user.user_id), recordIds: [], preserveSelection: false })">刷新</el-button><el-button :icon="ArrowLeft" @click="router.push('/bet-records')">返回下单记录</el-button></div>
     </section>
 
     <section class="filter-panel">
       <div class="filter-item"><label>彩种</label><el-select v-model="lotteryId" placeholder="请选择彩种" @change="changeLottery" style="width:220px"><el-option v-for="lottery in lotteries" :key="lottery.id" :label="lottery.name" :value="lottery.id" /></el-select></div>
-      <div class="filter-item"><label>未开奖期号</label><el-select v-model="issueNo" placeholder="请选择期号" :disabled="!issueOptions.length" style="width:220px" @change="changeIssue"><el-option v-for="issue in issueOptions" :key="issue" :label="issue" :value="issue" /></el-select></div>
+      <div class="filter-item"><label>期号</label><el-select v-model="issueNo" placeholder="请选择期号" :disabled="!issueOptions.length" style="width:220px" @change="changeIssue"><el-option v-for="issue in issueOptions" :key="issue" :label="issue" :value="issue" /></el-select></div>
       <div class="filter-item user-summary"><span>用户 {{ selectedUserKeys.length }} / {{ users.length }}</span><span>原始注单 {{ changedGroups.length }} 条已修改</span></div>
     </section>
 
@@ -120,7 +120,7 @@ onMounted(() => loadOptions({ issue: String(route.query.issue_no || ''), recordI
         <div v-if="!selectedUsers.length" class="select-tip">请先选择用户，下面将加载该用户在 {{ issueNo || '当前期' }} 的投注。</div>
         <div v-else-if="!selectedNumbers.length" class="select-tip">所选用户暂无可修改的投注号码。</div>
         <div v-else class="bet-table-wrap">
-          <table class="bet-table"><thead><tr><th>用户</th><th>原始注单（可编辑）</th><th>当前金额</th><th>明细数量</th></tr></thead><tbody><tr v-for="group in detailGroups" :key="group.key"><td>{{ group.user.display_name || group.user.username }}</td><td class="source-value"><el-input type="textarea" :model-value="sourceValue(group)" :autosize="{ minRows: 2, maxRows: 8 }" @update:model-value="updateSource(group, $event)" /></td><td>¥{{ group.numbers.reduce((sum, number) => sum + Number(number.amount || 0), 0).toFixed(2) }}</td><td>{{ group.numbers.length }}</td></tr></tbody></table>
+          <table class="bet-table"><thead><tr><th>用户</th><th>原始注单（可编辑）</th><th>注单金额</th></tr></thead><tbody><tr v-for="group in detailGroups" :key="group.key"><td>{{ group.user.display_name || group.user.username }}</td><td class="source-value"><el-input type="textarea" :model-value="sourceValue(group)" :autosize="{ minRows: 2, maxRows: 8 }" @update:model-value="updateSource(group, $event)" /></td><td>¥{{ group.numbers.reduce((sum, number) => sum + Number(number.amount || 0), 0).toFixed(2) }}</td></tr></tbody></table>
         </div>
       </section>
 
