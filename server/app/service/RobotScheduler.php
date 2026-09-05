@@ -199,9 +199,25 @@ final class RobotScheduler
             return ['status'=>'skipped','message'=>'机器人今日剩余分数不足一批，已核对当前奖期并完成可结算注单','skip_until'=>$this->nextBusinessDay($dailyAnchor),'daily_exhausted'=>true];
         }
         $maxAmount=min($maxAmount,$remaining);$minAmount=min($minAmount,$maxAmount);
+        // When the remaining amount fits in one configured batch, construct
+        // an exact-total ticket.  This prevents a final random unit/combination
+        // rounding from leaving a small, permanently unusable remainder.
+        $exactText=null;
+        if(!$pending && $remaining <= (float)($robot['max_amount']??$maxAmount)+0.000001){
+            $exactText=$this->generateExactTotalText(
+                $robot,
+                $lottery,
+                $remaining,
+                (int)($robot['amount_precision']??0),
+                $target['draw']??null,
+                $wantWin,
+            );
+        }
         $texts = $pending
             ? [$pendingText]
-            : $this->generateTexts($robot, $lottery, count($ids) > 1, $target['draw']??null, $wantWin, $minAmount, $maxAmount);
+            : ($exactText!==null
+                ? [$exactText]
+                : $this->generateTexts($robot, $lottery, count($ids) > 1, $target['draw']??null, $wantWin, $minAmount, $maxAmount));
         if ($texts === []) return ['status' => 'failed', 'message' => '未找到可匹配赔率的机器人玩法'];
 
         // The weight decision happens after the candidate is known.  This
@@ -524,6 +540,36 @@ final class RobotScheduler
         $hi = max($lo, (int)floor($max / 10));
         if ($hi < 1 || $max < 10) return null;
         return number_format((float)random_int($lo, $hi), 0, '.', '');
+    }
+
+    /** Build a direct ticket whose parsed total is exactly $amount. */
+    private function generateExactTotalText(array $robot,array $lottery,float $amount,int $precision,?string $targetDraw=null,?bool $wantWin=null): ?string
+    {
+        $scale=10**max(0,min(2,$precision));
+        $total=(int)round($amount*$scale);
+        if($total<1)return null;
+        // A direct single-column stake is capped at 600.  Find a divisor of
+        // the total so every generated column has the same legal unit stake.
+        $maxUnit=(int)round(600*$scale);
+        $minUnit=max(1,(int)ceil((float)($robot['min_amount']??1)*$scale));
+        $minCount=max(1,(int)ceil($total/$maxUnit));
+        $maxCount=min(999,(int)floor($total/$minUnit));
+        for($count=$minCount;$count<=$maxCount;$count++){
+            if($total%$count!==0)continue;
+            $unit=intdiv($total,$count);
+            if($unit<$minUnit||$unit>$maxUnit)continue;
+            $numbers=[];
+            if($targetDraw!==null&&$wantWin===true&&preg_match('/^\d{3}$/',$targetDraw)===1)$numbers[$targetDraw]=true;
+            while(count($numbers)<$count){
+                $candidate=$this->digits(3);
+                if($wantWin===false&&$targetDraw!==null&&$candidate===$targetDraw)continue;
+                $numbers[$candidate]=true;
+            }
+            $selection=implode(' ',array_keys($numbers));
+            $prefix=$this->weightedPrefix($robot,(string)$lottery['name'],false);
+            return $prefix.$selection.'直各'.number_format($unit/$scale,$precision,'.','').'元';
+        }
+        return null;
     }
 
     private function weightedPrefix(array $robot, string $lottery, bool $allowFuTi): string
