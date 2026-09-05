@@ -131,7 +131,10 @@ final class AdminBetBatch
             $records=$this->editableRecords($ids,$siteId); if(count($records)!==count($ids)) throw new \RuntimeException('主单状态已变化，请刷新后重试');
             $preview=$this->replacementPreview($records,$operation,$payload); $count=0;
             foreach($preview['changes'] as $change){
-                $detail=Db::name('bet_details')->where('id',(int)$change['detail_id'])->lock(true)->find(); if(!$detail)throw new \RuntimeException('明细已变化，请刷新后重试');
+                // Query Builder emits `LIMIT 1 FOR UPDATE` for find(), which
+                // is rejected by the MariaDB version used in production.
+                $detailRows=Db::name('bet_details')->where('id',(int)$change['detail_id'])->lock(true)->select()->toArray();
+                $detail=$detailRows[0]??null; if(!$detail)throw new \RuntimeException('明细已变化，请刷新后重试');
                 $update=['amount'=>$change['new_amount']]; if($operation==='replace_number')$update['number_text']=$change['new_number']; if($operation==='replace_play')$update['category']=$change['new_play'];
                 Db::name('bet_details')->where('id',(int)$change['detail_id'])->update($update);
                 $stopQuery=Db::name('user_stop_drops')->where('bet_detail_id',(int)$change['detail_id']); $stopUpdate=['original_amount'=>$change['new_amount'],'actual_amount'=>$change['new_amount']]; if($operation==='replace_number')$stopUpdate['number_text']=$change['new_number']; if($operation==='replace_play')$stopUpdate['play_type']=$change['new_play']; $stopQuery->update($stopUpdate); $count++;
@@ -295,7 +298,8 @@ final class AdminBetBatch
     {
         $query=Db::name('bet_records')->where('id',$recordId)->where('issue_no',$issue)->where('status','pending')->where('sealed',0);
         if ($siteId!==null) $query->where('site_id',$siteId);
-        $record=$query->field('id,tenant_id,site_id,user_id,submission_id,source_text,formatted_text')->lock(true)->find();
+        $recordRows=$query->field('id,tenant_id,site_id,user_id,submission_id,source_text,formatted_text')->lock(true)->select()->toArray();
+        $record=$recordRows[0]??null;
         if (!$record) throw new \RuntimeException('原始注单已不可修改，请刷新后重试');
         $sourceText=trim($sourceText); if ($sourceText==='') throw new \InvalidArgumentException('原始注单不能为空');
         $unit=(float)Db::name('lotteries')->where('tenant_id',(int)$record['tenant_id'])->where('name',$lotteryName)->where('status',1)->whereNull('deleted_at')->value('unit_stake');
@@ -335,7 +339,8 @@ final class AdminBetBatch
             if (is_array($odds) && array_key_exists('odds',$odds) && is_numeric($odds['odds'])) $detailUpdate['odds']=number_format((float)$odds['odds'],4,'.','');
             Db::name('bet_details')->where('id',(int)$detail['id'])->update($detailUpdate);
             $stopQuery=Db::name('user_stop_drops')->where('bet_detail_id',(int)$detail['id'])->where('lottery',$lotteryName);
-            $stop=$stopQuery->lock(true)->find();
+            $stopRows=$stopQuery->lock(true)->select()->toArray();
+            $stop=$stopRows[0]??null;
             if ($stop) {
                 $stopUpdate=['number_text'=>$numberText,'play_type'=>$play,'source_text'=>$settlementText,
                     'original_amount'=>number_format((float)($stop['original_amount']??$detail['amount'])*$ratio,2,'.',''),
@@ -401,9 +406,11 @@ final class AdminBetBatch
                 $query=Db::name('bet_details')->alias('d')->join('bet_records r','r.id=d.bet_record_id')
                     ->where('d.id',$detailId)->where('d.issue_no',$issue)->where('d.status','pending')->where('r.status','pending');
                 if ($siteId!==null) $query->where('d.site_id',$siteId);
-                $detail=$query->field('d.id,d.number_text,d.bet_record_id,r.source_text AS record_source_text,r.formatted_text AS record_formatted_text,r.submission_id')->lock(true)->find();
+                $detailRows=$query->field('d.id,d.number_text,d.bet_record_id,r.source_text AS record_source_text,r.formatted_text AS record_formatted_text,r.submission_id')->lock(true)->select()->toArray();
+                $detail=$detailRows[0]??null;
                 if (!$detail) throw new \RuntimeException('选中的号码已不可修改，请刷新后重试');
-                $stop=Db::name('user_stop_drops')->where('bet_detail_id',$detailId)->where('lottery',(string)$lottery['name'])->lock(true)->find();
+                $stopRows=Db::name('user_stop_drops')->where('bet_detail_id',$detailId)->where('lottery',(string)$lottery['name'])->lock(true)->select()->toArray();
+                $stop=$stopRows[0]??null;
                 if (!$stop) throw new \RuntimeException('选中的号码不属于当前彩种');
                 $editableTokens=$this->editableNumberTokens((string)$detail['number_text']);
                 foreach (array_keys($indexes) as $index) {

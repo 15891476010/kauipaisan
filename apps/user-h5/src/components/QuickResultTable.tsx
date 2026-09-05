@@ -16,6 +16,12 @@ const isAmountMismatch = (line: QuickEntryLine) => line.status === "failed" && B
   line.suggested_amount || /总金额|金额需确认|不一致|对不上/.test(line.reason || ""),
 );
 const categoryFromSource = (source: string): string | undefined => /福体/u.test(source) ? "福体" : (/^\s*体/u.test(source) ? "体" : (/^\s*福/u.test(source) ? "福" : undefined));
+const detailPlayOrder = [
+  "一码定位", "二码定位", "直选", "独胆", "双飞", "组选", "组三多码", "组六多码",
+  "复式多码", "组三胆拖", "组六胆拖", "跨度", "合值", "豹子", "组三沾边赖",
+  "组六沾边赖", "对子全包", "组六2胆拖", "单选全胆拖",
+] as const;
+const detailPlayRank = new Map<string, number>(detailPlayOrder.map((name, index) => [name, index]));
 const batchMetadataKeys = [
   "batch_id",
   "batch_index",
@@ -371,15 +377,30 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
   const normalizeGroupNumber = (value: string) =>
     value.length === 3 && /^\d{3}$/.test(value) ? value.split("").sort().join("") : value;
   const playLabel = (line: QuickEntryLine) => {
-    const play = String(line.play_type || "");
+    const play = String(line.play_type || "").trim();
     const groupSource = `${line.settlement_text || ""} ${line.parse_text || ""} ${line.input_text || ""} ${line.raw_text || ""}`;
+    const allText = `${play} ${groupSource}`;
+    if (/单选全胆拖/u.test(allText)) return "单选全胆拖";
+    if (/组六\s*2\s*胆拖|组六二胆拖|组6\s*2\s*胆拖/u.test(allText)) return "组六2胆拖";
+    if (/对子(?:全包|包)/u.test(allText)) return "对子全包";
+    if (/组三.*(?:沾边赖|赖)|三赖/u.test(allText)) return "组三沾边赖";
+    if (/组六.*(?:沾边赖|赖)|六赖/u.test(allText)) return "组六沾边赖";
+    if (/豹子(?:全包|包)?|豹包/u.test(allText)) return "豹子";
+    if (/组三.*胆拖|组3.*胆拖|三\d?拖/u.test(allText)) return "组三胆拖";
+    if (/组六.*胆拖|组6.*胆拖|六\d{1,2}拖/u.test(allText)) return "组六胆拖";
+    if (/复式/u.test(allText)) return "复式多码";
+    if (/独胆/u.test(allText)) return "独胆";
+    if (/双飞/u.test(allText)) return "双飞";
+    if (/跨度|^跨/u.test(play)) return "跨度";
+    if (/合值|和值|^和/u.test(play)) return "合值";
+    if (/^(?:百|十|个|口XX|X口X|XX口)$/u.test(play) || /一码定位/u.test(allText)) return "一码定位";
+    if (/^(?:百十|百个|十个|口口X|口X口|X口口)$/u.test(play) || /二码定位/u.test(allText)) return "二码定位";
     const multiDigits = String(line.number_text || line.display_number_text || "").match(/\d{4,10}/u)?.[0]
       || groupSource.match(/(?:组三|组六|组3|组6)\s*(\d{4,10})/u)?.[1]
       || groupSource.match(/(\d{4,10})\s*(?:组三|组六|组3|组6)/u)?.[1];
     const multiFamily = /组六|组6/u.test(play) ? "组六" : /组三|组3/u.test(play) ? "组三" : "";
     if (multiDigits && multiFamily) {
-      const words: Record<string, string> = { "4": "四", "5": "五", "6": "六", "7": "七", "8": "八", "9": "九" };
-      return `${multiFamily}${words[String(multiDigits.length)] || multiDigits.length}码`;
+      return `${multiFamily}多码`;
     }
     const mixedGroup = /(?:组三|组3)[^\n]*(?:组六|组6)|(?:组六|组6)[^\n]*(?:组三|组3)/u.test(groupSource);
     if (mixedGroup && /(?:组三|组六|组3|组6)/u.test(play)) {
@@ -388,15 +409,25 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
       const size = count?.[2] || (count?.[1] ? words[String(count[1].length)] : "");
       return size ? `组${words[size] || size}码` : "组选";
     }
-    if (line.play_type === "直") return "直选";
-    if (line.play_type === "组" || line.play_type === "组三" || line.play_type === "组六") return "组选";
-    if (line.play_type?.startsWith("和")) return "和值";
-    if (line.play_type?.startsWith("跨")) return "跨度";
-    return line.play_type || "直选";
+    if (play === "直" || play === "直选" || play.startsWith("直")) return "直选";
+    if (["组", "组选", "组三", "组六", "组3", "组6"].includes(play)) return "组选";
+    return play || "直选";
   };
-  const rawDetailSections = detailLines.flatMap((line) => {
+  type DetailSection = {
+    line: QuickEntryLine;
+    category: string;
+    title: string;
+    numbers: string[];
+    frequency: Record<string, number>;
+    unitAmount: number;
+    amounts: Record<string, number>;
+    currentNumbers: Set<string>;
+  };
+  const rawDetailSections: DetailSection[] = detailLines.flatMap((line): DetailSection[] => {
     const occurrences = numberTokens(line);
-    const isGroup = /^(?:组|组选|组三|组六|组3|组6)/u.test(String(line.play_type || ""));
+    const title = playLabel(line);
+    const isGroup = /^(?:组选|组三|组六|组三多码|组六多码|组三胆拖|组六胆拖|组六2胆拖|豹子|对子)/u.test(title)
+      || /^(?:组|组选|组三|组六|组3|组6)/u.test(String(line.play_type || ""));
     const frequency = occurrences.reduce<Record<string, number>>((frequencies, number) => {
       const displayNumber = isGroup ? normalizeGroupNumber(number) : number;
       frequencies[displayNumber] = (frequencies[displayNumber] || 0) + 1;
@@ -411,21 +442,28 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
     const detectedCategory = line.category || categoryFromSource(line.input_text || line.raw_text || "");
     const categorySections = detectedCategory === "福体" ? ["体", "福"] : [detectedCategory || "福"];
     const amounts = Object.fromEntries(numbers.map((number) => [number, unitAmount * (frequency[number] || 1)]));
-    return categorySections.map((category) => ({ line, category, title: playLabel(line), numbers, frequency, unitAmount, amounts }));
+    const currentNumbers = new Set(
+      occurrences
+        .filter((number) => number.length < 3 || /^A/i.test(number))
+        .map((number) => normalizeGroupNumber(number.replace(/[aA]/gu, ""))),
+    );
+    return categorySections.map((category) => ({ line, category, title, numbers, frequency, unitAmount, amounts: { ...amounts }, currentNumbers }));
   });
   const detailSections = Array.from(rawDetailSections.reduce((map, section) => {
-    const key = `${section.category}|${section.title}|${section.numbers.join(",")}`;
+    const key = `${section.category}|${section.title}`;
     const previous = map.get(key);
     if (!previous) { map.set(key, section); return map; }
     section.numbers.forEach((number) => {
+      if (!previous.numbers.includes(number)) previous.numbers.push(number);
       previous.amounts[number] = (previous.amounts[number] || 0) + (section.amounts[number] || 0);
       previous.frequency[number] = (previous.frequency[number] || 0) + (section.frequency[number] || 0);
+      if (section.currentNumbers.has(number)) previous.currentNumbers.add(number);
     });
     return map;
-  }, new Map<string, typeof rawDetailSections[number]>()).values()).sort((left, right) => {
+  }, new Map<string, DetailSection>()).values()).sort((left, right) => {
     const categoryRank = (category: string) => category === "体" ? 0 : category === "福" ? 1 : 2;
-    const playRank = (title: string) => title.includes("组三") ? 0 : title.includes("组六") ? 1 : title === "直选" ? 0 : 2;
-    return categoryRank(left.category) - categoryRank(right.category) || playRank(left.title) - playRank(right.title);
+    return categoryRank(left.category) - categoryRank(right.category)
+      || (detailPlayRank.get(left.title) ?? 99) - (detailPlayRank.get(right.title) ?? 99);
   });
   const detailCount = detailLines.reduce((sum, line) => sum + Number(line.batch_count ?? line.code_count ?? line.count ?? 0), 0);
   const detailAmount = detailLines.reduce((sum, line) => sum + Number(line.batch_amount ?? line.amount ?? 0), 0);
@@ -630,8 +668,15 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
                       {Array.from({ length: Math.ceil(section.numbers.length / 4) }, (_, rowIndex) => section.numbers.slice(rowIndex * 4, rowIndex * 4 + 4)).map((row, rowIndex) => (
                         <Fragment key={`${section}-row-${rowIndex}`}>
                           {Array.from({ length: 4 }, (_, index) => row[index] || null).map((number, index) => (
-                            <div className={`row-label-container${number ? " has-amount" : ""}`} key={`${section.category}-${section.title}-${rowIndex}-${index}`}>
-                              <span className="label-wrapper">{number || "--"}</span>
+                            <div className={`row-label-container${number && section.frequency[number] > 1 ? " has-amount" : ""}`} key={`${section.category}-${section.title}-${rowIndex}-${index}`}>
+                              <span className="label-wrapper">
+                                {number ? (
+                                  <>
+                                    {number}
+                                    {section.currentNumbers.has(number) && <span className="red">现</span>}
+                                  </>
+                                ) : "--"}
+                              </span>
                               <span className="label-wrapper">{number ? formatAmount((section.amounts[number] ?? section.unitAmount * (section.frequency[number] || 1)).toFixed(2)) : "--"}</span>
                             </div>
                           ))}

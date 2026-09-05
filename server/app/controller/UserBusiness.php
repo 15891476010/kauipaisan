@@ -147,8 +147,17 @@ final class UserBusiness
         $minimum=(float)($odds['min_bet']??0);$perNumber=$requested/$count;
         if($minimum>0&&$perNumber+0.000001<$minimum)throw new \InvalidArgumentException('每个号码最小下注金额为 '.rtrim(rtrim(number_format($minimum,2,'.',''),'0'),'.'));
         $singleBet=(float)($odds['single_bet_limit']??0); $singleItem=(float)($odds['single_item_limit']??0);
-        if ($singleBet>0) $actual=min($actual,$singleBet*$count);
-        if ($singleItem>0) $actual=min($actual,$singleItem);
+        // Both limits are expressed per generated number.  A compact line
+        // such as “500 numbers, each 10元” must therefore be checked against
+        // the per-number limit multiplied by its stake count.  The previous
+        // code applied single_item_limit to the whole line and silently
+        // truncated a 5000元 ticket to 1500元.
+        if ($singleBet>0 && $requested > $singleBet*$count + 0.000001) {
+            throw new \InvalidArgumentException('玩法“'.(string)($line['play_type']??$line['category']??'当前玩法').'”超过单注上限：最多 '.number_format($singleBet*$count,2,'.','').' 元，当前输入 '.number_format($requested,2,'.','').' 元，请修改后再提交');
+        }
+        if ($singleItem>0 && $requested > $singleItem*$count + 0.000001) {
+            throw new \InvalidArgumentException('玩法“'.(string)($line['play_type']??$line['category']??'当前玩法').'”超过单项上限：最多 '.number_format($singleItem*$count,2,'.','').' 元，当前输入 '.number_format($requested,2,'.','').' 元，请修改后再提交');
+        }
         $rebate=max(0,(float)($odds['offline_rebate']??0)); $rawOdds=$odds['odds']??null; $baseOdds=$rawOdds!==null && is_numeric($rawOdds)?(float)$rawOdds:null;
         $oddsLimit=max(0,(float)($odds['odds_limit']??0));if($baseOdds!==null&&$oddsLimit>0)$baseOdds=min($baseOdds,$oddsLimit);
         $actualOdds=$baseOdds===null?null:max(0,$baseOdds-$rebate);

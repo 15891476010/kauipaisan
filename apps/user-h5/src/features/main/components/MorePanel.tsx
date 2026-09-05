@@ -524,12 +524,17 @@ export function MorePanel({
     return groups;
   }, new Map<string, BetDetail[]>()));
   const numberPageCount = Math.max(1, Math.ceil(numberTotal / 100));
+  // 号码页返回：从快录点“号”进来的（有 initialNumberRecord）直接退出面板回快录，从查看更多列表进来的回列表。
+  const closeNumberPage = () => {
+    if (initialNumberRecord) onBack();
+    else setNumberRecord(undefined);
+  };
   if (numberRecord) {
     const time = String(numberRecord.placed_at || "").slice(0, 16);
     return (
       <section className="more-number-page">
         <div className="number-page-toolbar">
-          <span className="number-page-back" role="button" tabIndex={0} aria-label="返回查看更多" onClick={() => setNumberRecord(undefined)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setNumberRecord(undefined); } }}>
+          <span className="number-page-back" role="button" tabIndex={0} aria-label="返回查看更多" onClick={closeNumberPage} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); closeNumberPage(); } }}>
             <ArrowLeftOutlined />
           </span>
           <div className="number-page-indicator"><span>第<b>{numberPage}/{numberPageCount}</b>页</span></div>
