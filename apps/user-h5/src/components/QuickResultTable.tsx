@@ -179,6 +179,10 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
       .replace(/\s+/gu, "");
     return `${line.category || ""}|${key}`;
   };
+  const isGenericGroupSource = (line: QuickEntryLine): boolean => {
+    const source = String(line.input_text || line.raw_text || "");
+    return !/组三|组六/u.test(source) && (/(组选)/u.test(source) || /组(?=\s|各|每|\d|$)/u.test(source));
+  };
   const displayTextForGroup = (group: DisplayLine[]): string => {
     const first = String(group[0]?.input_text || group[0]?.raw_text || "");
     if (group.length < 2 || !group.some((item) => combinedPlay(item) === "组三") || !group.some((item) => combinedPlay(item) === "组六")) return first;
@@ -194,9 +198,11 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
       line.status === "success" &&
       !line.batch_id &&
       previous.every((item) => item.status === "success" && !item.batch_id) &&
-      ((previous[0].input_text || previous[0].raw_text) === (line.input_text || line.raw_text)
+      (((previous[0].input_text || previous[0].raw_text) === (line.input_text || line.raw_text)
         || (previous.length === 1 && combinedSourceKey(previous[0]) !== null && combinedSourceKey(previous[0]) === combinedSourceKey(line)
-          && combinedPlay(previous[0]) !== combinedPlay(line))) &&
+          && combinedPlay(previous[0]) !== combinedPlay(line))
+        || (previous.length === 1 && isGenericGroupSource(previous[0]) && isGenericGroupSource(line)
+          && (previous[0].input_text || previous[0].raw_text) === (line.input_text || line.raw_text)))) &&
       !previous[0].raw_text.includes("\n") &&
       !line.raw_text.includes("\n") &&
       previous[0].category === line.category &&
@@ -230,14 +236,9 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
     // Multi-code plays such as “组六六码/组三六码” are represented internally
     // by their expanded settlement combinations, while the detail dialog
     // should show the original six-digit selection as one item.
-    const play = String(line.play_type || "");
-    const family = play.startsWith("组三") || play.startsWith("组3") ? "三" : play.startsWith("组六") || play.startsWith("组6") ? "六" : "";
-    if (family && play !== "复式") {
-      const selection = String(line.settlement_text || line.parse_text || line.input_text || line.raw_text || "")
-        .match(/(?<!\d)(\d{4,10})\s*(?:组六|组三|组6|组3)(?:两|三|四|五|六|七|八|九|[2-9])?码?/u)?.[1];
-      if (selection) return [`${family}${selection}`];
-      const compact = String(line.number_text || line.display_number_text || "").replace(/\s+/gu, "");
-      if (/^[三六]\d{4,10}$/u.test(compact)) return [compact];
+    if (line.play_type?.includes("码") && line.play_type !== "复式") {
+      const selection = (line.settlement_text || "").match(/([0-9]{3,10})\s+(?:组六|组三)(?:两|三|四|五|六|七|八|九)?码/)?.[1];
+      if (selection) return [`${line.play_type.startsWith("组三") ? "三" : "六"}${selection}`];
     }
     const tokens = (line.batch_occurrence_text || line.display_number_text || line.number_text || "")
       .split(/\s+/)
@@ -252,32 +253,15 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
   const normalizeGroupNumber = (value: string) =>
     value.length === 3 && /^\d{3}$/.test(value) ? value.split("").sort().join("") : value;
   const playLabel = (line: QuickEntryLine) => {
-    const play = String(line.play_type || "");
-    const groupSource = `${line.settlement_text || ""} ${line.parse_text || ""} ${line.input_text || ""} ${line.raw_text || ""}`;
-    const multiDigits = String(line.number_text || line.display_number_text || "").match(/\d{4,10}/u)?.[0]
-      || groupSource.match(/(?:组三|组六|组3|组6)\s*(\d{4,10})/u)?.[1]
-      || groupSource.match(/(\d{4,10})\s*(?:组三|组六|组3|组6)/u)?.[1];
-    const multiFamily = /组六|组6/u.test(play) ? "组六" : /组三|组3/u.test(play) ? "组三" : "";
-    if (multiDigits && multiFamily) {
-      const words: Record<string, string> = { "4": "四", "5": "五", "6": "六", "7": "七", "8": "八", "9": "九" };
-      return `${multiFamily}${words[String(multiDigits.length)] || multiDigits.length}码`;
-    }
-    const mixedGroup = /(?:组三|组3)[^\n]*(?:组六|组6)|(?:组六|组6)[^\n]*(?:组三|组3)/u.test(groupSource);
-    if (mixedGroup && /(?:组三|组六|组3|组6)/u.test(play)) {
-      const count = groupSource.match(/(?<!\d)(\d{3,10})\s*(?:组三|组六|组3|组6)([一二两三四五六七八九]|[2-9])?码?/u);
-      const words: Record<string, string> = { "2": "二", "3": "三", "4": "四", "5": "五", "6": "六", "7": "七", "8": "八", "9": "九" };
-      const size = count?.[2] || (count?.[1] ? words[String(count[1].length)] : "");
-      return size ? `组${words[size] || size}码` : "组选";
-    }
     if (line.play_type === "直") return "直选";
     if (line.play_type === "组" || line.play_type === "组三" || line.play_type === "组六") return "组选";
     if (line.play_type?.startsWith("和")) return "和值";
     if (line.play_type?.startsWith("跨")) return "跨度";
     return line.play_type || "直选";
   };
-  const rawDetailSections = detailLines.flatMap((line) => {
+  const detailSections = detailLines.flatMap((line) => {
     const occurrences = numberTokens(line);
-    const isGroup = /^(?:组|组选|组三|组六|组3|组6)/u.test(String(line.play_type || ""));
+    const isGroup = line.play_type === "组" || line.play_type === "组三" || line.play_type === "组六";
     const frequency = occurrences.reduce<Record<string, number>>((frequencies, number) => {
       const displayNumber = isGroup ? normalizeGroupNumber(number) : number;
       frequencies[displayNumber] = (frequencies[displayNumber] || 0) + 1;
@@ -288,19 +272,8 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
     const unitAmount = stakeCount > 0 ? Number(line.amount || 0) / stakeCount : 0;
     const detectedCategory = line.category || categoryFromSource(line.input_text || line.raw_text || "");
     const categorySections = detectedCategory === "福体" ? ["体", "福"] : [detectedCategory || "福"];
-    const amounts = Object.fromEntries(numbers.map((number) => [number, unitAmount * (frequency[number] || 1)]));
-    return categorySections.map((category) => ({ line, category, title: playLabel(line), numbers, frequency, unitAmount, amounts }));
-  });
-  const detailSections = Array.from(rawDetailSections.reduce((map, section) => {
-    const key = `${section.category}|${section.title}|${section.numbers.join(",")}`;
-    const previous = map.get(key);
-    if (!previous) { map.set(key, section); return map; }
-    section.numbers.forEach((number) => {
-      previous.amounts[number] = (previous.amounts[number] || 0) + (section.amounts[number] || 0);
-      previous.frequency[number] = (previous.frequency[number] || 0) + (section.frequency[number] || 0);
-    });
-    return map;
-  }, new Map<string, typeof rawDetailSections[number]>()).values()).sort((left, right) => {
+    return categorySections.map((category) => ({ line, category, title: playLabel(line), numbers, frequency, unitAmount }));
+  }).sort((left, right) => {
     const categoryRank = (category: string) => category === "体" ? 0 : category === "福" ? 1 : 2;
     const playRank = (title: string) => title.includes("组三") ? 0 : title.includes("组六") ? 1 : title === "直选" ? 0 : 2;
     return categoryRank(left.category) - categoryRank(right.category) || playRank(left.title) - playRank(right.title);
@@ -516,7 +489,7 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
                           {Array.from({ length: 4 }, (_, index) => row[index] || null).map((number, index) => (
                             <div className={`row-label-container${number ? " has-amount" : ""}`} key={`${section.category}-${section.title}-${rowIndex}-${index}`}>
                               <span className="label-wrapper">{number || "--"}</span>
-                              <span className="label-wrapper">{number ? formatAmount((section.amounts[number] ?? section.unitAmount * (section.frequency[number] || 1)).toFixed(2)) : "--"}</span>
+                              <span className="label-wrapper">{number ? formatAmount((section.unitAmount * (section.frequency[number] || 1)).toFixed(2)) : "--"}</span>
                             </div>
                           ))}
                         </Fragment>
