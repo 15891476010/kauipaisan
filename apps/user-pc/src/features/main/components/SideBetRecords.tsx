@@ -124,6 +124,13 @@ export function SideBetRecords({
     const multiFamily = /组六|组6/u.test(multiSource) ? "组六" : /组三|组3/u.test(multiSource) ? "组三" : "";
     const multiDigits = multiSource.match(/(?<!\d)\d{4,10}(?!\d)/u)?.[0];
     if (multiFamily && multiDigits && !/全包|胆拖/u.test(multiSource)) return `${multiFamily}多码`;
+    const genericGroupSource = /(?:^|\s)组(?:各|每|共|合计|计|$)/u.test(multiSource)
+      && !/(组三|组六|组3|组6)/u.test(multiSource);
+    const genericLeopard = genericGroupSource && String(detail.number_text || "").split(/[\s,，、]+/u).some((token) => {
+      const number = token.match(/^(\d{3})/)?.[1];
+      return Boolean(number && new Set(number).size === 1);
+    });
+    if (genericLeopard) return "直选";
     // 定位玩法的 X/口 是内部占位符，不作为用户端玩法名称显示。
     if (/^[口Xx]{2}[Xx]$/.test(raw) || raw === "口口X") return "二码定位";
     if (/^[口Xx][Xx]{2}$/.test(raw)) return "一码定位";
@@ -142,6 +149,7 @@ export function SideBetRecords({
     if (/复式/u.test(`${playName(detail)} ${raw} ${detail.number_text || ""} ${detail.source_text || ""}`)) return "";
     if (packagePlay(detail)) return "";
     const multiContext = `${raw} ${detail.number_text || ""} ${detail.source_text || ""} ${detail.original_source_text || ""}`;
+    if (playName(detail) === "直选" && String(detail.number_text || "").match(/\d{3}/u) && new Set(String(detail.number_text || "").match(/\d{3}/u)![0]).size === 1) return "直";
     if (/\d{4,10}/u.test(multiContext) && /(?:组三|组六|组3|组6)/u.test(multiContext)) return "";
     if (/口|X/i.test(raw) && !raw.includes("直")) return "";
     if (raw === "直" || raw === "直选" || raw.startsWith("直")) return "直";

@@ -33,6 +33,12 @@ function detailPlayLabel(detail: BetDetail) {
   if (/胆拖/u.test(source)) return /组六|组6|六组/u.test(source) ? "组六胆拖" : /组三|组3|三组/u.test(source) ? "组三胆拖" : raw;
   if (/^[口Xx]{2}[Xx]$/u.test(raw) || raw === "口口X") return "二码定位";
   if (/^[口Xx][Xx]{2}$/u.test(raw)) return "一码定位";
+  const genericGroupSource = /(?:^|\s)组(?:各|每|共|合计|计|$)/u.test(source) && !/(组三|组六|组3|组6)/u.test(source);
+  const genericLeopard = genericGroupSource && String(detail.number_text || "").split(/[\s,，、]+/u).some((token) => {
+    const number = token.match(/^(\d{3})/)?.[1];
+    return Boolean(number && new Set(number).size === 1);
+  });
+  if (genericLeopard) return "直选";
   if (raw === "直" || raw === "直选" || raw.startsWith("直")) return "直选";
   if (["组", "组三", "组六", "组3", "组6", "组选"].includes(raw)) return "组选";
   return raw;
@@ -131,6 +137,7 @@ function detailPlayMark(detail: BetDetail, play: string) {
   const raw = String(detail.play_type || detail.play_label || "");
   if (/码定位/u.test(`${play} ${raw} ${detail.play_label || ""} ${detail.category || ""}`)) return "";
   const context = `${raw} ${detail.number_text || ""} ${detail.source_text || ""} ${detail.original_source_text || ""}`;
+  if (play === "直选" && String(detail.number_text || "").match(/\d{3}/u) && new Set(String(detail.number_text || "").match(/\d{3}/u)![0]).size === 1) return "直";
   if (/复式/u.test(`${play} ${context}`)) return "";
   if (/胆拖|和值|豹子|包/u.test(context) || /\d{4,10}/u.test(context) && /(?:组三|组六|组3|组6)/u.test(context)) return "";
   if (/口|X/i.test(raw) && !raw.includes("直")) return "";

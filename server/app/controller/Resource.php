@@ -402,9 +402,23 @@ final class Resource
         if ($resource === 'bet-records') {
             $lottery = trim((string)$request->param('lottery', ''));
             if ($lottery !== '') {
-                $ids = Db::name('user_stop_drops')->where('lottery', $lottery)->column('bet_detail_id');
-                $recordIds = $ids ? Db::name('bet_details')->whereIn('id', $ids)->column('bet_record_id') : [];
-                $query->whereIn('id', $recordIds ?: [0]);
+                // Keep the lottery filter inside SQL.  The previous
+                // implementation materialized every matching detail ID and
+                // then every matching record ID in PHP before applying the
+                // record pagination.  With a large history this created a
+                // huge IN (...) expression and made a 20-row page request
+                // behave like an unbounded export.
+                $lotterySiteId = $scopedSiteId ?? ((int)$request->param('site_id', 0) > 0 ? (int)$request->param('site_id', 0) : null);
+                $query->whereIn('id', function ($subQuery) use ($lottery, $lotterySiteId) {
+                    $subQuery->table('bet_details')->alias('d')
+                        ->join('user_stop_drops s', 's.bet_detail_id=d.id')
+                        ->where('s.lottery', $lottery);
+                    if ($lotterySiteId !== null) $subQuery->where('s.site_id', $lotterySiteId);
+                    $subQuery
+                        // IN semantics already removes duplicate record IDs;
+                        // avoid DISTINCT's temporary table on large histories.
+                        ->field('d.bet_record_id');
+                });
             }
             $drawStatus = strtolower(trim((string)$request->param('draw_status', 'all')));
             if (!in_array($drawStatus, ['all', 'opened', 'pending'], true)) throw new \InvalidArgumentException('开奖状态筛选值无效');
