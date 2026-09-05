@@ -26,11 +26,20 @@ function detailLotteryName(value?: string) {
 
 function detailPlayLabel(detail: BetDetail) {
   const raw = String(detail.play_label || detail.play_type || detail.category || "投注");
+  const rowMeta = `${detail.play_label || ""} ${detail.play_type || ""} ${detail.category || ""}`;
   const source = `${raw} ${detail.number_text || ""} ${detail.source_text || ""} ${detail.original_source_text || ""} ${detail.record_source || ""}`;
-  const family = /组六|组6/u.test(source) ? "组六" : /组三|组3/u.test(source) ? "组三" : "";
-  const digits = source.match(/(?<!\d)\d{4,10}(?!\d)/u)?.[0];
-  if (family && digits && !/全包|胆拖/u.test(source)) return `${family}多码`;
+  if (/(?:复式|复试)/u.test(rowMeta) || (!/(组三|组六|组3|组6|组选)/u.test(rowMeta) && /(?:复式|复试)/u.test(source))) return "复式多码";
+  if (/(?:沾边赖|粘边赖|赖)/u.test(source)) {
+    if (/(组六|组6)/u.test(rowMeta)) return "组六沾边赖";
+    if (/(组三|组3)/u.test(rowMeta)) return "组三沾边赖";
+    if (/组六|组6/u.test(source)) return "组六沾边赖";
+    if (/组三|组3/u.test(source)) return "组三沾边赖";
+  }
   if (/胆拖/u.test(source)) return /组六|组6|六组/u.test(source) ? "组六胆拖" : /组三|组3|三组/u.test(source) ? "组三胆拖" : raw;
+  const rowFamily = /组六|组6/u.test(rowMeta) ? "组六" : /组三|组3/u.test(rowMeta) ? "组三" : "";
+  const family = rowFamily || (/组六|组6/u.test(source) ? "组六" : /组三|组3/u.test(source) ? "组三" : "");
+  const digits = String(detail.number_text || "").replace(/\s+/gu, "").match(/^[三六]?(\d{4,10})/u)?.[1] || source.match(/(?<!\d)\d{4,10}(?!\d)/u)?.[0];
+  if (family && digits && !/全包|胆拖|赖|沾边/u.test(source)) return `${family}多码`;
   if (/^[口Xx]{2}[Xx]$/u.test(raw) || raw === "口口X") return "二码定位";
   if (/^[口Xx][Xx]{2}$/u.test(raw)) return "一码定位";
   const genericGroupSource = /(?:^|\s)组(?:各|每|共|合计|计|$)/u.test(source) && !/(组三|组六|组3|组6)/u.test(source);
@@ -101,6 +110,12 @@ function displayDetailNumber(detail: BetDetail, play: string) {
   const context = `${play}${combined}`;
   const isDantuo = /胆拖/u.test(context);
   const isPack = /(组三|组六|组3|组6)包/u.test(context);
+  const stickyFamily = play.match(/^(组六|组三)沾边赖$/u)?.[1];
+  if (stickyFamily) {
+    const digits = String(detail.number_text || "").replace(/\s+/gu, "").match(/^(?:六赖|三赖|六|三)?(\d{1,10})/u)?.[1]
+      || source.match(/(?<!\d)(\d{1,10})(?!\d)/u)?.[1] || "";
+    return `${stickyFamily === "组六" ? "六赖" : "三赖"}${digits ? ` ${digits}` : ""}`;
+  }
   if (isDantuo) {
     const family = /(组六|组6)/u.test(context) ? "六" : "三";
     const match = combined.match(/胆?([0-9]+)拖([0-9]+)/u);
@@ -118,9 +133,10 @@ function displayDetailNumber(detail: BetDetail, play: string) {
       .replace(/(?:组三|组六|组3|组6)组?$|组$/u, "") || "-";
   }
   let value = String(detail.number_text || "");
-  if (/复式/u.test(`${play} ${raw}`)) {
-    value = value.replace(/复式(?:[一二三四五六七八九\d]+码|多码)?$/u, "");
-    return value || "-";
+  if (/(?:复式|复试)/u.test(`${play} ${raw}`)) {
+    value = value.replace(/(?:复式|复试)(?:[一二三四五六七八九\d]+码|多码)?$/u, "");
+    const digits = value.match(/^[复六三]?(\d{3,10})$/u)?.[1] || source.match(/(?<!\d)(\d{3,10})\s*(?:复式|复试)/u)?.[1];
+    return digits ? `复式 ${digits}` : "复式";
   }
   if (/组3|组6|组三|组六|组选/u.test(raw)) {
     // Keep a meaningful `组三`/`组六` suffix and drop only a duplicated
@@ -135,10 +151,11 @@ function displayDetailNumber(detail: BetDetail, play: string) {
 
 function detailPlayMark(detail: BetDetail, play: string) {
   const raw = String(detail.play_type || detail.play_label || "");
+  if (/^(?:组六|组三)沾边赖$/u.test(play)) return "";
   if (/码定位/u.test(`${play} ${raw} ${detail.play_label || ""} ${detail.category || ""}`)) return "";
   const context = `${raw} ${detail.number_text || ""} ${detail.source_text || ""} ${detail.original_source_text || ""}`;
   if (play === "直选" && String(detail.number_text || "").match(/\d{3}/u) && new Set(String(detail.number_text || "").match(/\d{3}/u)![0]).size === 1) return "直";
-  if (/复式/u.test(`${play} ${context}`)) return "";
+  if (/(?:复式|复试)/u.test(`${play} ${context}`)) return "";
   if (/胆拖|和值|豹子|包/u.test(context) || /\d{4,10}/u.test(context) && /(?:组三|组六|组3|组6)/u.test(context)) return "";
   if (/口|X/i.test(raw) && !raw.includes("直")) return "";
   if (/直/u.test(raw)) return "直";

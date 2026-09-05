@@ -142,7 +142,18 @@ final class UserBusiness
     private function applyLineLimits(array $session, string $lottery, array $line): array
     {
         $requested=(float)($line['amount']??0); $count=max(1,(int)($line['stake_count']??$line['count']??1)); $odds=$this->lineOdds($session,$lottery,$line);
-        if (!$odds) throw new \InvalidArgumentException('当前玩法无法唯一匹配赔率，已禁止下注');
+        if (!$odds) {
+            $play=trim((string)($line['play_type']??$line['category']??''));
+            $source=trim((string)($line['settlement_text']??$line['raw_text']??''));
+            // Make an unsupported provider catalogue row actionable. In
+            // particular, “复式12” is recognized as 复式二码 but the odds
+            // catalogue intentionally starts at 复式三码; it must not make
+            // the whole mixed ticket fail with an opaque generic message.
+            if (preg_match('/^复式(?:二|2)码$/u',$play)===1 || preg_match('/(?<!\d)(?:复式|复试)\s*12(?:\D|$)/u',$source)===1) {
+                throw new \InvalidArgumentException('复式二码暂未配置赔率，复式请使用三码至九码；如要下注12，请改写为“组三两码”');
+            }
+            throw new \InvalidArgumentException(($play!==''?'玩法“'.$play.'”':'当前玩法').'无法匹配已配置赔率，请检查玩法名称或联系管理员配置赔率');
+        }
         $actual=$requested;
         $minimum=(float)($odds['min_bet']??0);$perNumber=$requested/$count;
         if($minimum>0&&$perNumber+0.000001<$minimum)throw new \InvalidArgumentException('每个号码最小下注金额为 '.rtrim(rtrim(number_format($minimum,2,'.',''),'0'),'.'));
@@ -388,6 +399,13 @@ final class UserBusiness
         if (preg_match('/(?<!\d)\d{1,2}\s*胆\s*\d{2,9}(?!\d)/u',$sourceText) === 1) {
             if (str_contains($value,'组六')) return '组六胆拖';
             if (str_contains($value,'组三')) return '组三胆拖';
+        }
+        // 沾边赖明细的行级玩法通常保存为“组六赖五码/组三赖五码”，
+        // 而“沾边赖”只出现在主单原文中。详情表头要保留这个业务语义，
+        // 不能落回普通的组6/组3，否则用户无法区分玩法。
+        if (preg_match('/(?:沾边赖|粘边赖|赖)/u', $sourceText) === 1) {
+            if (str_contains($value,'组六')) return '组六沾边赖';
+            if (str_contains($value,'组三')) return '组三沾边赖';
         }
         // 定位玩法在明细中会被展开成三位号码，但其来源仍保留百/十/个
         // 三个位置。优先按原始文本恢复定位级别，避免误标为直选。
@@ -735,7 +753,7 @@ final class UserBusiness
             if($compactGroupPackage!==null){$tokens=[$compactGroupPackage];$matchTokens=$tokens;}
             // 复式包在数据库中继续使用 000 作为结算占位，但明细页面应显示
             // 一条真实的复式选号（例如“复024567”），不能显示 000。
-            if(count($tokens)===1&&$tokens[0]==='000'&&preg_match('/(?<!\d)(\d{1,10})\s+复式[一二两三四五六七八九1-9]码/u',$source,$package))$tokens=['复'.$package[1]];
+            if(count($tokens)===1&&$tokens[0]==='000'&&preg_match('/(?<!\d)(\d{1,10})\s*(?:复式|复试)[一二两三四五六七八九1-9]码/u',$source,$package))$tokens=['复'.$package[1]];
             if($tokens===[])$tokens=['-'];
             // Keep hit indexes aligned with the visual order. The previous
             // code reversed only `$tokens`, so a hit such as X54 was rendered
@@ -745,7 +763,16 @@ final class UserBusiness
             $amounts=$this->splitDetailMoney((float)$row['amount'],$count);$wins=$this->splitDetailMoney((float)$row['win_amount'],$count);$rebates=$this->splitDetailMoney((float)$row['rebate'],$count);$offlineTotal=round((float)$row['amount']*max(0,(float)($row['drop_odds']??0)),2);$offlineRebates=$this->splitDetailMoney($offlineTotal,$count);$orderNo=$this->detailOrderNumber($row);$resolved=(float)$row['win_amount']<=0;$winningIndexes=[];
             $draw=$draws[(string)($row['lottery']??'').'|'.(string)($row['issue_no']??'')]??'';
             if((float)$row['win_amount']>0&&$draw!==''){$winningIndexes=array_keys(array_filter($matchTokens,static fn(string $token):bool=>$matcher->numberMatches($token,$draw,$source)));if($winningIndexes!==[]){$wins=array_fill(0,$count,'0');$winningParts=$this->splitDetailMoney((float)$row['win_amount'],count($winningIndexes));foreach($winningIndexes as $winningIndex=>$tokenIndex)$wins[$tokenIndex]=$winningParts[$winningIndex];$resolved=true;}}
-            $groupPackage=$this->isExpandedGroupPackage($matchTokens,$source);$displayOddsBase=$row['odds']===null?null:(float)$row['odds'];$lookupSource=$packageLabel!==''?$packageLabel:$source;if(trim($lookupSource)==='' )$lookupSource=(string)($row['play_type']??'');$currentOdds=$this->lineOdds($s,(string)($row['lottery']??''),['settlement_text'=>$lookupSource,'board_code'=>(string)($row['board_code']??'A')]);if($currentOdds!==[]&&array_key_exists('odds',$currentOdds)&&is_numeric($currentOdds['odds']))$displayOddsBase=(float)$currentOdds['odds'];$displayOdds=$displayOddsBase===null?null:$displayOddsBase*($groupPackage?$count:1);$oddsText=$displayOdds===null?'-':rtrim(rtrim(number_format($displayOdds,3,'.',''),'0'),'.');
+            $groupPackage=$this->isExpandedGroupPackage($matchTokens,$source);$displayOddsBase=$row['odds']===null?null:(float)$row['odds'];
+            // Resolve the quote from this detail row's own play type. Some
+            // legacy rows keep only the number in detail_source while the
+            // authoritative “复式九码/组六九码/组三九码” label is in
+            // play_type; never let the parent sentence containing multiple
+            // plays decide the row's odds.
+            $rowPlayType=trim((string)($row['play_type']??''));
+            $lookupSource=$packageLabel!==''?$packageLabel:trim($source.' '.$rowPlayType);
+            if($lookupSource==='')$lookupSource=$rowPlayType;
+            $currentOdds=$this->lineOdds($s,(string)($row['lottery']??''),['settlement_text'=>$lookupSource,'board_code'=>(string)($row['board_code']??'A')]);if($currentOdds!==[]&&array_key_exists('odds',$currentOdds)&&is_numeric($currentOdds['odds']))$displayOddsBase=(float)$currentOdds['odds'];$displayOdds=$displayOddsBase===null?null:$displayOddsBase*($groupPackage?$count:1);$oddsText=$displayOdds===null?'-':rtrim(rtrim(number_format($displayOdds,3,'.',''),'0'),'.');
             foreach($tokens as $index=>$token){$amount=(float)$amounts[$index];$win=(float)$wins[$index];$rebate=(float)$rebates[$index];$offlineRebate=(float)$offlineRebates[$index];$tokenStatus=(string)($row['status']??$row['record_status']??'pending');if($resolved&&$tokenStatus==='won')$tokenStatus=$win>0?'won':'unwon';$groupFirst=$index===0;$expanded[]=['id'=>(int)$row['id'],'row_key'=>(int)$row['id'].'-'.$index,'detail_group_id'=>(int)$row['id'],'detail_group_index'=>$index,'detail_group_size'=>$count,'group_first'=>$groupFirst,'is_group_first'=>$groupFirst,'show_text_button'=>$groupFirst,'bet_record_id'=>(int)($row['bet_record_id']??0),'submission_id'=>(int)($row['submission_id']??0)?:null,'order_no'=>$orderNo,'issue_no'=>(string)$row['issue_no'],'number_text'=>$token,'stored_number_text'=>$storedNumberText,'category'=>(string)($row['category']??''),'play_type'=>$packageLabel!==''?$packageLabel:(string)($row['play_type']??''),'play_label'=>$packageLabel!==''?$packageLabel:$this->detailPlayLabel($row['play_type']??'',$row['category']??'',$originalSource.' '.$source),'lottery'=>(string)($row['lottery']??''),'amount'=>$amounts[$index],'odds'=>$oddsText,'win_amount'=>$wins[$index],'is_winning_number'=>in_array($index,$winningIndexes,true),'win_projection_resolved'=>$resolved,'rebate'=>$rebates[$index],'offline_rebate'=>$this->detailMoney($offlineRebate),'profit'=>$this->detailMoney($win-$amount+$rebate+$offlineRebate),'status'=>$tokenStatus,'placed_at'=>(string)$row['placed_at'],'source_text'=>$originalSource,'record_source'=>$recordSource,'original_source_text'=>$originalSource,'parsed_source_text'=>$parsedText];}
         }
         $expanded=$this->collapseMixedDirectGroupDetails($expanded);

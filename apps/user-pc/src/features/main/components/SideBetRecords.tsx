@@ -128,19 +128,27 @@ export function SideBetRecords({
   const spanDigit = (detail: BetDetail) => detailContext(detail).match(/(?:跨度|跨)\s*([0-9])/u)?.[1] || "";
   const compoundDigits = (detail: BetDetail) => {
     const value = String(detail.number_text || "").replace(/\s+/gu, "");
-    const fromValue = value.match(/^复?([0-9]{3,10})$/u)?.[1];
+    const fromValue = value.match(/^[复六三]?([0-9]{3,10})$/u)?.[1];
     if (fromValue && fromValue !== "000") return fromValue;
     const source = `${detail.source_text || ""} ${detail.original_source_text || ""} ${detail.record_source || ""}`;
-    return source.match(/(?<!\d)([0-9]{3,10})\s*复式(?:[一二三四五六七八九十\d]+码|多码)?/u)?.[1] || "";
+    return source.match(/(?<!\d)([0-9]{3,10})\s*(?:复式|复试)(?:[一二三四五六七八九十\d]+码|多码)?/u)?.[1] || "";
   };
   const playName = (detail: BetDetail) => {
     const raw = String(detail.play_label || detail.play_type || detail.category || "投注");
     if (spanDigit(detail)) return "跨度";
     const rowMeta = `${detail.play_label || ""} ${detail.play_type || ""} ${detail.category || ""}`;
-    if (/复式/u.test(rowMeta) || (!/(组三|组六|组3|组6|组选)/u.test(rowMeta) && /复式/u.test(detailContext(detail)))) return "复式多码";
+    if (/(?:复式|复试)/u.test(rowMeta) || (!/(组三|组六|组3|组6|组选)/u.test(rowMeta) && /(?:复式|复试)/u.test(detailContext(detail)))) return "复式多码";
     const packageType = packagePlay(detail);
     if (packageType) return packageType;
     const dragSource = `${raw} ${detail.number_text || ""} ${detail.source_text || ""}`;
+    const stickySource = `${raw} ${detail.play_type || ""} ${detail.source_text || ""} ${detail.original_source_text || ""} ${detail.record_source || ""}`;
+    if (/(?:沾边赖|粘边赖|赖)/u.test(stickySource)) {
+      const rowFamily = `${detail.play_label || ""} ${detail.play_type || ""} ${detail.category || ""}`;
+      if (/(组六|组6)/u.test(rowFamily)) return "组六沾边赖";
+      if (/(组三|组3)/u.test(rowFamily)) return "组三沾边赖";
+      if (/(组六|组6)/u.test(stickySource)) return "组六沾边赖";
+      if (/(组三|组3)/u.test(stickySource)) return "组三沾边赖";
+    }
     if (/胆拖/u.test(dragSource)) {
       if (/(组六|组6|六组)/u.test(dragSource)) return "组六胆拖";
       if (/(组三|组3|三组)/u.test(dragSource)) return "组三胆拖";
@@ -172,11 +180,12 @@ export function SideBetRecords({
   };
   const playMark = (detail: BetDetail) => {
     const raw = String(detail.play_type || detail.play_label || "");
-    if (spanDigit(detail) || /复式/u.test(detailContext(detail))) return "";
+    if (/^(?:组六|组三)沾边赖$/u.test(playName(detail))) return "";
+    if (spanDigit(detail) || /(?:复式|复试)/u.test(detailContext(detail))) return "";
     if (/胆拖/u.test(`${raw} ${detail.number_text || ""} ${detail.source_text || ""}`)) return "";
     if (/^和/u.test(raw) || /^和值/u.test(raw)) return "";
     if (/豹子/u.test(`${raw} ${detail.number_text || ""} ${detail.source_text || ""}`)) return "";
-    if (/复式/u.test(`${playName(detail)} ${raw} ${detail.number_text || ""} ${detail.source_text || ""}`)) return "";
+    if (/(?:复式|复试)/u.test(`${playName(detail)} ${raw} ${detail.number_text || ""} ${detail.source_text || ""}`)) return "";
     if (packagePlay(detail)) return "";
     const multiContext = detailContext(detail);
     if (playName(detail) === "直选" && String(detail.number_text || "").match(/\d{3}/u) && new Set(String(detail.number_text || "").match(/\d{3}/u)![0]).size === 1) return "直";
@@ -232,6 +241,13 @@ export function SideBetRecords({
       const digits = compoundDigits(detail);
       return digits ? `复式 ${digits}` : "复式";
     }
+    const stickyFamily = play.match(/^(组六|组三)沾边赖$/u)?.[1];
+    if (stickyFamily) {
+      const stored = String(detail.number_text || "").replace(/\s+/gu, "");
+      const digits = stored.match(/^(?:六赖|三赖|六|三)?(\d{1,10})/u)?.[1]
+        || source.match(/(?<!\d)(\d{1,10})(?!\d)/u)?.[1] || "";
+      return `${stickyFamily === "组六" ? "六赖" : "三赖"}${digits ? ` ${digits}` : ""}`;
+    }
     // 胆拖的内部号码保存为“胆1拖2345678”，标题已经携带具体的
     // 组六/组三语义；详情号码按用户约定显示为“六拖…”或“三拖…”。
     const dragFamily = play.match(/^(组六|组三)胆拖/u)?.[1];
@@ -271,8 +287,8 @@ export function SideBetRecords({
     const value = detail.number_text || "";
     const packageType = packagePlay(detail);
     if (packageType) return packageType.startsWith("组六") ? "六包" : "三包";
-    if (/复式/u.test(`${play} ${rawPlay}`)) {
-      const compact = value.replace(/复式(?:[一二三四五六七八九\d]+码|多码)?$/u, "");
+    if (/(?:复式|复试)/u.test(`${play} ${rawPlay}`)) {
+      const compact = value.replace(/(?:复式|复试)(?:[一二三四五六七八九\d]+码|多码)?$/u, "");
       return compact || "-";
     }
     // 独胆的玩法标记单独显示为红色“独胆”，号码单元格只保留数字。

@@ -144,10 +144,10 @@ export function SideBetRecords({
   const spanDigit = (detail: BetDetail) => detailContext(detail).match(/(?:跨度|跨)\s*([0-9])/u)?.[1] || "";
   const compoundDigits = (detail: BetDetail) => {
     const value = String(detail.number_text || "").replace(/\s+/gu, "");
-    const fromValue = value.match(/^复?([0-9]{3,10})$/u)?.[1];
+    const fromValue = value.match(/^[复六三]?([0-9]{3,10})$/u)?.[1];
     if (fromValue && fromValue !== "000") return fromValue;
     const source = `${detail.source_text || ""} ${detail.original_source_text || ""} ${detail.record_source || ""}`;
-    return source.match(/(?<!\d)([0-9]{3,10})\s*复式(?:[一二三四五六七八九十\d]+码|多码)?/u)?.[1] || "";
+    return source.match(/(?<!\d)([0-9]{3,10})\s*(?:复式|复试)(?:[一二三四五六七八九十\d]+码|多码)?/u)?.[1] || "";
   };
   const normalizeDetailRows = (input: BetDetail[]): BetDetail[] => {
     const explicitLeopards = new Set<string>();
@@ -187,10 +187,17 @@ export function SideBetRecords({
     const raw = String(detail.play_label || detail.play_type || detail.category || "投注");
     if (spanDigit(detail)) return "跨度";
     const rowMeta = `${detail.play_label || ""} ${detail.play_type || ""} ${detail.category || ""}`;
-    if (/复式/u.test(rowMeta) || (!/(组三|组六|组3|组6|组选)/u.test(rowMeta) && /复式/u.test(detailContext(detail)))) return "复式多码";
+    if (/(?:复式|复试)/u.test(rowMeta) || (!/(组三|组六|组3|组6|组选)/u.test(rowMeta) && /(?:复式|复试)/u.test(detailContext(detail)))) return "复式多码";
     const packageType = packagePlay(detail);
     if (packageType) return packageType;
     const multiSource = `${raw} ${detail.number_text || ""} ${detail.source_text || ""} ${detail.original_source_text || ""} ${detail.record_source || ""}`;
+    if (/(?:沾边赖|粘边赖|赖)/u.test(multiSource)) {
+      const rowFamily = `${detail.play_label || ""} ${detail.play_type || ""} ${detail.category || ""}`;
+      if (/(组六|组6)/u.test(rowFamily)) return "组六沾边赖";
+      if (/(组三|组3)/u.test(rowFamily)) return "组三沾边赖";
+      if (/(组六|组6)/u.test(multiSource)) return "组六沾边赖";
+      if (/(组三|组3)/u.test(multiSource)) return "组三沾边赖";
+    }
     if (/胆拖/u.test(multiSource)) {
       if (/(组六|组6|六组)/u.test(multiSource)) return "组六胆拖";
       if (/(组三|组3|三组)/u.test(multiSource)) return "组三胆拖";
@@ -237,6 +244,13 @@ export function SideBetRecords({
       const digits = compoundDigits(detail);
       return digits ? `复式 ${digits}` : "复式";
     }
+    const stickyFamily = play.match(/^(组六|组三)沾边赖$/u)?.[1];
+    if (stickyFamily) {
+      const stored = String(detail.number_text || "").replace(/\s+/gu, "");
+      const digits = stored.match(/^(?:六赖|三赖|六|三)?(\d{1,10})/u)?.[1]
+        || source.match(/(?<!\d)(\d{1,10})(?!\d)/u)?.[1] || "";
+      return `${stickyFamily === "组六" ? "六赖" : "三赖"}${digits ? ` ${digits}` : ""}`;
+    }
     const compact = compactDetailNumber(detail, play, source);
     if (compact) return compact;
     const family = groupFamily(detail);
@@ -270,8 +284,8 @@ export function SideBetRecords({
     if (detail.number_text === "000" && play.startsWith("跨度")) return `跨${play.slice(2)}`;
     if (detail.number_text === "000" && play.startsWith("和值")) return play;
     let value = detail.number_text || "";
-    if (/复式/u.test(`${play} ${rawPlay}`)) {
-      value = value.replace(/复式(?:[一二三四五六七八九\d]+码|多码)?$/u, "");
+    if (/(?:复式|复试)/u.test(`${play} ${rawPlay}`)) {
+      value = value.replace(/(?:复式|复试)(?:[一二三四五六七八九\d]+码|多码)?$/u, "");
       return value || "-";
     }
     // 独胆的“胆”是玩法语义，号码列只显示数字；红色标记单独显示“独胆”。
@@ -296,11 +310,12 @@ export function SideBetRecords({
   };
   const playMark = (detail: BetDetail) => {
     const raw = String(detail.play_type || detail.play_label || "");
-    if (spanDigit(detail) || /复式/u.test(detailContext(detail))) return "";
+    if (/^(?:组六|组三)沾边赖$/u.test(playName(detail))) return "";
+    if (spanDigit(detail) || /(?:复式|复试)/u.test(detailContext(detail))) return "";
     if (/码定位/u.test(`${raw} ${detail.play_label || ""} ${detail.category || ""}`)) return "";
     const context = `${raw} ${detail.number_text || ""} ${detail.source_text || ""} ${detail.original_source_text || ""}`;
     if (playName(detail) === "直选" && String(detail.number_text || "").match(/\d{3}/u) && new Set(String(detail.number_text || "").match(/\d{3}/u)![0]).size === 1) return "直";
-    if (/复式/u.test(`${playName(detail)} ${context}`)) return "";
+    if (/(?:复式|复试)/u.test(`${playName(detail)} ${context}`)) return "";
     if (/胆拖|和值|豹子|包/u.test(context) || /\d{4,10}/u.test(context) && groupFamily(detail) && !/赖|沾边|连/u.test(context)) return "";
     if (/口|X/i.test(raw) && !raw.includes("直")) return "";
     if (/直/u.test(raw)) return "直";
