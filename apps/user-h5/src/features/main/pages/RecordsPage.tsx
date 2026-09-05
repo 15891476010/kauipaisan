@@ -25,7 +25,17 @@ function detailLotteryName(value?: string) {
 }
 
 function detailPlayLabel(detail: BetDetail) {
-  return detail.play_label || detail.play_type || detail.category || "投注";
+  const raw = String(detail.play_label || detail.play_type || detail.category || "投注");
+  const source = `${raw} ${detail.number_text || ""} ${detail.source_text || ""} ${detail.original_source_text || ""} ${detail.record_source || ""}`;
+  const family = /组六|组6/u.test(source) ? "组六" : /组三|组3/u.test(source) ? "组三" : "";
+  const digits = source.match(/(?<!\d)\d{4,10}(?!\d)/u)?.[0];
+  if (family && digits && !/全包|胆拖/u.test(source)) return `${family}多码`;
+  if (/胆拖/u.test(source)) return /组六|组6|六组/u.test(source) ? "组六胆拖" : /组三|组3|三组/u.test(source) ? "组三胆拖" : raw;
+  if (/^[口Xx]{2}[Xx]$/u.test(raw) || raw === "口口X") return "二码定位";
+  if (/^[口Xx][Xx]{2}$/u.test(raw)) return "一码定位";
+  if (raw === "直" || raw === "直选" || raw.startsWith("直")) return "直选";
+  if (["组", "组三", "组六", "组3", "组6", "组选"].includes(raw)) return "组选";
+  return raw;
 }
 
 function groupDetails(details: BetDetail[]) {
@@ -44,6 +54,40 @@ function groupPlayDetails(details: BetDetail[]) {
     groups.set(name, [...(groups.get(name) || []), detail]);
   });
   return Array.from(groups.entries());
+}
+
+function displayDetailNumber(detail: BetDetail, play: string) {
+  const source = String(detail.source_text || "");
+  const raw = String(detail.play_type || detail.play_label || "");
+  const combined = `${detail.number_text || ""} ${source}`.replace(/\s+/gu, "");
+  const context = `${play}${combined}`;
+  const isDantuo = /胆拖/u.test(context);
+  const isPack = /(组三|组六|组3|组6)包/u.test(context);
+  if (isDantuo) {
+    const family = /(组六|组6)/u.test(context) ? "六" : "三";
+    const match = combined.match(/胆?([0-9]+)拖([0-9]+)/u);
+    if (match) return `${family}${match[1]}拖${match[2]}`;
+  }
+  if (isPack) return /(组六|组6)/u.test(context) ? "六包" : "三包";
+  const sticky = source.match(/(\d{4,10})\s*(组三|组六)六码/u);
+  if (sticky) return `${sticky[2] === "组三" ? "三" : "六"}${sticky[1]}`;
+  let value = String(detail.number_text || "");
+  if (/组3|组6|组三|组六|组选/u.test(raw)) value = value.replace(/^[三六]/u, "").replace(/(?:直|组|组三|组六)$/u, "");
+  if (/直/u.test(raw)) value = value.replace(/直+$/u, "");
+  if (/^独胆$/u.test(play) || /^独胆$/u.test(raw)) value = value.replace(/胆$/u, "");
+  if (play.endsWith("码定位")) value = value.replace(/(?:口口X|口X口|X口口)$/iu, "");
+  return value || "-";
+}
+
+function detailPlayMark(detail: BetDetail, play: string) {
+  const raw = String(detail.play_type || detail.play_label || "");
+  if (/码定位/u.test(`${play} ${raw} ${detail.play_label || ""} ${detail.category || ""}`)) return "";
+  const context = `${raw} ${detail.number_text || ""} ${detail.source_text || ""} ${detail.original_source_text || ""}`;
+  if (/胆拖|和值|豹子|包/u.test(context) || /\d{4,10}/u.test(context) && /(?:组三|组六|组3|组6)/u.test(context)) return "";
+  if (/口|X/i.test(raw) && !raw.includes("直")) return "";
+  if (/直/u.test(raw)) return "直";
+  if (/组三|组六|组3|组6|组选|组/u.test(raw)) return "组";
+  return play === "独胆" ? "独胆" : raw;
 }
 
 export function RecordsPage() {
@@ -169,25 +213,6 @@ export function RecordsPage() {
       })
       .catch(() => setDetails([]))
       .finally(() => setDetailLoading(false));
-  };
-
-  const displayDetailNumber = (detail: BetDetail) => {
-    const value = detail.number_text || "";
-    const play = `${detail.play_label || ""}${detail.play_type || ""}${detail.category || ""}`;
-    // “三/组六赖”是玩法前缀，不是号码本身。参考站在号码列只保留
-    // 实际号码，玩法名称单独显示在红色标记中。
-    let normalized = /赖/u.test(play) || /^(?:(?:组六|组三)|[三六])赖/u.test(value)
-      ? value.replace(/^(?:(?:组六|组三)|[三六])赖/u, "")
-      : value;
-    // Some legacy rows persisted the display suffix (直/组/组六/豹子)
-    // inside number_text. Remove it before the red play marker is appended.
-    const displayPlay = String(detail.play_type || "").replace(/\\d+/g, "");
-    if (displayPlay && normalized.endsWith(displayPlay) && normalized !== displayPlay)
-      normalized = normalized.slice(0, -displayPlay.length);
-    if (/直/u.test(play)) normalized = normalized.replace(/直$/u, "");
-    else if (/豹子/u.test(play)) normalized = normalized.replace(/豹子$/u, "");
-    else if (/组六|组三|组选/u.test(play)) normalized = normalized.replace(/(?:组六|组三|组)$/u, "");
-    return /^\\d{3}$/.test(normalized) ? String(Number(normalized)) : normalized || "-";
   };
 
   const visibleDetails = detailWinningOnly
@@ -370,8 +395,8 @@ export function RecordsPage() {
                           <div className="record-detail-data-row" key={detail.id + "-" + index}>
                             <span>
                               <span className="record-detail-number">
-                                <label>{displayDetailNumber(detail)}</label>
-                                {detail.play_type ? <em>{detail.play_type.replace(/\d+/g, "")}</em> : null}
+                                <label>{displayDetailNumber(detail, playName)}</label>
+                                {detailPlayMark(detail, playName) ? <em>{detailPlayMark(detail, playName)}</em> : null}
                               </span>
                             </span>
                             <span>{detail.amount || "0"}</span>
