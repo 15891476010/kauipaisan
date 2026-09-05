@@ -11,6 +11,7 @@ use think\response\Json;
 
 final class BetAggregation
 {
+    private int $sourceItemCount = 0;
     private function reply(mixed $data=null,string $message='',int $code=0): Json
     {
         return json(['code'=>$code,'message'=>$message,'data'=>$data,'request_id'=>bin2hex(random_bytes(8))]);
@@ -47,8 +48,7 @@ final class BetAggregation
         ];
     }
 
-    /** @return array<int,array<string,mixed>> */
-    private function detailRows(array $filters,?int $scopedSiteId): array
+    private function detailRows(array $filters,?int $scopedSiteId): \think\db\Query
     {
         $query=Db::name('bet_details')->alias('d')
             ->join('bet_records r','r.id=d.bet_record_id')
@@ -67,7 +67,7 @@ final class BetAggregation
         elseif(!$filters['include_refunded'])$query->where('r.status','<>','refunded');
         if($filters['from']!=='')$query->where('r.placed_at','>=',(string)$filters['from'].' 00:00:00');
         if($filters['to']!=='')$query->where('r.placed_at','<=',(string)$filters['to'].' 23:59:59');
-        return $query->order('d.id','desc')->select()->toArray();
+        return $query;
     }
 
     private function sortedUniqueDigits(string $value): string
@@ -248,12 +248,16 @@ final class BetAggregation
         return $items;
     }
 
-    /** @return array<int,array<string,mixed>> */
-    private function items(Request $request): array
+    /** @return \Generator<int,array<string,mixed>,void,void> */
+    private function items(Request $request): \Generator
     {
-        $filters=$this->filters($request);$rows=$this->detailRows($filters,$this->scopedSiteId($request));$items=[];
-        foreach($rows as $row)foreach($this->normalizeRow($row)as$item)$items[]=$item;
-        return $items;
+        $filters=$this->filters($request);$base=$this->detailRows($filters,$this->scopedSiteId($request));$lastId=0;
+        while(true){
+            $rows=(clone $base)->where('d.id','>',$lastId)->order('d.id','asc')->limit(1000)->select()->toArray();
+            if($rows===[])break;
+            foreach($rows as $row){$lastId=(int)($row['detail_id']??0);foreach($this->normalizeRow($row)as$item)yield $item;}
+            if(count($rows)<1000)break;
+        }
     }
 
     /**
@@ -262,12 +266,15 @@ final class BetAggregation
      * stored play_type/number_text are the already-confirmed submission
      * result; only deterministic whitespace/order normalization is applied so
      * equivalent grouped expressions can share one risk key.
-     * @return array<int,array<string,mixed>>
+     * @return \Generator<int,array<string,mixed>,void,void>
      */
-    private function persistedRiskItems(Request $request): array
+    private function persistedRiskItems(Request $request): \Generator
     {
-        $filters=$this->filters($request);$rows=$this->detailRows($filters,$this->scopedSiteId($request));$items=[];
-        foreach($rows as $row){
+        $filters=$this->filters($request);$base=$this->detailRows($filters,$this->scopedSiteId($request));$lastId=0;
+        while(true){
+        $rows=(clone $base)->where('d.id','>',$lastId)->order('d.id','asc')->limit(1000)->select()->toArray();
+        if($rows===[])break;
+        foreach($rows as $row){$lastId=(int)($row['detail_id']??0);
             $playType=trim((string)($row['play_type']??''));
             $source=trim((string)($row['source_text']??''));
             if($source==='')$source=trim((string)($row['record_source']??''));
@@ -285,7 +292,7 @@ final class BetAggregation
             $amount=(float)($row['amount']??0);$odds=(float)($row['odds']??0);$resolvedPlay=$playType!==''?$playType:'其他';
             if(preg_match('/定位/u',$resolvedPlay)===1&&preg_match_all('/(百|十|个)\s*(?:位)?\s*([0-9]+)/u',$raw,$positionMatches,PREG_SET_ORDER)>0){
                 $positionCount=count($positionMatches);$fragmentAmount=$positionCount>0?$amount/$positionCount:$amount;
-                foreach($positionMatches as $positionMatch){$digits=$this->sortedUniqueDigits((string)$positionMatch[2]);$items[]=array_merge($row,['play_type'=>$resolvedPlay,'position'=>(string)$positionMatch[1].'位','selection'=>$digits,'match_number'=>$digits,'match_source'=>$source,'amount_value'=>$fragmentAmount,'potential_value'=>$fragmentAmount*max(0,$odds)]);}
+                foreach($positionMatches as $positionMatch){$digits=$this->sortedUniqueDigits((string)$positionMatch[2]);yield array_merge($row,['play_type'=>$resolvedPlay,'position'=>(string)$positionMatch[1].'位','selection'=>$digits,'match_number'=>$digits,'match_source'=>$source,'amount_value'=>$fragmentAmount,'potential_value'=>$fragmentAmount*max(0,$odds)]);}
                 continue;
             }
             // Risk uses persisted rows, but a legacy 直 row can still carry a
@@ -294,12 +301,13 @@ final class BetAggregation
             // one-winning-number exposure remain correct without reparsing.
             if($this->isDirectItem(['play_type'=>$resolvedPlay])&&preg_match_all('/(?<!\d)\d{3}(?!\d)/u',$raw,$numberMatches)>1){
                 $numbers=$numberMatches[0];$unit=$amount/count($numbers);
-                foreach($numbers as $number)$items[]=array_merge($row,['play_type'=>$resolvedPlay,'position'=>'','selection'=>$number,'match_number'=>$number.'直','match_source'=>$source,'amount_value'=>$unit,'potential_value'=>$unit*max(0,$odds)]);
+                foreach($numbers as $number)yield array_merge($row,['play_type'=>$resolvedPlay,'position'=>'','selection'=>$number,'match_number'=>$number.'直','match_source'=>$source,'amount_value'=>$unit,'potential_value'=>$unit*max(0,$odds)]);
                 continue;
             }
-            $items[]=array_merge($row,['play_type'=>$resolvedPlay,'position'=>'','selection'=>$selection,'match_number'=>$selection,'match_source'=>$source,'amount_value'=>$amount,'potential_value'=>$amount*max(0,$odds)]);
+            yield array_merge($row,['play_type'=>$resolvedPlay,'position'=>'','selection'=>$selection,'match_number'=>$selection,'match_source'=>$source,'amount_value'=>$amount,'potential_value'=>$amount*max(0,$odds)]);
         }
-        return $items;
+        if(count($rows)<1000)break;
+        }
     }
 
     private function expressionId(array $item): string
@@ -363,11 +371,12 @@ final class BetAggregation
         return null;
     }
 
-    /** @param array<int,array<string,mixed>> $items @return array<int,array<string,mixed>> */
-    private function playSummary(array $items): array
+    /** @param iterable<array<string,mixed>> $items @return array<int,array<string,mixed>> */
+    private function playSummary(iterable $items): array
     {
-        $groups=[];$allOccurrences=count($items);$directTickets=[];$directBuckets=[];$positionBuckets=[];$directThreshold=8;
+        $groups=[];$allOccurrences=0;$directTickets=[];$directBuckets=[];$positionBuckets=[];$directThreshold=8;$this->sourceItemCount=0;
         foreach($items as $item){
+            $allOccurrences++;$this->sourceItemCount++;
             if(($parts=$this->positionItemParts($item))!==null){$bucket=(string)$item['lottery'].'|'.(string)$item['issue_no'].'|'.(string)$item['play_type'].'|'.number_format((float)($item['odds']??0),4,'.','');$positionBuckets[$bucket][]=$item;continue;}
             if($this->isDirectItem($item)&&preg_match('/^\d{3}$/',(string)($item['selection']??''))===1){
                 $ticketKey=(string)$item['lottery'].'|'.(string)$item['issue_no'].'|'.number_format((float)($item['odds']??0),4,'.','').'|'.(string)($item['detail_id']??$item['bet_record_id']);
@@ -392,16 +401,17 @@ final class BetAggregation
         return $result;
     }
 
-    /** @param array<int,array<string,mixed>> $items @return array{rows:array<int,array<string,mixed>>,unmapped:int} */
-    private function riskSummary(array $items): array
+    /** @param iterable<array<string,mixed>> $items @return array{rows:array<int,array<string,mixed>>,unmapped:int} */
+    private function riskSummary(iterable $items): array
     {
         // Risk must use the same compact expression that settlement uses. A
         // ticket such as `六123456` is one exposure, not dozens of unrelated
         // three-digit rows. Expanding it into every possible draw both makes
         // the report misleading and turns a full-page request into a 000-999
         // scan for every distinct ticket.
-        $groups=[];$directTickets=[];$directBuckets=[];$positionBuckets=[];$directThreshold=8;
+        $groups=[];$directTickets=[];$directBuckets=[];$positionBuckets=[];$directThreshold=8;$this->sourceItemCount=0;
         foreach($items as $item){
+            $this->sourceItemCount++;
             if(($parts=$this->positionItemParts($item))!==null){$bucket=(string)$item['lottery'].'|'.(string)$item['issue_no'].'|'.(string)$item['play_type'].'|'.number_format((float)($item['odds']??0),4,'.','');$positionBuckets[$bucket][]=$item;continue;}
             if($this->isDirectItem($item)&&preg_match('/^\d{3}$/',(string)($item['selection']??''))===1){$ticketKey=(string)$item['lottery'].'|'.(string)$item['issue_no'].'|'.number_format((float)($item['odds']??0),4,'.','').'|'.(string)($item['detail_id']??$item['bet_record_id']);$directTickets[$ticketKey][]=$item;continue;}
             $id=$this->expressionId($item);
@@ -440,7 +450,7 @@ final class BetAggregation
             $items=$mode==='risk'?$this->persistedRiskItems($request):$this->items($request);$unmapped=0;
             if($mode==='risk'){$summary=$this->riskSummary($items);$rows=$summary['rows'];$unmapped=$summary['unmapped'];}else$rows=$this->playSummary($items);
             $this->sortRows($rows,$mode,$request);$total=count($rows);$page=max(1,(int)$request->param('page',1));$pageSize=min(100,max(1,(int)$request->param('page_size',20)));
-            return $this->reply(['list'=>array_slice($rows,($page-1)*$pageSize,$pageSize),'total'=>$total,'source_item_count'=>count($items),'unmapped_item_count'=>$unmapped]);
+            return $this->reply(['list'=>array_slice($rows,($page-1)*$pageSize,$pageSize),'total'=>$total,'source_item_count'=>$this->sourceItemCount,'unmapped_item_count'=>$unmapped]);
         }catch(\Throwable $error){return $this->reply(null,$error->getMessage(),422);}
     }
 

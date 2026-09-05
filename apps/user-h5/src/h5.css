@@ -13613,7 +13613,7 @@ body,
   padding: 0 .6rem !important;
   font-size: 1.6rem !important;
   line-height: 2.8rem !important;
-  white-space: pre-wrap !important;
+  white-space: nowrap !important;
   overflow: hidden !important;
 }
 

@@ -183,6 +183,19 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
       const exactMembers = (buckets.get(key) || []).filter((line) => !usedSemanticIds.has(line.id));
       if (exactMembers.length > 0) {
         const semantic = exactMembers[exactMembers.length - 1];
+        const isContinuation = Boolean(
+          activeSemantic
+          && activeSemantic.status === "success"
+          && semantic.status === "new"
+          && !Number(semantic.count || 0)
+          && !Number(semantic.amount || 0)
+          && !rawCategory,
+        );
+        if (isContinuation) {
+          usedSemanticIds.add(semantic.id);
+          addPhysicalOnly(raw, physicalIndex, activeSemantic || semantic, previousCategory, physicalIndex === sourcePhysical.length - 1);
+          return;
+        }
         const nextIsAggregate = /^\s*(?:共|合计|总)\s*\d+(?:\.\d+)?\s*(?:米|元)?\s*$/u.test(sourcePhysical[physicalIndex + 1] || "");
         if (nextIsAggregate) {
           const batchId = `physical-batch-${physicalIndex + 1}`;
@@ -312,16 +325,14 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
       displayGroups.push([line]);
     }
   });
-  // Textareas size themselves from their `rows` attribute on first paint,
-  // which can overestimate wrapped text on narrow phones and leave a large
-  // empty block below the visible content. Measure the rendered width and
-  // apply the actual scroll height after every preview/edit change.
+  // The reference keeps each mobile source line to a single fixed-height row;
+  // long number lists are clipped horizontally instead of growing the result
+  // panel into dozens of wrapped lines.
   useLayoutEffect(() => {
     if (!window.matchMedia("(max-width: 599px)").matches) return;
     const resize = () => {
       document.querySelectorAll<HTMLTextAreaElement>(".entry > .quick-result .quick-result-text").forEach((textarea) => {
-        textarea.style.setProperty("height", "auto", "important");
-        textarea.style.setProperty("height", `${textarea.scrollHeight}px`, "important");
+        textarea.style.setProperty("height", "3rem", "important");
       });
     };
     resize();
@@ -344,7 +355,10 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
       const compact = String(line.number_text || line.display_number_text || "").replace(/\s+/gu, "");
       if (/^[三六]\d{4,10}$/u.test(compact)) return [compact];
     }
-    const tokens = (line.batch_occurrence_text || line.display_number_text || line.number_text || "")
+    // Detail dialogs follow the provider's display order. `batch_occurrence_text`
+    // is an internal occurrence/settlement sequence and can start with a
+    // different subset (for example 133,144,166 before 033,044,066).
+    const tokens = (line.display_number_text || line.number_text || line.batch_occurrence_text || "")
       .split(/\s+/)
       .map((token) => token.trim())
       .filter(Boolean);
@@ -388,7 +402,10 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
       frequencies[displayNumber] = (frequencies[displayNumber] || 0) + 1;
       return frequencies;
     }, {});
-    const numbers = Array.from(new Set(occurrences.map((number) => isGroup ? normalizeGroupNumber(number) : number))).sort();
+    // The reference preserves the provider/API number order in the detail
+    // table. Sorting here changes the visual sequence (e.g. 033,044,066,133)
+    // and makes otherwise identical detail dialogs look different.
+    const numbers = Array.from(new Set(occurrences.map((number) => isGroup ? normalizeGroupNumber(number) : number)));
     const stakeCount = Number(line.stake_count ?? line.code_count ?? line.count ?? 0);
     const unitAmount = stakeCount > 0 ? Number(line.amount || 0) / stakeCount : 0;
     const detectedCategory = line.category || categoryFromSource(line.input_text || line.raw_text || "");
@@ -448,6 +465,7 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
       {displayGroups.map((group, groupIndex) => {
         const line = group[0];
         const groupKey = group.map((item) => item.id).join("-");
+        const relationKey = line.__groupKey || groupKey;
         const isEditing = editingGroupKey === groupKey;
         const draftText = draftTexts[groupKey] ?? displayTextForGroup(group);
         const isBatch = Boolean(line.batch_id);
@@ -462,24 +480,27 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
         // display group instead of looking only at its first row.
         const mismatchLine = group.find((item) => isAmountMismatch(item));
         const amountMismatch = Boolean(mismatchLine);
+        const hasParsedResult = (item: QuickEntryLine) => item.status === "success"
+          || (item.status !== "failed" && (Number(item.count || 0) > 0 || Number(item.amount || 0) > 0 || Boolean(item.number_text || item.display_number_text)));
+        const groupHasParsedResult = group.some(hasParsedResult);
         const mismatchGroup = amountMismatch || mismatchSources.has(sourceKey) || mismatchTexts.some((text) => text.includes(sourceKey) || sourceKey.includes(text));
         const hasLaterRelatedGroup = mismatchGroup
-          ? displayGroups.slice(groupIndex + 1).some((candidate) => candidate[0]?.__groupKey === groupKey || mismatchTexts.some((text) => {
+          ? displayGroups.slice(groupIndex + 1).some((candidate) => candidate[0]?.__groupKey === relationKey || mismatchTexts.some((text) => {
               const candidateSource = candidate[0]?.input_text || candidate[0]?.raw_text || "";
               return candidateSource !== "" && text.includes(candidateSource);
             }))
-          : displayGroups.slice(groupIndex + 1).some((candidate) => candidate[0]?.__groupKey === groupKey || (() => {
+          : displayGroups.slice(groupIndex + 1).some((candidate) => candidate[0]?.__groupKey === relationKey || (() => {
               const candidateSource = candidate[0]?.input_text || candidate[0]?.raw_text || "";
               return candidateSource === sourceKey || candidateSource.includes(sourceKey) || sourceKey.includes(candidateSource);
             })());
         const isLastRelatedGroup = !hasLaterRelatedGroup;
-        const showDetailButton = isLastRelatedGroup && ((group.some((item) => item.status === "success") && (!isBatch || isBatchEnd)) || mismatchGroup) && (!isPhysicalOnly || line.__groupEnd === true);
+        const showDetailButton = isLastRelatedGroup && ((groupHasParsedResult && (!isBatch || isBatchEnd)) || mismatchGroup) && (!isPhysicalOnly || line.__groupEnd === true);
         const displayCategory = line.category || lines.find((item) => {
           const itemSource = item.input_text || item.raw_text || "";
           return item.category && (itemSource === sourceKey || itemSource.includes(sourceKey) || sourceKey.includes(itemSource));
         })?.category || categoryFromSource(sourceKey) || (isPhysicalOnly ? "" : "福");
         const categoryTone = displayCategory === "福" ? "fu" : displayCategory === "体" ? "ti" : displayCategory === "福体" ? "futi" : "";
-        const visualStatus = isBlank ? "blank" : isEditing ? "new" : mismatchGroup ? "mismatch" : line.status;
+        const visualStatus = isBlank ? "blank" : isEditing ? "new" : mismatchGroup ? "mismatch" : hasParsedResult(line) ? "success" : line.status;
         const visualTone = isEditing ? "" : categoryTone;
         return (
           <Fragment key={group.map((item) => item.id).join("-")}>
@@ -489,7 +510,7 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
               <span className="quick-result-index">{line.id}</span>
               <button type="button" className="quick-result-add" aria-label={`新增第${line.id}条`} onClick={() => addLine(line)} />
               <strong className={`quick-result-status ${visualStatus}${visualTone ? ` ${visualTone}` : ""}`}>
-                {isBlank ? "" : isPhysicalOnly ? displayCategory : isEditing ? "新" : mismatchGroup ? displayCategory : line.status === "success" ? line.category || "成功" : line.status === "new" ? "新" : "失败"}
+                {isBlank ? "" : isPhysicalOnly ? displayCategory : isEditing ? "新" : mismatchGroup ? displayCategory : hasParsedResult(line) ? line.category || displayCategory : line.status === "new" ? "新" : "失败"}
               </strong>
               <span className="quick-result-detail-slot">
                 {isBatchEnd && (line.batch_has_duplicates || line.batch_count_mismatch) && (
@@ -549,7 +570,7 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
               </div>
             ) : null}
           </div>
-          {!isPhysicalOnly && line.status === "success" && (!isBatch || isBatchEnd) && isLastRelatedGroup && (
+          {hasParsedResult(line) && (!isBatch || isBatchEnd) && isLastRelatedGroup && (
             <div className="quick-result-summary">
               <span>笔数：</span><b>{groupCount}</b>
               <span>金额：</span><b>{formatAmount(groupAmount.toFixed(2))}</b>
@@ -606,7 +627,7 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
                       ))}
                     </div>
                     <div className="row-container">
-                      {Array.from({ length: Math.ceil(section.numbers.length / 4) }, (_, rowIndex) => section.numbers.slice(rowIndex * 8, rowIndex * 8 + 8)).map((row, rowIndex) => (
+                      {Array.from({ length: Math.ceil(section.numbers.length / 4) }, (_, rowIndex) => section.numbers.slice(rowIndex * 4, rowIndex * 4 + 4)).map((row, rowIndex) => (
                         <Fragment key={`${section}-row-${rowIndex}`}>
                           {Array.from({ length: 4 }, (_, index) => row[index] || null).map((number, index) => (
                             <div className={`row-label-container${number ? " has-amount" : ""}`} key={`${section.category}-${section.title}-${rowIndex}-${index}`}>

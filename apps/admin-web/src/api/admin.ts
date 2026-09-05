@@ -124,6 +124,8 @@ export type BatchBetNumber = {
   value: string;
   amount: string;
   source_text: string;
+  record_source_text?: string;
+  record_formatted_text?: string;
 };
 export type BatchBetUser = {
   key: string;
@@ -158,8 +160,9 @@ export const getBatchBetOptions = (params?: { lottery_id?: number; lottery?: str
 export const replaceBatchBetNumbers = (payload: {
   lottery_id: number;
   issue_no: string;
-  selections: Array<{ detail_id: number; number_index: number }>;
-  replacements: { hundreds: string; tens: string; units: string };
+  records?: Array<{ record_id: number; source_text: string }>;
+  selections?: Array<{ detail_id: number; number_index: number }>;
+  replacements?: { hundreds: string; tens: string; units: string };
 }) =>
   http.put<never, Envelope<{ changed: number }>>(
     "/admin/bet-details/batch-replace",
