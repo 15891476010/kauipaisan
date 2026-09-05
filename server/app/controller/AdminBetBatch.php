@@ -3,7 +3,10 @@ declare(strict_types=1);
 namespace app\controller;
 
 use app\service\BetSettlement;
+use app\service\CreditLedger;
 use app\service\QuickEntryParser;
+use app\service\ThirdPartyQuickEntryClient;
+use app\service\ThirdPartyQuickEntryConfig;
 use think\Request;
 use think\facade\Cache;
 use think\facade\Db;
@@ -56,7 +59,7 @@ final class AdminBetBatch
 
     private function editableRecords(array $recordIds, ?int $siteId): array
     {
-        $query=Db::name('bet_records')->whereIn('id',$recordIds)->where('status','pending')->where('sealed',0);
+        $query=Db::name('bet_records')->whereIn('id',$recordIds)->whereIn('status',['pending','won','unwon']);
         if ($siteId!==null) $query->where('site_id',$siteId);
         return $query->field('id,site_id,user_id,issue_no,submission_id,status,sealed,amount,bet_count,source_text,formatted_text')->select()->toArray();
     }
@@ -87,7 +90,7 @@ final class AdminBetBatch
 
     private function buildRecordOptions(?int $siteId): array
     {
-        $query=Db::name('bet_records')->where('status','pending')->where('sealed',0)->order('id desc')->limit(500);
+        $query=Db::name('bet_records')->whereIn('status',['pending','won','unwon'])->order('id desc')->limit(500);
         if ($siteId!==null) $query->where('site_id',$siteId);
         $records=$query->select()->toArray();
         $userIds=array_values(array_unique(array_filter(array_map('intval',array_column($records,'user_id')))));
@@ -223,7 +226,7 @@ final class AdminBetBatch
         $lotteryName=(string)$lottery['name'];
         $betIssueQuery=Db::name('bet_records')->alias('r')->join('bet_details d','d.bet_record_id=r.id')->leftJoin('user_stop_drops s','s.bet_detail_id=d.id')
             ->whereRaw('(s.lottery = ? OR (s.id IS NULL AND r.source_text LIKE ?))',[$lotteryName,'参考站总货概览主单%'])
-            ->where('r.status','pending')->where('r.sealed',0)->where('d.status','pending');
+            ->whereIn('r.status',['pending','won','unwon'])->whereIn('d.status',['pending','won','unwon']);
         if ($siteId!==null) $betIssueQuery->where('r.site_id',$siteId);
         foreach ($betIssueQuery->distinct(true)->column('r.issue_no') as $betIssue) {
             $betIssue=(string)$betIssue; if ($betIssue!=='' && !in_array($betIssue,$issues,true)) $issues[]=$betIssue;
@@ -231,7 +234,7 @@ final class AdminBetBatch
         $selectedRecordIds=array_values(array_unique(array_filter(array_map('intval',explode(',',(string)$request->param('record_ids',''))),static fn(int $id): bool=>$id>0)));
         $selectedUserIds=[];
         if ($selectedRecordIds!==[]) {
-            $selectedRows=Db::name('bet_records')->whereIn('id',$selectedRecordIds)->where('status','pending')->where('sealed',0);
+            $selectedRows=Db::name('bet_records')->whereIn('id',$selectedRecordIds)->whereIn('status',['pending','won','unwon']);
             if ($siteId!==null) $selectedRows->where('site_id',$siteId);
             $selectedRows=$selectedRows->field('id,user_id,issue_no')->select()->toArray();
             $selectedRecordIds=array_values(array_map('intval',array_column($selectedRows,'id')));
@@ -252,7 +255,7 @@ final class AdminBetBatch
             ->leftJoin('sites st','st.id=d.site_id')
             ->whereRaw('(s.lottery = ? OR (s.id IS NULL AND r.source_text LIKE ?))',[$lotteryName,'参考站总货概览主单%'])
             ->where('r.issue_no',$issue)
-            ->where('r.status','pending')->where('d.status','pending');
+            ->whereIn('r.status',['pending','won','unwon'])->whereIn('d.status',['pending','won','unwon']);
         if ($siteId!==null) $query->where('d.site_id',$siteId);
         if ($requestedUsers!==[]) $query->whereIn('d.user_id',$requestedUsers);
         $rows=$query->field('d.id,d.user_id,d.site_id,d.number_text,d.amount,d.source_text,r.id AS record_id,r.source_text AS record_source_text,r.formatted_text AS record_formatted_text,r.submission_id,u.username,u.display_name,st.name AS site_name')
@@ -293,19 +296,115 @@ final class AdminBetBatch
         return $position===false ? $source : substr_replace($source,$new,$position,strlen($old));
     }
 
-    /** Rebuild one pending record from its edited original ticket text. */
-    private function rebuildRawRecord(int $recordId, string $lotteryName, string $issue, ?int $siteId, string $sourceText): void
+    /** Use the same provider mapping as member quick-entry placement. */
+    private function thirdPartyRebuildLines(string $sourceText, string $lotteryName, int $tenantId, int $siteId): array
     {
-        $query=Db::name('bet_records')->where('id',$recordId)->where('issue_no',$issue)->where('status','pending')->where('sealed',0);
+        $config=ThirdPartyQuickEntryConfig::load($tenantId,$siteId);
+        if (!(bool)($config['enabled']??false)) throw new \RuntimeException('当前站点未启用三方识别，无法保存修改后的原始注单');
+        try {
+            $result=(new ThirdPartyQuickEntryClient($config))->recognize($sourceText,$lotteryName==='排列三'?3:4);
+        } catch (\Throwable $error) {
+            throw new \RuntimeException('三方识别失败：'.$error->getMessage(),0,$error);
+        }
+
+        // UserBusiness already contains the production provider-response
+        // mapper used for real member placement. Reuse that exact mapper here
+        // so batch editing never develops a second, incompatible rule set.
+        $business=new UserBusiness();
+        $previewMethod=new \ReflectionMethod(UserBusiness::class,'providerPreviewLines');
+        $previewMethod->setAccessible(true);
+        $providerLineMethod=new \ReflectionMethod(UserBusiness::class,'providerLineForLottery');
+        $providerLineMethod->setAccessible(true);
+        $previewLines=$previewMethod->invoke($business,$result,$lotteryName);
+        if (!is_array($previewLines) || $previewLines===[]) throw new \InvalidArgumentException('三方识别未返回有效投注内容');
+
+        $targetCategory=$lotteryName==='排列三'?'体':'福'; $lines=[]; $reasons=[];
+        foreach ($previewLines as $previewLine) {
+            if (!is_array($previewLine)) continue;
+            if ((string)($previewLine['status']??'')!=='success') {
+                $reason=trim((string)($previewLine['reason']??'')); if ($reason!=='') $reasons[]=$reason;
+                continue;
+            }
+            $parts=is_array($previewLine['provider_place_parts']??null)&&$previewLine['provider_place_parts']!==[]
+                ? $previewLine['provider_place_parts']
+                : (is_array($previewLine['provider_parts']??null)&&$previewLine['provider_parts']!==[]?$previewLine['provider_parts']:[$previewLine]);
+            foreach ($parts as $part) {
+                if (!is_array($part)) continue;
+                $category=(string)($part['category']??'');
+                if ($category!=='' && $category!=='福体' && $category!==$targetCategory) continue;
+                $mapped=$providerLineMethod->invoke($business,$part,$lotteryName);
+                if (is_array($mapped)) $lines[]=$mapped;
+            }
+        }
+        if ($reasons!==[]) throw new \InvalidArgumentException(implode('；',array_values(array_unique($reasons))));
+        if ($lines===[]) throw new \InvalidArgumentException('三方识别未返回当前彩种的有效投注内容');
+        return $lines;
+    }
+
+    /** Undo the financial effects of a settled record before rebuilding it. */
+    private function reopenSettledRecord(array $record): void
+    {
+        if (!in_array((string)($record['status']??''),['won','unwon'],true)) return;
+        $recordId=(int)$record['id']; $siteId=(int)$record['site_id']; $userId=(int)$record['user_id'];
+        $oldAmount=(float)($record['amount']??0); $oldWin=(float)($record['win_amount']??0);
+        $userRows=Db::name('site_users')->where('id',$userId)->where('site_id',$siteId)->lock(true)->select()->toArray();
+        $user=$userRows[0]??null; if (!$user) throw new \RuntimeException('结算用户不存在，无法重新计算');
+        $balanceBefore=(float)($user['balance']??0); $balanceAfter=$balanceBefore+$oldAmount-$oldWin;
+        Db::name('site_users')->where('id',$userId)->where('site_id',$siteId)->update([
+            'balance'=>number_format($balanceAfter,2,'.',''),
+            'used_balance'=>Db::raw('used_balance + '.number_format($oldAmount,2,'.','')),
+            'updated_at'=>date('Y-m-d H:i:s'),
+        ]);
+        if ($oldWin>0) CreditLedger::write(
+            ['tenant_id'=>(int)$record['tenant_id'],'site_id'=>$siteId],
+            (int)($user['organization_id']??0)?:null,'user',$userId,$userId,$recordId,null,(string)$record['issue_no'],
+            -$oldWin,$balanceBefore,$balanceAfter,'修改注单撤销原中奖结算','settlement'
+        );
+
+        // Sum the net share ledger for this record. This also handles a record
+        // that has already been recalculated before: old settlement and prior
+        // reversal entries cancel, leaving only the currently active shares.
+        $shareRows=Db::name('organization_credit_ledger')->where('related_bet_record_id',$recordId)
+            ->where('account_type','organization')->where('source_type','settlement_share')->select()->toArray();
+        $netShares=[];
+        foreach ($shareRows as $shareRow) {
+            $organizationId=(int)($shareRow['account_id']??0); if ($organizationId<1) continue;
+            $delta=(float)($shareRow['amount']??0)*((string)($shareRow['direction']??'in')==='out'?-1:1);
+            $netShares[$organizationId]=($netShares[$organizationId]??0)+$delta;
+        }
+        foreach ($netShares as $organizationId=>$netShare) {
+            if (abs($netShare)<0.005) continue;
+            $nodeRows=Db::name('organization_nodes')->where('id',(int)$organizationId)->lock(true)->select()->toArray();
+            $node=$nodeRows[0]??null; if (!$node) continue;
+            $before=(float)($node['balance']??0); $change=-$netShare; $after=$before+$change;
+            Db::name('organization_nodes')->where('id',(int)$organizationId)->update(['balance'=>number_format($after,2,'.',''),'updated_at'=>date('Y-m-d H:i:s')]);
+            CreditLedger::organizationSettlement($record,(int)$organizationId,$change,$before,$after,'修改注单撤销原结算占成',['recalculation'=>true]);
+        }
+
+        $billDate=substr((string)($record['placed_at']??''),0,10);
+        if ($billDate!=='') {
+            $billRows=Db::name('bills')->where('site_id',$siteId)->where('user_id',$userId)->where('bill_date',$billDate)->lock(true)->select()->toArray();
+            $bill=$billRows[0]??null;
+            if ($bill) Db::name('bills')->where('id',(int)$bill['id'])->update([
+                'bet_count'=>max(0,(int)($bill['bet_count']??0)-(int)($record['bet_count']??0)),
+                'amount'=>number_format(max(0,(float)($bill['amount']??0)-$oldAmount),2,'.',''),
+                'win_amount'=>number_format(max(0,(float)($bill['win_amount']??0)-$oldWin),2,'.',''),
+                'profit'=>number_format((float)($bill['profit']??0)-($oldWin-$oldAmount),2,'.',''),
+            ]);
+        }
+    }
+
+    /** Rebuild one record from its edited original ticket text. */
+    private function rebuildRawRecord(int $recordId, string $lotteryName, string $issue, ?int $siteId, string $sourceText): bool
+    {
+        $query=Db::name('bet_records')->where('id',$recordId)->where('issue_no',$issue)->whereIn('status',['pending','won','unwon']);
         if ($siteId!==null) $query->where('site_id',$siteId);
-        $recordRows=$query->field('id,tenant_id,site_id,user_id,submission_id,board_code,placed_at,source_text,formatted_text')->lock(true)->select()->toArray();
+        $recordRows=$query->field('id,tenant_id,site_id,user_id,submission_id,board_code,issue_no,placed_at,status,sealed,amount,bet_count,win_amount,source_text,formatted_text')->lock(true)->select()->toArray();
         $record=$recordRows[0]??null;
         if (!$record) throw new \RuntimeException('原始注单已不可修改，请刷新后重试');
+        $wasSettled=in_array((string)$record['status'],['won','unwon'],true);
         $sourceText=trim($sourceText); if ($sourceText==='') throw new \InvalidArgumentException('原始注单不能为空');
-        $unit=(float)Db::name('lotteries')->where('tenant_id',(int)$record['tenant_id'])->where('name',$lotteryName)->where('status',1)->whereNull('deleted_at')->value('unit_stake');
-        $lines=(new QuickEntryParser())->parse($sourceText,$lotteryName,$unit>0?$unit:2.0);
-        $lines=array_values(array_filter($lines,static fn(array $line): bool=>(string)($line['status']??'')==='success'));
-        if ($lines===[]) throw new \InvalidArgumentException('原始注单未识别到有效投注内容');
+        $lines=$this->thirdPartyRebuildLines($sourceText,$lotteryName,(int)$record['tenant_id'],(int)$record['site_id']);
         $details=Db::name('bet_details')->where('bet_record_id',$recordId)->order('id asc')->select()->toArray();
         /*
          * An edited raw ticket is a new calculation of the whole pending
@@ -317,6 +416,7 @@ final class AdminBetBatch
          */
         $lotteryId=(int)Db::name('lotteries')->where('tenant_id',(int)$record['tenant_id'])->where('name',$lotteryName)->where('status',1)->whereNull('deleted_at')->value('id');
         if ($lotteryId<1) throw new \RuntimeException('当前彩种不存在或已停用');
+        if ($wasSettled) $this->reopenSettledRecord($record);
         (new \app\service\InterceptionAllocator())->releaseForRecord($recordId);
         Db::name('agent_interceptions')->where('bet_record_id',$recordId)->delete();
         $detailIds=array_values(array_map('intval',array_column($details,'id')));
@@ -348,7 +448,21 @@ final class AdminBetBatch
         }
         if ($count<1) throw new \InvalidArgumentException('原始注单未生成有效投注明细');
         $formatted=(new QuickEntryParser())->formatText($sourceText);
-        Db::name('bet_records')->where('id',$recordId)->update(['source_text'=>$sourceText,'formatted_text'=>$formatted,'amount'=>number_format($total,2,'.',''),'bet_count'=>$count]);
+        if ($wasSettled) {
+            $amountDifference=$total-(float)$record['amount'];
+            if (abs($amountDifference)>=0.005) {
+                $userRows=Db::name('site_users')->where('id',(int)$record['user_id'])->where('site_id',(int)$record['site_id'])->lock(true)->select()->toArray();
+                $user=$userRows[0]??null; if (!$user) throw new \RuntimeException('结算用户不存在，无法调整重算金额');
+                $before=(float)$user['balance']+(float)$user['credit_balance']-(float)$user['used_balance'];
+                Db::name('site_users')->where('id',(int)$record['user_id'])->where('site_id',(int)$record['site_id'])->update([
+                    'used_balance'=>Db::raw($amountDifference>0?'used_balance + '.number_format($amountDifference,2,'.',''):'GREATEST(used_balance - '.number_format(abs($amountDifference),2,'.','').', 0)'),
+                    'updated_at'=>date('Y-m-d H:i:s'),
+                ]);
+                CreditLedger::write(['tenant_id'=>(int)$record['tenant_id'],'site_id'=>(int)$record['site_id']],(int)($user['organization_id']??0)?:null,
+                    'user',(int)$record['user_id'],(int)$record['user_id'],$recordId,null,$issue,-$amountDifference,$before,$before-$amountDifference,'修改注单调整下注金额','bet');
+            }
+        }
+        Db::name('bet_records')->where('id',$recordId)->update(['source_text'=>$sourceText,'formatted_text'=>$formatted,'amount'=>number_format($total,2,'.',''),'bet_count'=>$count,'win_amount'=>'0.00','status'=>'pending']);
         $submissionId=(int)($record['submission_id']??0);
         if ($submissionId>0 && Db::query("SHOW TABLES LIKE 'bet_submissions'")!==[]) {
             $submissionRows=Db::name('bet_records')->where('submission_id',$submissionId)->select()->toArray();
@@ -367,6 +481,17 @@ final class AdminBetBatch
                 'amount'=>number_format($submissionAmount,2,'.',''),'bet_count'=>$submissionCount,'win_amount'=>number_format($submissionWin,2,'.',''),
                 'status'=>$submissionStatus,'sealed'=>$submissionSealed]);
         }
+        return $wasSettled;
+    }
+
+    private function resettleRebuiltRecord(int $recordId, string $lotteryName, string $issue): void
+    {
+        $lotteryId=(int)Db::name('lotteries')->where('name',$lotteryName)->where('status',1)->whereNull('deleted_at')->value('id');
+        if ($lotteryId<1) return;
+        $historyRows=Db::name('lottery_histories')->where('lottery_id',$lotteryId)->where('code',$issue)->select()->toArray();
+        $history=$historyRows[0]??null;
+        if (!$history || (int)($history['is_opened']??0)!==1) return;
+        (new BetSettlement())->settleForHistory($history,['id'=>$lotteryId,'name'=>$lotteryName]);
     }
 
     public function replace(Request $request): \think\response\Json
@@ -377,20 +502,22 @@ final class AdminBetBatch
         $lottery=null;
         foreach ($this->lotteries($siteId) as $item) if ((int)$item['id']===$lotteryId) { $lottery=$item; break; }
         if (!$lottery) throw new \InvalidArgumentException('请选择有效彩种');
-        if ($issue==='' || $issue!==$this->currentIssue($lottery,$siteId)) throw new \RuntimeException('当前期号已变化，请刷新后重新选择');
+        if ($issue==='') throw new \RuntimeException('请选择需要修改的期号');
         $rawRecords=$data['records']??null;
         if (is_array($rawRecords) && $rawRecords!==[]) {
-            $changed=Db::transaction(function() use ($rawRecords,$lottery,$issue,$siteId): int {
+            $settledIds=[];
+            $changed=Db::transaction(function() use ($rawRecords,$lottery,$issue,$siteId,&$settledIds): int {
                 $changed=0; $seen=[];
                 foreach ($rawRecords as $rawRecord) {
                     if (!is_array($rawRecord)) continue;
                     $recordId=(int)($rawRecord['record_id']??0); if ($recordId<1 || isset($seen[$recordId])) continue;
-                    $seen[$recordId]=true; $this->rebuildRawRecord($recordId,(string)$lottery['name'],$issue,$siteId,(string)($rawRecord['source_text']??'')); $changed++;
+                    $seen[$recordId]=true; if ($this->rebuildRawRecord($recordId,(string)$lottery['name'],$issue,$siteId,(string)($rawRecord['source_text']??''))) $settledIds[]=$recordId; $changed++;
                 }
                 if ($changed<1) throw new \InvalidArgumentException('请选择需要保存的原始注单');
                 return $changed;
             });
-            return $this->reply(['changed'=>$changed],'原始注单保存并重算完成');
+            foreach ($settledIds as $settledId) $this->resettleRebuiltRecord((int)$settledId,(string)$lottery['name'],$issue);
+            return $this->reply(['changed'=>$changed,'resettled'=>count($settledIds)],'原始注单保存并重算完成');
         }
         $replacement=[];
         foreach (['hundreds'=>0,'tens'=>1,'units'=>2] as $field=>$position) {

@@ -764,16 +764,43 @@ final class UserBusiness
     }
     public function bills(Request $request): \think\response\Json
     {
-        $s=$this->session($request); $query=Db::name('bills')->where('site_id',$s['site_id'])->where('user_id',$s['user_id']);
-        $from=trim((string)$request->param('from','')); $to=trim((string)$request->param('to','')); if ($from) $query->where('bill_date','>=',$from); if ($to) $query->where('bill_date','<=',$to);
-        $list=$query->order('bill_date','desc')->select()->toArray();
+        $s=$this->session($request); $from=trim((string)$request->param('from','')); $to=trim((string)$request->param('to',''));
+        $lotteryParam=trim((string)$request->param('lottery',''));
+        // user_stop_drops stores the display lottery names used by the user
+        // APIs (not the short 福/体 aliases shown in some controls).
+        $lotteryMap=['福'=>'福彩3D','福彩3D'=>'福彩3D','体'=>'排列三','排列三'=>'排列三','all'=>''];
+        $lotteryFilter=$lotteryParam===''?'':($lotteryMap[$lotteryParam]??'__none__');
+        if ($lotteryFilter==='__none__') return $this->reply(['list'=>[],'total'=>['bet_count'=>0,'amount'=>'0.00','rebate'=>'0.00','offline_rebate'=>'0.00','win_amount'=>'0.00','profit'=>'0.00']]);
+        $query=Db::name('bills')->where('site_id',$s['site_id'])->where('user_id',$s['user_id']);
+        if ($from) $query->where('bill_date','>=',$from); if ($to) $query->where('bill_date','<=',$to);
+        // bills is a daily site/user summary and has no lottery column. When
+        // a lottery is selected, rebuild the daily result from tagged detail
+        // rows instead of returning the unfiltered all-lottery total.
+        $list=[];
+        if ($lotteryFilter!=='') {
+            $detailQuery=Db::name('bet_details')->alias('d')->leftJoin('user_stop_drops s','s.bet_detail_id=d.id')
+                ->where('d.site_id',$s['site_id'])->where('d.user_id',$s['user_id'])->where('s.lottery',$lotteryFilter);
+            if ($from) $detailQuery->where('d.placed_at','>=',$from.' 00:00:00');
+            if ($to) $detailQuery->where('d.placed_at','<=',$to.' 23:59:59');
+            $detailRows=$detailQuery->field('d.placed_at,d.amount,d.rebate,d.win_amount,s.drop_odds')->select()->toArray();
+            $daily=[];
+            foreach ($detailRows as $detail) {
+                $date=substr((string)($detail['placed_at']??''),0,10); if ($date==='') continue;
+                if (!isset($daily[$date])) $daily[$date]=['bill_date'=>$date,'bet_count'=>0,'amount'=>0.0,'rebate'=>0.0,'offline_rebate'=>0.0,'win_amount'=>0.0,'profit'=>0.0];
+                $amount=(float)($detail['amount']??0); $rebate=(float)($detail['rebate']??0); $offline=round($amount*max(0,(float)($detail['drop_odds']??0)),2); $win=(float)($detail['win_amount']??0);
+                $daily[$date]['bet_count']++; $daily[$date]['amount']+=$amount; $daily[$date]['rebate']+=$rebate; $daily[$date]['offline_rebate']+=$offline; $daily[$date]['win_amount']+=$win; $daily[$date]['profit']+=($win-$amount+$rebate+$offline);
+            }
+            $list=array_values($daily); usort($list,static fn(array $a,array $b): int => strcmp($b['bill_date'],$a['bill_date']));
+        } else {
+            $list=$query->order('bill_date','desc')->select()->toArray();
+        }
         // Older deployments do not backfill the bills summary table. Build the
         // same daily view from the source records until a summary exists.
         $recordsQuery=Db::name('bet_records')->where('site_id',$s['site_id'])->where('user_id',$s['user_id']);
         if ($from) $recordsQuery->where('placed_at','>=',$from.' 00:00:00');
         if ($to) $recordsQuery->where('placed_at','<=',$to.' 23:59:59');
         $records=$recordsQuery->select()->toArray();
-        if ($records) {
+        if ($records && $lotteryFilter==='') {
             $recordIds=array_map(static fn(array $row): int => (int)$row['id'],$records);
             $detailRows=$recordIds ? Db::name('bet_details')->alias('d')->leftJoin('user_stop_drops s','s.bet_detail_id=d.id')->whereIn('d.bet_record_id',$recordIds)->field('d.bet_record_id,d.rebate,d.amount,s.drop_odds')->select()->toArray() : [];
             $rebates=[];$offlineRebates=[];

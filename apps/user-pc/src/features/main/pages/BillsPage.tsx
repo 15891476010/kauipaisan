@@ -6,9 +6,10 @@ import { getBills, type Bill } from "../../../api/user";
 export function BillsPage() {
   const [rows, setRows] = useState<Bill[]>([]);
   const today = dayjs();
-  const [from, setFrom] = useState(today.startOf("month"));
+  // History bills open on today's interval by default (today → today).
+  const [from, setFrom] = useState(today);
   const [to, setTo] = useState(today);
-  const [period, setPeriod] = useState("month");
+  const [period, setPeriod] = useState("today");
   const [lotteries, setLotteries] = useState({ fu: true, ti: true });
   const [total, setTotal] = useState({
     bet_count: 0,
@@ -19,6 +20,13 @@ export function BillsPage() {
     profit: "0.00",
   });
   const [loading, setLoading] = useState(false);
+  const lotteryFilter = lotteries.fu === lotteries.ti
+    ? ""
+    : lotteries.fu
+      ? "福彩3D"
+      : lotteries.ti
+        ? "排列三"
+        : "__none__";
   const setRange = (
     nextFrom: dayjs.Dayjs,
     nextTo: dayjs.Dayjs,
@@ -46,7 +54,11 @@ export function BillsPage() {
   };
   useEffect(() => {
     setLoading(true);
-    getBills({ from: from.format("YYYY-MM-DD"), to: to.format("YYYY-MM-DD") })
+    getBills({
+      from: from.format("YYYY-MM-DD"),
+      to: to.format("YYYY-MM-DD"),
+      ...(lotteryFilter ? { lottery: lotteryFilter } : {}),
+    })
       .then((response) => {
         const data = response.data?.data;
         setRows(data?.list || []);
@@ -73,7 +85,7 @@ export function BillsPage() {
         });
       })
       .finally(() => setLoading(false));
-  }, [from, to]);
+  }, [from, to, lotteryFilter]);
   return (
     <div className="business-page">
       <div className="business-toolbar bill-toolbar">
