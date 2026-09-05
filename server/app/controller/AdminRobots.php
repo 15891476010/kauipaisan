@@ -219,11 +219,15 @@ final class AdminRobots
         if(!in_array($status,['running','stopped'],true))throw new \InvalidArgumentException('机器人状态无效');
         $now=date('Y-m-d H:i:s');
         $start=strtotime((string)$robot['start_at'])?:time();
-        $next=$status==='running'?max(time(),$start):null;
+        // Honour the configured start date.  A date such as 08-01 is an
+        // intentional historical replay point, not a request to start only
+        // from the moment the operator clicks the button.
+        $next=$status==='running'?$start:null;
         $update=['status'=>$status,'next_run_at'=>$next?date('Y-m-d H:i:s',$next):null,'updated_at'=>$now];
-        if($status==='running'){
-            // A fresh start belongs to the current business day.  Do not
-            // replay a deferred ticket left by the legacy historical worker.
+        if($status==='running' && !empty($robot['pending_ticket_scheduled_at'])
+            && strtotime((string)$robot['pending_ticket_scheduled_at']) < $start){
+            // Discard only a deferred ticket older than the configured start;
+            // a pending ticket within the configured replay range is kept.
             $update=array_merge($update,[
                 'pending_ticket_text'=>null,'pending_ticket_lottery'=>null,
                 'pending_ticket_target_issue'=>null,'pending_ticket_target_draw'=>null,

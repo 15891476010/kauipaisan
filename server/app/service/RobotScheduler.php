@@ -65,11 +65,11 @@ final class RobotScheduler
                 'next_run_at' => date('Y-m-d H:i:s', $now + 3600),
                 'updated_at' => date('Y-m-d H:i:s', $now),
             ]);
-            // Daily-budget robots always run against the current business
-            // day.  A stale next_run_at from the legacy monthly scheduler
-            // must not replay months of historical tickets one per second.
-            $scheduled = max($now, strtotime((string)$robot['next_run_at']) ?: $now);
-            $robot['_catchup'] = false;
+            // Keep a configured historical start date meaningful: the robot
+            // replays one scheduled slot at a time until it catches up.  The
+            // daily budget below is evaluated against that simulated day.
+            $scheduled = strtotime((string)$robot['next_run_at']) ?: $now;
+            $robot['_catchup'] = $scheduled < $now;
             $robot['_scheduled_at'] = $scheduled;
             return $robot;
         });
@@ -173,15 +173,20 @@ final class RobotScheduler
         if(!$user) return ['status'=>'failed','message'=>'机器人会员账户不存在'];
         $user=DailyScoreUsage::normalize($user);
         $dailyLimit=max(0,round((float)($user['balance']??0)+(float)($user['credit_balance']??0),2));
-        $dailySpent=$this->dailySpent((int)$robot['user_id'],$now,(float)($user['used_balance']??0));
+        $dailySpent=$this->dailySpent(
+            (int)$robot['user_id'],
+            $scheduleTime,
+            !empty($robot['_catchup']) ? 0.0 : (float)($user['used_balance']??0),
+        );
         $remaining=max(0,round($dailyLimit-$dailySpent,2));
+        $dailyAnchor=!empty($robot['_catchup']) ? $scheduleTime : $now;
         if($dailyLimit<=0) {
-            $this->settleDailyEnd($robot,$ids,$now);
-            return ['status'=>'skipped','message'=>'机器人未分配分数，今日不下注','skip_until'=>$this->nextBusinessDay($now),'daily_exhausted'=>true];
+            $this->settleDailyEnd($robot,$ids,$dailyAnchor);
+            return ['status'=>'skipped','message'=>'机器人未分配分数，今日不下注','skip_until'=>$this->nextBusinessDay($dailyAnchor),'daily_exhausted'=>true];
         }
         if($remaining<=0.000001) {
-            $this->settleDailyEnd($robot,$ids,$now);
-            return ['status'=>'skipped','message'=>'机器人今日分数已用完，已核对当前奖期并完成可结算注单','skip_until'=>$this->nextBusinessDay($now),'daily_exhausted'=>true];
+            $this->settleDailyEnd($robot,$ids,$dailyAnchor);
+            return ['status'=>'skipped','message'=>'机器人今日分数已用完，已核对当前奖期并完成可结算注单','skip_until'=>$this->nextBusinessDay($dailyAnchor),'daily_exhausted'=>true];
         }
         $winWeight=(float)($robot['win_weight']??50);
         $wantWin=$pending ? null : ($target!==null ? (random_int(1,10000) <= (int)round($winWeight*100) ) : null);
@@ -190,8 +195,8 @@ final class RobotScheduler
         // remaining amount is below the configured minimum, finish the day
         // and let the next business day reset usage instead of exceeding it.
         if($remaining<$minAmount-0.000001){
-            $this->settleDailyEnd($robot,$ids,$now);
-            return ['status'=>'skipped','message'=>'机器人今日剩余分数不足一批，已核对当前奖期并完成可结算注单','skip_until'=>$this->nextBusinessDay($now),'daily_exhausted'=>true];
+            $this->settleDailyEnd($robot,$ids,$dailyAnchor);
+            return ['status'=>'skipped','message'=>'机器人今日剩余分数不足一批，已核对当前奖期并完成可结算注单','skip_until'=>$this->nextBusinessDay($dailyAnchor),'daily_exhausted'=>true];
         }
         $maxAmount=min($maxAmount,$remaining);$minAmount=min($minAmount,$maxAmount);
         $texts = $pending
@@ -622,7 +627,7 @@ final class RobotScheduler
             if((string)($lottery['source_type']??'official')==='system'){
                 try{(new SystemLotteryService())->runLottery($lottery);}catch(\Throwable $error){Log::warning('robot daily settlement draw failed lottery='.$lotteryId.': '.$error->getMessage());}
             }
-            $this->settlePrevious($lottery,null);
+            $this->settlePrevious($lottery,!empty($robot['_catchup']) ? $timestamp : null);
         }
     }
 
@@ -765,7 +770,7 @@ final class RobotScheduler
             // Exhausting today's score is not a permanent robot failure. Keep
             // it running and wake it at the next local midnight, after the
             // normal daily usage reset.
-            $nextDay=$this->nextBusinessDay($now);
+            $nextDay=$this->nextBusinessDay(!empty($robot['_catchup']) ? $scheduledAt : $now);
             $this->appendRunLog($robot,'info','skipped',$message,array_merge($logContext,['daily_exhausted'=>true,'next_run_at'=>date('Y-m-d H:i:s',$nextDay)]));
             Db::name('robot_accounts')->where('id',(int)$robot['id'])->where('status','running')->update([
                 'next_run_at'=>date('Y-m-d H:i:s',$nextDay),'updated_at'=>date('Y-m-d H:i:s',$now), ...$diagnostics,
