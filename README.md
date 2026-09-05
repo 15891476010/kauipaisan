@@ -5,7 +5,9 @@
 ## 目录
 
 - `apps/admin-web`：SaaS 管理端。
-- `apps/user-web`：用户端。
+- `apps/select-page`：根路径设备选择页（仅包含 `index.html`）。
+- `apps/user-pc`：电脑版用户端。
+- `apps/user-h5`：手机版用户端。
 - `apps/agent-web`：代理端。
 - `server`：ThinkPHP API。
 - `online-snapshot`：原线上用户端参考资料。

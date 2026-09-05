@@ -4,9 +4,9 @@
 
 ## 用户端修改强制规则
 
-1. 修改用户端时，只允许直接修改服务器上的项目路径 `/zhang/WWW/kaipaisan/apps/user-web/src`。
-2. 禁止先改本地源码再同步到服务器，也禁止只改本地不落到服务器。
-3. 用户端线上入口读取的是 `/zhang/WWW/kaipaisan/apps/user-web/dist`，源码改完后必须在服务器上重新打包，生成并覆盖该 `dist`。
+1. 根路径只读取服务器上的 `/zhang/WWW/kaipaisan/apps/select-page/index.html`；该目录不得放入业务 SPA 或构建产物。
+2. PC/H5 用户端分别维护在服务器 `/zhang/WWW/kaipaisan/apps/user-pc` 与 `/zhang/WWW/kaipaisan/apps/user-h5`，源码改完后必须在服务器上重新打包并发布各自 `dist`。
+3. 禁止把 PC/H5 资源复制到根路径选择页，也不得恢复 `apps/user-web` 作为线上入口。
 4. 每次涉及用户端页面效果的修改，都要以服务器上的源码和打包产物为准，不能只看本地文件。
 
 ## 每次工作前必须执行
@@ -26,7 +26,8 @@
 ## 仓库结构
 
 - `apps/admin-web`：Vite + Vue 3 + Element Plus + Axios + Pinia + Vue Router。
-- `apps/user-web`：Vite + React + Axios + Zustand + React Router。Pinia 只适用于 Vue，React 端使用 Zustand。
+- `apps/select-page`：根路径静态设备选择页。
+- `apps/user-pc`、`apps/user-h5`：Vite + React + Axios + Zustand + React Router。Pinia 只适用于 Vue，React 端使用 Zustand。
 - `apps/agent-web`：Vite + React 代理端，独立 agent token、API 分组与绿色主题，布局参考用户端。
 - `server`：ThinkPHP API、数据库迁移、Redis、队列/缓存与租户权限。
 - `online-snapshot`：原线上构建产物和逆向分析资料，只读参考，不直接修改。
