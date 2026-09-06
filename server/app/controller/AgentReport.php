@@ -81,10 +81,18 @@ final class AgentReport
             ->join('bet_records r','r.id=d.bet_record_id')
             ->join('site_users u','u.id=d.user_id')
             ->leftJoin('user_stop_drops s','s.bet_detail_id=d.id')
+            // Ordinary bets do not have a stop-drop row.  Resolve their
+            // lottery from the issue history instead of filtering on the
+            // nullable stop-drop lottery column.
+            ->leftJoin('lottery_histories lh','lh.code=d.issue_no')
+            ->leftJoin('lotteries l','l.id=lh.lottery_id')
             ->where('d.site_id',$siteId)->where('u.site_id',$siteId)->whereNull('u.deleted_at')->where('d.placed_at','>=',$from.' 00:00:00')->where('d.placed_at','<=',$to.' 23:59:59')
             ->where('r.status','<>','refunded');
         OrganizationHierarchy::applyUserScope($query,$session,'d.user_id');
-        if($lotteries!==[]) $query->whereIn('s.lottery',$lotteries);
+        if($lotteries!==[]) {
+            $marks=implode(',',array_fill(0,count($lotteries),'?'));
+            $query->whereRaw('(s.lottery IN ('.$marks.') OR l.name IN ('.$marks.') OR d.lottery_name IN ('.$marks.'))',array_merge($lotteries,$lotteries,$lotteries));
+        }
         $rows=$query->field('d.id,d.user_id,u.username,u.organization_id,u.interception_rate AS share_rate,d.issue_no,d.number_text,d.amount,d.odds,d.win_amount,d.rebate,d.placed_at,s.lottery,s.drop_odds')->select()->toArray();
         // Imported batches keep the reference report snapshot until it is
         // materialized into local bet tables. Include those rows so a newly

@@ -62,7 +62,6 @@ final class AgentImportMaterialize
             if(!Db::name('agent_import_profiles')->where('id',$profileId)->where('site_id',$siteId)->where('tenant_id',(int)$session['tenant_id'])->count())return json(['code'=>404,'message'=>'数据源不存在','data'=>null],404);
             if(!Db::name('organization_nodes')->where('id',$targetId)->where('site_id',$siteId)->where('tenant_id',(int)$session['tenant_id'])->whereNull('deleted_at')->count())return json(['code'=>404,'message'=>'写入目标组织不存在','data'=>null],404);
             $now=date('Y-m-d H:i:s');$queuedId=(int)Db::name('agent_import_batches')->insertGetId(['tenant_id'=>(int)$session['tenant_id'],'site_id'=>$siteId,'profile_id'=>$profileId,'target_organization_id'=>$targetId,'from_date'=>$from,'to_date'=>$to,'types'=>json_encode(['report_overview','accounts','account_tree','sync_log'],JSON_UNESCAPED_UNICODE),'status'=>'queued','external_counts'=>null,'created_counts'=>null,'created_credentials'=>null,'started_at'=>null,'finished_at'=>null,'created_at'=>$now,'updated_at'=>$now]);
-            Db::name('agent_import_records')->insert(['batch_id'=>$queuedId,'entity_type'=>'sync_log','external_id'=>null,'local_id'=>null,'action'=>'progress','payload'=>json_encode(['level'=>'info','message'=>'做账任务已排队，等待后台 worker 启动','context'=>[]],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES),'created_at'=>$now]);
             $payload['_queued_batch_id']=$queuedId;
             $bodyFile=tempnam(sys_get_temp_dir(),'agent-import-job-');
             if($bodyFile===false) throw new \RuntimeException('后台任务临时文件不可用');
@@ -152,7 +151,24 @@ final class AgentImportMaterialize
             $history=Db::name('agent_import_batches')->where('tenant_id',(int)$session['tenant_id'])->where('site_id',(int)$batch['site_id'])->where('id','<>',$id)->whereNotNull('created_credentials')->order('id desc')->select()->toArray();
             foreach($history as $old){$items=json_decode((string)$old['created_credentials'],true);if(!is_array($items))continue;foreach($items as $item){$u=trim((string)($item['username']??''));if($u!==''&&isset($reusedUsers[$u])&&!isset($known[$u])){$item['reused_from_batch_id']=(int)$old['id'];$credentials[]=$item;$known[$u]=true;$reusedFound++;}}if($reusedFound>=$reusedTotal)break;}
         }
-        return json(['code'=>0,'message'=>'ok','data'=>['batch_id'=>$id,'credentials'=>array_values($credentials)]]);
+        // Always expose the complete source account tree, including accounts
+        // reused from earlier batches.  Plaintext passwords remain available
+        // only for accounts created by this batch; reused accounts are marked
+        // as existing and are never assigned a new password.
+        $accounts=[];
+        $levelMap=[1=>'总监',2=>'大股东',3=>'小股东',4=>'总代理',5=>'代理'];
+        foreach($this->accountRows($id) as $source){
+            $external=trim((string)($source['ai']??$source['id']??''));
+            $username=trim((string)($source['an']??$source['username']??''));
+            if($external===''||$username==='')continue;
+            $type=(int)($source['tp']??6);
+            $exists=$type>=6
+                ? Db::name('site_users')->where('site_id',(int)$batch['site_id'])->where('username',$username)->whereNull('deleted_at')->find()
+                : Db::name('organization_accounts')->where('site_id',(int)$batch['site_id'])->where('username',$username)->whereNull('deleted_at')->find();
+            $accounts[]=['external_id'=>$external,'parent_external_id'=>trim((string)($source['pi']??'')),'username'=>$username,'type'=>$type>=6?'会员':($levelMap[$type]??'下级'),'level'=>$type,'status'=>$exists?'已存在':'未创建','initial_password'=>null];
+        }
+        usort($accounts,static fn(array $a,array $b): int => ((int)$a['level'])<=>((int)$b['level']) ?: strcmp((string)$a['username'],(string)$b['username']));
+        return json(['code'=>0,'message'=>'ok','data'=>['batch_id'=>$id,'credentials'=>array_values($credentials),'accounts'=>$accounts]]);
     }
 
     public function rollback(Request $request): \think\response\Json

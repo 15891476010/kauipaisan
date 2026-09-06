@@ -19,7 +19,8 @@ import {
   updateBetDetail,
   type BetDetail,
   type BetAggregationRow,
-  type BetAggregationColumn,
+  type BetAggregationMember,
+  type BetAggregationOrder,
 } from "../api/admin";
 
 const route = useRoute();
@@ -65,12 +66,11 @@ const aggregationQuery = reactive({ site_id: "", lottery: "", issue_no: "", draw
 const aggregationDetailDrawer = ref(false);
 const aggregationDetailLoading = ref(false);
 const aggregationDetailRow = ref<BetAggregationRow | null>(null);
-const aggregationDetailColumns = ref<BetAggregationColumn[]>([]);
-const aggregationDetailSort = ref<"amount" | "payout" | "actual">("amount");
-const aggregationOnlyBet = ref(false);
-const aggregationNumberSearch = ref("");
-const aggregationColumnState = reactive<Record<string, { sort: "amount" | "payout" | "actual"; direction: "asc" | "desc"; loading: boolean }>>({});
-let aggregationDetailVersion = 0;
+const aggregationMembers = ref<BetAggregationMember[]>([]);
+const aggregationOrders = ref<BetAggregationOrder[]>([]);
+const aggregationDetailPage = ref(1);
+const aggregationDetailPageSize = ref(30);
+const aggregationOrdersTotal = ref(0);
 type AlertConfig = { bet: string; win: string; number: string };
 const alertSettings = reactive<Record<string, AlertConfig>>({});
 const numberSimulation = ref<Record<string, unknown> | null>(null);
@@ -284,13 +284,13 @@ function changeBetView(mode: BetViewMode) {
   if (mode === "records") void load();
   else {
     aggregationQuery.page = 1;
-    aggregationQuery.sort_field = "amount";
+    aggregationQuery.sort_field = "bet_amount";
     aggregationQuery.sort_order = "desc";
     void loadAggregation();
   }
 }
 function handleAggregationSort({ prop, order }: { prop: string; order: "ascending" | "descending" | null }) {
-  const allowed = ["order_count", "member_count", "amount", "actual_win_amount", "max_cell_amount", "max_payout"];
+  const allowed = ["occurrence_count", "order_count", "member_count", "frequency_rate", "bet_amount", "actual_win_amount", "potential_win_amount", "max_amount", "max_win_amount"];
   if (!allowed.includes(prop)) return;
   aggregationQuery.sort_field = order ? prop : "";
   aggregationQuery.sort_order = order === "ascending" ? "asc" : "desc";
@@ -300,72 +300,44 @@ function handleAggregationSort({ prop, order }: { prop: string; order: "ascendin
 function aggregationDetailParams(row: BetAggregationRow) {
   return {
     ...aggregationParams(),
+    page: undefined,
     page_size: undefined,
     sort_field: undefined,
     sort_order: undefined,
     lottery: row.lottery,
     issue_no: row.issue_no,
-    family: row.family || "",
-    group_key: row.key || "",
-    page: 1,
-    sort: aggregationDetailSort.value,
-    direction: "desc",
-    only_bet: aggregationOnlyBet.value ? 1 : 0,
-    search: aggregationNumberSearch.value,
+    play_type: row.play_type || "",
+    position: row.position || "",
+    selection: row.selection || "",
+    summary_kind: row.summary_kind || "play",
+    summary_odds: row.summary_odds || "",
+    outcome: row.outcome || "",
+    detail_page: aggregationDetailPage.value,
+    detail_page_size: aggregationDetailPageSize.value,
   };
 }
 async function loadAggregationDetails() {
   if (!aggregationDetailRow.value) return;
-  const version = ++aggregationDetailVersion;
   aggregationDetailLoading.value = true;
   try {
     const res = await getBetAggregationDetails(aggregationDetailParams(aggregationDetailRow.value));
-    if (version !== aggregationDetailVersion) return;
     if (res.code !== 0 || !res.data) throw new Error(res.message || "汇总明细加载失败");
-    aggregationDetailColumns.value = res.data.columns || [];
-    aggregationDetailColumns.value.forEach(column => {
-      aggregationColumnState[column.key] = { sort: aggregationDetailSort.value, direction: "desc", loading: false };
-    });
+    aggregationMembers.value = res.data.members || [];
+    aggregationOrders.value = res.data.orders || [];
+    aggregationOrdersTotal.value = Number(res.data.orders_total || 0);
   } catch (e) {
-    if (version !== aggregationDetailVersion) return;
-    aggregationDetailColumns.value = [];
     ElMessage.error(e instanceof Error ? e.message : "汇总明细加载失败");
   } finally {
-    if (version === aggregationDetailVersion) aggregationDetailLoading.value = false;
+    aggregationDetailLoading.value = false;
   }
 }
 function openAggregationDetails(row: BetAggregationRow) {
   aggregationDetailRow.value = row;
-  aggregationNumberSearch.value = "";
-  aggregationOnlyBet.value = false;
-  aggregationDetailColumns.value = [];
+  aggregationDetailPage.value = 1;
+  aggregationMembers.value = [];
+  aggregationOrders.value = [];
   aggregationDetailDrawer.value = true;
   void loadAggregationDetails();
-}
-function changeAggregationDetailSort(sort: "amount" | "payout" | "actual") {
-  aggregationDetailSort.value = sort;
-  void loadAggregationDetails();
-}
-async function loadAggregationColumn(column: BetAggregationColumn, page = 1, sort?: "amount" | "payout" | "actual") {
-  const row = aggregationDetailRow.value;
-  const state = aggregationColumnState[column.key];
-  if (!row || !state || state.loading) return;
-  if (sort) {
-    state.direction = state.sort === sort && state.direction === "desc" ? "asc" : "desc";
-    state.sort = sort;
-  }
-  state.loading = true;
-  const version = aggregationDetailVersion;
-  try {
-    const res = await getBetAggregationDetails({ ...aggregationDetailParams(row), column_key: column.key, page, sort: state.sort, direction: state.direction });
-    if (version !== aggregationDetailVersion) return;
-    if (res.code !== 0 || !res.data?.columns?.[0]) throw new Error(res.message || "号码列加载失败");
-    aggregationDetailColumns.value = aggregationDetailColumns.value.map(item => item.key === column.key ? res.data.columns[0]! : item);
-  } catch (e) {
-    if (version === aggregationDetailVersion) ElMessage.error(e instanceof Error ? e.message : "号码列加载失败");
-  } finally {
-    state.loading = false;
-  }
 }
 function handleTableSort({ prop, order }: { prop: string; order: "ascending" | "descending" | null }) {
   if (resource.value !== "bet-records" || !["amount", "potential_win_amount"].includes(prop)) return;
@@ -863,22 +835,24 @@ onBeforeUnmount(() => {
       <el-table v-loading="aggregationLoading" :data="aggregationRows" stripe border height="calc(100vh - 410px)" @sort-change="handleAggregationSort">
         <el-table-column prop="lottery" label="彩种" min-width="105" fixed="left" />
         <el-table-column prop="issue_no" label="期号" min-width="120" fixed="left" />
-        <el-table-column prop="name" label="玩法分类" min-width="145" fixed="left" />
-        <el-table-column label="玩法分列（赔率）" min-width="330">
+        <el-table-column prop="play_type" label="玩法" min-width="145" fixed="left" />
+        <el-table-column prop="position" label="位置" min-width="100"><template #default="scope">{{ scope.row.position || '-' }}</template></el-table-column>
+        <el-table-column label="号码（下注 / 中奖）" min-width="310">
           <template #default="scope">
             <div class="aggregation-number-list">
-              <div v-for="column in (scope.row.numbers || [])" :key="column.key" class="aggregation-number-item">
-                <b>{{ column.title }}</b><span>赔率 {{ column.odds || '-' }} · ¥{{ column.amount }}</span>
+              <div v-for="number in (scope.row.numbers || [])" :key="`${number.selection}-${number.odds}`" class="aggregation-number-item">
+                <b>{{ number.selection || '未标注' }}</b><span>¥{{ number.amount }} / ¥{{ number.win_amount }}</span>
               </div>
             </div>
           </template>
         </el-table-column>
+        <el-table-column prop="summary_odds" label="赔率" min-width="90" />
         <el-table-column prop="order_count" label="注单数" min-width="95" sortable="custom" />
         <el-table-column prop="member_count" label="会员数" min-width="95" sortable="custom" />
-        <el-table-column prop="amount" label="总下注金额" min-width="125" sortable="custom" />
-        <el-table-column prop="actual_win_amount" label="实际中奖金额" min-width="135" sortable="custom"><template #default="scope">{{ scope.row.actual_win_amount ?? '待开奖/无法归属' }}</template></el-table-column>
-        <el-table-column prop="max_cell_amount" label="最高单注金额" min-width="130" sortable="custom" />
-        <el-table-column prop="max_payout" label="最高可中奖金额" min-width="145" sortable="custom" />
+        <el-table-column prop="bet_amount" label="总下注金额" min-width="125" sortable="custom" />
+        <el-table-column prop="actual_win_amount" label="实际中奖金额" min-width="135" sortable="custom" />
+        <el-table-column prop="max_amount" label="最高单注金额" min-width="130" sortable="custom" />
+        <el-table-column prop="max_win_amount" label="最高中奖金额" min-width="130" sortable="custom" />
         <el-table-column label="操作" width="90" fixed="right"><template #default="scope"><el-button link type="primary" @click="openAggregationDetails(scope.row)">详情</el-button></template></el-table-column>
       </el-table>
       <el-pagination v-model:current-page="aggregationQuery.page" v-model:page-size="aggregationQuery.page_size" :total="aggregationTotal" :page-sizes="[10, 20, 50, 100]" layout="total, sizes, prev, pager, next, jumper" class="aggregation-pagination" @current-change="loadAggregation" @size-change="aggregationQuery.page = 1; loadAggregation()" />
@@ -1084,33 +1058,37 @@ onBeforeUnmount(() => {
       @current-change="load"
     /><el-drawer
       v-model="aggregationDetailDrawer"
-      :title="`汇总详情 · ${aggregationDetailRow?.name || ''} · ${aggregationDetailRow?.lottery || ''} ${aggregationDetailRow?.issue_no || ''}`"
+      :title="`汇总详情 · ${aggregationDetailRow?.play_type || ''} ${aggregationDetailRow?.position || ''}`"
       direction="rtl"
       size="min(1180px, 95vw)"
       ><div v-loading="aggregationDetailLoading" class="aggregation-detail">
-        <div class="aggregation-detail-toolbar">
-          <span>每个玩法列独立显示号码；蓝色为下注，红色为中奖可中金额</span>
-          <el-input v-model="aggregationNumberSearch" clearable placeholder="筛选号码" style="width:150px" @keyup.enter="loadAggregationDetails" @clear="loadAggregationDetails" />
-          <el-checkbox v-model="aggregationOnlyBet" @change="loadAggregationDetails">只看有下注</el-checkbox>
-          <el-button-group>
-            <el-button :type="aggregationDetailSort === 'amount' ? 'primary' : 'default'" @click="changeAggregationDetailSort('amount')">按下注金额</el-button>
-            <el-button :type="aggregationDetailSort === 'payout' ? 'primary' : 'default'" @click="changeAggregationDetailSort('payout')">按可中奖金额</el-button>
-            <el-button :type="aggregationDetailSort === 'actual' ? 'primary' : 'default'" @click="changeAggregationDetailSort('actual')">按实际中奖</el-button>
-          </el-button-group>
-        </div>
-        <div class="aggregation-detail-columns">
-          <section v-for="column in aggregationDetailColumns" :key="column.key" class="aggregation-detail-column">
-            <header><b>{{ column.title }}</b><span>赔率 {{ column.odds || '-' }} · 下注 ¥{{ column.amount }}</span></header>
-            <div class="aggregation-column-sort"><el-button size="small" :type="aggregationColumnState[column.key]?.sort === 'amount' ? 'primary' : 'default'" @click="loadAggregationColumn(column, 1, 'amount')">下注金额</el-button><el-button size="small" :type="aggregationColumnState[column.key]?.sort === 'payout' ? 'primary' : 'default'" @click="loadAggregationColumn(column, 1, 'payout')">可中奖</el-button><el-button size="small" :type="aggregationColumnState[column.key]?.sort === 'actual' ? 'primary' : 'default'" @click="loadAggregationColumn(column, 1, 'actual')">实际中奖</el-button></div>
-            <div v-loading="aggregationColumnState[column.key]?.loading" class="aggregation-column-items">
-              <div v-for="item in column.items" :key="item.number" class="aggregation-detail-number">
-                <strong>{{ item.number }}</strong><span class="bet-money">下注 ¥{{ item.amount }}</span><span class="win-money">可中 ¥{{ item.payout ?? '-' }}</span>
-              </div>
-            </div>
-            <small v-if="column.total && column.total > (column.page_size || 40)">共 {{ column.total }} 个号码，当前第 {{ column.page }} 页</small>
-            <el-pagination v-if="Number(column.total || 0) > Number(column.page_size || 40)" :current-page="column.page || 1" :page-size="column.page_size || 40" :total="column.total" :page-sizes="[40]" layout="total, prev, pager, next" class="aggregation-pagination" @current-change="(page: number) => loadAggregationColumn(column, page)" />
-          </section>
-        </div>
+        <h3>会员汇总（{{ aggregationMembers.length }} 个会员）</h3>
+        <el-table :data="aggregationMembers" border stripe max-height="300">
+          <el-table-column prop="site_name" label="所属站点" min-width="150" />
+          <el-table-column prop="username" label="会员账号" min-width="130" />
+          <el-table-column prop="display_name" label="姓名" min-width="110"><template #default="scope">{{ scope.row.display_name || '-' }}</template></el-table-column>
+          <el-table-column prop="occurrence_count" label="出现次数" width="95" />
+          <el-table-column prop="order_count" label="注单数" width="85" />
+          <el-table-column prop="bet_amount" label="下注金额" width="120" />
+          <el-table-column prop="win_amount" label="中奖金额" width="120" />
+          <el-table-column prop="potential_win_amount" label="预中奖金额" width="130" />
+        </el-table>
+        <h3>具体下注明细（{{ aggregationOrdersTotal }} 条）</h3>
+        <el-table :data="aggregationOrders" border stripe max-height="430">
+          <el-table-column prop="record_id" label="注单编号" width="105" />
+          <el-table-column prop="site_name" label="站点" min-width="130" />
+          <el-table-column prop="username" label="会员" width="110" />
+          <el-table-column prop="placed_at" label="下注时间" width="165" />
+          <el-table-column prop="play_type" label="玩法" width="120" />
+          <el-table-column prop="position" label="位置" width="90"><template #default="scope">{{ scope.row.position || '-' }}</template></el-table-column>
+          <el-table-column prop="selection" label="标准号码" min-width="130" />
+          <el-table-column prop="amount" label="金额" width="95" />
+          <el-table-column prop="odds" label="赔率" width="95" />
+          <el-table-column prop="win_amount" label="中奖金额" width="115" />
+          <el-table-column prop="potential_win_amount" label="预中奖" width="115" />
+          <el-table-column prop="source_text" label="原始行" min-width="220" show-overflow-tooltip />
+        </el-table>
+        <el-pagination v-model:current-page="aggregationDetailPage" v-model:page-size="aggregationDetailPageSize" :total="aggregationOrdersTotal" :page-sizes="[20, 30, 50, 100]" layout="total, sizes, prev, pager, next" class="aggregation-pagination" @current-change="loadAggregationDetails" @size-change="aggregationDetailPage = 1; loadAggregationDetails()" />
       </div></el-drawer
     ><el-drawer
       v-model="auditDetailVisible"
@@ -1389,18 +1367,6 @@ onBeforeUnmount(() => {
 .aggregation-number-item:last-child { border-bottom: 0; }
 .aggregation-number-item b { color: #1f2937; font-variant-numeric: tabular-nums; }
 .aggregation-number-item span { color: #64748b; font-size: 12px; white-space: nowrap; }
-.aggregation-detail-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:14px; color:#64748b; font-size:13px; }
-.aggregation-detail-columns { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:12px; max-height:calc(100vh - 260px); overflow:auto; padding:2px; }
-.aggregation-detail-column { border:1px solid #e5eaf2; border-radius:8px; background:#fff; overflow:hidden; }
-.aggregation-detail-column header { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:10px 12px; background:#f8fafc; border-bottom:1px solid #e5eaf2; }
-.aggregation-detail-column header span { color:#64748b; font-size:12px; }
-.aggregation-detail-number { display:grid; grid-template-columns:1fr auto auto; gap:12px; align-items:center; padding:6px 12px; border-bottom:1px dotted #edf0f5; font-variant-numeric:tabular-nums; }
-.aggregation-detail-number strong { color:#1f2937; letter-spacing:.08em; }
-.bet-money { color:#2563eb; font-size:12px; }
-.win-money { color:#dc2626; font-size:12px; }
-.aggregation-detail-column small { display:block; padding:8px 12px; color:#94a3b8; }
-.aggregation-column-sort { display:flex; gap:4px; padding:8px 10px 4px; }
-.aggregation-column-items { max-height:420px; overflow:auto; }
 .risk-number { color: #dc2626; font-size: 17px; letter-spacing: 2px; font-variant-numeric: tabular-nums; }
 .toolbar-action-group { display: flex; flex-direction: column; align-items: flex-end; gap: 7px; flex: 0 0 auto; }
 .toolbar-action-buttons { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }

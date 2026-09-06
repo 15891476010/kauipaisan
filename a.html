@@ -1,0 +1,37 @@
+#### 用户端nginx 伪静态配置文件
+
+location = / {
+    try_files /index.html =404;
+}
+
+location = /device-select.html {
+    return 301 /;
+}
+
+location = /pc {
+    return 301 /pc/;
+}
+
+location = /pc/index.html {
+    alias /zhang/kuaipaisan/apps/user-pc/dist/index.html;
+    add_header Cache-Control "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0" always;
+}
+
+location ^~ /pc/ {
+    alias /zhang/kuaipaisan/apps/user-pc/dist/;
+    try_files $uri $uri/ /pc/index.html;
+}
+
+location = /h5 {
+    return 301 /h5/;
+}
+
+location = /h5/index.html {
+    alias /zhang/kuaipaisan/apps/user-h5/dist/index.html;
+    add_header Cache-Control "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0" always;
+}
+
+location ^~ /h5/ {
+    alias /zhang/kuaipaisan/apps/user-h5/dist/;
+    try_files $uri $uri/ /h5/index.html;
+}

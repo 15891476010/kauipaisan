@@ -17,7 +17,11 @@ final class BetSettlement
         $draw = $this->digits($history);
         if ($draw === '') return ['records' => 0, 'won' => 0];
 
-        $records = Db::name('bet_records')->where('issue_no', $issue)->where('status', 'pending')->select()->toArray();
+        $recordQuery = Db::name('bet_records')->where('issue_no', $issue)->where('status', 'pending');
+        // 福彩3D and 排列三 can share an issue number; never settle one
+        // lottery against the other lottery's draw.
+        if ($lotteryName !== '') $recordQuery->where('lottery_name', $lotteryName);
+        $records = $recordQuery->select()->toArray();
         $processed = 0; $won = 0;
         foreach ($records as $record) {
             $settled=Db::transaction(function () use ($record, $lotteryId, $lotteryName, $draw): ?array {
@@ -46,17 +50,6 @@ final class BetSettlement
                         if($fallback!=='') $numbers=[$fallback];
                     }
                     if($numbers===[])throw new \RuntimeException('注单明细 #'.(int)$detail['id'].' 没有可结算的玩法表达式，已停止整单结算');
-                    // Provider continuation tickets used to persist a 组三/组六
-                    // catalogue selection as all of its expanded combinations.
-                    // Restore the original compact package before matching so
-                    // one package stake receives one package payout. Example:
-                    // `123 组三三码 10元` must settle as `三123` at 10×50,
-                    // not as six unrelated 1.67-yuan rows.
-                    $numbers=$this->compactLegacyGroupPackage(
-                        $numbers,
-                        (string)($lockedRecord['source_text']??''),
-                        (string)($stop['play_type']??'')
-                    );
                     [$odds,$legacyFallback]=$this->lockedOdds($detail,$stop,$lotteryId,count($numbers));
                     $payout=$this->detailPayout($numbers,$draw,(string)($detail['source_text']??''),(float)$detail['amount'],$odds);
                     $win=$payout['win'];$totalWin+=$win;$totalRebate+=(float)($detail['rebate']??0);
@@ -109,38 +102,6 @@ final class BetSettlement
             if($settled!==null){$processed++;if((float)$settled['win']>0)$won++;}
         }
         return ['records' => $processed, 'won' => $won];
-    }
-
-    /**
-     * @param array<int,string> $numbers
-     * @return array<int,string>
-     */
-    private function compactLegacyGroupPackage(array $numbers,string $recordSource,string $playType): array
-    {
-        if(count($numbers)<2||$recordSource==='')return $numbers;
-        if(preg_match('/^(组三|组六)([一二两三四五六七八九])码$/u',trim($playType),$play)!==1)return $numbers;
-        $lengths=['一'=>1,'二'=>2,'两'=>2,'三'=>3,'四'=>4,'五'=>5,'六'=>6,'七'=>7,'八'=>8,'九'=>9];
-        $selectionLength=$lengths[$play[2]]??0;
-        if($selectionLength<2)return $numbers;
-        $requiredUnique=$play[1]==='组三'?2:3;
-        $expandedDigits=[];
-        foreach($numbers as $number){
-            if(preg_match('/^\d{3}$/',$number)!==1)return $numbers;
-            $digits=array_values(array_unique(str_split($number)));
-            if(count($digits)!==$requiredUnique)return $numbers;
-            foreach($digits as $digit)$expandedDigits[$digit]=true;
-        }
-        if(count($expandedDigits)!==$selectionLength)return $numbers;
-        $matchCount=preg_match_all('/(?<!\d)(\d{'.$selectionLength.'})(?!\d)/u',$recordSource,$matches);
-        if($matchCount===false||$matchCount<1)return $numbers;
-        foreach((array)($matches[1]??[]) as $candidate){
-            $selected=array_values(array_unique(str_split((string)$candidate)));
-            if(count($selected)!==$selectionLength)continue;
-            if(array_diff($selected,array_keys($expandedDigits))===[]&&array_diff(array_keys($expandedDigits),$selected)===[]){
-                return [($play[1]==='组三'?'三':'六').$candidate];
-            }
-        }
-        return $numbers;
     }
 
     private function syncSubmissionSummary(int $submissionId): void
@@ -267,11 +228,16 @@ final class BetSettlement
     }
 
     /**
-     * Expanded group-three/group-six tokens are the outcomes of one package
-     * bet, not independent stakes. The parent detail therefore keeps the
-     * package amount and locked package odds. We still divide the amount over
-     * its tokens for matching, then multiply the odds by the token count so a
-     * single real combination pays exactly what the legacy 000 package paid.
+     * Calculate a detail payout from the actual matching tokens.
+     *
+     * `amount` is the total stake recorded for the detail, so every persisted
+     * number receives an equal unit stake. Only matching numbers are paid:
+     *
+     *     matched count × (detail amount ÷ number count) × locked odds
+     *
+     * In particular, a multi-number group/package must never turn the odds
+     * into `odds × number count`; doing that cancels the per-number split and
+     * incorrectly pays the whole detail amount for each hit.
      *
      * @param array<int,string> $numbers
      * @return array{matched:int,stake:float,effective_odds:float,win:float}
@@ -299,7 +265,9 @@ final class BetSettlement
         $stake=$positionCount>1&&$numberCount===1?$amount/$positionCount:$amount/$numberCount;
         $matched=0;
         foreach($numbers as $number)if($this->matches($number,$draw,$source))$matched++;
-        $effectiveOdds=$this->isExpandedGroupPackage($numbers,$source)?$packageOdds*$numberCount:$packageOdds;
+        // The locked odds apply to one matching number group. Never scale the
+        // odds by the number of selected combinations.
+        $effectiveOdds=$packageOdds;
         return ['matched'=>$matched,'stake'=>$stake,'effective_odds'=>$effectiveOdds,'win'=>$matched*$stake*$effectiveOdds];
     }
 
@@ -315,19 +283,6 @@ final class BetSettlement
         $total=1;
         foreach ($counts as $count) $total*=$count;
         return $total;
-    }
-
-    /** @param array<int,string> $numbers */
-    private function isExpandedGroupPackage(array $numbers,string $source): bool
-    {
-        if(count($numbers)<2||!preg_match('/(?<!\d)([0-9]{1,10})\s*(组三|组六)[一二两三四五六七八九1-9]码/u',$source,$catalog))return false;
-        $selected=array_values(array_unique(str_split($catalog[1])));
-        $requiredUnique=$catalog[2]==='组三'?2:3;
-        foreach($numbers as $number){
-            $digits=array_values(array_unique(str_split($number)));
-            if(strlen($number)!==3||count($digits)!==$requiredUnique||array_diff($digits,$selected)!==[])return false;
-        }
-        return true;
     }
 
     private function matches(string $number, string $draw, string $source): bool

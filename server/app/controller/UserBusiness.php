@@ -1279,9 +1279,9 @@ final class UserBusiness
     }
 
     /** Keep a reachable provider response authoritative, including errors. */
-    private function providerPreviewLines(array $result, string $lottery): array
+    public function providerPreviewLines(array $result, string $lottery): array
     {
-        $sourceLines=$this->thirdPartyLines($result,$lottery); $lines=[];
+        $sourceLines=$this->thirdPartyLines($result,$lottery); $lines=[]; $rows=(array)($result['data']['rl']??[]);
         foreach ($sourceLines as $sourceLine) {
             // provider_parts/provider_place_parts are private placement
             // metadata.  Never expand them in the user-facing preview.
@@ -1290,6 +1290,21 @@ final class UserBusiness
         $code=ThirdPartyQuickEntryUtils::responseCode($result);
         if ($code===200 && $lines!==[]) return $lines;
         if ($lines!==[]) return $lines;
+        // Continuation/aggregate responses may contain only the provider's
+        // authoritative `ij` summary row. Keep it as one compact expression
+        // instead of treating a valid ticket as an unrecognized ticket.
+        foreach ($rows as $row) {
+            if (!is_array($row) || ($row['ij']??false)!==true || (int)($row['isSuccess']??0)!==1) continue;
+            $raw=trim((string)($row['ftxt']??$row['txt']??$row['ltxt']??''));
+            if ($raw==='') continue;
+            return [[
+                'id'=>1,'raw_text'=>$raw,'input_text'=>$raw,'parse_text'=>$raw,'status'=>'success','reason'=>null,
+                'number_text'=>$raw,'display_number_text'=>$raw,'expanded_number_text'=>$raw,
+                'category'=>$lottery==='福彩3D'?'福':'体','play_type'=>'','settlement_text'=>$raw,
+                'amount'=>number_format((float)($row['ta']??0),2,'.',''),'count'=>(int)($row['tc']??0),
+                'stake_count'=>(int)($row['tc']??0),'code_count'=>(int)($row['tc']??0),
+            ]];
+        }
         return [[
             'id'=>1,'raw_text'=>'','input_text'=>'','parse_text'=>'','status'=>'failed',
             'reason'=>implode('；',$this->thirdPartyMessages($result)),'reasons'=>$this->thirdPartyMessages($result),'number_text'=>'','display_number_text'=>'',

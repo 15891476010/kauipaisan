@@ -66,7 +66,7 @@ final class AgentBusiness
     /** Main order number: YYMMDDHHMMSS plus the two-digit submission suffix. */
     private function orderNumber(array $row): string
     {
-        $explicit=trim((string)($row['submission_order_no']??$row['order_no']??''));
+        $explicit=trim((string)($row['external_order_no']??$row['submission_order_no']??$row['order_no']??''));
         if ($explicit!=='') return $explicit;
         $parent=(int)($row['submission_id']??0);
         if ($parent<1) $parent=(int)($row['bet_record_id']??$row['id']??0);
@@ -191,7 +191,7 @@ final class AgentBusiness
         $total=(int)($summary['total']??0);
         [$page,$size]=$this->page($request);
         $sort=(string)$request->param('sort','desc')==='asc'?'asc':'desc';
-        $rows=$query->field('d.id,d.bet_record_id,r.submission_id,d.board_code,d.issue_no,d.number_text,d.category,d.amount,d.odds,d.win_amount,d.rebate,d.status,d.placed_at,d.source_text,u.username,COALESCE(s.play_type,d.category) play_type,s.lottery,r.source_text record_source')
+        $rows=$query->field('d.id,d.bet_record_id,r.submission_id,r.external_order_no,d.external_order_no,d.board_code,d.issue_no,d.number_text,d.category,d.amount,d.odds,d.win_amount,d.rebate,d.status,d.placed_at,d.source_text,u.username,COALESCE(s.play_type,d.category) play_type,s.lottery,r.source_text record_source')
             ->order('d.placed_at',$sort)->order('d.id',$sort)->page($page,$size)->select()->toArray();
         foreach ($rows as &$row) {
             $amount=(float)$row['amount']; $rebate=(float)$row['rebate']; $win=(float)$row['win_amount'];
@@ -271,7 +271,7 @@ final class AgentBusiness
         $query->where('r.board_code',$this->boardCode($request));
         $total=(clone $query)->count();
         [$page,$size]=$this->page($request);
-        $rows=$query->field('r.id,r.submission_id,r.board_code,r.issue_no,r.source_text,r.formatted_text,r.bet_count,r.amount,r.win_amount,r.status,r.sealed,r.placed_at,u.username')
+        $rows=$query->field('r.id,r.submission_id,r.external_order_no,r.board_code,r.issue_no,r.source_text,r.formatted_text,r.bet_count,r.amount,r.win_amount,r.status,r.sealed,r.placed_at,u.username')
             ->order('r.placed_at','desc')->order('r.id','desc')->page($page,$size)->select()->toArray();
         $ids=array_map('intval',array_column($rows,'id')); $wins=[];
         if ($ids) {

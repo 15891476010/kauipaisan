@@ -172,7 +172,40 @@ final class AgentImportAccountSync
     public static function rollback(int $batchId, int $tenantId): array
     {
         $records=Db::name('agent_import_records')->where('batch_id',$batchId)->order('id desc')->select()->toArray();
-        $removed=['accounts'=>0,'members'=>0,'nodes'=>0];
+        $removed=['accounts'=>0,'members'=>0,'nodes'=>0,'bet_records'=>0,'bet_details'=>0];
+        // Overview sync records are identified by a deterministic fingerprint
+        // (site_id + external bli). Remove only rows belonging to this batch.
+        $batch=Db::name('agent_import_batches')->where('id',$batchId)->find();
+        if($batch){
+            $mappedIds=Db::name('agent_import_records')->where('batch_id',$batchId)->where('entity_type','imported_bet')->where('action','created')->column('local_id');
+            foreach(array_chunk(array_values(array_unique(array_map('intval',$mappedIds))),500) as $idChunk){
+                $removed['bet_details']+=(int)Db::name('bet_details')->whereIn('bet_record_id',$idChunk)->delete();
+                $removed['bet_records']+=(int)Db::name('bet_records')->whereIn('id',$idChunk)->delete();
+            }
+            $overview=Db::name('agent_import_records')->where('batch_id',$batchId)->where('entity_type','report_overview')->select()->toArray();
+            $fingerprints=[];
+            foreach($overview as $snapshot){
+                $body=json_decode((string)($snapshot['payload']??''),true);
+                $rows=$body['response']['data']['rl']??[];
+                if(!is_array($rows))continue;
+                foreach($rows as $source){
+                    if(!is_array($source))continue;
+                    $external=trim((string)($source['bli']??''));
+                    if($external!=='')$fingerprints[hash('sha256','agent-import|'.(int)$batch['site_id'].'|'.$external)]=true;
+                }
+            }
+            $recordIds=[];
+            foreach(array_chunk(array_keys($fingerprints),500) as $fpChunk){
+                $ids=Db::name('bet_records')->where('site_id',(int)$batch['site_id'])->whereIn('submission_fingerprint',$fpChunk)->column('id');
+                foreach($ids as $id)$recordIds[]=(int)$id;
+            }
+            // Chunked bulk deletes avoid one SQL request per imported order,
+            // which previously caused the HTTP rollback request to time out.
+            foreach(array_chunk(array_values(array_unique($recordIds)),500) as $idChunk){
+                $removed['bet_details']+=(int)Db::name('bet_details')->whereIn('bet_record_id',$idChunk)->delete();
+                $removed['bet_records']+=(int)Db::name('bet_records')->whereIn('id',$idChunk)->delete();
+            }
+        }
         foreach($records as $record){
             $id=(int)($record['local_id']??0); if($id<1) continue;
             $action=(string)$record['action'];

@@ -41,6 +41,80 @@ export const listResource = (
     `/admin/${endpoint(resource)}`,
     { params },
   );
+export type BetAggregationMode = "play";
+export type BetAggregationRow = {
+  group_id: string;
+  lottery: string;
+  issue_no: string;
+  play_type?: string;
+  position?: string;
+  selection?: string;
+  outcome?: string;
+  occurrence_count: number;
+  order_count: number;
+  member_count: number;
+  frequency_rate?: number;
+  bet_amount: string;
+  potential_win_amount: string;
+  actual_win_amount?: string;
+  max_amount?: string;
+  max_win_amount?: string;
+  summary_kind?: string;
+  summary_odds?: string;
+  numbers?: Array<{
+    selection: string;
+    amount: string;
+    win_amount: string;
+    potential_win_amount: string;
+    odds: string;
+    occurrence_count: number;
+  }>;
+};
+export type BetAggregationMember = {
+  site_id: number;
+  user_id: number;
+  site_name: string;
+  username: string;
+  display_name?: string;
+  occurrence_count: number;
+  order_count: number;
+  bet_amount: string;
+  potential_win_amount: string;
+  win_amount?: string;
+};
+export type BetAggregationOrder = {
+  record_id: number;
+  detail_id: number;
+  site_name: string;
+  username: string;
+  placed_at: string;
+  lottery: string;
+  issue_no: string;
+  play_type: string;
+  position: string;
+  selection: string;
+  amount: string;
+  odds: string;
+  potential_win_amount: string;
+  win_amount?: string;
+  source_text: string;
+};
+export const getBetAggregation = (params: Record<string, unknown>) =>
+  http.get<never, Envelope<{
+    list: BetAggregationRow[];
+    total: number;
+    source_item_count: number;
+    unmapped_item_count: number;
+}>>("/admin/bet-records/aggregation", { params });
+export const getBetAggregationDetails = (params: Record<string, unknown>) =>
+  http.get<never, Envelope<{
+    members: BetAggregationMember[];
+    member_total: number;
+    orders: BetAggregationOrder[];
+    orders_total: number;
+    page: number;
+    page_size: number;
+  }>>("/admin/bet-records/aggregation-details", { params });
 export const getAuditLog = (id: number) =>
   http.get<never, Envelope<Record<string, unknown>>>(`/admin/audit-logs/${id}`);
 export const clearAuditLogs = () =>
@@ -117,7 +191,6 @@ export const updateBetDetail = (
   },
 ) => http.put<never, Envelope<null>>(`/admin/bet-details/${id}`, payload);
 export type BatchBetNumber = {
-  record_source_text?: string;
   key: string;
   record_id: number;
   detail_id: number;
@@ -159,9 +232,8 @@ export const getBatchBetOptions = (params?: { lottery_id?: number; lottery?: str
 export const replaceBatchBetNumbers = (payload: {
   lottery_id: number;
   issue_no: string;
-  records?: Array<{ record_id: number; source_text: string }>;
-  selections?: Array<{ detail_id: number; number_index: number }>;
-  replacements?: { hundreds: string; tens: string; units: string };
+  selections: Array<{ detail_id: number; number_index: number }>;
+  replacements: { hundreds: string; tens: string; units: string };
 }) =>
   http.put<never, Envelope<{ changed: number }>>(
     "/admin/bet-details/batch-replace",
@@ -723,18 +795,6 @@ export const testThirdPartyQuickEntryConfig = (payload?: { site_id?: number; tex
   http.post<never, Envelope<{ code: number; total_amount: number | string | null; total_count: number | string | null; account?: { id: string; username: string; ak: string } | null; result: Record<string, unknown> }>>('/admin/system-settings/third-party-quick-entry/test', payload, { timeout: 45000 });
 export const loginThirdPartyQuickEntryAccount = (accountId: string, siteId?: number) =>
   http.post<never, Envelope<{ id: string; username: string; ak: string; ak_expires_at: string; duration_ms: number; attempts: number }>>('/admin/system-settings/third-party-quick-entry/accounts/login', { account_id: accountId, ...(siteId ? { site_id: siteId } : {}) }, { timeout: 45000 });
-export type AgentImportProfile = { id?: number; site_id: number; name: string; base_url: string; username: string; password?: string; enabled?: number; has_password?: boolean; last_probe_at?: string; last_probe_status?: string; last_probe_error?: string };
-export const listAgentImportProfiles = (site_id: number) => http.get<never, Envelope<{ list: AgentImportProfile[] }>>('/admin/agent-import/profiles', { params: { site_id } });
-export const saveAgentImportProfile = (payload: AgentImportProfile) => http.post<never, Envelope<AgentImportProfile>>('/admin/agent-import/profiles', payload);
-export const probeAgentImport = (profile_id: number) => http.post<never, Envelope<{ profile_id: number; calls: Array<Record<string, unknown>> }>>('/admin/agent-import/probe', { profile_id }, { timeout: 60000 });
-export type AgentImportBatch = { id: number; site_id: number; profile_id: number; target_organization_id: number; from_date: string; to_date: string; types: string[] | null; status: string; external_counts?: Record<string, unknown> | null; created_counts?: Record<string, unknown> | null; created_credentials?: AgentImportCredential[] | null; error?: string | null; };
-export const listAgentImportBatches = (site_id: number) => http.get<never, Envelope<{ list: AgentImportBatch[] }>>('/admin/agent-import/batches', { params: { site_id } });
-export type AgentImportCredential = { type: 'agent' | 'member'; username: string; initial_password: string; node_id?: number; user_id?: number };
-export const createAgentImportBatch = (payload: Partial<AgentImportBatch> & { site_id: number; profile_id: number; target_organization_id: number; from_date: string; to_date: string }) => http.post<never, Envelope<{ id: number; counts?: Record<string, unknown>; created_counts?: Record<string, unknown>; credentials?: AgentImportCredential[] }>>('/admin/agent-import/batches', payload);
-export const rollbackAgentImportBatch = (batch_id: number) => http.post<never, Envelope<{ batch_id: number }>>('/admin/agent-import/rollback', { batch_id });
-export const getAgentImportCredentials = (batch_id: number) => http.get<never, Envelope<{ batch_id: number; credentials: AgentImportCredential[]; accounts?: Array<{ external_id:string; parent_external_id:string; username:string; type:string; level:number; status:string; initial_password?:string|null }> }>>(`/admin/agent-import/batches/${batch_id}/credentials`);
-export type AgentImportLog = { id: number; created_at: string; level: string; message: string; context?: Record<string, unknown> };
-export const getAgentImportLogs = (batch_id: number, after_id = 0) => http.get<never, Envelope<{ batch_id: number; status: string; list: AgentImportLog[] }>>(`/admin/agent-import/batches/${batch_id}/logs`, { params: { after_id } });
 export type LotteryConfigTest = {
   base_url: string;
   url: string;
@@ -1051,55 +1111,3 @@ export const getRobotLogs = (id: number, params?: { after_id?: number; limit?: n
   http.get<never, Envelope<{ robot_id: number; list: RobotRunLog[]; last_id: number; limit: number }>>(
     `/admin/robots/${id}/logs`, { params },
   );
-
-export type BetAggregationColumn = {
-  key: string;
-  title: string;
-  odds: string | null;
-  amount: string;
-  items: Array<{ number: string; amount: string; payout: string | null; actual_win_amount: string | null; count: number }>;
-  total?: number;
-  page?: number;
-  page_size?: number;
-};
-export type BetAggregationRow = {
-  key: string;
-  lottery: string;
-  issue_no: string;
-  play_type?: string;
-  position?: string;
-  selection?: string;
-  outcome?: string;
-  occurrence_count: number;
-  order_count: number;
-  member_count: number;
-  frequency_rate?: number;
-  bet_amount?: string;
-  potential_win_amount?: string;
-  actual_win_amount?: string | null;
-  max_amount?: string;
-  max_win_amount?: string;
-  summary_kind?: string;
-  summary_odds?: string;
-  numbers?: Array<{ key: string; title: string; amount: string; odds: string | null }>;
-  family?: string;
-  name?: string;
-  amount?: string;
-  max_cell_amount?: string;
-  max_payout?: string;
-  column_count?: number;
-  columns?: BetAggregationColumn[];
-};
-export const getBetAggregation = (params: Record<string, unknown>) =>
-  http.get<never, Envelope<{
-    list: BetAggregationRow[];
-    total: number;
-    source_item_count: number;
-    unmapped_item_count: number;
-}>>("/admin/bet-records/aggregation", { params });
-export const getBetAggregationDetails = (params: Record<string, unknown>) =>
-  http.get<never, Envelope<{
-    family: string;
-    columns: BetAggregationColumn[];
-    source_item_count: number;
-  }>>("/admin/bet-records/aggregation-details", { params });
