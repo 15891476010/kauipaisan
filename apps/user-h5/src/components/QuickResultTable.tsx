@@ -349,6 +349,13 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
     return () => observer.disconnect();
   }, [displayGroups, draftTexts, editingGroupKey]);
   const numberTokens = (line: QuickEntryLine) => {
+    if (/(?:胆拖|拖)/u.test(String(line.play_type || ""))) {
+      const text = String(line.settlement_text || line.display_number_text || line.number_text || "");
+      const drag = text.match(/(?:[三六]\s*)?(\d{1,2})\s*拖\s*(\d{1,9})/u);
+      const isSix = String(line.play_type || "").startsWith("组六")
+        || /组六(?:胆拖|拖)/u.test(text);
+      if (drag) return [`${isSix ? "六" : "三"}${drag[1]}拖${drag[2]}`];
+    }
     // Multi-code plays such as “组六六码/组三六码” are represented internally
     // by their expanded settlement combinations, while the detail dialog
     // should show the original six-digit selection as one item.

@@ -372,11 +372,25 @@ final class UserBusiness
         $value=preg_replace('/^0(?=\d{2}(?:飞)?$)/u','',$value)??$value;
         return preg_replace('/飞$/u','',$value)??$value;
     }
-    private function detailPlayLabel(mixed $playType,mixed $category,mixed $source=''): string
+    private function detailPlayLabel(mixed $playType,mixed $category,mixed $source='',?string $originalSource=null): string
     {
         $value=trim((string)($playType?:$category));
         $sourceText=(string)$source;
         if ($value==='') return '';
+        // Ordinary group bets keep the user's wording. Generated settlement
+        // text names the odds family, but is not evidence of an explicit UI label.
+        // Specialized multi-code/package/drag labels continue through their own paths.
+        if ($originalSource!==null && in_array($value,['组','组选','组三','组六','组3','组6'],true)) {
+            $explicitThree=preg_match('/(?:组三|组3(?!\d))/u',$originalSource)===1;
+            $explicitSix=preg_match('/(?:组六|组6(?!\d))/u',$originalSource)===1;
+            if (in_array($value,['组三','组3'],true) && $explicitThree) return '组3';
+            if (in_array($value,['组六','组6'],true) && $explicitSix) return '组6';
+            if (in_array($value,['组','组选'],true)) {
+                if ($explicitThree && !$explicitSix) return '组3';
+                if ($explicitSix && !$explicitThree) return '组6';
+            }
+            return '组';
+        }
         if (str_contains($value,'组三')&&str_contains($value,'全包')) return '组三全包';
         if (str_contains($value,'组六')&&str_contains($value,'全包')) return '组六全包';
         if (str_contains($value,'豹子')&&str_contains($value,'全包')) return '豹子全包';
@@ -735,7 +749,7 @@ final class UserBusiness
             $lookupSource=$packageLabel!==''?$packageLabel:trim($source.' '.$rowPlayType);
             if($lookupSource==='')$lookupSource=$rowPlayType;
             if($displayOddsBase===null){$currentOdds=$this->lineOdds($s,(string)($row['lottery']??''),['settlement_text'=>$lookupSource,'board_code'=>(string)($row['board_code']??'A')]);if($currentOdds!==[]&&array_key_exists('odds',$currentOdds)&&is_numeric($currentOdds['odds']))$displayOddsBase=(float)$currentOdds['odds'];}$displayOdds=$displayOddsBase;$oddsText=$displayOdds===null?'-':rtrim(rtrim(number_format($displayOdds,3,'.',''),'0'),'.');
-            foreach($tokens as $index=>$token){$amount=(float)$amounts[$index];$win=(float)$wins[$index];$rebate=(float)$rebates[$index];$offlineRebate=(float)$offlineRebates[$index];$tokenStatus=(string)($row['status']??$row['record_status']??'pending');if($resolved&&$tokenStatus==='won')$tokenStatus=$win>0?'won':'unwon';$groupFirst=$index===0;$expanded[]=['id'=>(int)$row['id'],'row_key'=>(int)$row['id'].'-'.$index,'detail_group_id'=>(int)$row['id'],'detail_group_index'=>$index,'detail_group_size'=>$count,'group_first'=>$groupFirst,'is_group_first'=>$groupFirst,'show_text_button'=>$groupFirst,'bet_record_id'=>(int)($row['bet_record_id']??0),'submission_id'=>(int)($row['submission_id']??0)?:null,'order_no'=>$orderNo,'issue_no'=>(string)$row['issue_no'],'number_text'=>$token,'stored_number_text'=>$storedNumberText,'category'=>(string)($row['category']??''),'play_type'=>$packageLabel!==''?$packageLabel:(string)($row['play_type']??''),'play_label'=>$packageLabel!==''?$packageLabel:$this->detailPlayLabel($row['play_type']??'',$row['category']??'',$originalSource.' '.$source),'lottery'=>(string)($row['lottery']??''),'amount'=>$amounts[$index],'odds'=>$oddsText,'win_amount'=>$wins[$index],'is_winning_number'=>in_array($index,$winningIndexes,true),'win_projection_resolved'=>$resolved,'rebate'=>$rebates[$index],'offline_rebate'=>$this->detailMoney($offlineRebate),'profit'=>$this->detailMoney($win-$amount+$rebate+$offlineRebate),'status'=>$tokenStatus,'placed_at'=>(string)$row['placed_at'],'source_text'=>$originalSource,'record_source'=>$recordSource,'original_source_text'=>$originalSource,'parsed_source_text'=>$parsedText];}
+            foreach($tokens as $index=>$token){$amount=(float)$amounts[$index];$win=(float)$wins[$index];$rebate=(float)$rebates[$index];$offlineRebate=(float)$offlineRebates[$index];$tokenStatus=(string)($row['status']??$row['record_status']??'pending');if($resolved&&$tokenStatus==='won')$tokenStatus=$win>0?'won':'unwon';$groupFirst=$index===0;$expanded[]=['id'=>(int)$row['id'],'row_key'=>(int)$row['id'].'-'.$index,'detail_group_id'=>(int)$row['id'],'detail_group_index'=>$index,'detail_group_size'=>$count,'group_first'=>$groupFirst,'is_group_first'=>$groupFirst,'show_text_button'=>$groupFirst,'bet_record_id'=>(int)($row['bet_record_id']??0),'submission_id'=>(int)($row['submission_id']??0)?:null,'order_no'=>$orderNo,'issue_no'=>(string)$row['issue_no'],'number_text'=>$token,'stored_number_text'=>$storedNumberText,'category'=>(string)($row['category']??''),'play_type'=>$packageLabel!==''?$packageLabel:(string)($row['play_type']??''),'play_label'=>$packageLabel!==''?$packageLabel:$this->detailPlayLabel($row['play_type']??'',$row['category']??'',$originalSource.' '.$source,$recordSource!==''?$recordSource:$originalSource),'lottery'=>(string)($row['lottery']??''),'amount'=>$amounts[$index],'odds'=>$oddsText,'win_amount'=>$wins[$index],'is_winning_number'=>in_array($index,$winningIndexes,true),'win_projection_resolved'=>$resolved,'rebate'=>$rebates[$index],'offline_rebate'=>$this->detailMoney($offlineRebate),'profit'=>$this->detailMoney($win-$amount+$rebate+$offlineRebate),'status'=>$tokenStatus,'placed_at'=>(string)$row['placed_at'],'source_text'=>$originalSource,'record_source'=>$recordSource,'original_source_text'=>$originalSource,'parsed_source_text'=>$parsedText];}
         }
         // Display rows are deliberately kept at the persisted detail
         // boundary. Do not merge rows here: a direct/group pair, a 福/体

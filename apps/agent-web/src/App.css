@@ -7221,8 +7221,10 @@ body .ant-modal-confirm-info .ant-modal-confirm-icon { color:#006400; }
  * navigation and tables as desktop instead of a separate reflowed layout.
  */
 .agent-app {
+  --agent-canvas-width: 1320px;
+  position: relative;
   width: var(--agent-layout-width, 100%);
-  min-width: 1320px;
+  min-width: var(--agent-canvas-width);
   height: var(--agent-layout-height, 100vh);
   min-height: var(--agent-layout-height, 100vh);
   overflow-x: hidden;
@@ -7230,26 +7232,57 @@ body .ant-modal-confirm-info .ant-modal-confirm-icon { color:#006400; }
   zoom: var(--agent-scale, 1);
 }
 
+.agent-app .agent-header,
+.agent-app .agent-lottery-strip {
+  width: 100%;
+  min-width: var(--agent-canvas-width);
+  box-sizing: border-box;
+}
+
+.agent-app .agent-header {
+  overflow: visible;
+}
+
+.agent-app .agent-navigation {
+  min-width: 900px;
+  flex: 1 0 900px;
+  overflow: visible;
+}
+
 .agent-app .body.agent-body,
 .agent-app .agent-body main {
   min-height: calc(var(--agent-layout-height, 100vh) - 180px) !important;
 }
 
-/* The detail dialog uses the same 1500px canvas as desktop. OverviewPage
-   scales this canvas independently to the mobile viewport, outside the
-   already-scaled agent shell, so it is never scaled twice. */
-.overview-detail-modal {
-  width: 1500px !important;
-  max-width: none !important;
-  margin: 0 !important;
-  left: 50%;
-  transform-origin: top center;
-  will-change: transform;
+/*
+ * Ant Design portals normally use a viewport-sized fixed layer. Because the
+ * whole agent canvas is zoomed, using 100vw there applies the mobile width a
+ * second time and makes the dialog tiny and left aligned. Keep every portal
+ * inside the same 1320px design canvas so mask, centering and content receive
+ * exactly the same single scale as the page underneath.
+ */
+.agent-app > .ant-modal-root {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  min-width: var(--agent-canvas-width);
+  min-height: 100%;
+  pointer-events: none;
 }
-.overview-detail-modal .ant-modal-content {
-  width: 1500px;
-  max-width: none;
+
+.agent-app > .ant-modal-root .ant-modal-mask,
+.agent-app > .ant-modal-root .ant-modal-wrap {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  min-width: var(--agent-canvas-width);
+  height: 100%;
+  min-height: var(--agent-layout-height, 100vh);
+  pointer-events: auto;
 }
-.overview-detail-modal .overview-modal-table-scroll {
-  overflow: hidden;
+
+.agent-app .overview-detail-modal {
+  width: min(1500px, calc(100% - 64px)) !important;
+  max-width: calc(100% - 64px) !important;
+  margin-inline: auto;
 }

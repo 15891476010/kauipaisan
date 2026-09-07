@@ -218,6 +218,16 @@ export function QuickResultTable({ lines, sourceText: _sourceText, onChange, onC
     }
   });
   const numberTokens = (line: QuickEntryLine) => {
+    // A combined “1拖...组六组三” sentence is stored as two settlement
+    // legs. Keep the family marker on each leg so the detail dialog cannot
+    // collapse them into two identical generic rows.
+    if (/(?:胆拖|拖)/u.test(String(line.play_type || ""))) {
+      const text = String(line.settlement_text || line.display_number_text || line.number_text || "");
+      const drag = text.match(/(?:[三六]\s*)?(\d{1,2})\s*拖\s*(\d{1,9})/u);
+      const isSix = String(line.play_type || "").startsWith("组六")
+        || /组六(?:胆拖|拖)/u.test(text);
+      if (drag) return [`${isSix ? "六" : "三"}${drag[1]}拖${drag[2]}`];
+    }
     // Multi-code plays such as “组六六码/组三六码” are represented internally
     // by their expanded settlement combinations, while the detail dialog
     // should show the original six-digit selection as one item.
@@ -239,6 +249,8 @@ export function QuickResultTable({ lines, sourceText: _sourceText, onChange, onC
     value.length === 3 && /^\d{3}$/.test(value) ? value.split("").sort().join("") : value;
   const playLabel = (line: QuickEntryLine) => {
     if (line.play_type === "直") return "直选";
+    if (line.play_type?.startsWith("组三") && /胆拖/u.test(line.play_type)) return "组三胆拖";
+    if (line.play_type?.startsWith("组六") && /胆拖/u.test(line.play_type)) return "组六胆拖";
     if (line.play_type === "组" || line.play_type === "组三" || line.play_type === "组六") return "组选";
     if (line.play_type?.startsWith("和")) return "和值";
     if (line.play_type?.startsWith("跨")) return "跨度";

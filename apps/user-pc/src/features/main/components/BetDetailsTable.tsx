@@ -32,7 +32,7 @@ function displayNumber(row: BetDetail): string {
   if (/(?:复式|复试)/u.test(play)) {
     const digits = value.replace(/\s+/gu, "").match(/^[复六三]?(\d{3,10})$/u)?.[1]
       || source.match(/(?<!\d)(\d{3,10})\s*(?:复式|复试)/u)?.[1] || "";
-    return digits ? `复式 ${digits}` : "复式";
+    return digits ? `复 ${digits}` : "复";
   }
   const dragFamily = play.match(/(组六|组三)胆拖/u)?.[1];
   if (dragFamily) {
@@ -42,6 +42,9 @@ function displayNumber(row: BetDetail): string {
   }
   if (play.includes("双飞") || source.includes("对子")) {
     return value.replace(/^0(?=\d{2}(?:飞)?$)/, "").replace(/飞$/, "");
+  }
+  if (row.play_label === "组" && /^(?:组|组选|组三|组六|组3|组6)$/u.test(String(row.play_type || ""))) {
+    return value.replace(/^[三六]\s*/u, "").replace(/\s*(?:组三|组六|组选|组3|组6|组)$/u, "");
   }
   if (play.includes("组3") || play.includes("组6")) return value.replace(/^[三六]/u, "");
   // Lottery numbers are fixed-width expressions. Keep leading zeroes so

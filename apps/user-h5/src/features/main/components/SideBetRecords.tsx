@@ -199,8 +199,9 @@ export function SideBetRecords({
       if (/(组三|组3)/u.test(multiSource)) return "组三沾边赖";
     }
     if (/胆拖/u.test(multiSource)) {
-      if (/(组六|组6|六组)/u.test(multiSource)) return "组六胆拖";
-      if (/(组三|组3|三组)/u.test(multiSource)) return "组三胆拖";
+      // Parent wording can contain both families. Use this detail's family.
+      const family = groupFamily(detail);
+      if (family) return `${family}胆拖`;
     }
     const multiFamily = groupFamily(detail);
     const rowPlayType = String(detail.play_type || "").replace(/\s+/gu, "");
@@ -226,7 +227,7 @@ export function SideBetRecords({
     const isDantuo = /胆拖/u.test(context);
     const isPack = /(组三|组六|组3|组6)包/u.test(context);
     if (!isDantuo && !isPack) return "";
-    const kind = /(组六|组6)/u.test(context) ? "六" : "三";
+    const kind = (isDantuo ? /^(组六|组6)/u.test(play) : /(组六|组6)/u.test(context)) ? "六" : "三";
     if (isDantuo) {
       const match = combined.match(/胆?([0-9]+)拖([0-9]+)/u);
       if (match) return `${kind}${match[1]}拖${match[2]}`;

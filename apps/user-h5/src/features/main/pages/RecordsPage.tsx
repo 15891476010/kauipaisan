@@ -35,7 +35,13 @@ function detailPlayLabel(detail: BetDetail) {
     if (/组六|组6/u.test(source)) return "组六沾边赖";
     if (/组三|组3/u.test(source)) return "组三沾边赖";
   }
-  if (/胆拖/u.test(source)) return /组六|组6|六组/u.test(source) ? "组六胆拖" : /组三|组3|三组/u.test(source) ? "组三胆拖" : raw;
+  if (/胆拖/u.test(source)) {
+    for (const value of [detail.play_type, detail.play_label, detail.category, detail.number_text]) {
+      if (/组六|组6/u.test(String(value || ""))) return "组六胆拖";
+      if (/组三|组3/u.test(String(value || ""))) return "组三胆拖";
+    }
+    return raw;
+  }
   const rowFamily = /组六|组6/u.test(rowMeta) ? "组六" : /组三|组3/u.test(rowMeta) ? "组三" : "";
   const family = rowFamily || (/组六|组6/u.test(source) ? "组六" : /组三|组3/u.test(source) ? "组三" : "");
   const digits = String(detail.number_text || "").replace(/\s+/gu, "").match(/^[三六]?(\d{4,10})/u)?.[1] || source.match(/(?<!\d)\d{4,10}(?!\d)/u)?.[0];
@@ -117,7 +123,7 @@ function displayDetailNumber(detail: BetDetail, play: string) {
     return `${stickyFamily === "组六" ? "六赖" : "三赖"}${digits ? ` ${digits}` : ""}`;
   }
   if (isDantuo) {
-    const family = /(组六|组6)/u.test(context) ? "六" : "三";
+    const family = /^(组六|组6)/u.test(play) ? "六" : "三";
     const match = combined.match(/胆?([0-9]+)拖([0-9]+)/u);
     if (match) return `${family}${match[1]}拖${match[2]}`;
   }

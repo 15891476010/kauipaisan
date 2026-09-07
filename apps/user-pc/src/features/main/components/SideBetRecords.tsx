@@ -150,8 +150,9 @@ export function SideBetRecords({
       if (/(组三|组3)/u.test(stickySource)) return "组三沾边赖";
     }
     if (/胆拖/u.test(dragSource)) {
-      if (/(组六|组6|六组)/u.test(dragSource)) return "组六胆拖";
-      if (/(组三|组3|三组)/u.test(dragSource)) return "组三胆拖";
+      // Parent wording can contain both families. Use this detail's family.
+      const family = groupFamily(detail);
+      if (family) return `${family}胆拖`;
     }
     // 组三/组六的多码是一个业务玩法。码数属于选号内容，不应把
     // 表头拆成“组三五码/组三六码”等内部规格；参考站统一显示为
@@ -255,7 +256,7 @@ export function SideBetRecords({
     if (dragFamily) {
       const stored = (detail.number_text || "").replace(/\s+/gu, "");
       const countedDrag = stored.match(/^胆(\d{1,2})拖(\d{1,9})(?:(?:组三|组六|组3|组6)胆拖)?$/u);
-      if (countedDrag) return `${dragFamily === "组六" ? "六" : "三"} ${countedDrag[1]} 拖 ${countedDrag[2]}`;
+      if (countedDrag) return `${dragFamily === "组六" ? "六" : "三"}${countedDrag[1]}拖${countedDrag[2]}`;
       const drag = stored.match(/^[三六](\d{2,9})(?:(?:组三|组六|组3|组6)胆拖)?$/u)?.[1];
       if (drag) return `${dragFamily === "组六" ? "六" : "三"} 拖 ${drag}`;
     }
