@@ -18,6 +18,7 @@ final class BetSettlement
         if ($draw === '') return ['records' => 0, 'won' => 0];
 
         $recordQuery = Db::name('bet_records')->where('issue_no', $issue)->where('status', 'pending');
+        if (!empty($lottery['tenant_id'])) $recordQuery->where('tenant_id', (int)$lottery['tenant_id']);
         // 福彩3D and 排列三 can share an issue number; never settle one
         // lottery against the other lottery's draw.
         if ($lotteryName !== '') {
@@ -28,14 +29,14 @@ final class BetSettlement
             // the detail-level guard below then prevents cross-lottery
             // settlement when 福彩3D and 排列三 share an issue number.
             $recordQuery->whereRaw(
-                '(lottery_name = ? OR EXISTS (
+                '(lottery_name = ? OR ((lottery_name IS NULL OR lottery_name = \'\') AND EXISTS (
                     SELECT 1
                     FROM bet_details AS settlement_details
                     INNER JOIN user_stop_drops AS settlement_stops
                         ON settlement_stops.bet_detail_id = settlement_details.id
                     WHERE settlement_details.bet_record_id = bet_records.id
                       AND settlement_stops.lottery = ?
-                ))',
+                )))',
                 [$lotteryName, $lotteryName],
             );
         }
@@ -45,6 +46,7 @@ final class BetSettlement
             $settled=Db::transaction(function () use ($record, $lotteryId, $lotteryName, $draw): ?array {
                 $lockedRecord=Db::name('bet_records')->where('id',(int)$record['id'])->lock(true)->find();
                 if(!$lockedRecord || (string)$lockedRecord['status']!=='pending') return null;
+                if (trim((string)($lockedRecord['lottery_name'] ?? '')) !== '' && (string)$lockedRecord['lottery_name'] !== $lotteryName) return null;
                 $details=Db::name('bet_details')->where('bet_record_id',(int)$lockedRecord['id'])->lock(true)->select()->toArray();
                 if($details===[])return null;
                 $detailIds=array_map('intval',array_column($details,'id'));
@@ -53,7 +55,8 @@ final class BetSettlement
                 $totalWin=0.0;$totalRebate=0.0;$totalOffline=0.0;$matchedLottery=false;$waterItems=[];$totalMatched=0;$totalSelections=0;
                 foreach($details as $detail){
                     $stop=$stops[(int)$detail['id']]??null;
-                    if(!$stop||(string)$stop['lottery']!==$lotteryName)continue;
+                    if(!$stop||(string)$stop['lottery']!==$lotteryName)throw new \RuntimeException('注单彩种明细不完整或混合彩种，无法结算 #'.(int)$lockedRecord['id']);
+                    if ((string)$detail['status']==='refunded') continue;
                     $matchedLottery=true;
                     // New detail rows keep one compact expression (for example
                     // “三123456”, “66飞”, “和小” or “874直”) instead of
@@ -61,7 +64,13 @@ final class BetSettlement
                     // those expressions as match tokens; legacy expanded rows
                     // containing whitespace-separated three-digit numbers keep
                     // working unchanged.
-                    $numbers=preg_split('/\s+/',trim((string)$detail['number_text']))?:[];
+                    $source=(string)($detail['source_text']??'');
+                    $recordSource=(string)($lockedRecord['source_text']??'');
+                    $numbers=$this->selectionTokens((string)$detail['number_text'], $source);
+                    if (count($numbers)===1 && in_array($numbers[0], ['三3','六6'], true)) {
+                        $family=$numbers[0]==='三3'?'组三':'组六';
+                        if (preg_match('/'.$family.'\s*(?:全包|包)/u', $recordSource)) throw new \RuntimeException('历史全包注单保存为一码，需核对原始玩法及锁定赔率 #'.(int)$detail['id']);
+                    }
                     $numbers=array_values(array_filter($numbers,static fn(string $number):bool=>trim($number)!==''));
                     if($numbers===[]) {
                         $fallback=trim((string)($detail['source_text']??''));
@@ -69,7 +78,7 @@ final class BetSettlement
                     }
                     if($numbers===[])throw new \RuntimeException('注单明细 #'.(int)$detail['id'].' 没有可结算的玩法表达式，已停止整单结算');
                     [$odds,$legacyFallback]=$this->lockedOdds($detail,$stop,$lotteryId,count($numbers));
-                    $payout=$this->detailPayout($numbers,$draw,(string)($detail['source_text']??''),(float)$detail['amount'],$odds);
+                    $payout=$this->detailPayout($numbers,$draw,$source,(float)$detail['amount'],$odds,$recordSource);
                     $win=$payout['win'];$totalWin+=$win;$totalRebate+=(float)($detail['rebate']??0);
                     $totalMatched+=(int)$payout['matched'];$totalSelections+=count($numbers);
                     // 统一口径：结算不再产生玩法级离线反水，明水只在
@@ -144,7 +153,8 @@ final class BetSettlement
             }
             if ($rowStatus==='pending') $status='pending';
         }
-        if ($status!=='refunded') $status=$winAmount>0 ? 'won' : ($status==='pending' ? 'pending' : $status);
+        $statuses=array_column($records,'status');
+        $status=in_array('pending',$statuses,true)?'pending':($winAmount>0?'won':(count(array_filter($statuses,static fn($s)=>$s==='refunded'))===count($statuses)?'refunded':'unwon'));
         Db::name('bet_submissions')->where('id',$submissionId)->update([
             'bet_count'=>$betCount,
             'amount'=>number_format($amount,2,'.',''),
@@ -161,11 +171,6 @@ final class BetSettlement
         if($detail['odds']!==null){
             $odds=(float)$detail['odds'];
             if($odds<=0)throw new \RuntimeException('注单明细 #'.(int)$detail['id'].' 的锁定赔率无效，已停止整单结算');
-            // Older pending rows may have locked the catalog's 80 quote
-            // before concrete leopard handling was added. Correct those
-            // rows at settlement time; explicit 豹子全包 packages remain 80.
-            $source=(string)($detail['source_text']??'');
-            if(str_contains($source,'豹子')&&!str_contains($source,'豹子全包')&&$odds<800)$odds*=10;
             return [$odds,false];
         }
         if(($stop['actual_odds']??null)!==null&&(float)$stop['actual_odds']>0)return [(float)$stop['actual_odds'],true];
@@ -260,8 +265,9 @@ final class BetSettlement
      * @param array<int,string> $numbers
      * @return array{matched:int,stake:float,effective_odds:float,win:float}
      */
-    private function detailPayout(array $numbers,string $draw,string $source,float $amount,float $packageOdds): array
+    private function detailPayout(array $numbers,string $draw,string $source,float $amount,float $packageOdds,string $recordSource=''): array
     {
+        $numbers=$this->selectionTokens(implode(' ', $numbers), $source);
         $numberCount=count($numbers);
         if($numberCount<1)throw new \InvalidArgumentException('结算号码不能为空');
         // Position bets are stored as one compact expression while the amount
@@ -280,13 +286,54 @@ final class BetSettlement
                 $numberCount = 1;
             }
         }
-        $stake=$positionCount>1&&$numberCount===1?$amount/$positionCount:$amount/$numberCount;
+        $stakes=$this->selectionStakes($numbers,$source,$amount,$recordSource);
+        $stake=$positionCount>1&&$numberCount===1?$amount/$positionCount:$stakes[0];
         $matched=0;
-        foreach($numbers as $number)if($this->matches($number,$draw,$source))$matched++;
+        $winningStake=0.0;
+        foreach($numbers as $index=>$number)if($this->matches($number,$draw,$source)){$matched++;$winningStake+=$positionCount>1&&$numberCount===1?$stake:$stakes[$index];}
         // The locked odds apply to one matching number group. Never scale the
         // odds by the number of selected combinations.
         $effectiveOdds=$packageOdds;
-        return ['matched'=>$matched,'stake'=>$stake,'effective_odds'=>$effectiveOdds,'win'=>$matched*$stake*$effectiveOdds];
+        return ['matched'=>$matched,'stake'=>$stake,'effective_odds'=>$effectiveOdds,'win'=>$winningStake*$effectiveOdds];
+    }
+
+    /** Preserve a compact selection as one wager, including provider marker spacing. */
+    public function selectionTokens(string $text,string $source=''): array
+    {
+        $text=preg_replace('/(?<![\p{L}\d])((?:三|六)赖?|复|豹|胆|跨|跨度|和|和值)\s+(?=\d)/u','$1',$text)??$text;
+        // Provider type 9 used the 六 display marker for compound packages.
+        if(str_contains($source,'复式'))$text=preg_replace('/(?<!\S)六(?=\d)/u','复',$text)??$text;
+        return preg_split('/[\s,，、]+/u',trim($text),-1,PREG_SPLIT_NO_EMPTY)?:[];
+    }
+
+    /** Resolve the known legacy mixed direct/group bucket without averaging its extra leopard stakes. */
+    public function selectionStakes(array $numbers,string $source,float $amount,string $recordSource=''): array
+    {
+        $count=count($numbers);
+        if($count===0)return [];
+        // Old provider rows deduplicated group permutations but kept their total stake.
+        if(preg_match('/组/u',$recordSource) && preg_match('/(?:组三|组六|组)各(\d+(?:\.\d+)?)元\s*$/u',$source,$unit)){
+            preg_match_all('/(?<!\d)\d{3}(?!\d)/u',$recordSource,$original);
+            $frequencies=[];
+            foreach($original[0] as $number){$digits=str_split($number);sort($digits);$key=implode('',$digits);$frequencies[$key]=($frequencies[$key]??0)+1;}
+            $weights=[];
+            foreach($numbers as $token){
+                if(!preg_match('/^(\d{3})(?:组三|组六|组)$/u',$token,$m)){$weights=[];break;}
+                $digits=str_split($m[1]);sort($digits);$weights[]=$frequencies[implode('',$digits)]??0;
+            }
+            if($weights!==[] && min($weights)>0 && (float)$unit[1]>0 && abs(array_sum($weights)*(float)$unit[1]-$amount)<0.005)
+                return array_map(static fn(int $weight):float=>$weight*(float)$unit[1],$weights);
+        }
+        if(preg_match('/直\s*组/u',$recordSource) && preg_match('/直各(\d+(?:\.\d+)?)元\s*$/u',$source,$unit)){
+            $weights=[];
+            foreach($numbers as $token){
+                if(!preg_match('/^(\d{3})直$/u',$token,$m)){$weights=[];break;}
+                $weights[]=count(array_unique(str_split($m[1])))===1?2:1;
+            }
+            if($weights!==[] && (float)$unit[1]>0 && abs(array_sum($weights)*(float)$unit[1]-$amount)<0.005)
+                return array_map(static fn(int $weight):float=>$weight*(float)$unit[1],$weights);
+        }
+        return array_fill(0,$count,$amount/$count);
     }
 
     private function positionCombinationCount(string $source): int
@@ -315,6 +362,7 @@ final class BetSettlement
         $compactResult=$this->matchesCompactExpression($number,$draw,$source);
         if($compactResult!==null)return $compactResult;
         $sourceCompact=preg_replace('/\s+/u','',$source)??$source;
+
         $sum = array_sum(array_map('intval', str_split($draw)));
         if (str_contains($source, '和大')) return $sum >= 14;
         if (str_contains($source, '和小')) return $sum <= 13;
@@ -410,6 +458,20 @@ final class BetSettlement
         $drawUnique=array_values(array_unique($drawDigits));
         $sum=array_sum(array_map('intval',$drawDigits));
         $sourceCompact=preg_replace('/\s+/u','',$source)??$source;
+
+        // Explicit per-selection markers take precedence over another selection in source_text.
+        if(preg_match('/^[0-9Xx]{3}$/',$compact)&&preg_match('/[Xx]/',$compact)&&preg_match('/\d/',$compact)){
+            for($i=0;$i<3;$i++)if(ctype_digit($compact[$i])&&$compact[$i]!==$draw[$i])return false;
+            return true;
+        }
+        if(preg_match('/^(\d{3})(组三|组六)$/u',$compact,$match))
+            return count($drawUnique)===($match[2]==='组三'?2:3)&&count_chars($match[1],1)===count_chars($draw,1);
+        if(preg_match('/^(\d{1,10})(组三赖|组六赖)$/u',$compact,$match))
+            return count($drawUnique)===($match[2]==='组三赖'?2:3)&&array_intersect($drawDigits,str_split($match[1]))!==[];
+        if(preg_match('/^胆(\d{1,2})拖(\d+)(组三胆拖|组六胆拖|组六2胆拖|单选全胆拖)$/u',$compact,$match))
+            return $this->matchesCompactExpression('胆'.$match[1].'拖'.$match[2],$draw,$match[3]);
+        if(in_array($compact,['豹包','对包'],true))return count($drawUnique)===($compact==='豹包'?1:2);
+        if(preg_match('/^(\d)胆$/u',$compact,$match))return str_contains($draw,$match[1]);
 
         if(preg_match('/^三([0-9]{2,10})$/u',$compact,$match)){
             $selected=array_values(array_unique(str_split($match[1])));
@@ -538,6 +600,8 @@ final class BetSettlement
     public function numberMatches(string $number, string $drawNumbers, string $source): bool
     {
         $draw = preg_replace('/\D/', '', $drawNumbers) ?: '';
+        $tokens=$this->selectionTokens($number,$source);
+        if(count($tokens)===1)$number=$tokens[0];
         return strlen($draw) === 3 && $this->matches($number, $draw, $source);
     }
 

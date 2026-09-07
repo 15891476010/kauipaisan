@@ -203,7 +203,8 @@ export function SideBetRecords({
       if (/(组三|组3|三组)/u.test(multiSource)) return "组三胆拖";
     }
     const multiFamily = groupFamily(detail);
-    const rowHasMultiPlay = /^(?:组三|组六|组3|组6)[一二两三四五六七八九1-9]码$/u.test(rowMeta.replace(/\s+/gu, ""));
+    const rowPlayType = String(detail.play_type || "").replace(/\s+/gu, "");
+    const rowHasMultiPlay = /^(?:组三|组六|组3|组6)[一二两三四五六七八九1-9]码$/u.test(rowPlayType);
     const multiDigits = String(detail.number_text || "").replace(/\s+/gu, "").match(/^[三六]?(\d{1,10})/u)?.[1];
     if (multiFamily && multiDigits && rowHasMultiPlay && !/全包|胆拖|赖|沾边|连/u.test(multiSource)) return `${multiFamily}多码`;
     const genericGroupSource = /(?:^|\s)组(?:各|每|共|合计|计|$)/u.test(multiSource)
@@ -242,7 +243,7 @@ export function SideBetRecords({
     if (span) return `跨${span}`;
     if (play === "复式多码") {
       const digits = compoundDigits(detail);
-      return digits ? `复式 ${digits}` : "复式";
+      return digits ? `复 ${digits}` : "复";
     }
     const stickyFamily = play.match(/^(组六|组三)沾边赖$/u)?.[1];
     if (stickyFamily) {
@@ -255,7 +256,7 @@ export function SideBetRecords({
     if (compact) return compact;
     const family = groupFamily(detail);
     const multiDigits = String(detail.number_text || "").replace(/\s+/gu, "").match(/^[三六]?(\d{1,10})/u)?.[1];
-    if ((play === "组三多码" || play === "组六多码") && multiDigits) return `${family === "组六" ? "六" : "三"}${multiDigits}`;
+    if ((play === "组三多码" || play === "组六多码") && multiDigits) return `${family === "组六" ? "六" : "三"} ${multiDigits}`;
     const sticky = source.match(/(\d{4,10})\s*(组三|组六)六码/u);
     if (sticky) return `${sticky[2] === "组三" ? "三" : "六"}${sticky[1]}`;
     const sourceContext = `${source} ${detail.original_source_text || ""} ${detail.record_source || ""}`;
