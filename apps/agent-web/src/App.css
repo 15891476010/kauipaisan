@@ -7281,8 +7281,21 @@ body .ant-modal-confirm-info .ant-modal-confirm-icon { color:#006400; }
   pointer-events: auto;
 }
 
-.agent-app .overview-detail-modal {
-  width: min(1500px, calc(100% - 64px)) !important;
-  max-width: calc(100% - 64px) !important;
-  margin-inline: auto;
+/* This body-mounted dialog is scaled once by OverviewPage to 98% of the
+ * viewport. Do not apply the legacy 100vw cap before that scale. */
+.overview-detail-modal {
+  width: 1500px !important;
+  max-width: none !important;
+  margin: 0 !important;
+  left: 50%;
+  /* rc-dialog writes a click-position origin inline; it must not move this
+   * permanently scaled canvas away from the viewport center. */
+  transform-origin: top center !important;
+}
+
+.overview-detail-modal .ant-modal-content,
+.overview-detail-modal .ant-modal-container {
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
 }

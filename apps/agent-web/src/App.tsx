@@ -183,16 +183,14 @@ function OverviewPage({ lottery: suppliedLottery = "" }: { lottery?: string } = 
 
   useEffect(() => {
     const updateDetailModalScale = () => {
-      const viewportWidth = window.visualViewport?.width || window.innerWidth;
-      const availableWidth = Math.max(280, viewportWidth - 24);
-      setDetailModalScale(Math.min(1, availableWidth / DETAIL_MODAL_PC_WIDTH));
+      // Use the layout viewport so pinch-to-zoom can still magnify the dialog.
+      const availableWidth = window.innerWidth * 0.98;
+      setDetailModalScale(availableWidth / DETAIL_MODAL_PC_WIDTH);
     };
     updateDetailModalScale();
     window.addEventListener("resize", updateDetailModalScale);
-    window.visualViewport?.addEventListener("resize", updateDetailModalScale);
     return () => {
       window.removeEventListener("resize", updateDetailModalScale);
-      window.visualViewport?.removeEventListener("resize", updateDetailModalScale);
     };
   }, []);
 
@@ -348,6 +346,7 @@ function OverviewPage({ lottery: suppliedLottery = "" }: { lottery?: string } = 
       <Modal
         getContainer={() => document.body}
         className="overview-detail-modal"
+        transitionName=""
         title="注单明细"
         open={detailModalOpen}
         footer={null}
