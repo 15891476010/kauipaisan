@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import { App as AntdApp, Button, DatePicker, Empty, Input, Modal, Select, Spin } from "antd";
 import dayjs from "dayjs";
 import { HashRouter, Navigate, NavLink, Route, Routes } from "react-router-dom";
@@ -60,6 +61,10 @@ const levelDisplayNames: Record<string, string> = {
   general_agent: "总代理",
   agent: "代理",
 };
+
+function getAgentModalContainer() {
+  return document.querySelector<HTMLElement>(".agent-app") || document.body;
+}
 
 function clearAgentAuthQuery() {
   const url = new URL(window.location.href);
@@ -131,6 +136,8 @@ const overviewTabs = [
   { label: "投注明细", permission: "bet_details" },
   { label: "查看退码", permission: "refunds" },
 ];
+const DETAIL_MODAL_PC_WIDTH = 1500;
+
 function formatIssueOption(issue: LedgerIssue) {
   const date = String(issue.date || "");
   const match = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(date);
@@ -172,6 +179,22 @@ function OverviewPage({ lottery: suppliedLottery = "" }: { lottery?: string } = 
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [detailModalRows, setDetailModalRows] = useState<AgentOrderDetail[]>([]);
   const [detailModalLoading, setDetailModalLoading] = useState(false);
+  const [detailModalScale, setDetailModalScale] = useState(1);
+
+  useEffect(() => {
+    const updateDetailModalScale = () => {
+      const viewportWidth = window.visualViewport?.width || window.innerWidth;
+      const availableWidth = Math.max(280, viewportWidth - 24);
+      setDetailModalScale(Math.min(1, availableWidth / DETAIL_MODAL_PC_WIDTH));
+    };
+    updateDetailModalScale();
+    window.addEventListener("resize", updateDetailModalScale);
+    window.visualViewport?.addEventListener("resize", updateDetailModalScale);
+    return () => {
+      window.removeEventListener("resize", updateDetailModalScale);
+      window.visualViewport?.removeEventListener("resize", updateDetailModalScale);
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -322,12 +345,40 @@ function OverviewPage({ lottery: suppliedLottery = "" }: { lottery?: string } = 
         </div>
         <div className="overview-pagination"><span>总计：<b>{total}</b> 条数据</span><button type="button" disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>‹</button><strong>{page}</strong><button type="button" disabled={page >= Math.max(1, Math.ceil(total / pageSize))} onClick={() => setPage((value) => value + 1)}>›</button><Select className="overview-page-size" size="small" value={pageSize} onChange={(value) => { setPageSize(Number(value)); setPage(1); }} options={[10, 40, 100].map((value) => ({ value, label: `${value} 条/页` }))} /></div>
       </section>
-      <Modal className="overview-detail-modal" title="注单明细" open={detailModalOpen} footer={null} width={1500} onCancel={() => setDetailModalOpen(false)}>{detailModalLoading ? <div className="overview-no-data"><Spin /></div> : detailModalRows.length ? <div className="overview-modal-table-scroll"><OverviewDetailsTable rows={detailModalRows} /></div> : <Empty description="暂无明细" />}</Modal>
+      <Modal
+        getContainer={() => document.body}
+        className="overview-detail-modal"
+        title="注单明细"
+        open={detailModalOpen}
+        footer={null}
+        width={DETAIL_MODAL_PC_WIDTH}
+        style={{
+          width: DETAIL_MODAL_PC_WIDTH,
+          maxWidth: "none",
+          margin: 0,
+          left: "50%",
+          transform: `translateX(-50%) scale(${detailModalScale})`,
+          transformOrigin: "top center",
+        }}
+        onCancel={() => setDetailModalOpen(false)}
+      >
+        {detailModalLoading ? <div className="overview-no-data"><Spin /></div> : detailModalRows.length ? <div className="overview-modal-table-scroll"><OverviewDetailsTable rows={detailModalRows} /></div> : <Empty description="暂无明细" />}
+      </Modal>
     </section>
   );
 }
 
 function AgentMain({ name, onLogout, announcement, siteName }: { name: string; onLogout: () => void; announcement: Announcement; siteName: string }) {
+  const agentDesignWidth = 1320;
+  const getViewportLayout = () => {
+    const viewportWidth = Math.max(1, window.innerWidth);
+    return {
+      scale: Math.min(1, viewportWidth / agentDesignWidth),
+      width: Math.max(agentDesignWidth, viewportWidth),
+      height: window.innerHeight / Math.min(1, viewportWidth / agentDesignWidth),
+    };
+  };
+  const [agentViewport, setAgentViewport] = useState(getViewportLayout);
   const { modal } = AntdApp.useApp();
   const [lotteries, setLotteries] = useState<Lottery[]>([]);
   const [selectedLotteryId, setSelectedLotteryId] = useState<number | null>(() => {
@@ -358,6 +409,16 @@ function AgentMain({ name, onLogout, announcement, siteName }: { name: string; o
   const visibleMenus = permissionsReady && !permissionsFailed ? menus.filter((item) => isRouteAllowed(item.path, accessContext)) : [];
   const firstRoute = firstAllowedRoute(menus.map((item) => item.path), accessContext);
   const routeAllowed = (path: string) => permissionsReady && !permissionsFailed && isRouteAllowed(path, accessContext);
+  useEffect(() => {
+    const updateViewport = () => setAgentViewport(getViewportLayout());
+    updateViewport();
+    window.addEventListener("resize", updateViewport);
+    window.addEventListener("orientationchange", updateViewport);
+    return () => {
+      window.removeEventListener("resize", updateViewport);
+      window.removeEventListener("orientationchange", updateViewport);
+    };
+  }, []);
   useEffect(() => {
     document.title = `${resolvedSiteName} - ${systemName}`;
   }, [resolvedSiteName, systemName]);
@@ -467,7 +528,7 @@ function AgentMain({ name, onLogout, announcement, siteName }: { name: string; o
         }, 3_000);
       }
     } catch (error) {
-      if (run === lineRun.current) modal.error({ title: "线路检测失败", content: apiErrorMessage(error, "暂时无法获取线路") });
+      if (run === lineRun.current) modal.error({ title: "线路检测失败", content: apiErrorMessage(error, "暂时无法获取线路"), getContainer: getAgentModalContainer });
     } finally {
       if (run === lineRun.current) setLineLoading(false);
     }
@@ -488,8 +549,15 @@ function AgentMain({ name, onLogout, announcement, siteName }: { name: string; o
     return "agent-line-delay-slow";
   };
   return (
-    <div className="app agent-app">
-      <button className="notice" type="button" onClick={() => modal.info({ title: announcement.title, content: <div className="announcement-modal-content">{announcement.content}</div>, okText: "关闭" })}>
+    <div
+      className="app agent-app"
+      style={{
+        "--agent-scale": agentViewport.scale,
+        "--agent-layout-width": `${agentViewport.width}px`,
+        "--agent-layout-height": `${agentViewport.height}px`,
+      } as CSSProperties}
+    >
+      <button className="notice" type="button" onClick={() => modal.info({ title: announcement.title, content: <div className="announcement-modal-content">{announcement.content}</div>, okText: "关闭", getContainer: getAgentModalContainer })}>
         <span className="notice-track">{announcement.content || "暂无公告"}</span>
         <span className="notice-track" aria-hidden="true">{announcement.content || "暂无公告"}</span>
       </button>
@@ -521,7 +589,7 @@ function AgentMain({ name, onLogout, announcement, siteName }: { name: string; o
           })}
         </ul>
       </div>
-      <Modal title="切换线路" open={lineOpen} onCancel={closeLineModal} footer={null} width={460} destroyOnHidden>
+      <Modal getContainer={getAgentModalContainer} title="切换线路" open={lineOpen} onCancel={closeLineModal} footer={null} width={460} destroyOnHidden>
         <div className="agent-line-tip">测速完成后将 <b>自动跳转</b> 至 <b>速度最快</b> 的线路</div>
         <div className="agent-line-tip">数字越 <b>小</b>，速度越 <b>快</b></div>
         {lineLoading && <div className="agent-line-modal-state">正在检测线路...</div>}
@@ -582,6 +650,7 @@ export default function App() {
   useEffect(() => {
     const handleUnauthorized = () => {
       modal.confirm({
+        getContainer: getAgentModalContainer,
         title: "登录已过期",
         content: "请重新登录",
         okText: "确认",

@@ -20,7 +20,25 @@ final class BetSettlement
         $recordQuery = Db::name('bet_records')->where('issue_no', $issue)->where('status', 'pending');
         // 福彩3D and 排列三 can share an issue number; never settle one
         // lottery against the other lottery's draw.
-        if ($lotteryName !== '') $recordQuery->where('lottery_name', $lotteryName);
+        if ($lotteryName !== '') {
+            // Some robot/import-created parent rows predate the
+            // lottery_name column and therefore have it NULL. Their detail
+            // stop rows still carry the authoritative lottery name. Include
+            // only such rows that actually have a detail for this lottery;
+            // the detail-level guard below then prevents cross-lottery
+            // settlement when 福彩3D and 排列三 share an issue number.
+            $recordQuery->whereRaw(
+                '(lottery_name = ? OR EXISTS (
+                    SELECT 1
+                    FROM bet_details AS settlement_details
+                    INNER JOIN user_stop_drops AS settlement_stops
+                        ON settlement_stops.bet_detail_id = settlement_details.id
+                    WHERE settlement_details.bet_record_id = bet_records.id
+                      AND settlement_stops.lottery = ?
+                ))',
+                [$lotteryName, $lotteryName],
+            );
+        }
         $records = $recordQuery->select()->toArray();
         $processed = 0; $won = 0;
         foreach ($records as $record) {
