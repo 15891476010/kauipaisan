@@ -1,3 +1,4 @@
+import { displayAmount } from "../../../utils/amount";
 import { useEffect, useState } from "react";
 import { App as AntdApp, Empty } from "antd";
 import dayjs from "dayjs";
@@ -278,9 +279,9 @@ export function StopDropPage() {
                   <em>{displayNumber(row)}</em>
                 </span>
                 <span>
-                  <b>{row.original_amount}</b>
-                  <b>{row.actual_amount}</b>
-                  <b>{row.stop_amount}</b>
+                  <b>{displayAmount(row.original_amount)}</b>
+                  <b>{displayAmount(row.actual_amount)}</b>
+                  <b>{displayAmount(row.stop_amount)}</b>
                 </span>
                 <span>
                   <b>{row.original_odds || "-"}</b>

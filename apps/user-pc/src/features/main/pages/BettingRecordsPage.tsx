@@ -1,3 +1,4 @@
+import { displayAmount } from "../../../utils/amount";
 import { useEffect, useState } from "react";
 import { App as AntdApp, DatePicker, Empty } from "antd";
 import zhCN from "antd/es/date-picker/locale/zh_CN";
@@ -52,8 +53,8 @@ export function BettingRecordsPage() {
       ...records.map((r) =>
         [
           r.issue_no,
-          `${r.bet_count}/${r.amount}`,
-          r.win_amount,
+          `${r.bet_count}/${displayAmount(r.amount)}`,
+          displayAmount(r.win_amount),
           `"${(r.source_text || "").replaceAll('"', '""')}"`,
           r.sealed ? "已封盘" : "-",
           r.placed_at,
@@ -72,7 +73,7 @@ export function BettingRecordsPage() {
   const refund = (record: BetRecord) => {
     modal.confirm({
       title: "确认退单",
-      content: `确定退回该注单，金额 ¥ ${record.amount} 吗？`,
+      content: `确定退回该注单，金额 ¥ ${displayAmount(record.amount)} 吗？`,
       okText: "确认退单",
       cancelText: "取消",
       okButtonProps: { danger: true },
@@ -164,9 +165,9 @@ export function BettingRecordsPage() {
             <div className="records-row" key={record.id}>
               <span>{record.issue_no}</span>
               <span>
-                {record.bet_count}/{record.amount}
+                {record.bet_count}/{displayAmount(record.amount)}
               </span>
-              <span>{record.win_amount}</span>
+              <span>{displayAmount(record.win_amount)}</span>
               <span>{record.source_text || "-"}</span>
               <span>{record.sealed ? "已封盘" : "-"}</span>
               <span>{record.placed_at}</span>

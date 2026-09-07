@@ -181,6 +181,7 @@ export function SideBetRecords({
     return raw;
   };
   const playMark = (detail: BetDetail) => {
+    if (String(detail.play_type || detail.play_label || "").trim() === "对子") return "对子";
     const raw = String(detail.play_type || detail.play_label || "");
     if (/^(?:组六|组三)沾边赖$/u.test(playName(detail))) return "";
     if (spanDigit(detail) || /(?:复式|复试)/u.test(detailContext(detail))) return "";
@@ -234,6 +235,10 @@ export function SideBetRecords({
     return result;
   };
   const displayDetailNumber = (detail: BetDetail) => {
+    if (String(detail.play_type || detail.play_label || "").trim() === "对子") {
+      const pair = String(detail.number_text || "").replace(/\s+/gu, "").match(/^0?(\d{2})(?:对子|双飞|飞)*$/u);
+      if (pair) return pair[1];
+    }
     const source = detail.source_text || "";
     const play = playName(detail);
     const rawPlay = String(detail.play_type || detail.play_label || "");
@@ -393,8 +398,8 @@ export function SideBetRecords({
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
   const printNumbers = () => {
-    const rows = numberGroups.map(([key, group]) => `<tr><th colspan="2">${escapeHtml(key.replace("|", " 第 "))} 期，共 ${group.reduce((sum, item) => sum + Number(item.amount || 0), 0).toFixed(2)}</th></tr>${group.map((item) => `<tr><td>${escapeHtml(displayDetailNumber(item))}</td><td>${escapeHtml(item.amount)}</td></tr>`).join("")}`).join("");
-    const paper = `<div class="bet-number-print-paper"><p>时间：${escapeHtml(detailRecord?.placed_at || "")}</p><p>会员：-</p><table>${rows}</table><p>请核对一切以小票为准<br>总笔数：${details.length} 总金额：${details.reduce((sum, item) => sum + Number(item.amount || 0), 0).toFixed(2)}</p></div>`;
+    const rows = numberGroups.map(([key, group]) => `<tr><th colspan="2">${escapeHtml(key.replace("|", " 第 "))} 期，共 ${displayAmount(group.reduce((sum, item) => sum + Number(item.amount || 0), 0))}</th></tr>${group.map((item) => `<tr><td>${escapeHtml(displayDetailNumber(item))}</td><td>${escapeHtml(displayAmount(item.amount))}</td></tr>`).join("")}`).join("");
+    const paper = `<div class="bet-number-print-paper"><p>时间：${escapeHtml(detailRecord?.placed_at || "")}</p><p>会员：-</p><table>${rows}</table><p>请核对一切以小票为准<br>总笔数：${details.length} 总金额：${displayAmount(details.reduce((sum, item) => sum + Number(item.amount || 0), 0))}</p></div>`;
     const printCss = "body{font:14px Arial,sans-serif;padding:20px;color:#111}.bet-number-print-paper{max-width:580px;margin:0 auto}table{border-collapse:collapse;width:100%}th,td{border:1px solid #777;padding:7px;text-align:center}th{background:#666!important;color:#fff!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}";
 
     // 必须在点击事件内同步打开窗口，否则容易被浏览器当作广告弹窗拦截。
@@ -431,7 +436,7 @@ export function SideBetRecords({
     <>
       <div className="side-total">
         <span>
-          总金额: <b>{amountTotal}</b>
+          总金额: <b>{displayAmount(amountTotal)}</b>
         </span>
         <div className="side-actions">
           <button type="button" disabled={disabled} onClick={onMore}>
@@ -481,7 +486,7 @@ export function SideBetRecords({
             </div>
             <footer>
               <strong>
-                {record.status === "refunded" ? "0.00" : record.amount}
+                {record.status === "refunded" ? "0" : displayAmount(record.amount)}
               </strong>
               {record.status !== "refunded" ? (
                 <div>
@@ -550,9 +555,9 @@ export function SideBetRecords({
                         const labelCell = (label: string) => showLabels ? <div className="record-detail-grid-label">{label}</div> : null;
                         return <div className={`record-detail-grid${showLabels ? "" : " continuation"}`} key={`${lottery}-${play}-${chunkIndex}`} style={{ gridTemplateColumns: "repeat(6, minmax(112px, 1fr))" }}>
                           {labelCell("号码")}{cells.map((detail, index) => <div className={`record-detail-grid-value number${detail ? "" : " placeholder"}`} key={`number-${detail?.id || "empty"}-${index}`}>{detail ? <><span>{displayDetailNumber(detail)}</span><em>{playMark(detail)}</em></> : null}</div>)}
-                          {labelCell("金额")}{cells.map((detail, index) => <div className={`record-detail-grid-value amount${detail ? "" : " placeholder"}`} key={`amount-${detail?.id || "empty"}-${index}`}>{detail?.amount || null}</div>)}
+                          {labelCell("金额")}{cells.map((detail, index) => <div className={`record-detail-grid-value amount${detail ? "" : " placeholder"}`} key={`amount-${detail?.id || "empty"}-${index}`}>{detail ? displayAmount(detail.amount) : null}</div>)}
                           {labelCell("赔率")}{cells.map((detail, index) => <div className={`record-detail-grid-value odds${detail ? "" : " placeholder"}`} key={`odds-${detail?.id || "empty"}-${index}`}>{detail ? displayDetailOdds(detail) : null}</div>)}
-                          {labelCell("中奖")}{cells.map((detail, index) => <div className={`record-detail-grid-value win${detail ? "" : " placeholder"}`} key={`win-${detail?.id || "empty"}-${index}`}>{detail && Number(detail.win_amount || 0) > 0 ? detail.win_amount : null}</div>)}
+                          {labelCell("中奖")}{cells.map((detail, index) => <div className={`record-detail-grid-value win${detail ? "" : " placeholder"}`} key={`win-${detail?.id || "empty"}-${index}`}>{detail && Number(detail.win_amount || 0) > 0 ? displayAmount(detail.win_amount) : null}</div>)}
                         </div>;
                         });
                       })()}
@@ -565,7 +570,7 @@ export function SideBetRecords({
         ) : details.length ? (
           <div className="record-number-content">
             <div className="record-number-toolbar"><button type="button" onClick={() => setDetailRecord(undefined)}>←</button><span>第1/1页</span><button type="button" disabled>上页</button><button type="button" disabled>下页</button><button type="button" className="download" onClick={printNumbers}>下载PDF</button><button type="button" className="copy" onClick={() => void copyNumbers()}>复制号码</button></div>
-            <div className="record-number-paper"><p>时间:{detailRecord?.placed_at || ""}</p><p>会员:-</p><table><thead><tr><th>号码</th><th>全额</th></tr></thead><tbody>{numberGroups.map(([key, group]) => <Fragment key={key}><tr className="group"><th colSpan={2}>{key.replace("|", " 第 ")} 期，共 {group.reduce((sum, item) => sum + Number(item.amount || 0), 0).toFixed(2)}</th></tr>{group.map((detail, index) => <tr key={`${detail.id}-${index}`}><td>{displayDetailNumber(detail)}</td><td>{detail.amount}</td></tr>)}</Fragment>)}</tbody></table><p>请核对一切以小票为准<br />总笔数:{details.length} 总金额:{details.reduce((sum, item) => sum + Number(item.amount || 0), 0).toFixed(2)}</p></div>
+            <div className="record-number-paper"><p>时间:{detailRecord?.placed_at || ""}</p><p>会员:-</p><table><thead><tr><th>号码</th><th>全额</th></tr></thead><tbody>{numberGroups.map(([key, group]) => <Fragment key={key}><tr className="group"><th colSpan={2}>{key.replace("|", " 第 ")} 期，共 {displayAmount(group.reduce((sum, item) => sum + Number(item.amount || 0), 0))}</th></tr>{group.map((detail, index) => <tr key={`${detail.id}-${index}`}><td>{displayDetailNumber(detail)}</td><td>{displayAmount(detail.amount)}</td></tr>)}</Fragment>)}</tbody></table><p>请核对一切以小票为准<br />总笔数:{details.length} 总金额:{displayAmount(details.reduce((sum, item) => sum + Number(item.amount || 0), 0))}</p></div>
           </div>
         ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据" />}
       </Modal>

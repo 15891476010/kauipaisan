@@ -1,3 +1,4 @@
+import { displayAmount } from "../../../utils/amount";
 import { useEffect, useState } from "react";
 import { Empty } from "antd";
 import { getProfile, type Lottery, type UserProfile } from "../../../api/user";
@@ -85,7 +86,7 @@ export function MemberPage({
         </div>
         <div>
           <span>信用额度</span>
-          <b>{displayNumber(profile?.credit_balance)}</b>
+          <b>{displayAmount(profile?.credit_balance ?? "-")}</b>
         </div>
       </div>
       <div className="member-odds-panel">
@@ -108,10 +109,10 @@ export function MemberPage({
                   {group.rows.map((row) => (
                     <div className={rowClass(row)} key={row.id}>
                       <span>{displayName(row.name)}</span>
-                      <span>{displayNumber(row.min_bet)}</span>
+                      <span>{displayAmount(row.min_bet ?? "-")}</span>
                       <span>{displayNumber(row.odds_limit)}</span>
-                      <span>{displayNumber(row.single_bet_limit)}</span>
-                      <span>{displayNumber(row.single_item_limit)}</span>
+                      <span>{displayAmount(row.single_bet_limit ?? "-")}</span>
+                      <span>{displayAmount(row.single_item_limit ?? "-")}</span>
                       <span>{displayNumber(row.offline_rebate)}</span>
                       <span>{displayNumber(row.odds)}</span>
                     </div>

@@ -1,3 +1,4 @@
+import { displayAmount } from "../../../utils/amount";
 import { useEffect, useState } from "react";
 import { DatePicker, Empty } from "antd";
 import dayjs from "dayjs";
@@ -193,10 +194,10 @@ export function BillsPage() {
             <div className="business-row" key={row.bill_date}>
               <span>{row.bill_date}</span>
               <span>{row.bet_count}</span>
-              <span>{row.amount}</span>
-              <span>{row.rebate}</span>
-              <span>{row.win_amount}</span>
-              <span>{row.profit}</span>
+              <span>{displayAmount(row.amount)}</span>
+              <span>{displayAmount(row.rebate)}</span>
+              <span>{displayAmount(row.win_amount)}</span>
+              <span>{displayAmount(row.profit)}</span>
             </div>
           ))
         ) : (
@@ -210,10 +211,10 @@ export function BillsPage() {
         <div className="bill-total">
           <span>合计</span>
           <span>{total.bet_count}</span>
-          <span>{total.amount}</span>
-          <span>{total.rebate}</span>
-          <span>{total.win_amount}</span>
-          <span>{total.profit}</span>
+          <span>{displayAmount(total.amount)}</span>
+          <span>{displayAmount(total.rebate)}</span>
+          <span>{displayAmount(total.win_amount)}</span>
+          <span>{displayAmount(total.profit)}</span>
         </div>
         {loading && (
           <div

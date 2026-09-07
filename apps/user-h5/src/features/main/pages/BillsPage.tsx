@@ -1,3 +1,4 @@
+import { displayAmount } from "../../../utils/amount";
 import { useEffect, useState } from "react";
 import dayjs, { type Dayjs } from "dayjs";
 import { getBills, type Bill } from "../../../api/user";
@@ -30,10 +31,7 @@ export function BillsPage() {
   const dateOptions = Array.from({ length: 42 }, (_, index) =>
     today.subtract(index, "day"),
   );
-  const displayValue = (value: string | number) => {
-    const text = String(value ?? "0");
-    return text.endsWith(".00") ? text.slice(0, -3) : text;
-  };
+  const displayValue = displayAmount;
 
   const toggleLottery = (key: "fu" | "ti") => {
     setLotteries((value) => {

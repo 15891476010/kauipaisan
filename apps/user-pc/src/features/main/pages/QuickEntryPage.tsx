@@ -240,7 +240,7 @@ export function QuickEntryPage({
     const body = lines
       .filter((line) => line.status === "success")
       .map(
-        (line) => `${line.display_number_text || line.number_text} ${line.category || ""}各${line.amount}`,
+        (line) => `${line.display_number_text || line.number_text} ${line.category || ""}各${displayAmount(line.amount)}`,
       )
       .join("\n");
     const ticket = options[4] ? sourceText : body || sourceText;
@@ -343,7 +343,7 @@ export function QuickEntryPage({
     }
     modal.confirm({
       title: "确认下注",
-      content: `共 ${generatedTotal.codeCount} 码，共 ¥ ${preview.amount}，确认提交吗？`,
+      content: `共 ${generatedTotal.codeCount} 码，共 ¥ ${displayAmount(preview.amount)}，确认提交吗？`,
       okText: "确认下注",
       cancelText: "取消",
       onOk: () => submitBet(text, preview),

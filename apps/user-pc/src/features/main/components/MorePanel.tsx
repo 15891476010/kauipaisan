@@ -1,3 +1,4 @@
+import { displayAmount } from "../../../utils/amount";
 import { useEffect, useState } from "react";
 import { App as AntdApp } from "antd";
 import dayjs from "dayjs";
@@ -122,7 +123,7 @@ export function MorePanel({
         </button>
       </div>
       <div className="more-total">
-        总金额: <b>{amountTotal}</b>
+        总金额: <b>{displayAmount(amountTotal)}</b>
       </div>
       <div className="more-results">
         {records.length > 0 && (
@@ -139,9 +140,9 @@ export function MorePanel({
               <div className="more-table-row" key={record.id}>
                 <span>{record.issue_no}</span>
                 <span>
-                  {record.bet_count}/{record.amount}
+                  {record.bet_count}/{displayAmount(record.amount)}
                 </span>
-                <span>{record.win_amount}</span>
+                <span>{displayAmount(record.win_amount)}</span>
                 <span>{record.source_text || "-"}</span>
                 <span>{record.placed_at}</span>
                 <span>

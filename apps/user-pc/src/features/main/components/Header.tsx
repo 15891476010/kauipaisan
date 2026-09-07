@@ -1,3 +1,4 @@
+import { displayAmount } from "../../../utils/amount";
 import { useEffect, useRef, useState } from "react";
 import { App as AntdApp, Modal } from "antd";
 import { NavLink } from "react-router-dom";
@@ -173,15 +174,15 @@ export function Header({
           </label>
           <label className="account-field account-credit">
             <span>信用</span>
-            <input value={balances.credit_balance} readOnly />
+            <input value={displayAmount(balances.credit_balance)} readOnly />
           </label>
           <label className="account-field account-used">
             <span>已用</span>
-            <input value={balances.used_balance} readOnly />
+            <input value={displayAmount(balances.used_balance)} readOnly />
           </label>
           <label className="account-field account-available">
             <span>可用</span>
-            <input value={balances.available_balance} readOnly />
+            <input value={displayAmount(balances.available_balance)} readOnly />
           </label>
         </div>
         <ul

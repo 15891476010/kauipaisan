@@ -1,3 +1,4 @@
+import { displayAmount } from "../../../utils/amount";
 import { useEffect, useState } from "react";
 import { App as AntdApp, Empty, Modal } from "antd";
 import { QuestionCircleOutlined } from "@ant-design/icons";
@@ -237,6 +238,10 @@ export function SideBetRecords({
     return `${kind}包`;
   };
   const displayDetailNumber = (detail: BetDetail) => {
+    if (String(detail.play_type || detail.play_label || "").trim() === "对子") {
+      const pair = String(detail.number_text || "").replace(/\s+/gu, "").match(/^0?(\d{2})(?:对子|双飞|飞)*$/u);
+      if (pair) return pair[1];
+    }
     const source = detail.source_text || "";
     const play = playName(detail);
     const rawPlay = String(detail.play_type || detail.play_label || detail.category || "");
@@ -310,6 +315,7 @@ export function SideBetRecords({
     return detail.odds || "---";
   };
   const playMark = (detail: BetDetail) => {
+    if (String(detail.play_type || detail.play_label || "").trim() === "对子") return "对子";
     const raw = String(detail.play_type || detail.play_label || "");
     if (/^(?:组六|组三)沾边赖$/u.test(playName(detail))) return "";
     if (spanDigit(detail) || /(?:复式|复试)/u.test(detailContext(detail))) return "";
@@ -378,7 +384,7 @@ export function SideBetRecords({
       {refundSuccessHolder}
       <div className="side-total">
         <span>
-          总金额: <b>{amountTotal}</b>
+          总金额: <b>{displayAmount(amountTotal)}</b>
         </span>
         <div className="side-actions">
           <button type="button" disabled={disabled} onClick={onMore}>
@@ -420,7 +426,7 @@ export function SideBetRecords({
               </p>            </div>
             <footer>
               <strong>
-                {record.status === "refunded" ? "0.00" : record.amount}
+                {record.status === "refunded" ? "0" : displayAmount(record.amount)}
               </strong>
               {record.status !== "refunded" ? (
                 <div>
@@ -509,9 +515,9 @@ export function SideBetRecords({
                                 {playMark(detail) ? <em>{playMark(detail)}</em> : null}
                               </span>
                             </span>
-                            <span>{detail.amount || "0"}</span>
+                            <span>{displayAmount(detail.amount || "0")}</span>
                             <span>{displayDetailOdds(detail)}</span>
-                            <span>{Number(detail.win_amount || 0) > 0 ? detail.win_amount : "---"}</span>
+                            <span>{Number(detail.win_amount || 0) > 0 ? displayAmount(detail.win_amount) : "---"}</span>
                           </div>
                         ))}
                       </div>

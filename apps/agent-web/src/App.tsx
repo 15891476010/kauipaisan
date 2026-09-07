@@ -30,6 +30,7 @@ import { ForcedPasswordPage } from "./features/auth/ForcedPasswordPage";
 import { firstAllowedRoute, hasAgentPermission, isRouteAllowed } from "./routePermissions";
 import fishLogo from "./assets/login-logo.svg";
 import { OverviewDetailsTable, OverviewRecordsTable, OverviewRefundsTable } from "./components/OverviewTables";
+import { OrderDetailsModal } from "./components/OrderDetailsModal";
 
 const menus = [
   { path: "overview", title: "总货概览", icon: FileDoneOutlined },
@@ -136,7 +137,6 @@ const overviewTabs = [
   { label: "投注明细", permission: "bet_details" },
   { label: "查看退码", permission: "refunds" },
 ];
-const DETAIL_MODAL_PC_WIDTH = 1500;
 
 function formatIssueOption(issue: LedgerIssue) {
   const date = String(issue.date || "");
@@ -176,23 +176,7 @@ function OverviewPage({ lottery: suppliedLottery = "" }: { lottery?: string } = 
   const [pageSize, setPageSize] = useState(40);
   const [queryVersion, setQueryVersion] = useState(0);
   const [total, setTotal] = useState(0);
-  const [detailModalOpen, setDetailModalOpen] = useState(false);
-  const [detailModalRows, setDetailModalRows] = useState<AgentOrderDetail[]>([]);
-  const [detailModalLoading, setDetailModalLoading] = useState(false);
-  const [detailModalScale, setDetailModalScale] = useState(1);
-
-  useEffect(() => {
-    const updateDetailModalScale = () => {
-      // Use the layout viewport so pinch-to-zoom can still magnify the dialog.
-      const availableWidth = window.innerWidth * 0.98;
-      setDetailModalScale(availableWidth / DETAIL_MODAL_PC_WIDTH);
-    };
-    updateDetailModalScale();
-    window.addEventListener("resize", updateDetailModalScale);
-    return () => {
-      window.removeEventListener("resize", updateDetailModalScale);
-    };
-  }, []);
+  const [detailRecord, setDetailRecord] = useState<{ id: number; orderNo: string } | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -289,18 +273,8 @@ function OverviewPage({ lottery: suppliedLottery = "" }: { lottery?: string } = 
     return () => { active = false; };
   }, [activeTab, account, category, endDate, fromTime, lottery, lotteryId, max, metric, min, number, page, pageSize, queryVersion, source, sourceText, startDate, toTime, winningStatus]);
 
-  const openRecordDetails = async (id: number) => {
-    setDetailModalOpen(true);
-    setDetailModalLoading(true);
-    try {
-      const response = await getAgentOrderDetails({ lottery_id: lotteryId || undefined, record_id: id, include_refunded: 1, page: 1, page_size: 100 });
-      setDetailModalRows(response.data.data?.list || []);
-    } catch (error) {
-      setDetailModalRows([]);
-      setDataError(apiErrorMessage(error, "注单明细加载失败"));
-    } finally {
-      setDetailModalLoading(false);
-    }
+  const openRecordDetails = (id: number) => {
+    setDetailRecord({ id, orderNo: records.find(row => row.id === id)?.order_no || "" });
   };
 
   return (
@@ -343,26 +317,7 @@ function OverviewPage({ lottery: suppliedLottery = "" }: { lottery?: string } = 
         </div>
         <div className="overview-pagination"><span>总计：<b>{total}</b> 条数据</span><button type="button" disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>‹</button><strong>{page}</strong><button type="button" disabled={page >= Math.max(1, Math.ceil(total / pageSize))} onClick={() => setPage((value) => value + 1)}>›</button><Select className="overview-page-size" size="small" value={pageSize} onChange={(value) => { setPageSize(Number(value)); setPage(1); }} options={[10, 40, 100].map((value) => ({ value, label: `${value} 条/页` }))} /></div>
       </section>
-      <Modal
-        getContainer={() => document.body}
-        className="overview-detail-modal"
-        transitionName=""
-        title="注单明细"
-        open={detailModalOpen}
-        footer={null}
-        width={DETAIL_MODAL_PC_WIDTH}
-        style={{
-          width: DETAIL_MODAL_PC_WIDTH,
-          maxWidth: "none",
-          margin: 0,
-          left: "50%",
-          transform: `translateX(-50%) scale(${detailModalScale})`,
-          transformOrigin: "top center",
-        }}
-        onCancel={() => setDetailModalOpen(false)}
-      >
-        {detailModalLoading ? <div className="overview-no-data"><Spin /></div> : detailModalRows.length ? <div className="overview-modal-table-scroll"><OverviewDetailsTable rows={detailModalRows} /></div> : <Empty description="暂无明细" />}
-      </Modal>
+      {detailRecord && <OrderDetailsModal key={`${lotteryId}-${detailRecord.id}`} recordId={detailRecord.id} orderNo={detailRecord.orderNo} lotteryId={lotteryId} onClose={() => setDetailRecord(null)} />}
     </section>
   );
 }

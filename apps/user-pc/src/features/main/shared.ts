@@ -26,11 +26,7 @@ export type Balances = {
   available_balance: string;
 };
 
-export function displayAmount(value: unknown) {
-  const text = String(value ?? "0");
-  if (!text.includes(".")) return text;
-  return text.replace(/0+$/, "").replace(/\.$/, "") || "0";
-}
+export { displayAmount } from "../../utils/amount";
 
 export function lotteryTiming(lottery: Lottery | undefined, now: number) {
   const permissionCanBet = lottery?.can_bet !== false;

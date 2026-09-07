@@ -1,3 +1,4 @@
+import { displayAmount } from "../../../utils/amount";
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { App as AntdApp, Modal, Switch } from "antd";
 import { ArrowLeftOutlined, FileTextOutlined, LeftOutlined, SearchOutlined } from "@ant-design/icons";
@@ -7,11 +8,7 @@ import { apiErrorMessage } from "../../../utils/request";
 import { displayIssueCode } from "../shared";
 import { RecordsPagination } from "./RecordsPagination";
 
-function displayTotalAmount(value: unknown): string {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return "0";
-  return Number.isInteger(numeric) ? String(numeric) : String(Number(numeric.toFixed(2)));
-}
+const displayTotalAmount = displayAmount;
 
 async function writeClipboardText(value: string): Promise<boolean> {
   if (navigator.clipboard && window.isSecureContext) {
@@ -556,15 +553,15 @@ export function MorePanel({
               const lotteryLabel = lottery === "体" || lottery === "排列三" ? "体" : "福";
               return (
                 <Fragment key={key}>
-                  <div className="number-group-header"><b>{lotteryLabel}</b><span>第</span><b>{issue}</b><span>期，共</span><b>{amount.toFixed(2).replace(/\.00$/, "")}</b></div>
-                  {lines.map((line, index) => <div className="number-row" key={line.id || index}><span>{line.number_text || "-"}</span><span>{line.amount || "0"}</span></div>)}
+                  <div className="number-group-header"><b>{lotteryLabel}</b><span>第</span><b>{issue}</b><span>期，共</span><b>{displayAmount(amount)}</b></div>
+                  {lines.map((line, index) => <div className="number-row" key={line.id || index}><span>{line.number_text || "-"}</span><span>{displayAmount(line.amount || "0")}</span></div>)}
                 </Fragment>
               );
             })}
             {!numberLoading && numberLines.length === 0 && <div className="number-empty">暂无号码</div>}
             <div className="number-note">
               请核对 一切以小票为准<br />
-              总笔数:{numberTotal} 总金额:{numberRecord.amount}
+              总笔数:{numberTotal} 总金额:{displayAmount(numberRecord.amount)}
             </div>
           </div>
         </div>
@@ -653,7 +650,7 @@ export function MorePanel({
             <SearchOutlined /><span>搜索</span>
           </button>
           <label className="more-total">总金额：</label>
-          <span className="more-total-amount">{amountTotal}</span>
+          <span className="more-total-amount">{displayAmount(amountTotal)}</span>
         </div>
       </div>
       <div className="more-results">
@@ -678,7 +675,7 @@ export function MorePanel({
               </label>
               <p className={lotteryClass} onClick={refunded ? undefined : () => copyRecordText(record)}>{record.source_text || record.formatted_text || "-"}</p>
               <div className="more-card-footer">
-                <span>{refunded ? "0.00" : record.amount}</span>
+                <span>{refunded ? "0" : displayAmount(record.amount)}</span>
                 {!refunded && (
                   <div className="more-card-actions">
                     <button type="button" className="more-card-action copy" aria-label="查看下注详情" onClick={() => void openDetails(record)}>
@@ -742,9 +739,9 @@ export function MorePanel({
                 {detailLines.map((line, index) => (
                   <div className="more-detail-line" key={line.id || index}>
                     <span>{line.number_text || "-"}</span>
-                    <span>{line.amount || "0"}</span>
+                    <span>{displayAmount(line.amount || "0")}</span>
                     <span>{line.odds || "---"}</span>
-                    <span>{Number(line.win_amount || 0) > 0 ? line.win_amount : "---"}</span>
+                    <span>{Number(line.win_amount || 0) > 0 ? displayAmount(line.win_amount) : "---"}</span>
                   </div>
                 ))}
               </div>

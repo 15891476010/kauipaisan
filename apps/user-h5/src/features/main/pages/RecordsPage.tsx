@@ -33,7 +33,16 @@ function isGenericGroupDetail(detail: BetDetail) {
   return /组/u.test(original) || /^(?:组|组选)$/u.test(String(detail.play_label || ""));
 }
 
+function detailSpanDigit(detail: BetDetail) {
+  for (const value of [detail.play_type, detail.play_label, detail.number_text]) {
+    const match = String(value || "").trim().match(/^(?:跨度|跨)\s*([0-9])$/u);
+    if (match) return match[1];
+  }
+  return "";
+}
+
 function detailPlayLabel(detail: BetDetail) {
+  if (detailSpanDigit(detail) !== "") return "跨度";
   if (isGenericGroupDetail(detail)) return "组选";
   const raw = String(detail.play_label || detail.play_type || detail.category || "投注");
   const rowMeta = `${detail.play_label || ""} ${detail.play_type || ""} ${detail.category || ""}`;
@@ -120,6 +129,12 @@ function normalizeDetailRows(input: BetDetail[]): BetDetail[] {
 }
 
 function displayDetailNumber(detail: BetDetail, play: string) {
+  const span = detailSpanDigit(detail);
+  if (span !== "") return `跨${span}`;
+  if (String(detail.play_type || detail.play_label || "").trim() === "对子") {
+    const pair = String(detail.number_text || "").replace(/\s+/gu, "").match(/^0?(\d{2})(?:对子|双飞|飞)*$/u);
+    if (pair) return pair[1];
+  }
   // Multi-code prefixes describe this row's family, not the whole source sentence.
   const multiFamily = String(detail.play_type || "").match(/^(?:组)(三|六|3|6)(?:[一二两三四五六七八九1-9]码|多码)$/u)?.[1];
   if (multiFamily && /^(?:组三|组六)多码$/u.test(play)) {
@@ -176,6 +191,8 @@ function displayDetailNumber(detail: BetDetail, play: string) {
 }
 
 function detailPlayMark(detail: BetDetail, play: string) {
+  if (detailSpanDigit(detail) !== "") return "";
+  if (String(detail.play_type || detail.play_label || "").trim() === "对子") return "对子";
   if (/^(?:组三|组六)多码$/u.test(play)) return "";
   if (isGenericGroupDetail(detail)) return "组";
   const raw = String(detail.play_type || detail.play_label || "");
@@ -261,8 +278,8 @@ export function RecordsPage() {
         );
         setRecords(nextRecords);
         setTotal(Number(data?.total || 0));
-        setAmountTotal(pageAmount.toFixed(2));
-        setWinAmountTotal(pageWinAmount.toFixed(2));
+        setAmountTotal(String(pageAmount));
+        setWinAmountTotal(String(pageWinAmount));
         setPage(nextPage);
       })
       .catch((reason) => {
@@ -511,9 +528,9 @@ export function RecordsPage() {
                                 {detailPlayMark(detail, playName) ? <em>{detailPlayMark(detail, playName)}</em> : null}
                               </span>
                             </span>
-                            <span>{detail.amount || "0"}</span>
+                            <span>{displayAmount(detail.amount || "0")}</span>
                             <span>{displayDetailOdds(detail)}</span>
-                            <span>{Number(detail.win_amount || 0) > 0 ? detail.win_amount : "---"}</span>
+                            <span>{Number(detail.win_amount || 0) > 0 ? displayAmount(detail.win_amount) : "---"}</span>
                           </div>
                         ))}
                       </div>

@@ -20,7 +20,7 @@ import { ChangePasswordPage } from "./pages/ChangePasswordPage";
 import { RulesPage } from "./pages/RulesPage";
 import { GenericPage } from "./pages/GenericPage";
 import { StopDropPage } from "./pages/StopDropPage";
-import { displayAmount, nav, type Announcement, type Balances } from "./shared";
+import { nav, type Announcement, type Balances } from "./shared";
 import "./Main.scss";
 
 function MainShell({ name, logout, forcePasswordChange = false, onPasswordChanged }: { name: string; logout: () => void; forcePasswordChange?: boolean; onPasswordChanged?: () => void }) {
@@ -131,8 +131,8 @@ function MainShell({ name, logout, forcePasswordChange = false, onPasswordChange
       if (amount > 0) {
         setBalances((current) => ({
           ...current,
-          used_balance: displayAmount(Number(current.used_balance) + amount),
-          available_balance: displayAmount(
+          used_balance: String(Number(current.used_balance) + amount),
+          available_balance: String(
             Math.max(0, Number(current.available_balance) - amount),
           ),
         }));
@@ -144,7 +144,7 @@ function MainShell({ name, logout, forcePasswordChange = false, onPasswordChange
             setBalances((current) => {
               const normalized = {} as Balances;
               (Object.keys(current) as Array<keyof Balances>).forEach((key) => {
-                normalized[key] = displayAmount(data[key] ?? current[key]);
+                normalized[key] = String(data[key] ?? current[key]);
               });
               return { ...current, ...normalized };
             });

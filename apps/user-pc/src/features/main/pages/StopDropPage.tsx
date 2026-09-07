@@ -1,3 +1,4 @@
+import { displayAmount } from "../../../utils/amount";
 import { useEffect, useState } from "react";
 import { App as AntdApp, DatePicker, Empty } from "antd";
 import zhCN from "antd/es/date-picker/locale/zh_CN";
@@ -268,7 +269,7 @@ export function StopDropPage() {
                 <span>{row.placed_at}</span>
                 <span>{displayNumber(row)}</span>
                 <span>
-                  {row.original_amount}/{row.actual_amount}/{row.stop_amount}
+                  {displayAmount(row.original_amount)}/{displayAmount(row.actual_amount)}/{displayAmount(row.stop_amount)}
                 </span>
                 <span>
                   {row.original_odds || "-"}/{row.actual_odds || "-"}/

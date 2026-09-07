@@ -1,3 +1,4 @@
+import { displayAmount } from "../utils/amount";
 import { Fragment, memo, useLayoutEffect, useState } from "react";
 import type { QuickEntryLine } from "../api/user";
 import { Button, Modal } from "antd";
@@ -11,7 +12,7 @@ type QuickResultTableProps = {
   onConfirmMismatch?: (line: QuickEntryLine) => void;
 };
 
-const formatAmount = (value: string) => value.replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
+const formatAmount = displayAmount;
 const isAmountMismatch = (line: QuickEntryLine) => line.status === "failed" && Boolean(
   line.suggested_amount || /总金额|金额需确认|不一致|对不上/.test(line.reason || ""),
 );
@@ -618,7 +619,7 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
           {hasParsedResult(line) && (!isBatch || isBatchEnd) && isLastRelatedGroup && (
             <div className="quick-result-summary">
               <span>笔数：</span><b>{groupCount}</b>
-              <span>金额：</span><b>{formatAmount(groupAmount.toFixed(2))}</b>
+              <span>金额：</span><b>{formatAmount(groupAmount)}</b>
             </div>
           )}
           </Fragment>
@@ -645,7 +646,7 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
         width={1000}
         className="quick-detail-modal"
       >
-        <div className="quick-detail-summary"><InfoCircleOutlined className="quick-detail-info" />详情：总笔数 {detailCount}，总金额 {formatAmount(detailAmount.toFixed(2))}</div>
+        <div className="quick-detail-summary"><InfoCircleOutlined className="quick-detail-info" />详情：总笔数 {detailCount}，总金额 {formatAmount(detailAmount)}</div>
         <div className="quick-detail-scroll">
           <div className="result-table">
             <div className="result-category-tabs">
@@ -684,7 +685,7 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
                                   </>
                                 ) : "--"}
                               </span>
-                              <span className="label-wrapper">{number ? formatAmount((section.amounts[number] ?? section.unitAmount * (section.frequency[number] || 1)).toFixed(2)) : "--"}</span>
+                              <span className="label-wrapper">{number ? formatAmount(section.amounts[number] ?? section.unitAmount * (section.frequency[number] || 1)) : "--"}</span>
                             </div>
                           ))}
                         </Fragment>

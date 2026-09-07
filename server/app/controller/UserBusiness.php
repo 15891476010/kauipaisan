@@ -193,7 +193,7 @@ final class UserBusiness
             $query=Db::name('bet_records')->where('site_id',$s['site_id'])->where('user_id',$s['user_id']);
             if ($from) $query->where('placed_at','>=',$from); if ($to) $query->where('placed_at','<=',$to);
             $status=(string)$request->param('status',''); if (in_array($status,['won','unwon'],true)) $query->where('status',$status);
-            $source=trim((string)$request->param('source','')); if ($source !== '') $query->where(function($nested)use($source):void{$nested->whereLike('source_text','%'.$source.'%')->whereOrLike('formatted_text','%'.$source.'%');});
+            $source=trim((string)$request->param('source','')); if ($source !== '') $query->where(function($nested)use($source):void{$nested->whereLike('source_text','%'.$source.'%')->whereOr('formatted_text','like','%'.$source.'%');});
             $total=(clone $query)->count(); $amountTotal=(float)(clone $query)->sum('amount'); $page=max(1,(int)$request->param('page',1)); $size=min(100,max(1,(int)$request->param('page_size',20)));
             $list=$query->order('placed_at','desc')->page($page,$size)->select()->toArray();
             foreach ($list as &$record) {
@@ -209,7 +209,7 @@ final class UserBusiness
         $query=Db::name('bet_submissions')->where('site_id',$s['site_id'])->where('user_id',$s['user_id']);
         if ($from) $query->where('placed_at','>=',$from); if ($to) $query->where('placed_at','<=',$to);
         $status=(string)$request->param('status',''); if (in_array($status,['won','unwon'],true)) $query->where('status',$status);
-        $source=trim((string)$request->param('source','')); if ($source !== '') $query->where(function($nested)use($source):void{$nested->whereLike('source_text','%'.$source.'%')->whereOrLike('formatted_text','%'.$source.'%');});
+        $source=trim((string)$request->param('source','')); if ($source !== '') $query->where(function($nested)use($source):void{$nested->whereLike('source_text','%'.$source.'%')->whereOr('formatted_text','like','%'.$source.'%');});
         $total=(clone $query)->count(); $amountTotal=(float)(clone $query)->sum('amount'); $page=max(1,(int)$request->param('page',1)); $size=min(100,max(1,(int)$request->param('page_size',20)));
         $list=$query->order('placed_at','desc')->page($page,$size)->select()->toArray();
         foreach ($list as &$record) {
