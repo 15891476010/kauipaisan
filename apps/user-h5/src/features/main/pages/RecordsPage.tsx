@@ -24,7 +24,17 @@ function detailLotteryName(value?: string) {
   return "福彩3D";
 }
 
+function isGenericGroupDetail(detail: BetDetail) {
+  const type = String(detail.play_type || detail.play_label || detail.category || "").trim();
+  if (!/^(?:组|组选|组三|组六|组3|组6)$/u.test(type)) return false;
+  // Generated number/settlement text is not the user's choice of display label.
+  const original = String(detail.record_source || detail.original_source_text || detail.source_text || "");
+  if (/(?:组三|组六|组[36](?!\d))/u.test(original)) return false;
+  return /组/u.test(original) || /^(?:组|组选)$/u.test(String(detail.play_label || ""));
+}
+
 function detailPlayLabel(detail: BetDetail) {
+  if (isGenericGroupDetail(detail)) return "组选";
   const raw = String(detail.play_label || detail.play_type || detail.category || "投注");
   const rowMeta = `${detail.play_label || ""} ${detail.play_type || ""} ${detail.category || ""}`;
   const source = `${raw} ${detail.number_text || ""} ${detail.source_text || ""} ${detail.original_source_text || ""} ${detail.record_source || ""}`;
@@ -110,6 +120,16 @@ function normalizeDetailRows(input: BetDetail[]): BetDetail[] {
 }
 
 function displayDetailNumber(detail: BetDetail, play: string) {
+  // Multi-code prefixes describe this row's family, not the whole source sentence.
+  const multiFamily = String(detail.play_type || "").match(/^(?:组)(三|六|3|6)(?:[一二两三四五六七八九1-9]码|多码)$/u)?.[1];
+  if (multiFamily && /^(?:组三|组六)多码$/u.test(play)) {
+    const digits = String(detail.number_text || "").replace(/\s+/gu, "").match(/^[三六]?(\d{1,10})(?:(?:组三|组六|组3|组6)(?:[一二两三四五六七八九1-9]码|多码)?)?$/u)?.[1];
+    if (digits) return `${multiFamily === "三" || multiFamily === "3" ? "三" : "六"} ${digits}`;
+  }
+  if (isGenericGroupDetail(detail)) {
+    return String(detail.number_text || "").replace(/^[三六]\s*/u, "")
+      .replace(/\s*(?:组三|组六|组选|组3|组6|组)+$/u, "") || "-";
+  }
   const source = String(detail.source_text || "");
   const raw = String(detail.play_type || detail.play_label || "");
   const combined = `${detail.number_text || ""} ${source}`.replace(/\s+/gu, "");
@@ -156,6 +176,8 @@ function displayDetailNumber(detail: BetDetail, play: string) {
 }
 
 function detailPlayMark(detail: BetDetail, play: string) {
+  if (/^(?:组三|组六)多码$/u.test(play)) return "";
+  if (isGenericGroupDetail(detail)) return "组";
   const raw = String(detail.play_type || detail.play_label || "");
   if (/^(?:组六|组三)沾边赖$/u.test(play)) return "";
   if (/码定位/u.test(`${play} ${raw} ${detail.play_label || ""} ${detail.category || ""}`)) return "";

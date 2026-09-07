@@ -21,6 +21,11 @@ function detailOrderKey(row: BetDetail): string {
 
 function displayNumber(row: BetDetail): string {
   const value = String(row.number_text || "");
+  const multiFamily = String(row.play_type || "").match(/^组(三|六|3|6)(?:[一二两三四五六七八九1-9]码|多码)$/u)?.[1];
+  if (multiFamily) {
+    const digits = value.replace(/\s+/gu, "").match(/^[三六]?(\d{1,10})(?:(?:组三|组六|组3|组6)(?:[一二两三四五六七八九1-9]码|多码)?)?$/u)?.[1];
+    if (digits) return `${multiFamily === "三" || multiFamily === "3" ? "三" : "六"} ${digits}`;
+  }
   const play = `${row.play_label || ""}${row.play_type || ""}`;
   const source = String(row.source_text || row.parsed_source_text || "");
   const stickyFamily = play.match(/(组六|组三)沾边赖/u)?.[1];
