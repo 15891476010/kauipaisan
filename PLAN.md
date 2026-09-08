@@ -1191,3 +1191,13 @@
 - [x] 服务器上重新打包 user-h5 并发布 dist。
 - [x] Playwright 实测两条路径均符合预期（快录→号→返回→快录；查看更多→号→返回→查看更多）。
 - 备份：src/features/main/components/MorePanel.tsx.bak-20260905-number-back
+
+### 2026-09-08：代理端总货概览桌面/手机响应式对齐（已完成）
+- [x] 对比参考站与部署站总货概览 DOM、截图、计算样式和参考站 CSS 单位；参考站主要使用 px，部分 H5 旧样式使用 rem。
+- [x] 备份 agent-web App.tsx/App.css，并为窄屏增加真实 viewport 响应式覆盖，移除手机端 1320px 最小画布与 zoom 截取问题。
+- [x] 对齐手机端头部、彩种条、面包屑、总货 tabs、筛选表单、期号栏、数据空态、分页和温馨提示；宽数据表仍仅在表格容器内横向滚动。
+- [x] 保留桌面端完整导航与总货概览结构，1440px 下重新核对布局。
+- [x] agent-web lint 通过（0 errors，保留既有 warnings）；生产构建成功并发布到 agent-web dist 及四个代理目标目录。
+- [ ] route test 仍有既有失败：tests/routePermissions.test.ts 的 nested routes 权限断言失败，与本次 CSS-only 改动无关。
+- 验证：Playwright 390x844 下 `.agent-app` width=390px、min-width=0、zoom=1；总货概览内容 width=370px；1440x900 下桌面导航、筛选和暂无数据区域正常显示。
+- 备份：`apps/agent-web/src/App.css.bak-overview-responsive-20260908`、`App.tsx.bak-overview-responsive-20260908`
