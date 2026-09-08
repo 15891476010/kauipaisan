@@ -104,7 +104,7 @@ function MainShell({ name, logout, forcePasswordChange = false, onPasswordChange
           setSelectedLotteryId((current) =>
             current && list.some((item) => item.id === current)
               ? current
-              : list[0]?.id || null,
+              : (list.find((item) => /福彩3D|福彩|^福$/u.test(`${item.code || ""} ${item.name || ""}`)) || list[0])?.id || null,
           );
         })
         .catch(() => {
