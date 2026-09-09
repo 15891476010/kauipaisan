@@ -123,12 +123,16 @@ final class AgentReport
                 $chain=[['id'=>0,'parent_id'=>1,'level'=>'agent','share_rate'=>(float)$row['share_rate']]];
             }
             $allocations=SequentialProfitShare::allocate($memberProfit,$chain,$siteCap);
-            $allocationAmount=(float)($allocations[0]['amount']??0);
+            // Select the allocation belonging to the organization viewing this report.
+            $currentOrganizationId=(int)($session['organization_id']??0);
+            $currentAllocation=null; foreach($allocations as $allocation){if((int)($allocation['node']['id']??0)===$currentOrganizationId){$currentAllocation=$allocation;break;}}
+            $currentAllocation ??= (($currentOrganizationId>0 && $allocations!==[]) ? end($allocations) : null);
+            $allocationAmount=(float)($currentAllocation['amount']??0);
             // Occupation amount is always displayed as a positive principal.
             // The sign belongs only to occupation P/L: a positive member P/L
             // means the member won and the organization must pay it out.
             $occupationAmount=abs($allocationAmount);
-            $hasShare=(float)($allocations[0]['share_rate']??0)>0;
+            $hasShare=(float)($currentAllocation['share_rate']??0)>0;
             $water=$occupationAmount*$waterRate;
             // The single site-wide 明水 is part of occupation P/L. There is no
             // separate offline/dark-water stream.
@@ -143,7 +147,7 @@ final class AgentReport
                 // Hidden aggregation inputs: occupation is calculated on the
                 // member's net P/L after grouping, never by summing absolute
                 // P/L for individual bet lines.
-                'share_base'=>$allocationAmount,'share_rate'=>(float)($allocations[0]['share_rate']??0),'water_rate'=>$waterRate,'has_share'=>$hasShare?1:0];
+                'share_base'=>$allocationAmount,'share_rate'=>(float)($currentAllocation['share_rate']??0),'water_rate'=>$waterRate,'has_share'=>$hasShare?1:0];
         }
         unset($row); return $rows;
     }

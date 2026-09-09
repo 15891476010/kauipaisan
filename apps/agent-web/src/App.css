@@ -4604,7 +4604,7 @@ body {
   flex-direction: row;
   cursor: pointer;
 }
-.ledger-reference-band button.current {
+.ledger-reference-band button.active {
   color: #ff7171;
 }
 .ledger-issue-range {
@@ -7413,4 +7413,51 @@ body .ant-modal-confirm-info .ant-modal-confirm-icon { color:#006400; }
     appearance: auto;
     background-image: none;
   }
+}
+/* Reference mobile behavior: preserve the desktop canvas and let the
+   viewport inspect it horizontally instead of scaling the whole interface. */
+@media (max-width: 767px) {
+  html, body, #root {
+    width: 100%;
+    min-width: 0;
+    overflow-x: auto;
+  }
+  .agent-app {
+    width: 1300px !important;
+    min-width: 1300px !important;
+    max-width: none !important;
+    height: auto !important;
+    min-height: 100vh !important;
+    zoom: 1 !important;
+    overflow-x: visible !important;
+    overflow-y: auto;
+  }
+  .agent-app .agent-header,
+  .agent-app .agent-lottery-strip {
+    width: 1300px !important;
+    min-width: 1300px !important;
+  }
+  .agent-body,
+  .management-workspace.agent-body {
+    width: 1300px !important;
+    min-width: 1300px !important;
+    padding: 10px !important;
+    overflow-x: visible !important;
+  }
+  .management-workspace.agent-body > main {
+    min-width: 0;
+  }
+  .overview-page {
+    width: 1280px !important;
+    min-width: 1280px !important;
+  }
+  .overview-location,
+  .overview-page .overview-filters,
+  .overview-page .overview-table-panel {
+    min-width: 0;
+  }
+}
+@media (max-width: 767px) {
+  html, body { width: 100%; min-width: 0; overflow-x: auto !important; }
+  #root { width: 1300px !important; min-width: 1300px !important; overflow: visible !important; }
 }

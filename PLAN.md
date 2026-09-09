@@ -1,5 +1,12 @@
 # 项目实施计划
 
+### 2026-09-09: Ledger Range Selection
+
+- [x] Identify the hard-coded current-period class and missing range selection state.
+- [x] Bind shortcut styling to the applied range, reset on manual issue changes/view/lottery defaults, and verify server build and browser requests.
+- Verified all four shortcut highlights and request ranges, custom issue edits, monthly defaults, lottery changes, and 430px scaled layout using isolated mocked API responses. Corrected week endpoints to include Sunday and today's issue before noon. No real data writes.
+- Home-server oxlint: 0 warnings/errors; TypeScript/build and diff checks passed. Published index-CzduYbLM.js / index-G-XHmPju.css and refreshed the user's page.
+
 ### 2026-09-09: Agent Header Issue Styling
 
 - [x] Inspect reference issue typography, colors, and centered two-row alignment.
@@ -1223,3 +1230,10 @@
 - [ ] route test 仍有既有失败：tests/routePermissions.test.ts 的 nested routes 权限断言失败，与本次 CSS-only 改动无关。
 - 验证：Playwright 390x844 下 `.agent-app` width=390px、min-width=0、zoom=1；总货概览内容 width=370px；1440x900 下桌面导航、筛选和暂无数据区域正常显示。
 - 备份：`apps/agent-web/src/App.css.bak-overview-responsive-20260908`、`App.tsx.bak-overview-responsive-20260908`
+
+### 2026-09-09：总货概览手机端恢复参考站固定画布行为（已完成）
+- [x] 确认参考站 390px 下为约 1300px 固定画布、zoom=1，而部署站原为 1320px 画布 zoom≈0.295。
+- [x] agent-web App.css 增加窄屏覆盖：1300px agent canvas、#root 1300px、zoom=1，恢复手机横向查看而非整体缩小。
+- [x] 生产构建成功发布到 agent-web dist 及四个代理目标目录。
+- [x] Playwright 验证：手机 390px 下 agent/root 实际 1300px、zoom=1、body scrollWidth=1300，截图视觉与参考站同类固定画布行为一致。
+- 备份：`apps/agent-web/src/App.css.bak-reference-mobile-20260909`

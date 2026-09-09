@@ -2263,3 +2263,8 @@
 
 - User correction: the marked issue label differs in appearance, not its data. Do not change issue formatting, values, or API selection rules.
 - Match reference Arial 16px normal-weight labels, black when unselected and white when selected, centered over the countdown. Keep desktop canvas scaling.
+# 2026-09-09: Ledger Shortcuts Must Reflect The Selected Range
+
+- The current-period class was hard-coded, so queries changed while the highlight stayed on 本期.
+- Track the applied shortcut explicitly, clear it for manual issue edits, and reset it with view/lottery defaults. Only change the selected shortcut when its range is applied.
+- Check all four shortcuts, monthly defaults, custom ranges, and week boundaries (including Sunday and today's issue before noon).
