@@ -147,9 +147,10 @@ final class AgentMember
     public function create(Request $request): \think\response\Json
     {
         $session=$this->session($request); $siteId=(int)$session['site_id']; $tenantId=(int)($session['tenant_id']??1); $data=$request->post();
-        $node=OrganizationHierarchy::nodeForSession($session);
-        if(!$node||(string)$node['level']!=='agent')throw new \InvalidArgumentException('只有代理层级可以直接创建会员');
-        $nodePermissions=AgentAuthorization::sitePermissions((int)$session['site_id'],(string)$node['level']);
+        $organizationId=(int)($data['organization_id']??$session['organization_id']??0);
+        $node=OrganizationHierarchy::assertManageableNode($session,$organizationId,true);
+        if((string)$node['level']!=='agent')throw new \InvalidArgumentException('会员必须归属代理层级');
+        $nodePermissions=OrganizationHierarchy::managementPermissions($session);
         if(!in_array('*',$nodePermissions,true)&&!in_array('member.create',$nodePermissions,true))throw new \InvalidArgumentException('当前未分配新增下级权限');
         $organizationId=(int)$node['id'];
         $username=trim((string)($data['username']??'')); $displayName=trim((string)($data['display_name']??$username)); $password=(string)($data['password']??''); $credit=$data['credit_balance']??0;

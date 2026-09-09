@@ -1,5 +1,19 @@
 # 项目实施计划
 
+### 2026-09-09: Agent Header Issue Styling
+
+- [x] Inspect reference issue typography, colors, and centered two-row alignment.
+- [x] Match header CSS without changing issue values or selection logic; build on 192.168.2.18 and verify desktop/mobile states.
+- Verified: 1362px, 430px and 375px; both selected states use reference label colors, 16px/400 typography and centered countdown alignment without clipping. Live page confirms unchanged 26241/2026241 values. Home build published index-DDw_MCv2.css; TypeScript and diff checks passed.
+
+### 2026-09-09: Agent Create Form Reference Layout
+
+- [x] Identify the unused eight-column member layout and inspect the reference form.
+- [x] Align the member account and lottery permission sections with the reference dimensions.
+- [x] Verify desktop and scaled mobile layouts, then build and publish on 192.168.2.18.
+- Verified: 960px member account band; reference column widths 216.656/291.672/421.672px; 170px and 300px inputs; desktop 1552/1362px and scaled 430/375px screenshots without clipping. Permission coupling, organization creation fields, and selected-parent return navigation passed with mocked APIs and no real data writes.
+- Home-server oxlint and TypeScript/build passed. Port 5997 serves index-DIB32cgz.js and index-BVFb80vi.css. Production server was not accessed.
+
 ### 本轮：修复用户端直选单项上限误截断（已完成）
 
 - [x] 核对“福直10元”长号码串的解析注数与赔率限额字段，确认 `single_item_limit=1500` 被错误用于整行金额。
@@ -1161,6 +1175,14 @@
 - [x] 前端重建物理行时补齐合并批次、合并文本和末行状态，前 7 行不再误标为“新”。
 - [x] 成功行统一为参考站 `#a7e1ce`，福标签为 `#7a2bc3`，“合/详”分别使用 `#037bab/#036564`。
 - [x] lint、生产构建和线上资源校验通过；发布 `index-CN1c61sJ.css` / `index-CTYfrBYS.js`。
+## 2026-09-09: Descendant Management
+
+- [x] Unify subtree authorization and preserve the selected parent in agent management forms.
+- [x] Verify descendant edits, creation, score ownership, and rejection of self/ancestor/unrelated targets using rollback fixtures.
+- [x] Build agent-web on 192.168.2.18 and verify drill-down, edit, create, and return navigation.
+- Verified: PHP syntax checks; DescendantManagementTest (fixtures rolled back), OrganizationDrillDownTest, OrganizationHierarchyTest; browser mock workflows for descendant organization/member edits and creation, disabled status, return/refresh context, and read-only permissions; live port 5997 read check confirms can_manage for a descendant. Agent build: index-D-t7xHit.js.
+- Production server 64.90.27.174 was not accessed or modified.
+
 # 本轮：对齐手机记录标题中的盘名和时间（已完成）
 
 - [x] 对比参考站与当前站标题行 DOM 和计算样式。

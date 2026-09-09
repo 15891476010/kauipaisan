@@ -1,4 +1,5 @@
 import axios, { type AxiosError, type AxiosInstance, type AxiosResponse, type InternalAxiosRequestConfig } from "axios";
+import { applyRefreshedAgentToken, clearAgentAgreement } from "./agreementSession";
 
 export type ApiEnvelope<T> = {
   code: number;
@@ -19,7 +20,7 @@ function handleUnauthorized() {
   localStorage.removeItem("agent_token");
   localStorage.removeItem("agent_name");
   localStorage.removeItem("agent_must_change_password");
-  sessionStorage.removeItem("agent_agreement_accepted_token");
+  clearAgentAgreement();
   if (unauthorizedDispatched) return;
   unauthorizedDispatched = true;
   window.dispatchEvent(new CustomEvent("agent:unauthorized"));
@@ -40,8 +41,7 @@ async function refreshToken(currentToken: string): Promise<string | null> {
       { timeout: 8000, headers: { Authorization: `Bearer ${currentToken}`, "X-Agent-Domain": window.location.host } },
     ).then((response) => {
       const token = String(response.data?.data?.token || "").trim();
-      if (token) localStorage.setItem("agent_token", token);
-      return token || null;
+      return applyRefreshedAgentToken(currentToken, token) ? token : null;
     }).catch(() => null).finally(() => { refreshPromise = null; });
   }
   return refreshPromise;
@@ -61,7 +61,7 @@ async function retryAfterRefresh(error: AxiosError<ApiEnvelope<unknown>>): Promi
     config.headers.set("Authorization", `Bearer ${token}`);
     return request(config);
   }
-  handleUnauthorized();
+  if (localStorage.getItem("agent_token") === oldToken) handleUnauthorized();
   return Promise.reject(error);
 }
 

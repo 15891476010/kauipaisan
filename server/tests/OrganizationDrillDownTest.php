@@ -28,7 +28,8 @@ try{
     $payload=$decode($controller->agentIndex($request((int)$child['id'])));
     $data=$payload['data']??[];
     $check((int)($data['current']['id']??0)===(int)$child['id'],'未进入指定直属下级');
-    $check(($data['current']['can_manage']??true)===false,'后代浏览必须为只读');
+    $check(($data['current']['can_manage']??false)===true,'上级应能管理自己范围内的后代');
+    $check(($data['current']['permissions']??[])===OrganizationHierarchy::managementPermissions(['site_id'=>(int)$root['site_id'],'tenant_id'=>(int)$root['tenant_id'],'organization_id'=>(int)$root['id']]),'操作权限必须来自登录上级，而不是正在浏览的下级');
     $check((int)($data['breadcrumbs'][0]['id']??0)===(int)$root['id'],'面包屑泄露了当前账号上级');
     $check((int)($data['breadcrumbs'][count($data['breadcrumbs'])-1]['id']??0)===(int)$child['id'],'面包屑未定位当前节点');
     foreach($data['nodes']??[] as $row)$check((int)$row['parent_id']===(int)$child['id'],'列表混入非直属下级');

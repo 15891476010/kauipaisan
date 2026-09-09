@@ -113,6 +113,34 @@ final class OrganizationHierarchy
         return $node ?: self::rootForSite($siteId);
     }
 
+    public static function assertManageableNode(array $session, int $organizationId, bool $includeSelf = false): array
+    {
+        $rootId = (int)($session['organization_id'] ?? 0);
+        $siteId = (int)($session['site_id'] ?? 0);
+        $tenantId = (int)($session['tenant_id'] ?? 0);
+        $root = $rootId > 0 ? Db::name('organization_nodes')->where('id', $rootId)
+            ->where('site_id', $siteId)->where('tenant_id', $tenantId)->whereNull('deleted_at')->find() : null;
+        if (!$root || empty($root['path']) || (!$includeSelf && $organizationId === $rootId)) {
+            throw new \InvalidArgumentException('无权管理该组织，只能操作当前账号的下级');
+        }
+        $node = Db::name('organization_nodes')->where('id', $organizationId)
+            ->where('site_id', $siteId)->where('tenant_id', $tenantId)
+            ->whereLike('path', (string)$root['path'].'%')->whereNull('deleted_at')->find();
+        if (!$node) throw new \InvalidArgumentException('无权管理该组织，只能操作当前账号的下级');
+        return $node;
+    }
+
+    public static function managementPermissions(array $session): array
+    {
+        $root = self::assertManageableNode($session, (int)($session['organization_id'] ?? 0), true);
+        $permissions = self::effectivePermissions((int)$root['id']);
+        // The session can further restrict subaccounts; browsing a child must
+        // never replace the operator's permissions with that child's permissions.
+        return isset($session['permissions']) && is_array($session['permissions'])
+            ? AgentAuthorization::intersect($session['permissions'], $permissions)
+            : $permissions;
+    }
+
     public static function descendantIds(int $organizationId): array
     {
         $node=Db::name('organization_nodes')->where('id',$organizationId)->whereNull('deleted_at')->find();

@@ -15,6 +15,7 @@ export const routePermissions: Record<string, string[]> = {
   rules: ["rules"],
   settings: ["settings"],
   subaccounts: ["subaccounts"],
+  organizations: ["organization.manage"],
 };
 
 export const routePermissionCodes: Record<string, string> = {
@@ -28,6 +29,7 @@ export const routePermissionCodes: Record<string, string> = {
   rules: "route.rules",
   settings: "route.settings",
   subaccounts: "route.subaccounts",
+  organizations: "route.organizations",
 };
 
 export function storedAgentPermissions(): string[] {
@@ -53,8 +55,8 @@ export function routeKey(pathname: string): string {
 
 export function isRouteAllowed(pathname: string, context: RouteAccessContext): boolean {
   const key = routeKey(pathname);
+  if (context.permissions.includes("*")) return key in routePermissions;
   if (!(key in routePermissions)) return false;
-  if (context.permissions.includes("*")) return true;
   const routePermission = routePermissionCodes[key];
   return Boolean(routePermission && context.permissions.includes(routePermission))
     && routePermissions[key].some((permission) => context.permissions.includes(permission));

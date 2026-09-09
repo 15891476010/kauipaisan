@@ -1,5 +1,5 @@
 import { DoubleRightOutlined, ReloadOutlined } from '@ant-design/icons';
-import { Button, Checkbox, Empty, Input, Radio, Select, Spin } from 'antd';
+import { Button, Checkbox, Empty, Input, Radio, Spin } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { getInterceptionCategories, getInterceptionIssues, getInterceptionPlate, getInterceptions, type InterceptionCategory, type InterceptionIssue, type InterceptionPlateGroup, type InterceptionRow, type InterceptionSummary } from '../../api/user';
 
@@ -68,11 +68,11 @@ export function InterceptionsPage({ lottery }: { lottery: string }) {
           <FilterField label="查账号"><Input aria-label="查账号" value={filters.account} onChange={(event) => setFilters({ ...filters, account: event.target.value })}/></FilterField>
           <FilterField label="查号码"><Input aria-label="查号码" value={filters.number} onChange={(event) => setFilters({ ...filters, number: event.target.value })}/></FilterField>
           <div className="interception-check"><span className="interception-check-title">组</span><label className="interception-check-control"><span>是？</span><Checkbox checked={filters.groupOnly} onChange={(event) => setFilters({ ...filters, groupOnly: event.target.checked })}/></label></div>
-          <FilterField label="列出"><Select value={filters.metric} onChange={(value) => setFilters({ ...filters, metric: value as Filters['metric'] })} options={[{ value: 'odds', label: '赔率' }, { value: 'amount', label: '金额' }]}/></FilterField>
+          <FilterField label="列出"><select value={filters.metric} onChange={(event) => setFilters({ ...filters, metric: event.target.value as Filters['metric'] })}><option value="odds">赔率</option><option value="amount">金额</option></select></FilterField>
           <div className="interception-range"><Input type="number" aria-label="最小值" value={filters.min} onChange={(event) => setFilters({ ...filters, min: event.target.value })}/><span>至</span><Input type="number" aria-label="最大值" value={filters.max} onChange={(event) => setFilters({ ...filters, max: event.target.value })}/></div>
-          <FilterField label="分类"><Select value={filters.oddsId || undefined} placeholder="所有" onChange={(value) => setFilters({ ...filters, oddsId: value || '' })} options={[{ value: '', label: '所有' }, ...categoryGroups.map((group) => ({ label: group.label, options: group.rows.map((row) => ({ value: String(row.id), label: row.name })) }))]}/></FilterField>
-          <FilterField label="来源"><Select value={filters.source} onChange={(value) => setFilters({ ...filters, source: value })} options={[{ value: 'all', label: '全部' }, { value: 'quick', label: '快录' }]}/></FilterField>
-          <FilterField label="设备"><Select value={filters.device} onChange={(value) => setFilters({ ...filters, device: value })} options={[{ value: 'all', label: '全部' }, { value: 'web', label: '网' }]}/></FilterField>
+          <FilterField label="分类"><select value={filters.oddsId} onChange={event=>setFilters({ ...filters, oddsId: event.target.value })}><option value="">所有</option>{categoryGroups.map(group=><optgroup key={group.label} label={group.label}>{group.rows.map(row=><option key={row.id} value={String(row.id)}>{row.name}</option>)}</optgroup>)}</select></FilterField>
+          <FilterField label="来源"><select value={filters.source} onChange={(event) => setFilters({ ...filters, source: event.target.value })}><option value="all">全部</option><option value="quick">快录</option></select></FilterField>
+          <FilterField label="设备"><select value={filters.device} onChange={(event) => setFilters({ ...filters, device: event.target.value })}><option value="all">全部</option><option value="web">网</option></select></FilterField>
           <Button className="interception-submit" type="primary" htmlType="submit">提交</Button>
         </form>
         <div className="interception-band"><strong>{title}</strong><div className="interception-order"><span>按下注时间排序:</span><Radio.Group value={filters.order} onChange={(event) => { const order = event.target.value as Filters['order']; const next = { ...filters, order }; setFilters(next); setApplied(next); }} options={[{ value: 'desc', label: '倒序' }, { value: 'asc', label: '正序' }]} /></div><IssueSelect label="开始期号" value={view === 'details' ? toIssue : fromIssue} issues={issues} onChange={view === 'details' ? setToIssue : setFromIssue}/>{view === 'winning' && <><span>至</span><IssueSelect label="结束期号" value={toIssue} issues={issues} onChange={setToIssue}/></>}</div>
@@ -82,7 +82,7 @@ export function InterceptionsPage({ lottery }: { lottery: string }) {
 }
 
 function FilterField({ label, children }: { label: string; children: React.ReactNode }) { return <label className="interception-filter-field"><span>{label}</span>{children}</label>; }
-function IssueSelect({ label, value, issues, onChange }: { label: string; value: string; issues: InterceptionIssue[]; onChange: (value: string) => void }) { return <Select className="interception-issue-select" size="small" aria-label={label} value={value} onChange={onChange} options={issues.map((item) => ({ value: item.issue_no, label: `${Number(item.date.slice(5, 7))}-${Number(item.date.slice(8, 10))}(${item.issue_no})` }))}/>; }
+function IssueSelect({label,value,issues,onChange}: {label:string;value:string;issues:InterceptionIssue[];onChange:(value:string)=>void}) { return <select className="interception-issue-select" aria-label={label} value={value} onChange={event=>onChange(event.target.value)}>{issues.map(item=><option key={item.issue_no} value={item.issue_no}>{Number(item.date.slice(5,7))}-{Number(item.date.slice(8,10))}({item.issue_no})</option>)}</select>; }
 function Loading() { return <div className="interception-state"><Spin/></div>; }
 function EmptyState() { return <div className="interception-state"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无数据"/></div>; }
 
