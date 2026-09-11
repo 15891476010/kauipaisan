@@ -1237,3 +1237,11 @@
 - [x] 生产构建成功发布到 agent-web dist 及四个代理目标目录。
 - [x] Playwright 验证：手机 390px 下 agent/root 实际 1300px、zoom=1、body scrollWidth=1300，截图视觉与参考站同类固定画布行为一致。
 - 备份：`apps/agent-web/src/App.css.bak-reference-mobile-20260909`
+\n## 2026-09-10 代理端总货概览再次对齐参考站\n- 通过 SSH 直接修改 `/zhang/WWW/kaipaisan/apps/agent-web/src/App.css`：将总货概览位置栏恢复为参考站彩种栏下方的白色 36px 工具行，调整面包屑和页签颜色/间距。\n- 在服务器执行 `npm run lint`（0 errors，3 条既有 warning）和 `npm run build`，已发布到 agent-web dist 及四个代理目标目录。\n\n- Playwright 验证：1440×900 下总货主体 x=16/y=184，位置栏 y=186，高度36；390×844 下固定 1300px 画布，位置栏 y=180，高度36，查询区 y=232，表格区 y=326，与参考站对应区域接近。\n
+- 2026-09-10 对比后修正 PC 端查询区垂直间距：参考站查询区 y=233、表格 y=325，部署站通过桌面媒体查询调整为相同起始位置；重新构建发布并用 Playwright 刷新验证。
+
+## 2026-09-10 用户截图纠正：总货位置栏颜色
+- 用户指出参考站位置/页签整条为深绿色。此前误判为白色并修改是错误的。已通过SSH直接恢复 #006400 背景、白色文字、白底绿色选中页签，并构建发布。
+- Playwright computed style 验证背景 rgb(0,100,0)、文字 rgb(255,255,255)，PC 坐标 x=10 y=180 width=1420 height=36。仍需对齐参考站整条横向边缘与其他细节，不能宣称完全一致。
+
+- 2026-09-10 按参考站实际 header DOM/CSS 对齐展示层：Logo 80px、身份区 x=30、导航起点 x=400、导航项 74x75px、Flex 间距 1px；未修改接口、数据、路由。

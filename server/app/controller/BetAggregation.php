@@ -440,6 +440,7 @@ final class BetAggregation
         if($order==='')$order='desc';
         if(!in_array($field,$allowed,true))throw new \InvalidArgumentException('汇总排序字段无效');
         if(!in_array($order,['asc','desc'],true))throw new \InvalidArgumentException('汇总排序方向无效');
+        if (trim((string)$request->param('sort_field','')) === '') { usort($rows, static function(array $a,array $b): int { $issue=strnatcmp((string)($b['issue_no']??''),(string)($a['issue_no']??'')); if($issue!==0)return $issue; $rank=static function(array $x):int { $p=(string)($x['play_type']??''); return str_contains($p,'直')||str_contains($p,'定位')?0:(str_contains($p,'组六')?1:(str_contains($p,'组三')?2:3)); }; return ($rank($a)<=>$rank($b)) ?: strcmp((string)($a['group_id']??''),(string)($b['group_id']??'')); }); return; }
         usort($rows,static function(array $a,array $b)use($field,$order,$numeric):int{$comparison=in_array($field,$numeric,true)?((float)($a[$field]??0)<=>(float)($b[$field]??0)):strnatcasecmp((string)($a[$field]??''),(string)($b[$field]??''));if($comparison===0)$comparison=strcmp((string)($a['group_id']??''),(string)($b['group_id']??''));return $order==='asc'?$comparison:-$comparison;});
     }
 
@@ -493,7 +494,7 @@ final class BetAggregation
             }
             $memberRows=[];foreach($members as $member){$member['order_count']=count($member['record_ids']);if($compactDirect)$member['potential_value']=$member['selection_potential']===[]?0.0:max($member['selection_potential']);unset($member['record_ids'],$member['selection_potential']);$member['bet_amount']=number_format($member['bet_amount_value'],2,'.','');$member['potential_win_amount']=number_format($member['potential_value'],2,'.','');unset($member['bet_amount_value'],$member['potential_value']);$memberRows[]=$member;}
             usort($memberRows,static fn(array $a,array $b):int=>(float)$b['potential_win_amount']<=>(float)$a['potential_win_amount']);
-            usort($orders,static fn(array $a,array $b):int=>strcmp($b['placed_at'],$a['placed_at'])?:($b['record_id']<=>$a['record_id']));
+            usort($orders,static fn(array $a,array $b):int=>strcmp((string)$b['placed_at'],(string)$a['placed_at'])?:($b['record_id']<=>$a['record_id']));
             $page=max(1,(int)$request->param('detail_page',1));$pageSize=min(100,max(1,(int)$request->param('detail_page_size',30)));
             return $this->reply(['members'=>$memberRows,'member_total'=>count($memberRows),'orders'=>array_slice($orders,($page-1)*$pageSize,$pageSize),'orders_total'=>count($orders),'page'=>$page,'page_size'=>$pageSize]);
         }catch(\Throwable $error){return $this->reply(null,$error->getMessage(),422);}

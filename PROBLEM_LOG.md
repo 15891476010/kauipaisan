@@ -2268,3 +2268,7 @@
 - The current-period class was hard-coded, so queries changed while the highlight stayed on 本期.
 - Track the applied shortcut explicitly, clear it for manual issue edits, and reset it with view/lottery defaults. Only change the selected shortcut when its range is applied.
 - Check all four shortcuts, monthly defaults, custom ranges, and week boundaries (including Sunday and today's issue before noon).
+
+## 2026-09-10 用户截图纠正：总货位置栏颜色
+- 用户指出参考站位置/页签整条为深绿色。此前误判为白色并修改是错误的。已通过SSH直接恢复 #006400 背景、白色文字、白底绿色选中页签，并构建发布。
+- Playwright computed style 验证背景 rgb(0,100,0)、文字 rgb(255,255,255)，PC 坐标 x=10 y=180 width=1420 height=36。仍需对齐参考站整条横向边缘与其他细节，不能宣称完全一致。

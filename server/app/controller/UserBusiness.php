@@ -820,7 +820,7 @@ final class UserBusiness
                 $amount=(float)($detail['amount']??0); $rebate=(float)($detail['rebate']??0); $offline=round($amount*max(0,(float)($detail['drop_odds']??0)),2); $win=(float)($detail['win_amount']??0);
                 $daily[$date]['bet_count']++; $daily[$date]['amount']+=$amount; $daily[$date]['rebate']+=$rebate; $daily[$date]['offline_rebate']+=$offline; $daily[$date]['win_amount']+=$win; $daily[$date]['profit']+=($win-$amount+$rebate+$offline);
             }
-            $list=array_values($daily); usort($list,static fn(array $a,array $b): int => strcmp($b['bill_date'],$a['bill_date']));
+            $list=array_values($daily); usort($list,static fn(array $a,array $b): int => strcmp((string)$b['bill_date'],(string)$a['bill_date']));
         } else {
             $list=$query->order('bill_date','desc')->select()->toArray();
         }
@@ -843,7 +843,7 @@ final class UserBusiness
                 $amount=(float)$record['amount']; $rebate=(float)($rebates[(int)$record['id']]??0); $offline=(float)($offlineRebates[(int)$record['id']]??0); $win=(float)$record['win_amount'];
                 $daily[$date]['bet_count']+=(int)$record['bet_count']; $daily[$date]['amount']+=$amount; $daily[$date]['rebate']+=$rebate; $daily[$date]['offline_rebate']+=$offline; $daily[$date]['win_amount']+=$win; $daily[$date]['profit']+=($win-$amount+$rebate+$offline);
             }
-            $list=array_values($daily); usort($list,static fn(array $a,array $b): int => strcmp($b['bill_date'],$a['bill_date']));
+            $list=array_values($daily); usort($list,static fn(array $a,array $b): int => strcmp((string)$b['bill_date'],(string)$a['bill_date']));
         }
         $total=['bet_count'=>0,'amount'=>'0.00','rebate'=>'0.00','offline_rebate'=>'0.00','win_amount'=>'0.00','profit'=>'0.00']; foreach ($list as $row) foreach ($total as $key=>$value) $total[$key]=$key==='bet_count' ? $total[$key]+(int)$row[$key] : number_format((float)$total[$key]+(float)$row[$key],2,'.','');
         return $this->reply(['list'=>$list,'total'=>$total]);

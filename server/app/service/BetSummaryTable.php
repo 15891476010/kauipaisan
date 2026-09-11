@@ -6,7 +6,7 @@ namespace app\service;
 /** Read-only projections of confirmed bets. No recognition, repricing or settlement writes. */
 final class BetSummaryTable
 {
-    public const FAMILIES = ['six'=>'组六','three'=>'组三','direct'=>'直选＋定位','group'=>'组选','pair'=>'对子','fly'=>'双飞','triple'=>'豹子','sum'=>'和值','dan'=>'独胆','drag'=>'胆拖','three_lai'=>'组三赖','six_lai'=>'组六赖','compound'=>'复式','span'=>'跨度','other'=>'其他'];
+    public const FAMILIES = ['six'=>'组六组选','three'=>'组三组选','direct'=>'直选（三码定位）','group'=>'组选','pair'=>'对子','fly'=>'双飞','triple'=>'豹子','sum'=>'和值','dan'=>'独胆','drag'=>'胆拖','three_lai'=>'组三赖','six_lai'=>'组六赖','compound'=>'复式','span'=>'跨度','other'=>'其他'];
     private const DIGITS = ['一'=>1,'二'=>2,'两'=>2,'三'=>3,'四'=>4,'五'=>5,'六'=>6,'七'=>7,'八'=>8,'九'=>9,'十'=>10];
 
     public static function money(int $cents): string { return number_format($cents/100, 2, '.', ''); }
@@ -171,7 +171,7 @@ final class BetSummaryTable
             }
         }
         foreach($groups as &$g){$g['amount']=self::money($g['amount_cents']);$g['actual_win_amount']=$g['win_unallocated']?null:self::money($g['win_amount_cents']);$g['max_cell_amount']=self::money($g['max_cell_cents']);$g['max_payout']=self::money($g['max_payout_cents']);$g['member_count']=count($g['members']);$g['order_count']=count($g['records']);$g['column_count']=count($g['columns']);unset($g['members'],$g['records']);if(!$includeNumbers)unset($g['columns']);}unset($g);
-        $groups=array_values($groups);usort($groups,static fn($a,$b)=>($b['amount_cents']<=>$a['amount_cents'])?:strcmp($a['key'],$b['key']));
+        $familyRank=["direct"=>0,"six"=>1,"three"=>2,"group"=>2]; usort($groups,static function($a,$b)use($familyRank){$issue=strnatcmp((string)$a["issue_no"],(string)$b["issue_no"]); if($issue!==0)return $issue; $ra=$familyRank[$a["family"]]??3; $rb=$familyRank[$b["family"]]??3; return ($ra<=>$rb)?:strcmp((string)$a["key"],(string)$b["key"]);});
         return ['list'=>$groups,'source_count'=>$sourceCount];
     }
 
@@ -242,7 +242,7 @@ final class BetSummaryTable
             }
             $cells=array_values(array_filter($cells,static fn($c)=>(!$onlyBet||$c['count']>0)&&($search===''||str_contains($c['number'],$search))));
             $field=match($sort){'payout'=>'payout_cents','actual'=>'win_amount_cents',default=>'amount_cents'};
-            usort($cells,static function($a,$b)use($field,$direction){$v=($a[$field]??-1)<=>($b[$field]??-1);return ($direction==='asc'?$v:-$v)?:strcmp($a['number'],$b['number']);});
+            usort($cells,static function($a,$b)use($field,$direction){$v=($a[$field]??-1)<=>($b[$field]??-1);return ($direction==='asc'?$v:-$v)?:strcmp((string)$a['number'],(string)$b['number']);});
             $total=count($cells);$pageSize=40;$current=$onlyColumn!==''?$page:1;
             $column['items']=array_map(static fn($c)=>['number'=>$c['number'],'amount'=>self::money($c['amount_cents']),'payout'=>$c['payout_cents']===null?null:self::money($c['payout_cents']),'actual_win_amount'=>$c['win_amount_cents']===null?null:self::money($c['win_amount_cents']),'count'=>$c['count']],array_slice($cells,($current-1)*$pageSize,$pageSize));
             $column['total']=$total;$column['page']=$current;$column['page_size']=$pageSize;$column['amount']=self::money($column['amount_cents']);unset($column['cells']);$result[]=$column;

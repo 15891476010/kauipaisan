@@ -7461,3 +7461,102 @@ body .ant-modal-confirm-info .ant-modal-confirm-icon { color:#006400; }
   html, body { width: 100%; min-width: 0; overflow-x: auto !important; }
   #root { width: 1300px !important; min-width: 1300px !important; overflow: visible !important; }
 }
+/* Match reference overview tool row below lottery strip. */
+.overview-page { padding-top: 2px; }
+.overview-location { height: 36px; padding-left: 25px; background: #fff; color: #333; }
+.overview-breadcrumb { gap: 10px; font-size: 14px; }
+.overview-breadcrumb b { font-weight: 400; }
+.overview-breadcrumb span { color: #999; }
+.overview-tabs button { color: #333; background: transparent; }
+.overview-tabs button.active { color: #006400; background: #fff; }
+@media (max-width: 767px) {
+  .overview-page { padding-top: 2px !important; }
+  .overview-location { height: 36px !important; padding-left: 25px !important; background: #fff !important; color: #333 !important; }
+}
+@media (min-width: 768px) {
+  .management-workspace.agent-body { padding: 10px !important; }
+  .overview-page .overview-filters { margin: 0 0 22px !important; }
+  .overview-page .overview-table-panel { margin: 0 15px !important; }
+}
+@media (min-width: 768px) {
+  .overview-page .overview-filters { margin: 17px 0 10px !important; }
+}
+
+/* Final reference correction: overview location bar is dark green, not white. */
+.overview-location { background: #006400 !important; color: #fff !important; }
+.overview-breadcrumb b, .overview-breadcrumb u { color: #fff !important; }
+.overview-breadcrumb span { color: #d9f2df !important; }
+.overview-tabs button { color: #fff !important; background: transparent !important; border-left: 1px dotted rgba(255,255,255,.85) !important; }
+.overview-tabs button.active { color: #006400 !important; background: #fff !important; border-left-color: transparent !important; }
+@media (max-width: 767px) { .overview-location { background: #006400 !important; color: #fff !important; } }
+
+/* Match reference vertical bands: notice 30px, header 100px, lottery strip 50px. */
+.agent-app .notice { height: 30px !important; }
+.agent-app .agent-header { height: 100px !important; min-height: 100px !important; }
+.agent-app .agent-lottery-strip { height: 50px !important; }
+.agent-app .agent-lottery-strip .lottery { height: 50px !important; }
+.agent-app .agent-lottery-strip .lottery > li { height: 46px !important; }
+.overview-location { margin-left: -10px !important; width: calc(100% + 20px) !important; }
+@media (max-width: 767px) {
+  .agent-app .notice { height: 30px !important; }
+  .agent-app .agent-header { height: 100px !important; min-height: 100px !important; }
+  .agent-app .agent-lottery-strip { height: 50px !important; }
+  .agent-app .agent-lottery-strip .lottery { height: 50px !important; }
+  .overview-location { margin-left: -10px !important; width: calc(100% + 20px) !important; }
+}
+@media (min-width: 768px) {
+  .management-workspace.agent-body { padding: 0 10px 10px !important; }
+}
+
+/* Header alignment from reference computed layout. */
+@media (min-width: 768px) {
+  .agent-app .agent-header { padding: 0 !important; }
+  .agent-app .agent-identity { width: 390px !important; min-width: 390px !important; height: 100px !important; padding-left: 10px !important; padding-right: 0 !important; gap: 79px !important; align-items: center !important; }
+  .agent-app .agent-identity .agent-logo { width: 80px !important; height: 80px !important; flex-basis: 80px !important; }
+  .agent-app .agent-account-box { width: 122px !important; min-width: 122px !important; height: 40px !important; }
+  .agent-app .agent-navigation { width: 899px !important; min-width: 899px !important; height: 80px !important; gap: 1px !important; align-items: center !important; }
+  .agent-app .agent-navigation a, .agent-app .agent-navigation button { width: 74px !important; min-width: 74px !important; flex-basis: 74px !important; height: 75px !important; padding: 6px 4px !important; font-size: 16px !important; }
+}
+@media (min-width: 768px) {
+  .agent-app .agent-identity { width: 400px !important; min-width: 400px !important; padding-left: 30px !important; }
+}
++/* PC palette aligned with the reference site: dark green chrome on a neutral gray workspace. */
++.agent-app {
++  background: #e8e8e8;
++  color: #111;
++}
++.agent-app .notice {
++  background: #006400 !important;
++}
++.agent-app .site-header {
++  background: #fff;
++  border-bottom-color: #006400;
++}
++.agent-app .agent-lottery-strip {
++  color: #006400;
++  background: #fff;
++}
++.agent-app .agent-lottery-strip .lottery > li.selected {
++  color: #fff;
++  background: #006400;
++}
++.agent-app .agent-body,
++.agent-app .agent-body main {
++  background: #e8e8e8 !important;
++}
++.agent-app .agent-navigation a,
++.agent-app .agent-navigation button {
++  color: #006400;
++}
++.agent-app .agent-navigation .nav-icon-shell {
++  border-color: #006400;
++}
++.agent-app .agent-navigation a.selected {
++  color: #fff;
++  background: #006400;
++}
++.agent-app .overview-location {
++  color: #fff !important;
++  background: #006400 !important;
++}
++

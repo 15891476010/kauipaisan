@@ -410,9 +410,15 @@ final class Resource
             $drawStatus = strtolower(trim((string)$request->param('draw_status', 'all')));
             if (!in_array($drawStatus, ['all', 'opened', 'pending'], true)) throw new \InvalidArgumentException('开奖状态筛选值无效');
             if ($drawStatus === 'opened') {
-                $query->whereIn('status', ['won', 'unwon']);
+                $openedCodes = Db::name('lottery_histories')->where('is_opened', 1)->column('code');
+                $query->where(function ($q) use ($openedCodes) {
+                    $q->whereIn('status', ['won', 'unwon']);
+                    if ($openedCodes) $q->whereOr('issue_no', 'in', array_map('strval', $openedCodes));
+                });
             } elseif ($drawStatus === 'pending') {
+                $openedCodes = Db::name('lottery_histories')->where('is_opened', 1)->column('code');
                 $query->where('status', 'pending');
+                if ($openedCodes) $query->whereNotIn('issue_no', array_map('strval', $openedCodes));
             }
         }
         $betAlertThreshold = 0.0; $winAlertThreshold = 0.0; $checkNumber = ''; $numberSimulation = null;

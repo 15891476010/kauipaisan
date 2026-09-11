@@ -284,7 +284,7 @@ function changeBetView(mode: BetViewMode) {
   if (mode === "records") void load();
   else {
     aggregationQuery.page = 1;
-    aggregationQuery.sort_field = "amount";
+    aggregationQuery.sort_field = "";
     aggregationQuery.sort_order = "desc";
     void loadAggregation();
   }
@@ -829,8 +829,10 @@ onBeforeUnmount(() => {
 </script>
 <template>
   <div :class="['page-card', { 'audit-page-card': resource === 'audit-logs', 'bet-records-page-card': resource === 'bet-records' }]">
-    <h1 class="page-title">{{ title }}</h1>
-    <p class="page-subtitle">{{ pageSubtitle }}</p>
+    <template v-if="resource !== 'bet-records'">
+      <h1 class="page-title">{{ title }}</h1>
+      <p class="page-subtitle">{{ pageSubtitle }}</p>
+    </template>
     <div v-if="resource === 'bet-records'" class="bet-view-switch">
       <el-radio-group :model-value="betViewMode" @change="changeBetView($event as BetViewMode)">
         <el-radio-button value="records">下单列表</el-radio-button>
@@ -1330,7 +1332,9 @@ onBeforeUnmount(() => {
 .bet-records-page-card {
   height: 100%;
   min-height: 0;
-  overflow: hidden;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
 }
 .lottery-checkboxes {
   display: flex;
@@ -1348,6 +1352,7 @@ onBeforeUnmount(() => {
   font-size: 12px;
   line-height: 1.5;
 }
+.bet-records-page-card > .el-pagination { flex: 0 0 auto; padding-bottom: 12px; }
 .bet-detail-panel { width: 100%; overflow-x: hidden; }
 .record-text-cell { display: block; width: 100%; max-width: 280px; min-width: 0; overflow: hidden; color: #2563eb; cursor: pointer; text-overflow: ellipsis; white-space: nowrap; }
 .record-text-cell:hover { text-decoration: underline; }

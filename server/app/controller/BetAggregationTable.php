@@ -54,8 +54,17 @@ final class BetAggregationTable
         });
         $status = (string)$request->param('draw_status', 'pending');
         if (!in_array($status, ['pending', 'opened', 'all'], true)) throw new \InvalidArgumentException('开奖状态无效');
-        if ($status === 'pending') $query->where('r.status', 'pending');
-        elseif ($status === 'opened') $query->whereIn('r.status', ['won', 'unwon']);
+        if ($status === 'pending') {
+            $openedCodes = Db::name('lottery_histories')->where('is_opened', 1)->column('code');
+            $query->where('r.status', 'pending');
+            if ($openedCodes) $query->whereNotIn('r.issue_no', array_map('strval', $openedCodes));
+        } elseif ($status === 'opened') {
+            $openedCodes = Db::name('lottery_histories')->where('is_opened', 1)->column('code');
+            $query->where(function ($q) use ($openedCodes) {
+                $q->whereIn('r.status', ['won', 'unwon']);
+                if ($openedCodes) $q->whereOr('r.issue_no', 'in', array_map('strval', $openedCodes));
+            });
+        }
         elseif ((int)$request->param('include_refunded', 0) !== 1) $query->where('r.status', '<>', 'refunded');
         foreach (['from' => ['>=', ' 00:00:00'], 'to' => ['<=', ' 23:59:59']] as $param => [$op, $time]) {
             $date = trim((string)$request->param($param, ''));
@@ -101,9 +110,20 @@ final class BetAggregationTable
             }
             unset($group);
             $fields = ['amount' => 'amount_cents', 'actual_win_amount' => 'win_amount_cents', 'max_cell_amount' => 'max_cell_cents', 'max_payout' => 'max_payout_cents', 'order_count' => 'order_count', 'member_count' => 'member_count'];
-            $field = $fields[(string)$request->param('sort_field', 'amount')] ?? 'amount_cents';
+            $requestedField=(string)$request->param('sort_field','');
+            $field = $fields[$requestedField] ?? null;
             $direction = $request->param('sort_order') === 'asc' ? 1 : -1;
-            usort($summary['list'], static fn($a, $b) => $direction * ($a[$field] <=> $b[$field]) ?: strcmp($a['key'], $b['key']));
+            if ($field === null) {
+                $familyRank=['direct'=>0,'six'=>1,'three'=>2,'group'=>2];
+                usort($summary['list'], static function($a,$b)use($familyRank){
+                    $issue=strnatcmp((string)($b['issue_no']??''),(string)($a['issue_no']??''));
+                    if($issue!==0)return $issue;
+                    $ra=$familyRank[$a['family']??'']??3; $rb=$familyRank[$b['family']??'']??3;
+                    return ($ra<=>$rb)?:strcmp((string)($a['key']??''),(string)($b['key']??''));
+                });
+            } else {
+                usort($summary['list'], static fn($a, $b) => $direction * ($a[$field] <=> $b[$field]) ?: strcmp((string)$a['key'], (string)$b['key']));
+            }
             $total = count($summary['list']);
             $size = min(100, max(1, (int)$request->param('page_size', 20)));
             $page = max(1, (int)$request->param('page', 1));
