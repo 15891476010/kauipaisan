@@ -98,10 +98,20 @@ final class Auth
             if ($agentId < 1) $agentId=(int)Db::name('domains')->whereIn('domain',$domainCandidates)->where('domain_type','agent')->where('status',1)->value('agent_id');
         }
         $organizationId=0; $organizationLevel='';
-        $orgQuery=Db::name('organization_accounts')->where('username',$username)->where('status',1)->whereNull('deleted_at');
-        if ($siteId > 0) $orgQuery->where('site_id',$siteId);
-        $orgAccount=$orgQuery->find();
-        $account=$orgAccount && password_verify($password,(string)$orgAccount['password']) ? $orgAccount : null;
+        // 组织架构账号以账号自身的 site_id 为准。代理端前端可能没有
+        // 传递 X-Agent-Domain，或域名尚未同步到 domains 表；先按用户名
+        // 查找账号，成功后再用账号所属站点/组织做状态校验，避免合法总监
+        // 因域名头不匹配而被误判为登录失败。
+        $orgCandidates=Db::name('organization_accounts')
+            ->where('username',$username)
+            ->where('status',1)
+            ->whereNull('deleted_at')
+            ->select()->toArray();
+        $orgAccount=null;
+        foreach ($orgCandidates as $candidate) {
+            if (password_verify($password,(string)$candidate['password'])) { $orgAccount=$candidate; break; }
+        }
+        $account=$orgAccount;
         $accountTable=$account ? 'organization_accounts' : 'agent_admins';
         if ($account) {
             $siteId=(int)$account['site_id'];

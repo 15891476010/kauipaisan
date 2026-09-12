@@ -1,5 +1,12 @@
 # 项目实施计划
 
+### 本轮：恢复组三/组六多码显示（已完成）
+
+- [x] 定位用户反馈的显示回退：`/pc/`、`/h5/` 的 index.html 在 2026-09-08 被重新指向 2026-09-01 的旧构建（index-CXYmkiwE.js / index-BehsVOfr.js），早于 09-07 的组三/组六多码显示改动（f4720f1、8f17bfe、8977dc7）。
+- [x] 旧包中 `playName` 直接返回 `组6/组六四码` 等原始标签、`displayDetailNumber` 会剥掉 `三/六` 前缀；当前源码（HEAD）逻辑正确，只是未重新打包。
+- [x] 修复 user-pc/user-h5 因 `apps/user-web` 删除导致的 node_modules 断链，重新安装依赖并在服务器上重新构建发布。
+- 验证：`/pc/index.html` 现引用 `index-fP7Btw8E.js` + `index-DdigMgK6.css`，`/h5/index.html` 引用 `index-B9C6eY2Y.js` + `index-C_UHF33i.css`；新包内确认存在 `组三多码/组六多码` 分组表头与 `六/三 + 选号` 显示分支；Host 实测 `kpsuser.tzgpt.top:5998` 返回新资源。数据库中 `组六四码` 等明细行存储为 `六 1234`/`组六四码`，新前端会显示为表头“组六多码”+ 号码 `六 1234`。未执行下注、退码或数据修改。
+
 ### 2026-09-09: Ledger Range Selection
 
 - [x] Identify the hard-coded current-period class and missing range selection state.
@@ -1251,3 +1258,7 @@
 - [x] 汇总明细跳过无投注数据的空目录列，避免一次性展开大量零金额号码单元格。
 - [x] PHP 语法检查通过；需在运行环境验证接口响应耗时。
 - [x] 将开奖期号过滤从 PHP 大数组 `NOT IN` 改为数据库子查询，避免 2 万余期号造成请求超时；默认恢复加载全部期号。
+
+## 2026-09-12：修复三端分层路由类解析失败
+- [x] 修正控制器路由格式、恢复显式参数声明并检查所有目标。
+- [x] 用 PHP lint、控制器实例化和路由目标扫描验证登录入口，不使用真实账号登录。
