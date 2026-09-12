@@ -1,0 +1,35 @@
+/* Reference site header geometry, shared by the desktop and 1300px mobile canvas. */
+.agent-app .agent-account-box {
+  align-items: center;
+  transform: translateY(-0.5px);
+}
+
+.agent-app .agent-account-field {
+  width: 122px !important;
+  min-width: 122px !important;
+  max-width: 122px !important;
+  height: 40px !important;
+  margin: 8px 5px 0 !important;
+  padding: 7px 15px 0 !important;
+}
+
+.agent-app .agent-navigation {
+  transform: translateY(-0.5px);
+}
+
+.agent-app .agent-navigation > a,
+.agent-app .agent-navigation > button {
+  transform: translateY(-1px);
+}
+
+.agent-app .agent-navigation .nav-icon-shell {
+  width: 35px !important;
+  height: 35px !important;
+  border-width: 2px !important;
+}
+
+.agent-app .agent-navigation .nav-icon {
+  width: 22px !important;
+  height: 22px !important;
+  font-size: 22px !important;
+}

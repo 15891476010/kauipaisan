@@ -10,6 +10,7 @@ import {
   TransactionOutlined,
 } from "@ant-design/icons";
 import "./App.css";
+import "./styles/reference-header.css";
 import { Login } from "./features/auth/Login";
 import { Agreement, defaultAgentAgreement, type AgreementData } from "./features/agreement/Agreement";
 import { getAgentBetRecords, getAgentLineOptions, getAgentOrganizationProfile, getAgentOrderDetails, getAgentRefunds, getAgentWinningDetails, getAgreement, getAnnouncement, getBranding, getLedgerIssues, getLotteries, type AgentBetRecord, type AgentOrganizationProfile, type AgentOrderDetail, type AgentRefundRecord, type Announcement, type LedgerIssue, type Lottery } from "./api/user";
@@ -29,7 +30,7 @@ import { SubaccountsPage } from "./features/subaccounts/SubaccountsPage";
 import { heartbeat, logout as logoutSession } from "./api/auth";
 import { ForcedPasswordPage } from "./features/auth/ForcedPasswordPage";
 import { firstAllowedRoute, hasAgentPermission, isRouteAllowed } from "./routePermissions";
-import fishLogo from "./assets/login-logo.svg";
+import headerLogo from "./assets/header-logo.svg";
 import { OverviewDetailsTable, OverviewRecordsTable, OverviewRefundsTable } from "./components/OverviewTables";
 import { OrderDetailsModal } from "./components/OrderDetailsModal";
 
@@ -518,16 +519,16 @@ function AgentMain({ name, onLogout, announcement, siteName }: { name: string; o
       </button>
       <header className="site-header agent-header">
         <div className="agent-identity">
-          <img className="fish-logo agent-logo" src={fishLogo} alt="快排" />
+          <img className="fish-logo agent-logo" src={headerLogo} alt="快排" />
           <div className="account agent-account-box">
             <label className="account-field account-current agent-account-field">
               <span className="agent-account-label">账号</span>
-              <input className="agent-account-value" value={`${currentLevelLabel}：${name}${organizationProfile?.organization?.boards?.length ? `（${organizationProfile.organization.boards.map((board) => board.name).join("、")}）` : ""}`} readOnly />
+              <input className="agent-account-value" value={`${currentLevelLabel}：${name}`} readOnly />
             </label>
           </div>
         </div>
         <nav className="site-navigation agent-navigation">
-          {visibleMenus.map(({ path, title, icon: Icon }) => <NavLink key={path} to={`/${path}`} title={title} className={({ isActive }) => isActive ? "selected" : ""}><span className="nav-icon-shell"><Icon className="nav-icon" /></span>{path === "ledger" ? "贡献度" : title}</NavLink>)}
+          {visibleMenus.map(({ path, title, icon: Icon }) => <NavLink key={path} to={`/${path}`} title={title} className={({ isActive }) => isActive ? "selected" : ""}><span className="nav-icon-shell"><Icon className="nav-icon" /></span>{path === "ledger" ? "分类账" : title}</NavLink>)}
           <button className="line" type="button" onClick={() => void checkLines()}><span className="nav-icon-shell"><SwapOutlined className="nav-icon" /></span><em>更换线路</em></button>
           <button className="exit" type="button" onClick={onLogout}><span className="nav-icon-shell"><LogoutOutlined className="nav-icon" /></span><em>退出</em></button>
         </nav>

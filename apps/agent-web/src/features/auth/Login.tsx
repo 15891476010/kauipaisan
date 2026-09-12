@@ -1,5 +1,5 @@
-import { App as AntdApp, Button, Input, Modal, Space } from "antd";
-import { LockOutlined, PoweroffOutlined, UserOutlined } from "@ant-design/icons";
+import { App as AntdApp, Button, Input, Modal, Space, Spin } from "antd";
+import { CloseCircleOutlined, LoadingOutlined, LockOutlined, PoweroffOutlined, UserOutlined } from "@ant-design/icons";
 import { useEffect, useState } from "react";
 import loginLogo from "../../assets/agent-logo.svg";
 import { apiErrorMessage } from "../../utils/request";
@@ -27,17 +27,19 @@ export function Login({ onLogin, siteName }: { onLogin: (name: string) => void; 
   useEffect(() => { document.title = `${siteName} - 登录`; }, [siteName]);
 
   async function requestCaptcha() {
+    setShowCaptcha(true);
+    setCaptchaImage("");
+    setCaptcha("");
     setBusy(true);
     try {
       const response = await getCaptcha();
       const payload = response.data.data;
       setCaptchaId(String(payload?.captcha_id || ""));
       setCaptchaImage(String(payload?.image || ""));
-      setCaptcha("");
       setCaptchaDigits(shuffledDigits());
-      setShowCaptcha(true);
     } catch (reason) {
       message.error(apiErrorMessage(reason, "验证码加载失败"));
+      setShowCaptcha(false);
     } finally { setBusy(false); }
   }
 
@@ -63,17 +65,20 @@ export function Login({ onLogin, siteName }: { onLogin: (name: string) => void; 
   }
 
   async function submitCaptcha() {
-    setShowCaptcha(false);
+    setBusy(true);
     try {
       const response = await verifyCaptcha({ captcha_id: captchaId, answer: captcha });
       if (!response.data.data?.verified) {
-        modal.error({ title: "验证码已失效", okText: "确定", centered: true });
+        setShowCaptcha(false);
+        modal.error({ title: "验证码已失效", icon: <CloseCircleOutlined />, okText: "OK", okButtonProps: { type: "default" } });
         return;
       }
       await authenticate();
+      setShowCaptcha(false);
     } catch (reason) {
-      modal.error({ title: apiErrorMessage(reason, "验证码已失效"), okText: "确定", centered: true });
-    }
+      setShowCaptcha(false);
+      modal.error({ title: apiErrorMessage(reason, "验证码已失效"), icon: <CloseCircleOutlined />, okText: "OK", okButtonProps: { type: "default" } });
+    } finally { setBusy(false); }
   }
 
   function submit(event: React.FormEvent) {
@@ -94,9 +99,9 @@ export function Login({ onLogin, siteName }: { onLogin: (name: string) => void; 
         </Space>
         <button className="login-submit" aria-label="登录" type="submit" disabled={busy}><PoweroffOutlined /></button>
       </form>
-      <Modal title="请输入图片验证码" open={showCaptcha} onCancel={() => setShowCaptcha(false)} footer={<div className="captcha-footer"><Button htmlType="button" type="primary" loading={busy} onClick={submitCaptcha}>登 录</Button></div>} width={520}>
-        <div className="captcha-equation"><img className="captcha-image" src={captchaImage} alt="算术验证码" /><b>=</b><strong>{captcha}</strong><Button htmlType="button" type="link" onClick={() => void requestCaptcha()}>换题</Button></div>
-        <div className="digit-grid">{captchaDigits.map((digit) => <Button className="captcha-digit" htmlType="button" key={digit} type="dashed" onClick={() => { if (captcha.length < 2) setCaptcha(captcha + digit); }}>{digit}</Button>)}</div>
+      <Modal className="captcha-dialog" title="请输入图片验证码" open={showCaptcha} onCancel={() => setShowCaptcha(false)} footer={<div className="captcha-footer"><Button htmlType="button" type="primary" loading={busy} onClick={submitCaptcha}>登 录</Button></div>} width={520}>
+        {captchaImage ? <div className="captcha-equation"><img className="captcha-image" src={captchaImage} alt="算术验证码" /><b>=</b><strong>{captcha}</strong><Button htmlType="button" type="link" onClick={() => void requestCaptcha()}>换题</Button></div> : <div className="captcha-loading"><Spin indicator={<LoadingOutlined style={{ fontSize: 28, color: "#999" }} spin />} /></div>}
+        {captchaImage ? <div className="digit-grid">{captchaDigits.map((digit) => <Button className="captcha-digit" htmlType="button" key={digit} type="dashed" onClick={() => { if (captcha.length < 2) setCaptcha(captcha + digit); }}>{digit}</Button>)}</div> : null}
       </Modal>
     </div>
   );

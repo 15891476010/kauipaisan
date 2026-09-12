@@ -587,8 +587,8 @@ final class UserBusiness
         $prefix=str_contains($playType,'组六')?'六':(str_contains($playType,'组三')?'三':'');
         return [$prefix.$selection];
     }
-    /** @param array<int,array<string,mixed>> $rows @return array<int,array<string,mixed>> */
-    private function normalizeLegacyDirectRows(array $rows): array
+    /** @param array<int,array<string,mixed>> $rows @param array<string,string> $draws @return array<int,array<string,mixed>> */
+    private function normalizeLegacyDirectRows(array $rows,array $draws=[],?BetSettlement $matcher=null): array
     {
         $leopardsByRecord=[];
         foreach ($rows as $row) {
@@ -607,7 +607,10 @@ final class UserBusiness
             if ($isLeopardRow && $row['odds']!==null) $row['odds']='800.0000';
             $tokens=$this->detailNumberTokens($row['number_text']??'');
             $direct=(string)($row['play_type']??'')==='直' && count($tokens)>0 && count(array_filter($tokens,static fn(string $t): bool=>preg_match('/^\d{3}直$/u',$t)===1))===count($tokens);
-            if (!$direct || $isLeopardRow) { $out[]=$row; continue; }
+            // 只有“直组”混选票里豹子号才带额外的豹子腿；三码定位等
+            // 被 provider 展开成直选号的行不是直组票，不能拆出虚构豹子行。
+            $mixedSource=(string)($row['submission_source']??'').' '.(string)($row['record_source']??'').' '.$source;
+            if (!$direct || $isLeopardRow || preg_match('/直\s*组/u',$mixedSource)!==1) { $out[]=$row; continue; }
             $leopardSet=array_fill_keys($leopardsByRecord[$key]??[],true);
             $normal=[];$leopard=[];
             foreach($tokens as $token){$number=substr($token,0,3);if(count(array_unique(str_split($number)))===1 && (isset($leopardSet[$number]) || $leopardSet===[]))$leopard[]=$token;else $normal[]=$token;}
@@ -620,8 +623,19 @@ final class UserBusiness
                 if ($normal!==[]) {$row['number_text']=implode(' ',$normal);$row['amount']=number_format($per*count($normal),2,'.','');$out[]=$row;}
                 continue;
             }
-            if ($normal!==[]) {$row['number_text']=implode(' ',$normal);$row['amount']=number_format($per*count($normal),2,'.','');$out[]=$row;}
-            $leopardRow=$row;$leopardRow['number_text']=implode(' ',$leopard);$leopardRow['amount']=number_format($per*count($leopard),2,'.','');$leopardRow['detail_source']=implode(' ',array_map(static fn(string $t):string=>substr($t,0,3),$leopard)).' 直豹子各'.number_format($per,2,'.','').'元 '.(string)($row['category']??'福');$leopardRow['source_text']=$leopardRow['detail_source'];$leopardRow['odds']='800.0000';$out[]=$leopardRow;
+            if ($normal!==[]) {$row['number_text']=implode(' ',$normal);$row['amount']=number_format($per*count($normal),2,'.','');}
+            $leopardRow=$row;$leopardRow['number_text']=implode(' ',$leopard);$leopardRow['amount']=number_format($per*count($leopard),2,'.','');$leopardRow['detail_source']=implode(' ',array_map(static fn(string $t):string=>substr($t,0,3),$leopard)).' 直豹子各'.number_format($per,2,'.','').'元 '.(string)($row['category']??'福');$leopardRow['source_text']=$leopardRow['detail_source'];$leopardRow['odds']='800.0000';
+            // 中奖金额只能落在实际命中的那一侧：豹子号中则归豹子行，
+            // 否则保留在普通行。两侧都复制 win_amount 会让未命中侧按
+            // 均摊显示成虚假中奖（如 333/555 各显示中 1350）。
+            if((float)($row['win_amount']??0)>0){
+                $drawKey=(string)($row['lottery']??'').'|'.(string)($row['issue_no']??'');
+                $draw=$draws[$drawKey]??'';$leopardWon=false;
+                if($draw!==''&&$matcher!==null){foreach($leopard as $t){if($matcher->numberMatches($t,$draw,(string)$leopardRow['detail_source'])){$leopardWon=true;break;}}}
+                if($leopardWon)$row['win_amount']='0.00';else $leopardRow['win_amount']='0.00';
+            }
+            if ($normal!==[]) {$out[]=$row;}
+            $out[]=$leopardRow;
         }
         return $out;
     }
@@ -785,8 +799,9 @@ final class UserBusiness
         $fields='d.id,d.bet_record_id,d.issue_no,d.number_text,d.category,d.amount,d.odds,d.win_amount,d.rebate,d.status,d.placed_at,d.board_code,d.source_text AS detail_source,s.play_type,s.lottery,s.drop_odds,r.submission_id,r.source_text AS record_source,r.formatted_text AS record_formatted_text,r.status AS record_status';
         if($hasSubmissions)$fields.=',b.id AS submission_row_id,b.source_text AS submission_source,b.formatted_text AS submission_formatted_text';
         $detailRows=$query->field($fields)->order('d.placed_at',$sort)->order('d.id',$sort)->select()->toArray();
-        $detailRows=$this->normalizeLegacyDirectRows($detailRows);
-        $expanded=[];$draws=$this->detailDrawMap($detailRows,(int)$s['tenant_id']);$matcher=new BetSettlement();
+        $draws=$this->detailDrawMap($detailRows,(int)$s['tenant_id']);$matcher=new BetSettlement();
+        $detailRows=$this->normalizeLegacyDirectRows($detailRows,$draws,$matcher);
+        $expanded=[];
         foreach($detailRows as $row){
             $recordSource=(string)($row['record_source']??'');
             $source=(string)($row['detail_source']??'');if($source==='')$source=$recordSource;
