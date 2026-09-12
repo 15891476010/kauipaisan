@@ -7520,43 +7520,43 @@ body .ant-modal-confirm-info .ant-modal-confirm-icon { color:#006400; }
 @media (min-width: 768px) {
   .agent-app .agent-identity { width: 400px !important; min-width: 400px !important; padding-left: 30px !important; }
 }
-+/* PC palette aligned with the reference site: dark green chrome on a neutral gray workspace. */
-+.agent-app {
-+  background: #e8e8e8;
-+  color: #111;
-+}
-+.agent-app .notice {
-+  background: #006400 !important;
-+}
-+.agent-app .site-header {
-+  background: #fff;
-+  border-bottom-color: #006400;
-+}
-+.agent-app .agent-lottery-strip {
-+  color: #006400;
-+  background: #fff;
-+}
-+.agent-app .agent-lottery-strip .lottery > li.selected {
-+  color: #fff;
-+  background: #006400;
-+}
-+.agent-app .agent-body,
-+.agent-app .agent-body main {
-+  background: #e8e8e8 !important;
-+}
-+.agent-app .agent-navigation a,
-+.agent-app .agent-navigation button {
-+  color: #006400;
-+}
-+.agent-app .agent-navigation .nav-icon-shell {
-+  border-color: #006400;
-+}
-+.agent-app .agent-navigation a.selected {
-+  color: #fff;
-+  background: #006400;
-+}
-+.agent-app .overview-location {
-+  color: #fff !important;
-+  background: #006400 !important;
-+}
-+
+/* PC palette aligned with the reference site: dark green chrome on a neutral gray workspace. */
+.agent-app {
+  background: #e8e8e8;
+  color: #111;
+}
+.agent-app .notice {
+  background: #006400 !important;
+}
+.agent-app .site-header {
+  background: #fff;
+  border-bottom-color: #006400;
+}
+.agent-app .agent-lottery-strip {
+  color: #006400;
+  background: #fff;
+}
+.agent-app .agent-lottery-strip .lottery > li.selected {
+  color: #fff;
+  background: #006400;
+}
+.agent-app .agent-body,
+.agent-app .agent-body main {
+  background: #e8e8e8 !important;
+}
+.agent-app .agent-navigation a,
+.agent-app .agent-navigation button {
+  color: #006400;
+}
+.agent-app .agent-navigation .nav-icon-shell {
+  border-color: #006400;
+}
+.agent-app .agent-navigation a.selected {
+  color: #fff;
+  background: #006400;
+}
+.agent-app .overview-location {
+  color: #fff !important;
+  background: #006400 !important;
+}
+

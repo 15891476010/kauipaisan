@@ -2284,3 +2284,9 @@
 - 问题：将 ThinkPHP 路由目标写成 `User\\Auth/action` 后，框架未按控制器分层解析，用户端登录报“类不存在:User.Auth”。
 - 正确做法：分层控制器路由使用点号格式 `User.Auth/action`、`Agent.Auth/action`、`Saas.Auth/action`；包装方法保留原控制器的显式参数签名，确保 Request 和路径参数注入。
 - 防复发检查：三端登录路由目标必须使用点号分层格式；运行 PHP lint，并检查 User.Auth、Agent.Auth、Saas.Auth 均可实例化。
+
+# 2026-09-12：diff 补丁文本被直接粘贴进 agent-web App.css
+
+- 问题：提交 759d5ab 中，`App.css` 末尾追加的 40 行 PC 绿色主题规则带着字面 `+` 前缀（把 git diff 输出原样粘进了文件），导致 PostCSS 报 `Unknown word background`，agent-web 生产构建失败；其余三端不受影响。
+- 正确做法：补丁内容合入文件前必须去掉 diff 行首 `+` 标记；本次已将 7523-7562 行的前缀清除，规则内容保留。
+- 防复发检查：CSS/JS 文件改动后用构建验证，不要只看不跑；可 `grep -n '^+' <file>` 快速检查是否混入补丁文本。
