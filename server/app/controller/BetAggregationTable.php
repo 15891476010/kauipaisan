@@ -55,14 +55,12 @@ final class BetAggregationTable
         $status = (string)$request->param('draw_status', 'pending');
         if (!in_array($status, ['pending', 'opened', 'all'], true)) throw new \InvalidArgumentException('开奖状态无效');
         if ($status === 'pending') {
-            $openedCodes = Db::name('lottery_histories')->where('is_opened', 1)->column('code');
             $query->where('r.status', 'pending');
-            if ($openedCodes) $query->whereNotIn('r.issue_no', array_map('strval', $openedCodes));
+            $query->whereRaw('r.issue_no NOT IN (SELECT code FROM lottery_histories WHERE is_opened = 1)');
         } elseif ($status === 'opened') {
-            $openedCodes = Db::name('lottery_histories')->where('is_opened', 1)->column('code');
-            $query->where(function ($q) use ($openedCodes) {
+            $query->where(function ($q) {
                 $q->whereIn('r.status', ['won', 'unwon']);
-                if ($openedCodes) $q->whereOr('r.issue_no', 'in', array_map('strval', $openedCodes));
+                $q->whereOrRaw('r.issue_no IN (SELECT code FROM lottery_histories WHERE is_opened = 1)');
             });
         }
         elseif ((int)$request->param('include_refunded', 0) !== 1) $query->where('r.status', '<>', 'refunded');

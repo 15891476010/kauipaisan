@@ -235,6 +235,11 @@ final class BetSummaryTable
         foreach($columns as $column){
             if($onlyColumn!==''&&$column['key']!==$onlyColumn)continue;
             $cells=$column['cells'];
+            // Catalogs contain many possible odds/plays (direct play alone can
+            // expose 100 columns × 1,000 numbers). Empty catalog columns have
+            // no useful data for this group; skipping them prevents a detail
+            // click from materializing tens of thousands of zero cells.
+            if ($cells === [] && !$onlyBet) continue;
             if(!$onlyBet)foreach(self::universe($column) as $number){
                 // For sum/span, a number's zero cell belongs only to its configured odds.
                 if(in_array($column['universe'],['sum','span'],true)&&!$this->catalogNumberHasOdds($catalog,$column,(string)$number))continue;
