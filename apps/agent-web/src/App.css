@@ -7560,3 +7560,16 @@ body .ant-modal-confirm-info .ant-modal-confirm-icon { color:#006400; }
   background: #006400 !important;
 }
 
+
+/* Match the reference announcement text metrics. */
+.agent-app .notice {
+  height: 30px !important;
+  line-height: 30px !important;
+  font-size: 14px !important;
+  padding: 0 !important;
+}
+.agent-app .notice-track {
+  height: 30px !important;
+  line-height: 30px !important;
+  font-size: 14px !important;
+}
