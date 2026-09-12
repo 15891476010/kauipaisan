@@ -1,5 +1,12 @@
 # 项目实施计划
 
+### 本轮：代理端登录失败区分“密码错误”与“非代理账号”（已完成）
+
+- [x] 定位用户反馈：总监创建的代理 `Aa123012`（organization_accounts id=70、节点82“代理2”、status=1）登录代理端返回 401，但提示语是“站点管理员请从总平台站点后台登录……”，看不出是密码错误。
+- [x] 确认该文案来自 2026-08-24 `ff98234`：移除站点管理员/老站点账号静默登录代理端的回退时，把所有凭据失败统一成了引导语。
+- [x] 拆分提示：代理侧三张表（organization_accounts/agent_admins/agent_subaccounts）存在该用户名时返回“账号或密码错误”，不存在时保留原引导语。
+- 验证：`php -l` 通过；真实接口实测 `Aa123012`+错误密码 → “账号或密码错误”（401），不存在用户名 → 原引导语（401）。代理2 的实际登录密码需总监在“修改下级”里重置（创建时若留空则初始密码只显示一次，之后 16:05~16:06 的保存也可能覆盖过密码）。
+
 ### 本轮：恢复组三/组六多码显示（已完成）
 
 - [x] 定位用户反馈的显示回退：`/pc/`、`/h5/` 的 index.html 在 2026-09-08 被重新指向 2026-09-01 的旧构建（index-CXYmkiwE.js / index-BehsVOfr.js），早于 09-07 的组三/组六多码显示改动（f4720f1、8f17bfe、8977dc7）。
@@ -1268,3 +1275,33 @@
 - [x] 清除行首 `+`，保留 PC 绿色主题规则本身。
 - [x] 本地 `npm run build` 验证通过（vite 8.2.1，3423 modules），dist 已发布到本地 agent-web 目标目录。
 - 下一步：提交并推送后，在正式服务器重新拉取并打包 agent-web。
+
+## 2026-09-12：用户端一/二/三码定位显示修复（已完成）
+- [x] 排查定位行展示链路：第三方识别把定位存成内部代号（一码定位→口XX，二码定位→口口X，三码定位→直），后端 detailPlayLabel 只按来源文本里的百/十/个还原，来源为“口口X各10元”时标签直接透出内部代号。
+- [x] 后端 `server/app/controller/User/UserBusiness.php`（并同步旧副本 `app/controller/UserBusiness.php`）：detailPlayLabel 按“口”数量把口XX/X口X/XX口→一码定位、口口X/口X口/X口口→二码定位、口口口→三码定位；新增 positionDisplayTokens 把 X 通配位换成位置+数字（8XX→百8、16X→百1 十6、XX4→个4），并把“百 0345 十 23456 个 34567”保留为一注整体；定位行跳过 collapseSingleGroupSelection（否则“百8X各100元”的金额 100 被误当组选号码）。
+- [x] 顺带修复 `QuickEntryCompiler::compileStandalonePositionBlock` 尾行无“合计”金额时 `$tm[3]` 未定义导致的 500。
+- [x] 前端 user-pc/user-h5：`SideBetRecords`/`BetDetailsTable`/`QuickResultTable` 同步占位符→定位名映射与位置+数字显示兜底；PC 端 playMark 对定位行不再重复显示标记；h5 playLabel 增加三码定位与按来源位置数判定。
+- [x] 验证：PHP lint 通过；反射调用验证口XX→一码定位+百8/十8/个8、口口X→二码定位+百1 十6、三码定位+百0345 十23456 个34567；user-pc/user-h5 tsc -b 通过并重新构建发布（/pc/ → index-CD2rU0Sq.js，/h5/ → index-CXb_QTNB.js，线上 Host 实测 200）。
+
+## 2026-09-12：快速录入同玩法不同选号被合并成一笔订单（已修复）
+- [x] 定位问题在 `thirdPartyCatalogueLines` 的 catalogue 分组键只含 彩种|provider类型|玩法|单注额，未含选号：`福34678组六共50米` 与 `福14567组六共50米` 被合成一行 100 元，且 settlement_text 只保留第一个选号。
+- [x] `server/app/controller/User/UserBusiness.php`（同步旧副本 `app/controller/UserBusiness.php`）：选号集合型玩法（provider type 7/8/9 组三/组六/复式多码，10/11/18/19 胆拖，15/16 赖）分组键追加选号；单号码类玩法（直选、组选、独胆、定位占位行等）维持原合并展示。
+- [x] 验证：模拟 provider 响应，组六五码 34678/14567 各自成行 50 元、组三五码 20 元，直选 330/332 仍合并一行；php -l 通过。
+
+## 2026-09-12：定位号码显示格式改回 x 占位符 + 三码定位标签（已修复）
+- [x] 用户纠正：定位号码应显示“数字+x 占位符”格式（3x1、8xx、xx4、16x），不是“百3 个1”位置格式；多位选号集合（百0345 十23456 个34567）保留位置格式。
+- [x] 后端 `positionDisplayTokens`（两份 UserBusiness 同步）：X-掩码 token 归一小写输出；位置文本每位单数字→三位占位符（百位4→4xx、百3 个1→3x1），多位→保留 百0345 十23456。
+- [x] `providerPreviewLines` 增加 `$sourceText`：整段输入是纯“百/十/个+选号”位置块时，给 直/口X 目录行打 `position_label`（一/二/三码定位），修复 provider 把三码定位展开成直选后标题显示“直选”。
+- [x] PC/H5 `SideBetRecords`/`BetDetailsTable`/`QuickResultTable` 同步改为 x 占位符输出；`playLabel` 优先用 `position_label`；`QuickEntryLine` 增加 `position_label` 字段。
+- [x] 验证：8XX→8xx、16X→16x、百位4→4xx、百3 个1→3x1、百0345 十23456 个34567 原样；纯位置输入打标三码定位、普通直选输入不打标；php -l 通过、两端 tsc/build 通过并已发布（pc index-D8tUp8Ef.js / h5 index-7YHUwumc.js）。
+
+## 2026-09-12：三码定位明细仍显示“直/330直”（已修复）
+- [x] 后端 `betDetails`：直选明细行在整单来源是纯“百/十/个+选号”位置块时用 `positionLabelForSource` 还原 play_label=一/二/三码定位；`providerPreviewLines` 复用同一 helper（原来只给 preview 行打 position_label，存储行未覆盖）。
+- [x] 号码后缀剥离：`330直/330组` 这类“数字+玩法”存储标记逐 token 剥离为纯数字（BetDetailsTable.displayNumber、SideBetRecords 直分支、QuickResultTable positionTokens+纯直选 tokens 路径）；直组混合行保留后缀以区分两条赔率。
+- [x] SideBetRecords.playName 增加 play_label 定位优先（play_type=直 但 play_label=三码定位 时表头显示定位）。
+- [x] 验证：positionLabelForSource 实测（三码定位/二码定位/一码定位命中，330直与混合输入不误标）；php -l、tsc、双端构建通过并发布（pc index-B3287Blx.js / h5 index--kpULFst.js，线上 200）。
+
+## 2026-09-12：直组单豹子号金额被均分成 3.54（已修复）
+- [x] 原因：直组行把豹子号的额外豹子腿金额（provider al=[2,2]，每豹子 4元）合并在同一明细行，明细展示按注数均分 → 13 个号各显示 46/13=3.54。
+- [x] 后端 `betDetails`（两份 UserBusiness 同步）：当整行金额恰等于 各X元×(注数+豹子数) 时按豹子 2× 权重分配——豹子号 4 元、普通号 2 元。
+- [x] 验证：13 token/46 元/各2元 实测分配 10×4+3×2=46；php -l 通过。后端即时生效。

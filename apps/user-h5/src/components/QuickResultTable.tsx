@@ -369,13 +369,24 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
       const compact = String(line.number_text || line.display_number_text || "").replace(/\s+/gu, "");
       if (/^[三六]\d{4,10}$/u.test(compact)) return [compact];
     }
+    // 定位行的号码按“位置+数字”显示（8XX→百8、16X→百1 十6、
+    // XX4→个4），不直接透出 X/口 内部占位符。
+    const isPositionLine = Boolean(line.position_label) || /定位/u.test(String(line.play_type || "")) || /^[口Xx]{3}$/u.test(String(line.play_type || ""));
+    if (isPositionLine) {
+      const positioned = positionTokens(line.display_number_text || line.number_text || "");
+      if (positioned.length) return positioned;
+    }
     // Detail dialogs follow the provider's display order. `batch_occurrence_text`
     // is an internal occurrence/settlement sequence and can start with a
     // different subset (for example 133,144,166 before 033,044,066).
+    // 纯直选行的“330直”后缀是存储标记，剥离后单元格只显示数字；
+    // 直组混合行保留后缀以区分不同赔率的直/组两注。
+    const stripPlaySuffix = line.play_type === "直" || line.play_type === "直选";
     const tokens = (line.display_number_text || line.number_text || line.batch_occurrence_text || "")
       .split(/\s+/)
       .map((token) => token.trim())
-      .filter(Boolean);
+      .filter(Boolean)
+      .map((token) => stripPlaySuffix ? token.replace(/(?:直|组三|组六|组3|组6|组选|组)$/u, "") : token);
     if (tokens.length === 1 && tokens[0] === "000" && line.play_type) {
       if (line.play_type.startsWith("跨度")) return [`跨${line.play_type.slice(2)}`];
       return [line.play_type];
@@ -384,8 +395,47 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
   };
   const normalizeGroupNumber = (value: string) =>
     value.length === 3 && /^\d{3}$/.test(value) ? value.split("").sort().join("") : value;
+  // 定位号码按 x 占位符显示（与参考站一致，如 3x1、8xx、xx4）；
+  // “百0345 十23456”位置集合是一注整体，每位只有一个数字时换算成
+  // 三位占位符（百3 个1→3x1、百位4→4xx），多位选号保留位置+数字。
+  const positionTokens = (value: string) => {
+    const posIndex: Record<string, number> = { "百": 0, "十": 1, "个": 2 };
+    const text = String(value || "").trim();
+    if (!text) return [] as string[];
+    if (/^[百十个]/u.test(text)) {
+      const parts = text.split(/(?=[百十个])/u);
+      const mask = ["x", "x", "x"];
+      const normalized: string[] = [];
+      let allSingle = true;
+      for (const part of parts) {
+        const m = part.trim().match(/^([百十个])\s*位?\s*([0-9Xx]+)$/u);
+        if (!m) { allSingle = false; break; }
+        const digits = m[2].toUpperCase();
+        if (digits.length === 1) mask[posIndex[m[1]]] = digits; else allSingle = false;
+        normalized.push(`${m[1]}${m[2].replace(/[Xx]/gu, "")}`);
+      }
+      if (normalized.length) return [allSingle ? mask.join("") : normalized.join(" ")];
+    }
+    return text.split(/[\s,，、]+/u).filter(Boolean).map((token) => {
+      const named = token.match(/^([百十个])位?([0-9Xx]+)$/u);
+      if (named) {
+        const digits = named[2].toUpperCase();
+        if (digits.length === 1) {
+          const mask = ["x", "x", "x"];
+          mask[posIndex[named[1]]] = digits;
+          return mask.join("");
+        }
+        return `${named[1]}${named[2].replace(/[Xx]/gu, "")}`;
+      }
+      if (/^[0-9Xx]{1,3}$/u.test(token) && /[Xx]/u.test(token)) return token.toLowerCase();
+      // “330直/330组”是数字+玩法后缀的存储标记，号码单元格只显示数字。
+      if (/^\d{1,4}(?:直|组三|组六|组3|组6|组选|组)$/u.test(token)) return token.replace(/(?:直|组三|组六|组3|组6|组选|组)$/u, "");
+      return token;
+    });
+  };
   const playLabel = (line: QuickEntryLine) => {
     const play = String(line.play_type || "").trim();
+    if (line.position_label) return line.position_label;
     const groupSource = `${line.settlement_text || ""} ${line.parse_text || ""} ${line.input_text || ""} ${line.raw_text || ""}`;
     const allText = `${play} ${groupSource}`;
     if (/单选全胆拖/u.test(allText)) return "单选全胆拖";
@@ -401,8 +451,13 @@ function QuickResultTableInner({ lines, sourceText: _sourceText, onChange, onCon
     if (/双飞/u.test(allText)) return "双飞";
     if (/跨度|^跨/u.test(play)) return "跨度";
     if (/合值|和值|^和/u.test(play)) return "合值";
+    // 输入按“百/十/个+数字”落位时按位置数判定定位级别，避免 provider
+    // 把三码定位归一成直选、把一/二码定位归一成口XX/口口X 内部代号。
+    const locatorCount = ["百", "十", "个"].filter((position) => new RegExp(`${position}位?\\s*[0-9０-９]`, "u").test(allText)).length;
+    if (locatorCount > 0) return `${["", "一", "二", "三"][locatorCount]}码定位`;
     if (/^(?:百|十|个|口XX|X口X|XX口)$/u.test(play) || /一码定位/u.test(allText)) return "一码定位";
     if (/^(?:百十|百个|十个|口口X|口X口|X口口)$/u.test(play) || /二码定位/u.test(allText)) return "二码定位";
+    if (/^(?:百十个|口口口)$/u.test(play) || /三码定位/u.test(allText)) return "三码定位";
     const multiDigits = String(line.number_text || line.display_number_text || "").match(/\d{4,10}/u)?.[0]
       || groupSource.match(/(?:组三|组六|组3|组6)\s*(\d{4,10})/u)?.[1]
       || groupSource.match(/(\d{4,10})\s*(?:组三|组六|组3|组6)/u)?.[1];

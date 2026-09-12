@@ -140,9 +140,15 @@ final class Auth
         if (!$account || !password_verify($password,(string)$account['password'])) {
             // Site administrators and legacy site manager credentials belong to
             // the platform/site backend only. They must not silently become a
-            // root director session in the agent center.
+            // root director session in the agent center. The guidance message
+            // is kept only for accounts that do not exist on the agent side;
+            // an existing agent account with a wrong password gets a plain
+            // credential error instead of misleading site-admin wording.
+            $agentAccountExists=Db::name('organization_accounts')->where('username',$username)->where('status',1)->whereNull('deleted_at')->find()
+                || Db::name('agent_admins')->where('username',$username)->where('status',1)->whereNull('deleted_at')->find()
+                || Db::name('agent_subaccounts')->where('username',$username)->where('status',1)->whereNull('deleted_at')->find();
             $this->log($request,['username'=>$username], 'login_failed', 'agent');
-            return $this->reply(null,'站点管理员请从总平台站点后台登录；代理端请使用组织架构中的总监账号',401);
+            return $this->reply(null,$agentAccountExists?'账号或密码错误':'站点管理员请从总平台站点后台登录；代理端请使用组织架构中的总监账号',401);
         }
         $platformSite=$siteId>0 && (int)Db::name('sites')->where('id',$siteId)->value('is_platform_site')===1;
         // 组织架构账号直接归属于站点和组织，不依赖旧的 agents 代理记录。

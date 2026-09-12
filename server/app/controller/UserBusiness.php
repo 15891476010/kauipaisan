@@ -374,6 +374,55 @@ final class UserBusiness
         return $tokens;
     }
 
+    /**
+     * 定位明细的用户端显示号码：x 是通配位占位符（与参考站一致，
+     * 如 3x1、8xx、xx4）。位置格式“百 0345 十 23456 个 34567”是一注
+     * 整体（不能按空格拆碎）；每位只有一个数字时换算成三位占位符
+     * （百位4→4xx、百3 个1→3x1），多位选号保留“位置+数字”。
+     * @return array<int,string>
+     */
+    /**
+     * 纯“百/十/个+选号”位置块输入判定：每一行必须是彩种标记、
+     * 位置选号行或金额行。返回对应的定位标题，否则空串。
+     * provider 会把三码定位展开成直选原子，只能靠原始输入还原语义。
+     */
+    private function positionLabelForSource(string $sourceText): string
+    {
+        $blocks=array_values(array_filter(array_map('trim',preg_split('/\r?\n/u',$sourceText)?:[]),static fn(string $l):bool=>$l!==''));
+        if($blocks===[])return '';
+        foreach($blocks as $b){
+            if(preg_match('/^(福体|福|体)$/u',$b)===1)continue;
+            if(preg_match('/^(百|十|个)\s*位?\s*[0-9Xx口]+$/u',$b)===1)continue;
+            if(preg_match('/^(?:各|每|合计|共计|总计|合|共|计)\s*\d/u',$b)===1)continue;
+            return '';
+        }
+        $loc=0;foreach(['百','十','个'] as $p)if(preg_match('/'.$p.'\s*位?\s*[0-9Xx口]/u',$sourceText)===1)$loc++;
+        return [1=>'一码定位',2=>'二码定位',3=>'三码定位'][$loc]??'';
+    }
+
+    private function positionDisplayTokens(string $numberText): array
+    {
+        $value=trim($numberText);
+        if ($value==='') return [];
+        if (preg_match('/^[百十个]/u',$value)===1) {
+            $parts=preg_split('/\s+(?=[百十个])/u',$value,-1,PREG_SPLIT_NO_EMPTY)?:[];
+            $posIndex=['百'=>0,'十'=>1,'个'=>2];$mask=['x','x','x'];$normalized=[];$allSingle=true;
+            foreach($parts as $part){
+                if(preg_match('/^([百十个])\s*位?\s*([0-9Xx]+)$/u',trim($part),$m)!==1){$allSingle=false;break;}
+                $digits=strtoupper($m[2]);
+                if(strlen($digits)===1)$mask[$posIndex[$m[1]]]=$digits;else $allSingle=false;
+                $normalized[]=$m[1].preg_replace('/[Xx]/u','',$m[2]);
+            }
+            if($normalized!==[])return $allSingle?[implode('',$mask)]:[implode(' ',$normalized)];
+        }
+        $tokens=[];
+        foreach(preg_split('/[\s,，、]+/u',$value,-1,PREG_SPLIT_NO_EMPTY)?:[] as $token){
+            if(preg_match('/^[0-9Xx]{1,3}$/u',$token)===1&&preg_match('/[Xx]/u',$token)===1){$tokens[]=strtolower($token);continue;}
+            $tokens[]=$token;
+        }
+        return $tokens;
+    }
+
     private function normalizeDoubleFlyNumber(string $value): string
     {
         $value=preg_replace('/^0(?=\d{2}(?:飞)?$)/u','',$value)??$value;
@@ -407,6 +456,13 @@ final class UserBusiness
             if (str_contains($value,'组六')) return '组六沾边赖';
             if (str_contains($value,'组三')) return '组三沾边赖';
         }
+        // 口XX/口口X 等是定位玩法的内部占位符代号（口=选号位，X=通配位），
+        // 不能作为用户端表头透传；按“口”的数量恢复一/二/三码定位。
+        if (preg_match('/^[口Xx]{3}$/u',$value)===1) {
+            $maskCount=mb_substr_count($value,'口');
+            return [1=>'一码定位',2=>'二码定位',3=>'三码定位'][$maskCount]??$value;
+        }
+        if (in_array($value,['一码定位','二码定位','三码定位'],true)) return $value;
         // 定位玩法在明细中会被展开成三位号码，但其来源仍保留百/十/个
         // 三个位置。优先按原始文本恢复定位级别，避免误标为直选。
         $locatorCount=0;
@@ -737,9 +793,23 @@ final class UserBusiness
             $originalSource=(string)($row['submission_source']??'');if($originalSource==='')$originalSource=$recordSource;if($originalSource==='')$originalSource=$source;
             $parsedText=trim((string)($row['submission_formatted_text']??''))!==''?(string)$row['submission_formatted_text']:(string)($row['record_formatted_text']??'');if(trim($parsedText)==='')$parsedText=$source;
             $storedNumberText=trim((string)($row['number_text']??''));$tokens=$this->detailNumberTokens($storedNumberText);
+            // 定位行的号码是“百/十/个位置+数字”或 X/口 通配位占位符；
+            // 先转成用户端显示格式（8XX→百8、16X→百1 十6），并跳过
+            // 组选折叠，避免“百8X各100元”里的金额被误当成组选号码。
+            $isPositionRow=preg_match('/定位/u',(string)($row['play_type']??''))===1
+                || preg_match('/^[口Xx]{3}$/u',(string)($row['play_type']??''))===1
+                || preg_match('/^[百十个]\s*位?\s*[0-9]/u',$storedNumberText)===1;
+            // provider 把三码定位展开成直选原子存储（number 形如 330直），
+            // 位置语义只剩在整单原始文本里；纯位置块来源的直选行还原
+            // 定位标题。
+            $positionLabel='';
+            if(!$isPositionRow && in_array((string)($row['play_type']??''),['直','直选'],true))$positionLabel=$this->positionLabelForSource($originalSource!==''?$originalSource:$recordSource);
+            if($isPositionRow)$tokens=$this->positionDisplayTokens($storedNumberText);
             $playSource=(string)($row['play_type']??'').' '.(string)($source);
             if(str_contains($playSource,'双飞')||str_contains($playSource,'对子'))$tokens=array_map([$this,'normalizeDoubleFlyNumber'],$tokens);
-            $tokens=$this->collapseSingleGroupSelection($tokens,$originalSource,(string)($row['play_type']??''));
+            // 定位还原行同样跳过组选折叠：来源里的“合计375”会被当成
+            // 组选号码把整行 125 个直选号折叠成一个 375。
+            if(!$isPositionRow && $positionLabel==='')$tokens=$this->collapseSingleGroupSelection($tokens,$originalSource,(string)($row['play_type']??''));
             $matchTokens=$tokens;
             // Full-package wording lives on the parent submission while the
             // detail row may contain parser atoms such as `三 3`. Keep one
@@ -760,7 +830,21 @@ final class UserBusiness
             // on another row (for example X39) in descending views.
             if($sort==='desc'){ $tokens=array_reverse($tokens); $matchTokens=array_reverse($matchTokens); }
             $count=count($tokens);
-            $amounts=$this->splitDetailMoney((float)$row['amount'],$count);$wins=$this->splitDetailMoney((float)$row['win_amount'],$count);$rebates=$this->splitDetailMoney((float)$row['rebate'],$count);$offlineTotal=round((float)$row['amount']*max(0,(float)($row['drop_odds']??0)),2);$offlineRebates=$this->splitDetailMoney($offlineTotal,$count);$orderNo=$this->detailOrderNumber($row);$resolved=(float)$row['win_amount']<=0;$winningIndexes=[];
+            $amounts=$this->splitDetailMoney((float)$row['amount'],$count);$wins=$this->splitDetailMoney((float)$row['win_amount'],$count);$rebates=$this->splitDetailMoney((float)$row['rebate'],$count);$offlineTotal=round((float)$row['amount']*max(0,(float)($row['drop_odds']??0)),2);$offlineRebates=$this->splitDetailMoney($offlineTotal,$count);
+            // 直组/直选行里豹子号（000–999）含一注额外豹子腿（provider
+            // 返回 al=[2,2]）：整行金额恰为 各X元×(注数+豹子数) 时按
+            // 豹子2倍权重还原真实分配（4元/2元），避免均分成 3.54。
+            if($count>1&&preg_match('/各\s*(\d+(?:\.\d+)?)\s*元/u',$source,$unitMatch)===1){
+                $legUnit=(float)$unitMatch[1];$leopardIndexes=[];
+                foreach($tokens as $ti=>$token)if(preg_match('/^(\d)\1{2}(?:直|组)?$/u',$token)===1)$leopardIndexes[]=$ti;
+                if($leopardIndexes!==[]&&$legUnit>0&&abs((float)$row['amount']-$legUnit*($count+count($leopardIndexes)))<0.005){
+                    $legAcc=0.0;$amounts=[];
+                    foreach($tokens as $ti=>$token){
+                        $v=$ti===$count-1?round((float)$row['amount']-$legAcc,2):$legUnit*(in_array($ti,$leopardIndexes,true)?2:1);
+                        $legAcc+=$v;$amounts[]=number_format($v,2,'.','');
+                    }
+                }
+            }$orderNo=$this->detailOrderNumber($row);$resolved=(float)$row['win_amount']<=0;$winningIndexes=[];
             $draw=$draws[(string)($row['lottery']??'').'|'.(string)($row['issue_no']??'')]??'';
             if((float)$row['win_amount']>0&&$draw!==''){$winningIndexes=array_keys(array_filter($matchTokens,static fn(string $token):bool=>$matcher->numberMatches($token,$draw,$source)));if($winningIndexes!==[]){$wins=array_fill(0,$count,'0');$winningParts=$this->splitDetailMoney((float)$row['win_amount'],count($winningIndexes));foreach($winningIndexes as $winningIndex=>$tokenIndex)$wins[$tokenIndex]=$winningParts[$winningIndex];$resolved=true;}}
             $groupPackage=$this->isExpandedGroupPackage($matchTokens,$source);$displayOddsBase=$row['odds']===null?null:(float)$row['odds'];
@@ -773,7 +857,7 @@ final class UserBusiness
             $lookupSource=$packageLabel!==''?$packageLabel:trim($source.' '.$rowPlayType);
             if($lookupSource==='')$lookupSource=$rowPlayType;
             $currentOdds=$this->lineOdds($s,(string)($row['lottery']??''),['settlement_text'=>$lookupSource,'board_code'=>(string)($row['board_code']??'A')]);if($currentOdds!==[]&&array_key_exists('odds',$currentOdds)&&is_numeric($currentOdds['odds']))$displayOddsBase=(float)$currentOdds['odds'];$displayOdds=$displayOddsBase===null?null:$displayOddsBase*($groupPackage?$count:1);$oddsText=$displayOdds===null?'-':rtrim(rtrim(number_format($displayOdds,3,'.',''),'0'),'.');
-            foreach($tokens as $index=>$token){$amount=(float)$amounts[$index];$win=(float)$wins[$index];$rebate=(float)$rebates[$index];$offlineRebate=(float)$offlineRebates[$index];$tokenStatus=(string)($row['status']??$row['record_status']??'pending');if($resolved&&$tokenStatus==='won')$tokenStatus=$win>0?'won':'unwon';$groupFirst=$index===0;$expanded[]=['id'=>(int)$row['id'],'row_key'=>(int)$row['id'].'-'.$index,'detail_group_id'=>(int)$row['id'],'detail_group_index'=>$index,'detail_group_size'=>$count,'group_first'=>$groupFirst,'is_group_first'=>$groupFirst,'show_text_button'=>$groupFirst,'bet_record_id'=>(int)($row['bet_record_id']??0),'submission_id'=>(int)($row['submission_id']??0)?:null,'order_no'=>$orderNo,'issue_no'=>(string)$row['issue_no'],'number_text'=>$token,'stored_number_text'=>$storedNumberText,'category'=>(string)($row['category']??''),'play_type'=>$packageLabel!==''?$packageLabel:(string)($row['play_type']??''),'play_label'=>$packageLabel!==''?$packageLabel:$this->detailPlayLabel($row['play_type']??'',$row['category']??'',$originalSource.' '.$source),'lottery'=>(string)($row['lottery']??''),'amount'=>$amounts[$index],'odds'=>$oddsText,'win_amount'=>$wins[$index],'is_winning_number'=>in_array($index,$winningIndexes,true),'win_projection_resolved'=>$resolved,'rebate'=>$rebates[$index],'offline_rebate'=>$this->detailMoney($offlineRebate),'profit'=>$this->detailMoney($win-$amount+$rebate+$offlineRebate),'status'=>$tokenStatus,'placed_at'=>(string)$row['placed_at'],'source_text'=>$originalSource,'record_source'=>$recordSource,'original_source_text'=>$originalSource,'parsed_source_text'=>$parsedText];}
+            foreach($tokens as $index=>$token){$amount=(float)$amounts[$index];$win=(float)$wins[$index];$rebate=(float)$rebates[$index];$offlineRebate=(float)$offlineRebates[$index];$tokenStatus=(string)($row['status']??$row['record_status']??'pending');if($resolved&&$tokenStatus==='won')$tokenStatus=$win>0?'won':'unwon';$groupFirst=$index===0;$expanded[]=['id'=>(int)$row['id'],'row_key'=>(int)$row['id'].'-'.$index,'detail_group_id'=>(int)$row['id'],'detail_group_index'=>$index,'detail_group_size'=>$count,'group_first'=>$groupFirst,'is_group_first'=>$groupFirst,'show_text_button'=>$groupFirst,'bet_record_id'=>(int)($row['bet_record_id']??0),'submission_id'=>(int)($row['submission_id']??0)?:null,'order_no'=>$orderNo,'issue_no'=>(string)$row['issue_no'],'number_text'=>$token,'stored_number_text'=>$storedNumberText,'category'=>(string)($row['category']??''),'play_type'=>$packageLabel!==''?$packageLabel:(string)($row['play_type']??''),'play_label'=>$packageLabel!==''?$packageLabel:($positionLabel!==''?$positionLabel:$this->detailPlayLabel($row['play_type']??'',$row['category']??'',$originalSource.' '.$source)),'lottery'=>(string)($row['lottery']??''),'amount'=>$amounts[$index],'odds'=>$oddsText,'win_amount'=>$wins[$index],'is_winning_number'=>in_array($index,$winningIndexes,true),'win_projection_resolved'=>$resolved,'rebate'=>$rebates[$index],'offline_rebate'=>$this->detailMoney($offlineRebate),'profit'=>$this->detailMoney($win-$amount+$rebate+$offlineRebate),'status'=>$tokenStatus,'placed_at'=>(string)$row['placed_at'],'source_text'=>$originalSource,'record_source'=>$recordSource,'original_source_text'=>$originalSource,'parsed_source_text'=>$parsedText];}
         }
         $expanded=$this->collapseMixedDirectGroupDetails($expanded);
         // Collapse equivalent permutations from legacy/provider rows only
@@ -989,7 +1073,15 @@ final class UserBusiness
             $categories=array_keys($atom['categories']); sort($categories);
             $category=in_array('福',$categories,true)&&in_array('体',$categories,true)?'福体':($categories[0]??($lottery==='排列三'?'体':'福'));
             $unit=(float)$atom['amount']/max(1,(int)$atom['count']);
-            $groupKey=$category.'|'.$atom['type'].'|'.$atom['play'].'|'.number_format($unit,4,'.','');
+            // 组三/组六多码、复式、胆拖、赖是“选号集合型”玩法：每个
+            // catalogue code 是一组独立选号（如 组六五码 34678 与
+            // 14567 是两笔不同的票），分组键必须包含选号，不能把
+            // 它们并成一行；直选/组选/独胆等单号码行才允许按玩法
+            // 和单注额合并展示。
+            $selectionKey=in_array((int)$atom['type'],[7,8,9,10,11,15,16,18,19],true)
+                ? '|'.preg_replace('/\s+/u','',(string)$atom['number'])
+                : '';
+            $groupKey=$category.'|'.$atom['type'].'|'.$atom['play'].'|'.number_format($unit,4,'.','').$selectionKey;
             if (!isset($catalogue[$groupKey])) $catalogue[$groupKey]=['numbers'=>[],'display'=>[],'amount'=>0.0,'count'=>0,'source'=>$atom['source'],'play'=>$atom['play'],'category'=>$category];
             $catalogue[$groupKey]['numbers'][]=$atom['number']; $catalogue[$groupKey]['display'][]=$atom['number'];
             $catalogue[$groupKey]['amount']+=(float)$atom['amount']; $catalogue[$groupKey]['count']+=(int)$atom['count'];
@@ -1281,13 +1373,23 @@ final class UserBusiness
     }
 
     /** Keep a reachable provider response authoritative, including errors. */
-    private function providerPreviewLines(array $result, string $lottery): array
+    private function providerPreviewLines(array $result, string $lottery, string $sourceText=''): array
     {
         $sourceLines=$this->thirdPartyLines($result,$lottery); $lines=[];
         foreach ($sourceLines as $sourceLine) {
             // provider_parts/provider_place_parts are private placement
             // metadata.  Never expand them in the user-facing preview.
             $sourceLine['id']=count($lines)+1; $lines[]=$sourceLine;
+        }
+        // 定位输入会被 provider 展开成直选（type3）或口X 占位符原子。
+        // 当整段输入是纯“百/十/个+选号”位置块时，给这些目录行标一个
+        // 仅展示用的定位标签，用户端显示一/二/三码定位而不是直选。
+        if ($lines!==[] && $sourceText!=='') {
+            $positionLabel=$this->positionLabelForSource($sourceText);
+            if($positionLabel!=='')foreach($lines as &$line){
+                $pt=(string)($line['play_type']??'');
+                if($pt==='直'||$pt==='直选'||preg_match('/^[口Xx]{3}$/u',$pt)===1)$line['position_label']=$positionLabel;
+            }unset($line);
         }
         $code=ThirdPartyQuickEntryUtils::responseCode($result);
         if ($code===200 && $lines!==[]) return $lines;
@@ -1410,7 +1512,7 @@ final class UserBusiness
             Log::warning('third-party quick preview unavailable: '.$e->getMessage());
             return $this->reply(null,'识别服务暂时不可用，请点击“生成”重试',503);
         }
-        $providerLines=$this->providerPreviewLines($thirdParty,$lottery);
+        $providerLines=$this->providerPreviewLines($thirdParty,$lottery,$text);
         return $this->reply(['lines'=>$providerLines,'count'=>(int)($thirdParty['data']['tc']??0),'code_count'=>(int)($thirdParty['data']['tc']??0),'amount'=>number_format((float)($thirdParty['data']['ta']??0),2,'.',''),'formatted_text'=>$text]);
     }
     public function quickPlace(Request $request): \think\response\Json
@@ -1428,7 +1530,7 @@ final class UserBusiness
         }
         $providerAuthoritative=true;
         $formattedText=$text;
-        $lines=$this->providerPreviewLines($providerResult,$lottery);
+        $lines=$this->providerPreviewLines($providerResult,$lottery,$text);
         if (!$lines) return $this->reply(null,'没有可下注的有效内容',422);
         foreach ($lines as $line) if (($line['status']??'')!=='success') {
             return $this->reply(null, $providerAuthoritative ? (string)($line['reason']??$this->thirdPartyMessage($providerResult??[])) : '存在未识别或金额不一致的内容，已取消整单下注', 422);

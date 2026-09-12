@@ -170,9 +170,17 @@ export function SideBetRecords({
       return Boolean(number && new Set(number).size === 1);
     });
     if (genericLeopard) return "直选";
-    // 定位玩法的 X/口 是内部占位符，不作为用户端玩法名称显示。
-    if (/^[口Xx]{2}[Xx]$/.test(raw) || raw === "口口X") return "二码定位";
-    if (/^[口Xx][Xx]{2}$/.test(raw)) return "一码定位";
+    // 后端按整单原始来源还原的定位标签：provider 把三码定位展开成
+    // 直选原子存储时 play_type 仍是“直”，但 play_label 已携带定位语义。
+    if (/码定位/u.test(String(detail.play_label || ""))) return String(detail.play_label);
+    // 定位玩法的 X/口 是内部占位符：口=选号位，X=通配位。
+    // 按“口”的数量恢复一/二/三码定位，不把内部代号透传为表头。
+    if (/^[口Xx]{3}$/u.test(raw)) {
+      const maskCount = (raw.match(/口/gu) || []).length;
+      if (maskCount === 1) return "一码定位";
+      if (maskCount === 2) return "二码定位";
+      if (maskCount === 3) return "三码定位";
+    }
     // The API may return 直/直选 (or a direct-play subtype) for the same
     // catalog play. Keep them in one section so the detail table has one
     // heading instead of splitting the same direct bets into separate blocks.
@@ -193,6 +201,7 @@ export function SideBetRecords({
     const multiContext = detailContext(detail);
     if (playName(detail) === "直选" && String(detail.number_text || "").match(/\d{3}/u) && new Set(String(detail.number_text || "").match(/\d{3}/u)![0]).size === 1) return "直";
     if (/\d{4,10}/u.test(multiContext) && groupFamily(detail) && !/赖|沾边|连/u.test(multiContext)) return "";
+    if (/码定位/u.test(`${raw} ${detail.play_label || ""} ${detail.category || ""}`)) return "";
     if (/口|X/i.test(raw) && !raw.includes("直")) return "";
     if (raw === "直" || raw === "直选" || raw.startsWith("直")) return "直";
     if (raw === "组" || raw === "组三" || raw === "组六" || raw === "组3" || raw === "组6" || raw === "组选") return "组";
@@ -233,6 +242,42 @@ export function SideBetRecords({
       if (explicitLeopards.size === 0) result.push({ ...detail, number_text: leopard.join(" "), amount: (perAmount * leopard.length).toFixed(2), odds: "800", source_text: `${leopard.map((token) => token.slice(0, 3)).join(" ")}直豹子各${perAmount}元` });
     });
     return result;
+  };
+  // 定位号码按 x 占位符显示（与参考站一致，如 3x1、8xx、xx4）；
+  // “百0345 十23456”位置集合是一注整体，每位只有一个数字时换算成
+  // 三位占位符（百3 个1→3x1、百位4→4xx），多位选号保留位置+数字。
+  const positionDisplayValue = (value: string) => {
+    const posIndex: Record<string, number> = { "百": 0, "十": 1, "个": 2 };
+    const text = String(value || "").trim();
+    if (!text) return "";
+    if (/^[百十个]/u.test(text)) {
+      const parts = text.split(/(?=[百十个])/u);
+      const mask = ["x", "x", "x"];
+      const normalized: string[] = [];
+      let allSingle = true;
+      for (const part of parts) {
+        const m = part.trim().match(/^([百十个])\s*位?\s*([0-9Xx]+)$/u);
+        if (!m) { allSingle = false; break; }
+        const digits = m[2].toUpperCase();
+        if (digits.length === 1) mask[posIndex[m[1]]] = digits; else allSingle = false;
+        normalized.push(`${m[1]}${m[2].replace(/[Xx]/gu, "")}`);
+      }
+      if (normalized.length) return allSingle ? mask.join("") : normalized.join(" ");
+    }
+    return text.split(/[\s,，、]+/u).filter(Boolean).map((token) => {
+      const named = token.match(/^([百十个])位?([0-9Xx]+)$/u);
+      if (named) {
+        const digits = named[2].toUpperCase();
+        if (digits.length === 1) {
+          const mask = ["x", "x", "x"];
+          mask[posIndex[named[1]]] = digits;
+          return mask.join("");
+        }
+        return `${named[1]}${named[2].replace(/[Xx]/gu, "")}`;
+      }
+      if (/^[0-9Xx]{1,3}$/u.test(token) && /[Xx]/u.test(token)) return token.toLowerCase();
+      return token;
+    }).join(" ");
   };
   const displayDetailNumber = (detail: BetDetail) => {
     if (String(detail.play_type || detail.play_label || "").trim() === "对子") {
@@ -281,7 +326,9 @@ export function SideBetRecords({
     if (rawPlay.includes("组3") || rawPlay.includes("组6") || rawPlay === "组" || rawPlay === "组三" || rawPlay === "组六" || rawPlay === "组选") {
       return (detail.number_text || "").replace(/^[三六]/u, "").replace(/(?:直|组|组三|组六|组3|组6)+$/u, "");
     }
-    if (rawPlay.includes("直")) return (detail.number_text || "").replace(/直+$/u, "").replace(/(?:组|组三|组六|组3|组6)+$/u, "");
+    // “330直/330组”这类数字+玩法后缀是存储标记，逐 token 剥离（provider
+    // 把三码定位展开成直选号时号码列会带上 直 后缀）。
+    if (rawPlay.includes("直")) return (detail.number_text || "").replace(/(?:直|组三|组六|组3|组6|组选|组)(?=[\s,，、]|$)/gu, "");
     if (play.includes("双飞") || source.includes("对子")) {
       const number = (detail.number_text || "")
         .replace(/^0(?=\d{2}(?:飞)?$)/, "")
@@ -299,9 +346,9 @@ export function SideBetRecords({
     }
     // 独胆的玩法标记单独显示为红色“独胆”，号码单元格只保留数字。
     if (/^独胆$/u.test(play) || /^独胆$/u.test(rawPlay)) return value.replace(/胆$/u, "");
-    // 定位号码中的 X 表示未指定的位置，需保留在号码本身（例如 12X）。
-    // 仅将内部玩法标签“口口X/X口口”规范化为“二码定位”，不改写号码。
-    if (play.endsWith("码定位")) return value;
+    // 定位号码中的 X 是通配位占位符；用户端统一按“位置+数字”显示，
+    // 例如 12X→百1 十2、XX4→个4，而不是把内部代号原样透出。
+    if (play.endsWith("码定位")) return positionDisplayValue(value) || "-";
     // Preserve the three-character lottery expression, including a leading
     // zero, for direct and multi-position displays.
     return value || "-";
