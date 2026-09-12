@@ -7573,3 +7573,129 @@ body .ant-modal-confirm-info .ant-modal-confirm-icon { color:#006400; }
   line-height: 30px !important;
   font-size: 14px !important;
 }
+
+/* Match reference header geometry on desktop and the fixed mobile canvas. */
+.agent-app {
+  font-family: Arial, "Microsoft YaHei", sans-serif;
+  font-size: 14px;
+  line-height: 21px;
+}
+@media (min-width: 768px) {
+  .agent-app .agent-header {
+    padding: 0 0 0 10px !important;
+    gap: 0 !important;
+  }
+  .agent-app .agent-identity {
+    display: contents !important;
+  }
+  .agent-app .agent-identity .agent-logo {
+    width: 120px !important;
+    height: 84px !important;
+    flex: 0 0 120px !important;
+    padding: 0 20px !important;
+  }
+  .agent-app .agent-account-box {
+    width: 260px !important;
+    min-width: 260px !important;
+    max-width: 260px !important;
+    height: 100px !important;
+    flex: 0 0 260px !important;
+  }
+  .agent-app .agent-navigation {
+    width: 899px !important;
+    min-width: 899px !important;
+    height: 80px !important;
+    margin-left: 10px !important;
+    flex: 0 0 899px !important;
+    gap: 1px !important;
+  }
+}
+@media (max-width: 767px) {
+  .agent-app {
+    width: 1300px !important;
+    min-width: 1300px !important;
+  }
+  .agent-app .agent-header {
+    width: 1300px !important;
+    min-width: 1300px !important;
+    padding: 0 0 0 10px !important;
+    gap: 0 !important;
+  }
+  .agent-app .agent-identity {
+    display: contents !important;
+  }
+  .agent-app .agent-identity .agent-logo {
+    width: 120px !important;
+    height: 84px !important;
+    flex: 0 0 120px !important;
+    padding: 0 20px !important;
+  }
+  .agent-app .agent-account-box {
+    width: 260px !important;
+    min-width: 260px !important;
+    max-width: 260px !important;
+    height: 100px !important;
+    flex: 0 0 260px !important;
+  }
+  .agent-app .agent-navigation {
+    width: 899px !important;
+    min-width: 899px !important;
+    height: 80px !important;
+    margin-left: 10px !important;
+    flex: 0 0 899px !important;
+    gap: 1px !important;
+  }
+}
+
+/* Remove the extra mobile workspace inset; the reference starts the location bar at 180px. */
+.overview-page {
+  padding-top: 0 !important;
+}
+@media (max-width: 767px) {
+  .management-workspace.agent-body {
+    padding: 0 !important;
+  }
+  .overview-page {
+    padding-top: 0 !important;
+  }
+}
+
+/* Keep the mobile viewport at device width while the app canvas remains 1300px. */
+@media (max-width: 767px) {
+  html,
+  body,
+  #root {
+    width: 100% !important;
+    min-width: 0 !important;
+    overflow-x: auto !important;
+  }
+  .agent-app {
+    width: 1300px !important;
+    min-width: 1300px !important;
+  }
+  .overview-location {
+    margin-left: 0 !important;
+    width: 100% !important;
+  }
+}
+.overview-location {
+  margin-left: 0 !important;
+  width: 100% !important;
+}
+
+@media (max-width: 767px) {
+  .overview-page {
+    width: 1300px !important;
+    min-width: 1300px !important;
+  }
+}
+
+/* The reference location bar spans the full viewport; content panels keep their own spacing. */
+.management-workspace.agent-body {
+  padding: 0 !important;
+}
+
+body {
+  font-size: 14px;
+  line-height: 21px;
+}

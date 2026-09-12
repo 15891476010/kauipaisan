@@ -373,6 +373,9 @@ export function SideBetRecords({
     if (playName(detail) === "直选" && String(detail.number_text || "").match(/\d{3}/u) && new Set(String(detail.number_text || "").match(/\d{3}/u)![0]).size === 1) return "直";
     if (/(?:复式|复试)/u.test(`${playName(detail)} ${context}`)) return "";
     if (/胆拖|和值|豹子|包/u.test(context) || /\d{4,10}/u.test(context) && groupFamily(detail) && !/赖|沾边|连/u.test(context)) return "";
+    // 组三/组六多码行（三 12、六 1234）标题已含玩法语义，不再追加
+    // 红色“组”标——位数少于4的组三多码不能被上面的位数条件漏掉。
+    if (/^(?:组三|组六)多码$/u.test(playName(detail))) return "";
     if (/口|X/i.test(raw) && !raw.includes("直")) return "";
     if (/直/u.test(raw)) return "直";
     if (/组三|组六|组3|组6|组选|组/u.test(raw)) return "组";

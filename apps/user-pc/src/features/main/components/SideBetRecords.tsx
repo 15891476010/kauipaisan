@@ -201,6 +201,9 @@ export function SideBetRecords({
     const multiContext = detailContext(detail);
     if (playName(detail) === "直选" && String(detail.number_text || "").match(/\d{3}/u) && new Set(String(detail.number_text || "").match(/\d{3}/u)![0]).size === 1) return "直";
     if (/\d{4,10}/u.test(multiContext) && groupFamily(detail) && !/赖|沾边|连/u.test(multiContext)) return "";
+    // 组三/组六多码行（三 12、六 1234）标题已含玩法语义，不再追加
+    // “组三/组六”徽标——位数少于4的组三多码不能被上面的位数条件漏掉。
+    if (/^(?:组三|组六)多码$/u.test(playName(detail))) return "";
     if (/码定位/u.test(`${raw} ${detail.play_label || ""} ${detail.category || ""}`)) return "";
     if (/口|X/i.test(raw) && !raw.includes("直")) return "";
     if (raw === "直" || raw === "直选" || raw.startsWith("直")) return "直";
