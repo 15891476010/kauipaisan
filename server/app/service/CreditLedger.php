@@ -25,6 +25,17 @@ final class CreditLedger
         self::writeExtended($session,ScoreTransfer::transactionNo('LG'),$organizationId,'organization',$organizationId,(int)$record['user_id'],(int)$record['id'],null,(string)$record['issue_no'],$change,$before,$after,$reason,'settlement_share','settlement',[],null,null,null,$metadata);
     }
 
+    /**
+     * Actual balance movement recorded by a ledger row. Settlement-share
+     * entries written by the current settle path are bookkeeping-only and
+     * keep balance_before == balance_after; only rows whose stored balances
+     * differ ever moved the account and may be reversed.
+     */
+    public static function recordedMovement(array $row): float
+    {
+        return round((float)($row['balance_after']??0)-(float)($row['balance_before']??0),2);
+    }
+
     public static function platformSettlement(array $record, int $accountId, float $change, float $before, float $after): void
     {
         $session=['tenant_id'=>(int)$record['tenant_id'], 'site_id'=>(int)$record['site_id']];

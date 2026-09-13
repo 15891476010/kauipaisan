@@ -1,6 +1,10 @@
 * {
   box-sizing: border-box;
 }
+html {
+  text-size-adjust: 100%;
+  -webkit-text-size-adjust: 100%;
+}
 body {
   margin: 0;
   font-family: Arial, "Microsoft YaHei", sans-serif;
@@ -420,6 +424,7 @@ body {
   width: 90%;
   margin: 0 auto;
   padding: 15px;
+  border-radius: 5px;
   background: #fff;
   color: #000;
 }
@@ -429,6 +434,7 @@ body {
   border-bottom: 1px solid #666;
   color: #000;
   font-size: 24px;
+  font-weight: 400;
   line-height: 32px;
   text-align: center;
 }
@@ -498,22 +504,37 @@ body {
 .agreement-markdown ul,
 .agreement-markdown ol {
   margin: 0;
-  padding: 0 40px;
+  padding: 0 20px;
   color: #000;
   font-size: 15px;
   line-height: 26px;
+  list-style-position: inside;
+}
+.agreement-markdown ol > li:first-child,
+.agreement-markdown ol > li:first-child p {
+  color: #ff0000;
+  font-size: 16px;
+}
+.agreement-markdown li > p {
+  display: inline;
+  padding: 0;
 }
 .agreement-markdown li {
   padding-left: 2px;
 }
+/* 对齐参考站协议页：第1条红色、第2条内嵌红字、特别提醒无粉色框 */
+.agreement-markdown ol strong,
+.agreement-markdown ol p strong {
+  color: #ff0000;
+}
 .agreement-markdown blockquote {
-  margin: 6px 20px;
-  padding: 4px 12px;
-  border-left: 3px solid #d00000;
-  background: #fff7f7;
-  color: #c40000;
-  font-size: 15px;
-  line-height: 24px;
+  margin: 0 20px;
+  padding: 0;
+  border-left: 0;
+  background: none;
+  color: #ff0000;
+  font-size: 16px;
+  line-height: 30px;
 }
 .agreement-markdown blockquote p {
   padding: 0;
@@ -554,17 +575,20 @@ body {
 .agreement-actions strong {
   margin-right: 50px;
   color: #000;
-  font-size: 15px;
+  font-size: 16px;
 }
 .agreement-actions .ant-btn {
   min-width: 90px;
-  height: auto;
+  height: 37px;
   margin: 0 15px;
-  padding: 6px 12px;
+  padding: 0;
   border-radius: 0;
   color: #000;
   font-size: 15px;
   cursor: pointer;
+}
+.agreement-actions .ant-btn:not(.ant-btn-primary) {
+  background: #efefef;
 }
 .agreement-actions .ant-btn-primary {
   background: darkblue;
@@ -1000,6 +1024,12 @@ body {
 }
 .agent-app {
   background: #e5f3e5;
+}
+/* Overlong unbreakable values (huge scores, long codes) must wrap inside
+   their cell instead of painting over the neighbouring column. */
+.agent-app td,
+.agent-app th {
+  overflow-wrap: anywhere;
 }
 .agent-app .notice {
   background: #006b00;
@@ -1763,6 +1793,9 @@ body {
 }
 .member-link:hover {
   text-decoration: underline;
+}
+.member-link.member-link-danger {
+  color: #cf1322;
 }
 .member-empty {
   display: grid;
@@ -2637,7 +2670,7 @@ body {
   cursor: wait;
   opacity: 0.65;
 }
-@media (max-width: 1050px) and (min-width: 1320px) {
+@media (max-width: 1050px) {
   .subordinate-account-form {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
@@ -2668,7 +2701,7 @@ body {
     grid-column: auto;
   }
 }
-@media (max-width: 700px) and (min-width: 1320px) {
+@media (max-width: 700px) {
   .subordinate-form-shell {
     width: calc(100% - 20px);
   }
@@ -3871,7 +3904,7 @@ body {
   flex: 0 0 72px;
   margin: 24px 5px 0;
 }
-@media (max-width: 1250px) and (min-width: 1320px) {
+@media (max-width: 1250px) {
   .interception-filters {
     width: calc(100% - 20px);
     height: auto;
@@ -3880,7 +3913,7 @@ body {
     padding: 0 5px 8px;
   }
 }
-@media (max-width: 1250px) and (min-width: 1320px) {
+@media (max-width: 1250px) {
   .agent-log-filters,
   .agent-log-table-card,
   .agent-log-pagination {
@@ -4516,7 +4549,7 @@ body {
   background: #c7f4f4;
   font-weight: 700;
 }
-@media (max-width: 900px) and (min-width: 1320px) {
+@media (max-width: 900px) {
   .agent-reports-location {
     padding: 0 10px;
   }
@@ -4712,7 +4745,7 @@ body {
 .contribution-table th {
   width: 11.111%;
 }
-@media (max-width: 900px) and (min-width: 1320px) {
+@media (max-width: 900px) {
   .ledger-reference-location {
     padding: 0 10px;
   }
@@ -4840,15 +4873,10 @@ body {
   color: #111;
   outline: none;
 }
-.interception-filter-field input {
-  width: 100px;
-}
+.interception-filter-field input,
 .interception-filter-field select {
-  min-width: 76px;
-  max-width: 180px;
-}
-.interception-filter-field:nth-of-type(5) select {
-  width: 145px;
+  width: 100%;
+  max-width: 100%;
 }
 .interception-check {
   display: flex;
@@ -5199,7 +5227,7 @@ body {
   background: #e7f5e7;
   color: #075807;
 }
-@media (max-width: 1050px) and (min-width: 1320px) {
+@media (max-width: 1050px) {
   .interception-filters {
     flex-wrap: wrap;
   }
@@ -5212,7 +5240,7 @@ body {
     grid-template-columns: repeat(2, minmax(240px, 1fr));
   }
 }
-@media (max-width: 700px) and (min-width: 1320px) {
+@media (max-width: 700px) {
   .interception-location {
     padding: 0 10px;
   }
@@ -5605,7 +5633,7 @@ body {
   color: #fff;
   cursor: pointer;
 }
-@media (max-width: 900px) and (min-width: 1320px) {
+@media (max-width: 900px) {
   .subaccount-location {
     padding: 0 10px;
   }
@@ -5633,7 +5661,7 @@ body {
   }
 }
 
-@media (max-width: 900px) and (min-width: 1320px) {
+@media (max-width: 900px) {
   .agent-reports-tabs,
   .ledger-reference-tabs,
   .interception-tabs,
@@ -6102,7 +6130,7 @@ body {
 .reference-agent-shell button {
   font-family: Arial, Helvetica, sans-serif;
 }
-@media (max-width: 900px) and (min-width: 1320px) {
+@media (max-width: 900px) {
   .reference-agent-shell .reference-header {
     min-width: 960px;
     padding-left: 10px;
@@ -6346,7 +6374,7 @@ body {
   color: #27334a;
   font-size: 15px;
 }
-@media (max-width: 1100px) and (min-width: 1320px) {
+@media (max-width: 1100px) {
   .hierarchy-stats {
     grid-template-columns: repeat(3, minmax(130px, 1fr));
   }
@@ -6982,7 +7010,7 @@ body .ant-modal-confirm-info .ant-modal-confirm-icon { color:#006400; }
   min-height: calc(100vh - 180px);
   background: #e8e8e8 !important;
 }
-@media (max-width: 1200px) and (min-width: 1320px) {
+@media (max-width: 1200px) {
   .agent-app .site-header {
     min-width: 1180px;
     padding-left: 20px;
@@ -7329,7 +7357,7 @@ body .ant-modal-confirm-info .ant-modal-confirm-icon { color:#006400; }
 }
 .agent-app .interception-range .ant-input { width: 70px; height: 24px; }
 .agent-app .interception-submit.ant-btn { flex: 0 0 72px; margin: 24px 5px 0; }
-@media (max-width: 1250px) and (min-width: 1320px) {
+@media (max-width: 1250px) {
   .agent-app .interception-filters {
     width: calc(100% - 20px);
     height: auto;

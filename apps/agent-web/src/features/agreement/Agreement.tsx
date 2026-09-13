@@ -27,10 +27,10 @@ export const defaultAgreement: AgreementData = {
 };
 
 export const defaultAgentAgreement: AgreementData = {
-  title: "代理服务协议",
+  title: "责任声明",
   content: `1. 用户明确同意本系统的使用由用户个人承担风险。
 
-2. 本系统不作任何类型的担保，不担保服务一定能满足用户的要求，也不担保服务不会受中断；对服务的及时性、安全性、出错发生都不作担保。用户理解并接受，任何通过本系统服务取得的信息资料的可靠性取决于用户自己，用户自己承担所有风险和责任。
+2. 本系统不作任何类型的担保，不担保服务一定能满足用户的要求，也不担保服务不会受中断；对服务的及时性、安全性、出错发生都不作担保。用户理解并接受，任何通过本系统服务取得的信息资料的可靠性取决于用户自己，**用户自己承担所有风险和责任**。
 
 3. 本声明的最终解释权归本系统所有。
 
@@ -48,11 +48,11 @@ export function Agreement({ agreement, onAccept, onReject }: { agreement: Agreem
     <section className="agreement-page">
       <div className="agreement-card">
         <h1>{agreement.title}</h1>
-        {isRichText ? <div className="agreement-rich-html" dangerouslySetInnerHTML={{ __html: safeHtml }} /> : <div className="agreement-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{agreement.content}</ReactMarkdown></div>}
+        {isRichText ? <div className="agreement-rich-html" dangerouslySetInnerHTML={{ __html: safeHtml }} /> : <div className="agreement-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{agreement.content.replace(/(?<!\*\*)用户自己承担所有风险和责任(?!\*\*)/, "**用户自己承担所有风险和责任**")}</ReactMarkdown></div>}
         <div className="agreement-actions">
           <strong>了解以及同意以上列明的协议</strong>
-          <Button htmlType="button" onClick={onReject}>不同意</Button>
-          <Button htmlType="button" type="primary" onClick={onAccept}>同意</Button>
+          <Button htmlType="button" autoInsertSpace={false} onClick={onReject}>不同意</Button>
+          <Button htmlType="button" type="primary" autoInsertSpace={false} onClick={onAccept}>同意</Button>
         </div>
       </div>
     </section>

@@ -128,18 +128,29 @@ final class AgentMember
     {
         $session=$this->session($request); $siteId=(int)$session['site_id'];
         $query=Db::name('site_users')->where('site_id',$siteId)->whereNull('deleted_at');
-        OrganizationHierarchy::applyUserScope($query,$session,'id');
+        $scopeNode=OrganizationHierarchy::nodeForSession($session);
+        $scopeId=(int)$request->param('organization_id',0);
+        if($scopeId>0&&$scopeId!==(int)($scopeNode['id']??0)){
+            $node=OrganizationHierarchy::assertManageableNode($session,$scopeId);
+            $query->whereIn('organization_id',OrganizationHierarchy::descendantIds((int)$node['id'])?:[0]);
+        }else{
+            OrganizationHierarchy::applyUserScope($query,$session,'id');
+        }
         $username=trim((string)$request->param('username','')); $code=trim((string)$request->param('code','')); $status=$request->param('status','');
         if ($username !== '') $query->whereLike('username','%'.$username.'%');
         if ($code !== '') $query->whereLike('display_name','%'.$code.'%');
         if ($status !== '') $query->where('status',(int)$status);
         $page=max(1,(int)$request->param('page',1)); $pageSize=min(100,max(1,(int)$request->param('page_size',40))); $total=(clone $query)->count();
-        $list=$query->field('id,username,display_name,phone,balance,credit_balance,used_balance,used_balance_date,status,last_login_at,last_login_ip,last_login_location,created_at')->order('id desc')->page($page,$pageSize)->select()->toArray();
+        $list=$query->field('id,organization_id,username,display_name,phone,balance,credit_balance,used_balance,used_balance_date,status,last_login_at,last_login_ip,last_login_location,created_at')->order('id desc')->page($page,$pageSize)->select()->toArray();
         AccountPresence::append($list,'site_user');
+        $agentNames=[];$orgIds=array_values(array_unique(array_filter(array_map('intval',array_column($list,'organization_id')))));
+        if($orgIds)foreach(Db::name('organization_nodes')->whereIn('id',$orgIds)->where('site_id',$siteId)->field('id,name')->select()->toArray() as $nodeRow)$agentNames[(int)$nodeRow['id']]=(string)$nodeRow['name'];
         foreach ($list as &$row) {
             $row=DailyScoreUsage::normalize($row);
             $row['available_balance']=number_format(max(0,(float)$row['balance']+(float)$row['credit_balance']-(float)$row['used_balance']),2,'.','');
             $row['type']='会员';
+            $row['organization_id']=(int)($row['organization_id']??0)>0?(int)$row['organization_id']:null;
+            $row['agent_name']=$row['organization_id']?($agentNames[$row['organization_id']]??null):null;
         }
         return $this->reply(array_merge(['list'=>$list,'total'=>$total,'page'=>$page,'page_size'=>$pageSize],$this->summary($session)));
     }
@@ -183,6 +194,7 @@ final class AgentMember
         $member['permissions']=$this->permissions($siteId,$tenantId,$id);
         $member['odds']=$this->memberOdds($siteId,$tenantId,(int)($session['agent_id']??0),$id,$boardCode); $member['board_code']=$boardCode;
         $member['summary']=$member['organization_id']?OrganizationHierarchy::agentCreditSummary((int)$member['organization_id']):$this->summary($session);
+        $member['agent_name']=$member['organization_id']?Db::name('organization_nodes')->where('id',(int)$member['organization_id'])->value('name'):null;
         return $this->reply($member);
     }
 

@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace app\controller;
 
+use app\service\CreditLedger;
 use app\service\OrganizationHierarchy;
 use app\service\PasswordPolicy;
 use app\service\ScoreTransfer;
@@ -391,7 +392,11 @@ final class AdminRobots
                 // member actually owns.  Only hierarchy/platform movements
                 // are reversed in this operation.
                 if((string)($row['account_type']??'')==='user')continue;
-                $key=(string)$row['account_type'].':'.(int)$row['account_id'];$delta=((string)($row['direction']??'out')==='in'?1:-1)*(float)($row['amount']??0);$deltas[$key]=($deltas[$key]??0)+$delta;
+                // Reverse only the movement actually applied to the account
+                // balance. Share entries written by the current settle path
+                // are bookkeeping-only (balance_before == balance_after);
+                // replaying their amounts would push balances negative.
+                $key=(string)$row['account_type'].':'.(int)$row['account_id'];$delta=CreditLedger::recordedMovement($row);if(abs($delta)<0.000001)continue;$deltas[$key]=($deltas[$key]??0)+$delta;
             }
             $today=DailyScoreUsage::today();
             $pendingAmount=0.0;foreach($records as $record)if((string)($record['status']??'pending')==='pending'&&substr((string)($record['placed_at']??''),0,10)===$today)$pendingAmount+=(float)$record['amount'];

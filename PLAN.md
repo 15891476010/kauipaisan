@@ -1,5 +1,39 @@
 # 项目实施计划
 
+### 本轮：代理端响应式失效 + 拦货筛选溢出修复（已完成）
+
+- [x] 根因：`App.css` 14 处媒体查询写成 `@media (max-width:Xpx) and (min-width:1320px)`（不可能区间，永不命中），全站窄屏/移动端适配（筛选换行、页签滚动、卡片边距等）全部失效，导致拦货页筛选项被压缩、内部控件爆出描边框。
+- [x] 修复：全部去掉错误的 `and (min-width:1320px)`；拦货页残留旧样式块中 `.interception-filter-field input/select` 固定宽度改为 `width:100%;max-width:100%` 贴合悬浮标签框。
+- 验证：oxlint 0 errors；构建发布 4 个代理站点（index-CF_w66vp.js / index-D5uUY7hv.css），产物媒体查询已正常。线上服务器仍为旧包，需另行部署。
+
+### 本轮：代理端数字叠列修复（已完成）
+
+- [x] 根因：fixed 布局表格单元格无溢出处理，超长无断点数字（脏数据如 122326860298664）直接画到相邻列。已加 `.agent-app td/th { overflow-wrap: anywhere }` 全局兜底（与 user-h5 既有约定一致）。
+- [x] 用户决定：不加 viewport meta——保留手机端整页缩放看清全部列的效果，`index.html` 维持原样。
+- 验证：构建通过并发布 4 个代理站点（index-DglX7DRm.js 后续包）；dist 已含 overflow-wrap、无 viewport。线上站点（如 7fht9y.hnrpkewp.top）部署的是旧包 index-C_IOnfPs.js，需另行发布到线上服务器。
+
+### 本轮：结算占成回滚不再误伤组织余额（已完成）
+
+- [x] 排查负余额来源：当前结算路径只写流水不动 `organization_nodes.balance`（before==after）；负数是 8/30–9/8 旧版结算直接扣余额留下的脏数据（总代理1 曾 -413,353，手工调账 +4,492,799.87 后剩 -693.12 等零头）。
+- [x] 隐患修复：`AdminRobots::clearLatest`（机器人清历史）与 `AdminBetBatch::reopenSettledRecord`（修改已结算注单）回滚时按 `direction×amount` 反冲余额，会把新版“只记账不动余额”的流水也反冲成负数；改为只反转 `balance_after−balance_before` 真实移动过的流水（`CreditLedger::recordedMovement`）。
+- 验证：`php -l` 通过；新增 `server/tests/SettlementShareReversalTest.php`（记账行被忽略、真实移动行被正确反转）通过；`DeleteNodeReclaimTest`、`MemberScopeIndexTest`、`DescendantManagementTest`、`OrganizationHierarchyTest`、`OrganizationCreditSummaryTest` 全部通过。
+- 语义确认：会员信用额度是真实划转（代理 balance 减、会员加），会员只能用分到的分数；删除代理需先删/转会员（额度归还代理），删除时 balance 全额回上级——与用户描述一致。
+
+### 本轮：删除下级按剩余分数回收（已完成）
+
+- [x] 定位报错来源：`agentDeleteNode`/`adminDeleteNode` 删除时按 `credit_limit`（额度上限）回收，节点剩余分数（balance）低于额度即报“下级可用分数不足…不能收回这么多”，实际只能回收节点当前剩余分数。
+- [x] 删除改为回收节点 `balance`：余额为正退回直属上级/站点，为负由直属上级承接（守恒），为零不记账；流水原因标记“删除组织/下级退回剩余分数”。
+- [x] 代理端“账户列表”下级行增加“删除”入口（`organization.delete` 权限、确认弹窗），此前删除只在未路由的旧页面和 SaaS 管理端存在。
+- 验证：`php -l` 通过；新增 `server/tests/DeleteNodeReclaimTest.php`（balance<credit_limit 正常删除且只回收余额、负余额由上级承接）通过；`DescendantManagementTest`、`MemberScopeIndexTest`、`OrganizationHierarchyTest`、`OrganizationCreditSummaryTest` 通过；agent-web oxlint 0 errors、TypeScript/构建通过，已发布 4 个代理站点（index-Bz8jFd_e.js）；未执行真实删除。
+
+### 本轮：代理端跨层级会员编辑 + 停用账号可见（已完成）
+
+- [x] 下级管理增加“会员列表”页签：总监/大股东/小股东/总代理/代理均可直接搜索并编辑其范围内的会员，不再必须逐级点到代理节点；页签和面包屑随 `organization_id` 限定到当前浏览节点的后代。
+- [x] `/agent/members` 支持 `organization_id` 限定到当前浏览节点后代（等于会话根节点时保持原全量范围），列表行返回 `organization_id`、`agent_name`，详情返回 `agent_name`。
+- [x] 下级管理状态筛选默认改为“全部”，停用的下级/会员保留在列表中并显示“停用”（与 SaaS 一致，停用≠删除）；停用节点仍可点入查看和重新启用。
+- [x] 编辑页返回时保留 `view=members` 上下文；会员编辑页额度条改显示会员所属代理名。
+- 验证：`php -l` 通过；新增 `server/tests/MemberScopeIndexTest.php` 覆盖全范围/节点范围/状态筛选/越权 organization_id 拒绝，通过；`DescendantManagementTest`、`OrganizationDrillDownTest` 通过；agent-web TypeScript/oxlint（0 errors）/构建通过，已发布 `/www/wwwroot/kps-{shareholder,director,general-agent,agent}`（index-7SqZNESh.js）；未执行真实业务写操作。
+
 ### 本轮：代理端登录失败区分“密码错误”与“非代理账号”（已完成）
 
 - [x] 定位用户反馈：总监创建的代理 `Aa123012`（organization_accounts id=70、节点82“代理2”、status=1）登录代理端返回 401，但提示语是“站点管理员请从总平台站点后台登录……”，看不出是密码错误。

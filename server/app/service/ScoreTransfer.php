@@ -12,7 +12,7 @@ final class ScoreTransfer
         return $prefix.date('YmdHis').strtoupper(bin2hex(random_bytes(5)));
     }
 
-    public static function organizationAllocation(array $child,float $delta,array $operator=[]): void
+    public static function organizationAllocation(array $child,float $delta,array $operator=[],?string $reason=null): void
     {
         if(abs($delta)<0.005)return;
         $childId=(int)$child['id'];$parentId=(int)$child['parent_id'];$tenantId=(int)$child['tenant_id'];$siteId=(int)$child['site_id'];
@@ -30,13 +30,13 @@ final class ScoreTransfer
         if($parentId>0){
             $parent=Db::name('organization_nodes')->where('id',$parentId)->where('tenant_id',$tenantId)->where('site_id',$siteId)->whereNull('deleted_at')->lock(true)->find();if(!$parent)throw new \RuntimeException('上级组织不存在');
             if($delta>0&&(float)$parent['balance']+0.000001<$delta)throw new \InvalidArgumentException('上级可用分数不足，无法继续分配');
-            self::changeOrganization($parent,-$delta,$tx,'层级分数分配',$childId,'organization',$operator);
+            self::changeOrganization($parent,-$delta,$tx,$reason??'层级分数分配',$childId,'organization',$operator);
         }else{
             $site=self::siteAccount($tenantId,$siteId,true);
             if($delta>0&&(float)$site['balance']+0.000001<$delta)throw new \InvalidArgumentException('站点可用分数不足，无法分配给该总监');
-            self::changeSite($site,-$delta,$tx,$delta>0?'站点向总监分配分数':'站点收回总监分数',$childId,'organization',$operator);
+            self::changeSite($site,-$delta,$tx,$reason??($delta>0?'站点向总监分配分数':'站点收回总监分数'),$childId,'organization',$operator);
         }
-        self::changeOrganization($lockedChild,$delta,$tx,'收到上级分配分数',$parentId>0?$parentId:(int)$site['site_id'],$parentId>0?'organization':'site',$operator);
+        self::changeOrganization($lockedChild,$delta,$tx,$reason??'收到上级分配分数',$parentId>0?$parentId:(int)$site['site_id'],$parentId>0?'organization':'site',$operator);
     }
 
     public static function userAllocation(array $user,float $delta,array $operator=[]): void

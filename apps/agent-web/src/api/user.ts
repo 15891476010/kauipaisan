@@ -93,6 +93,8 @@ export type MemberLotteryOdds = {
 };
 export type AgentMember = {
   id: number;
+  organization_id?: number | null;
+  agent_name?: string | null;
   username: string;
   display_name: string;
   phone: string | null;

@@ -1,5 +1,38 @@
 # 问题与防复发记录
 
+### 2026-09-13：全站窄屏适配失效（不可能媒体查询区间）
+
+- 问题：拦货页搜索框控件超出描边框，且所有页面窄屏布局异常。
+- 根因：`App.css` 14 处 `@media (max-width:Xpx) and (min-width:1320px)` 为不可能区间（X 均 <1320），移动端适配全部不生效；另有残留旧版 `.interception-filter-field` 样式块给原生 select 固定 145px 宽度撑出 110px 描边框。
+- 正确做法：媒体查询断点只保留 `max-width`；同一组件样式不要留多套同选择器的旧版本。
+- 防复发检查：改 CSS 后 grep `@media` 确认没有 max<min 的死区间；新增组件样式前缀加 `.agent-app` 防串扰。
+
+### 2026-09-13：代理端表格数字叠列
+
+- 问题：报表等页面相邻列数字叠在一起，手机端和 PC 都会出现。
+- 根因：固定布局表格单元格无 `overflow-wrap`，超长无断点数字（如结算脏数据产生的 15 位金额）溢出并画到下一列。（`index.html` 无 viewport meta 手机会整页缩放，用户要求保留该效果，不加。）
+- 正确做法：数据表格单元格统一 `overflow-wrap:anywhere`（参照 user-h5 做法）。已在 `.agent-app td/th` 加全局兜底；viewport meta 保持不加。
+- 防复发检查：新建表格页面时确认数字列能折行；固定布局表格要么 `overflow-wrap` 要么 `overflow:hidden`。
+
+### 2026-09-13：组织余额负数来源与回滚误伤
+
+- 问题：用户质疑“会员只能用分到的分数，余额不该为负”。确认当前流程确实不会产生负数：会员额度经 `ScoreTransfer::setUserBalances` 真实划转且有充足校验；2026-09-06 起结算占成只写 `organization_credit_ledger` 流水（before==after）不动节点余额。
+- 负数真因：8/30–9/8 旧版结算直接把占成扣进 `organization_nodes.balance`（1445 条 before≠after 流水），大额测试注单把节点打成负数（总代理1 最深 -413,353），后手工调账 +4,492,799.87（“纠正历史定位结算”）只补回大部分，残留 -693.12 等零头。
+- 隐患：`AdminRobots::clearLatest` 和 `AdminBetBatch::reopenSettledRecord` 回滚按 `direction×amount` 反冲余额，对新版“只记账不动余额”的流水会错误扣减、再次制造负数。已修复为只反转 `balance_after−balance_before` 实际移动过的流水（`CreditLedger::recordedMovement`），旧流水经核验两种口径完全一致。
+- 防复发检查：回归 `server/tests/SettlementShareReversalTest.php`；任何按流水回滚余额的逻辑必须用记录的 before/after 差值，不得用 direction×amount；线上残留负余额节点是历史脏数据，可按需手工调平。
+
+### 2026-09-13：删除下级按额度上限回收导致“分数不够回收”
+
+- 问题：删除组织节点时按 `credit_limit`（额度上限）回收分数，但节点 `balance` 可能因亏损/分配低于额度，报“下级可用分数不足…不能收回这么多”，无法删除。
+- 正确做法：删除只回收节点当前剩余 `balance` 并清零——正余额退回直属上级（根总监退回站点），负余额由直属上级承接，保持分数守恒；流水原因用“删除组织/下级退回剩余分数”。`credit_limit` 是额度上限不是应回收金额。
+- 防复发检查：回归 `server/tests/DeleteNodeReclaimTest.php`（balance<credit_limit、负余额承接）；任何“回收/退回”逻辑必须按实际余额而非额度上限；代理端下级行现在有“删除”入口（`organization.delete` 权限）。
+
+### 2026-09-13：代理端停用账号从列表消失、会员必须逐级进入才能编辑
+
+- 问题：下级管理状态筛选默认“启用”，总监/大股东停用下级或下下级账号后该行立刻消失，但 SaaS 管理端仍能看到，造成“停用被当成删除”的误解；同时会员只能在逐级点到其直属代理节点后才能编辑，总监等上层无法直接管理范围内的会员。
+- 正确做法：状态筛选默认“全部”，停用行保留并显示“停用”（后端 `responseForSite`、`/agent/members` 本来就不按 status 过滤，只是前端默认值隐藏了它们）；下级管理增加“会员列表”页签，调用 `/agent/members` 按当前浏览节点（`organization_id`）列出全部后代会员，任意层级可直接搜索并进入“修改账号”。
+- 防复发检查：停用账号/会员后列表行必须仍可见且状态列显示“停用”；`organization_id` 越界（上级、兄弟分支、已删除节点）必须返回参数错误；会员编辑返回需保留 `view=members` 上下文；回归 `server/tests/MemberScopeIndexTest.php` 与 `DescendantManagementTest.php`。
+
 ### 2026-09-12：代理端登录失败文案掩盖了“密码错误”
 
 - 问题：代理端登录对“账号不存在”和“密码错误”返回同一句引导语（站点管理员请从总平台站点后台登录……），导致用户以为代理账号没建成功，实际是密码不匹配（审计 401 = password_verify 失败）。

@@ -374,7 +374,12 @@ final class AdminBetBatch
         $netShares=[];
         foreach ($shareRows as $shareRow) {
             $organizationId=(int)($shareRow['account_id']??0); if ($organizationId<1) continue;
-            $delta=(float)($shareRow['amount']??0)*((string)($shareRow['direction']??'in')==='out'?-1:1);
+            // Reverse only the movement actually applied to the node balance.
+            // Share entries written by the current settle path are
+            // bookkeeping-only (balance_before == balance_after); replaying
+            // their amounts would subtract funds the balance never received.
+            $delta=CreditLedger::recordedMovement($shareRow);
+            if (abs($delta)<0.005) continue;
             $netShares[$organizationId]=($netShares[$organizationId]??0)+$delta;
         }
         foreach ($netShares as $organizationId=>$netShare) {

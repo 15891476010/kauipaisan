@@ -40,7 +40,10 @@ export function SubordinateEditPage({ agentName }: { agentName: string }) {
   const memberId = Number(useParams().id || 0);
   const organizationMode = new URLSearchParams(location.search).get("kind") === "organization";
   const contextId = Number(new URLSearchParams(location.search).get("organization_id")) || undefined;
-  const listPath = contextId ? `/subordinates?organization_id=${contextId}` : "/subordinates";
+  const fromMembers = new URLSearchParams(location.search).get("view") === "members";
+  const listPath = contextId
+    ? `/subordinates?organization_id=${contextId}${fromMembers ? "&view=members" : ""}`
+    : fromMembers ? "/subordinates?view=members" : "/subordinates";
   const canUpdate = hasAgentPermission(organizationMode ? "organization.update" : "member.update");
   const [member, setMember] = useState<AgentMember | null>(null);
   const [organization, setOrganization] = useState<AgentOrganizationNode | null>(null);
@@ -175,7 +178,7 @@ export function SubordinateEditPage({ agentName }: { agentName: string }) {
       <div className="subordinate-actions"><button type="button" onClick={() => navigate(listPath)}>账户列表</button><i /><button className="active" type="button">修改账号</button></div>
     </div>
     {loading ? <div className="subordinate-edit-state">正在加载账号资料...</div> : loadError || !member ? <div className="subordinate-edit-state error"><span>{loadError || "会员不存在"}</span><button type="button" onClick={() => navigate(listPath)}>返 回</button></div> : <div className="subordinate-edit-shell">
-      <div className="edit-credit-summary"><strong>{agentName}(代理)</strong><span>上级授予额度：</span><b>{displayNumber(summary?.granted_credit || summary?.total_credit || 0)}</b><span>当前可用余额：</span><b>{displayNumber(summary?.current_available_balance || summary?.available_credit || 0)}</b><span>直属会员额度：</span><b>{displayNumber(summary?.direct_member_credit || summary?.allocated_credit || 0)}</b></div>
+      <div className="edit-credit-summary"><strong>{member.agent_name || agentName}(代理)</strong><span>上级授予额度：</span><b>{displayNumber(summary?.granted_credit || summary?.total_credit || 0)}</b><span>当前可用余额：</span><b>{displayNumber(summary?.current_available_balance || summary?.available_credit || 0)}</b><span>直属会员额度：</span><b>{displayNumber(summary?.direct_member_credit || summary?.allocated_credit || 0)}</b></div>
       {summary?.credit_unallocated && <div className="credit-allocation-warning">{summary.credit_notice || "上级尚未分配额度，当前不能给会员分配分数"}</div>}
 
       <section className="edit-account-panel">
