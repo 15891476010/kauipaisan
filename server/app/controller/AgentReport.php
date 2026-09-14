@@ -94,6 +94,16 @@ final class AgentReport
             $query->whereRaw('(s.lottery IN ('.$marks.') OR l.name IN ('.$marks.') OR d.lottery_name IN ('.$marks.'))',array_merge($lotteries,$lotteries,$lotteries));
         }
         $rows=$query->field('d.id,d.user_id,u.username,u.organization_id,u.interception_rate AS share_rate,d.issue_no,d.number_text,d.amount,d.odds,d.win_amount,d.rebate,d.placed_at,s.lottery,s.drop_odds')->select()->toArray();
+        // The lottery-history join exists only for name filtering. 福彩3D and
+        // 排列三 share the same issue codes, so one detail joins two history
+        // rows and would otherwise be counted twice.
+        $seenDetails=[];
+        $rows=array_values(array_filter($rows,static function(array $row)use(&$seenDetails):bool{
+            $detailId=(int)$row['id'];
+            if(isset($seenDetails[$detailId])) return false;
+            $seenDetails[$detailId]=true;
+            return true;
+        }));
         // Imported batches keep the reference report snapshot until it is
         // materialized into local bet tables. Include those rows so a newly
         // created总代理 immediately sees the selected date range and members.
@@ -222,20 +232,7 @@ final class AgentReport
     {
         if ($organizationId<1) return [];
         if (array_key_exists($organizationId,$cache)) return $cache[$organizationId];
-        $chain=[];$current=$organizationId;$visited=[];
-        while($current>0&&!in_array($current,$visited,true)) {
-            $visited[]=$current;
-            $node=Db::name('organization_nodes')->where('id',$current)->where('site_id',$siteId)->where('status',1)->whereNull('deleted_at')->find();
-            if(!$node) break;
-            $share=Db::name('organization_profit_shares')
-                ->where('child_organization_id',(int)$node['id'])
-                ->where('parent_organization_id',(int)$node['parent_id'])
-                ->where('status',1)->find();
-            $node['share_rate']=$share?(float)$share['share_rate']:0.0;
-            $chain[]=$node;
-            $current=(int)$node['parent_id'];
-        }
-        return $cache[$organizationId]=$chain;
+        return $cache[$organizationId]=OrganizationHierarchy::shareChain($siteId,$organizationId);
     }
 
     private function memberRows(array $rows): array

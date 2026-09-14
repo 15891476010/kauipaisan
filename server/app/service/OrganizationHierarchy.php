@@ -70,6 +70,31 @@ final class OrganizationHierarchy
         return $query->where('level','director')->find() ?: null;
     }
 
+    /**
+     * Leaf-to-root organization chain with each node's active share rate
+     * toward its parent attached as `share_rate`. Used by report and ledger
+     * aggregation so both share the same chain definition.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    public static function shareChain(int $siteId, int $organizationId): array
+    {
+        $chain=[];$current=$organizationId;$visited=[];
+        while($current>0&&!in_array($current,$visited,true)) {
+            $visited[]=$current;
+            $node=Db::name('organization_nodes')->where('id',$current)->where('site_id',$siteId)->where('status',1)->whereNull('deleted_at')->find();
+            if(!$node) break;
+            $share=Db::name('organization_profit_shares')
+                ->where('child_organization_id',(int)$node['id'])
+                ->where('parent_organization_id',(int)$node['parent_id'])
+                ->where('status',1)->find();
+            $node['share_rate']=$share?(float)$share['share_rate']:0.0;
+            $chain[]=$node;
+            $current=(int)$node['parent_id'];
+        }
+        return $chain;
+    }
+
     public static function accountContext(array $account): array
     {
         $node=Db::name('organization_nodes')->where('id',(int)$account['organization_id'])->where('site_id',(int)$account['site_id'])->where('status',1)->whereNull('deleted_at')->find();

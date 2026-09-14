@@ -82,6 +82,16 @@ $makeBet = function(int $userId, float $amount, float $win) use ($now, $siteId, 
 
 Db::startTrans();
 try {
+    // Both lotteries share the same issue code — the report's history join
+    // fans out to two rows per detail and must not double-count amounts.
+    foreach ([1, 2] as $lotteryId) {
+        Db::name('lottery_histories')->insert([
+            'tenant_id'=>$tenantId, 'lottery_id'=>$lotteryId, 'code'=>'RPTLVL001',
+            'draw_day'=>$today, 'numbers'=>'123', 'is_opened'=>1,
+            'created_at'=>$now, 'updated_at'=>$now,
+        ]);
+    }
+
     $root = $makeNode(0, 'director');
     // Branch A: agent opened directly under the director — the member's chain
     // has no 总代理/股东 level at all.
@@ -114,6 +124,7 @@ try {
     $a = $byMember[$prefix.'_a'] ?? null;
     check($a !== null, 'Member A row missing');
     check($a['member_profit'] === '-1000', 'Member A profit must be -1000, got '.var_export($a['member_profit'], true));
+    check($a['amount'] === '1000', 'Member A amount must count once (join fan-out), got '.var_export($a['amount'], true));
     check(($a['levels']['agent']['amount'] ?? null) === '1000', 'Agent level amount for A must be 1000, got '.var_export($a['levels']['agent']['amount'] ?? null, true));
     check(($a['levels']['agent']['profit'] ?? null) === '1000', 'Agent level profit for A must be +1000 (mirror), got '.var_export($a['levels']['agent']['profit'] ?? null, true));
     check(($a['levels']['director']['profit'] ?? null) === '0', 'Director remainder for A must be 0, got '.var_export($a['levels']['director']['profit'] ?? null, true));
@@ -130,6 +141,7 @@ try {
 
     // Aggregated summary: agent level totals both branches, mid level only B.
     $summary = $data['summary'] ?? [];
+    check(($summary['amount'] ?? null) === '2000', 'Summary amount must be 2000 not doubled, got '.var_export($summary['amount'] ?? null, true));
     check(($summary['levels']['agent']['profit'] ?? null) === '2000', 'Summary agent profit must be 2000, got '.var_export($summary['levels']['agent']['profit'] ?? null, true));
     check(($summary['levels']['general_agent']['amount'] ?? null) === '1000', 'Summary 总代理 amount must be 1000 (branch B only), got '.var_export($summary['levels']['general_agent']['amount'] ?? null, true));
     check(!isset($summary['levels']['shareholder']), 'Summary must not contain levels absent from every chain');

@@ -2387,3 +2387,15 @@
 - 问题：`AgentReport` 只算“当前查看者”的占成，前端把会员的 amount/member_profit 原样填进每个 downline 层级列——不在会员链上的层级（如总监直开代理时的 总代/股东）也显示会员总投与会员视角盈亏（-1022 而非占成方 +1022）。
 - 正确做法：层级列按 `SequentialProfitShare` 的链上分配逐层拆分——层级在链上 → 总投=会员投注额、盈亏=`-该层 share_base`（会员盈亏的镜像）、赚水=`|share_base|×water_rate`；不在链上 → 全 0。用户确认的语义：代理占满 100% 时上游盈亏为 0；层级不在链上时总投/盈亏全为 0。
 - 防复发检查：`tests/ReportLevelColumnsTest.php` 覆盖“直挂代理（中间层缺席→全 0）”与“链上总代被占满（总投有值、盈亏 0）”两种场景；改层级展示时不得再回退到直接渲染 member_profit。
+
+# 2026-09-14：报表金额翻倍（lottery_histories join 行膨胀）
+
+- 问题：报表查询 `leftJoin lottery_histories lh ON lh.code=d.issue_no` 只为按彩种名过滤，但福彩3D 与排列三共用同一批期号 code——每条明细被 join 成 2 行，总投/总中/盈亏/笔数全部算两遍；单彩种筛选也翻倍（`d.lottery_name IN(...)` 让两条膨胀行都通过过滤）。
+- 正确做法：取数后按 `d.id` 去重（join 仅为过滤服务，不得放大行数）。
+- 防复发检查：`tests/ReportLevelColumnsTest.php` 夹具为同一期号插入两个彩种的历史记录，断言金额不翻倍；任何为过滤目的新增的 join 都必须保证不产生行膨胀（唯一键 join 或 EXISTS）。
+
+# 2026-09-14：分类账贡献度恒 0%（占成取错字段）
+
+- 问题：`AgentLedger::details()` 用 `site_users.interception_rate`（组织模型会员恒为 0）计算占成盈亏与贡献度，导致所有会员贡献度显示 0%；真实占成存于 `organization_profit_shares` 的组织边上。
+- 正确做法：占成一律按组织链 `SequentialProfitShare` 分摊，取当前查看者节点的分摊额；会员表 interception_rate 仅作无组织遗留会员的回退。共享方法 `OrganizationHierarchy::shareChain()` 供报表与分类账复用。
+- 防复发检查：`tests/LedgerContributionTest.php` 断言代理视角贡献度 100%、总监视角 0%；任何占成计算不得再读 `site_users.interception_rate` 作为主来源。

@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace app\controller;
 
 use app\service\OrganizationHierarchy;
+use app\service\SequentialProfitShare;
 use think\Request;
 use think\facade\Cache;
 use think\facade\Db;
@@ -49,10 +50,23 @@ final class AgentLedger
 
     private function details(array $session,string $lottery,array $issues): array
     {
-        if($issues===[])return[];$query=Db::name('bet_details')->alias('d')->join('bet_records r','r.id=d.bet_record_id')->join('site_users u','u.id=d.user_id')->leftJoin('user_stop_drops s','s.bet_detail_id=d.id')->where('d.site_id',(int)$session['site_id'])->whereIn('d.issue_no',$issues)->where('s.lottery',$lottery)->where('r.status','<>','refunded');OrganizationHierarchy::applyUserScope($query,$session,'d.user_id');$rows=$query->field('d.id,d.user_id,u.username,u.interception_rate AS member_share_rate,d.issue_no,d.category,d.number_text,d.amount,d.win_amount,d.rebate,s.drop_odds')->select()->toArray();if($rows===[])return[];
-        $settings=Db::name('sites')->where('id',(int)$session['site_id'])->value('settings');$settings=is_string($settings)?json_decode($settings,true):(is_array($settings)?$settings:[]);$waterRate=max(0,min(1,(float)($settings['water_rate']??$settings['dark_water_rate']??0.085)));
+        if($issues===[])return[];$query=Db::name('bet_details')->alias('d')->join('bet_records r','r.id=d.bet_record_id')->join('site_users u','u.id=d.user_id')->leftJoin('user_stop_drops s','s.bet_detail_id=d.id')->where('d.site_id',(int)$session['site_id'])->whereIn('d.issue_no',$issues)->where('s.lottery',$lottery)->where('r.status','<>','refunded');OrganizationHierarchy::applyUserScope($query,$session,'d.user_id');$rows=$query->field('d.id,d.user_id,u.username,u.organization_id,u.interception_rate AS member_share_rate,d.issue_no,d.category,d.number_text,d.amount,d.win_amount,d.rebate,s.drop_odds')->select()->toArray();if($rows===[])return[];
+        $settings=Db::name('sites')->where('id',(int)$session['site_id'])->value('settings');$settings=is_string($settings)?json_decode($settings,true):(is_array($settings)?$settings:[]);$waterRate=max(0,min(1,(float)($settings['water_rate']??$settings['dark_water_rate']??0.085)));$siteCap=max(0,min(100,(float)($settings['max_profit_share_rate']??100)));
         $ids=array_map(static fn(array $row):int=>(int)$row['id'],$rows);$allocations=Db::name('agent_interceptions')->whereIn('bet_detail_id',$ids)->whereNull('released_at')->field('bet_detail_id,SUM(requested_amount) requested,SUM(intercepted_amount) intercepted,MAX(share_rate) share_rate')->group('bet_detail_id')->select()->toArray();$map=[];foreach($allocations as $row)$map[(int)$row['bet_detail_id']]=$row;
-        foreach($rows as &$row){$amount=(float)$row['amount'];$win=(float)$row['win_amount'];$rebate=(float)$row['rebate'];$memberProfit=$win+$rebate-$amount;$intercepted=(float)($map[(int)$row['id']]['intercepted']??0);$shareRate=max(0,min(100,(float)($row['member_share_rate']??0)));$occupation=$memberProfit*$shareRate/100;$water=round(abs($occupation)*$waterRate,2);$numbers=preg_split('/[\s,，]+/u',trim((string)$row['number_text']),-1,PREG_SPLIT_NO_EMPTY)?:[];$row['bet_count']=max(1,count($numbers));$row['intercepted']=$intercepted;$row['requested_share']=(float)($map[(int)$row['id']]['requested']??0);$row['share_rate']=$shareRate;$row['water']=$water;$row['offline_water']=0.0;$row['bright_water']=$water;$row['house_profit']=-$memberProfit;$row['share_profit']=$occupation;$row['agent_profit']=$occupation+($occupation>=0?$water:-$water);}unset($row);return$rows;
+        $viewerOrg=(int)($session['organization_id']??0);$chainCache=[];
+        foreach($rows as &$row){$amount=(float)$row['amount'];$win=(float)$row['win_amount'];$rebate=(float)$row['rebate'];$memberProfit=$win+$rebate-$amount;$intercepted=(float)($map[(int)$row['id']]['intercepted']??0);
+            // Occupation follows the organization chain, same as the betting
+            // report: each level books its configured share of the member's
+            // net P/L and only the remainder passes upward. The member-table
+            // interception_rate is legacy and unused by organization members.
+            $memberOrg=(int)($row['organization_id']??0);
+            $chain=$memberOrg>0?($chainCache[$memberOrg]??=OrganizationHierarchy::shareChain((int)$session['site_id'],$memberOrg)):[];
+            if($chain===[]){$legacyRate=max(0,min(100,(float)($row['member_share_rate']??0)));$chain=$legacyRate>0?[['id'=>0,'parent_id'=>1,'level'=>'agent','share_rate'=>$legacyRate]]:(($root=OrganizationHierarchy::rootForSite((int)$session['site_id']))?[$root]:[]);}
+            $chainAllocations=SequentialProfitShare::allocate($memberProfit,$chain,$siteCap);
+            $viewerAllocation=null;foreach($chainAllocations as $allocation){if((int)($allocation['node']['id']??0)===$viewerOrg){$viewerAllocation=$allocation;break;}}
+            $viewerAllocation??=(($viewerOrg>0&&$chainAllocations!==[])?end($chainAllocations):null);
+            $occupation=(float)($viewerAllocation['amount']??0);$shareRate=(float)($viewerAllocation['share_rate']??0);
+            $water=round(abs($occupation)*$waterRate,2);$numbers=preg_split('/[\s,，]+/u',trim((string)$row['number_text']),-1,PREG_SPLIT_NO_EMPTY)?:[];$row['bet_count']=max(1,count($numbers));$row['intercepted']=$intercepted;$row['requested_share']=(float)($map[(int)$row['id']]['requested']??0);$row['share_rate']=$shareRate;$row['water']=$water;$row['offline_water']=0.0;$row['bright_water']=$water;$row['house_profit']=-$memberProfit;$row['share_profit']=$occupation;$row['agent_profit']=$occupation+($occupation>=0?$water:-$water);}unset($row);return$rows;
     }
 
     private function contribution(array $details): array

@@ -1,11 +1,18 @@
 # 项目实施计划
 
+### 本轮：分类账贡献度恒 0% 修复（已完成）
+
+- [x] 根因：`AgentLedger::details()` 用会员表 `site_users.interception_rate`（组织模型会员该字段恒 0）算占成 → `share_profit=0` → 贡献度 0%。真实占成在 `organization_profit_shares` 上。
+- [x] 修复：占成改走组织链——新增 `OrganizationHierarchy::shareChain()`（叶到根 + 各节点对父级的 share_rate），每行用 `SequentialProfitShare::allocate` 取**当前查看者节点**的分摊额为 `share_profit`；无组织会员保留旧 interception_rate 哨兵链，否则回退根总监。`AgentReport::organizationChain` 同步重构为调用共享方法。
+- 验证：`tests/LedgerContributionTest.php`（代理视角=100%、总监视角=0%）通过；`ReportLevelColumnsTest` 等 9 个回归全部通过。
+
 ### 本轮：报表各层级列按链上占成拆分（已完成）
 
 - [x] 根因：`AgentReport::rows()` 只计算“当前查看者”自己的占成（`currentAllocation`），前端 `MetricRow` 把会员的 `amount`/`member_profit` 原样填进每一个 downline 层级列——导致不在该会员链上的层级（如总监直开代理时的 总代/小股东/大股东）也显示会员总投/盈亏，且盈亏用了会员视角符号（会员 -1022 而非占成方 +1022）。
 - [x] 后端：每行按 `SequentialProfitShare::allocate` 结果聚合 `metrics.levels[level] = {amount, share_base}`（层级在链上 → 总投=会员投注额、share_base=该层占成份额；不在链上 → 无数据）；`aggregate()` 输出 `levels[level] = {amount, water, profit}`，profit = `-share_base`（镜像），water = `|share_base| × water_rate`。无组织且无占成的会员回退到根总监（与结算 rootForSite 一致）。
 - [x] 前端：downline/upline 层级列改读 `metrics.levels[level.key]`，缺省显示 0；self 列“总赚水”由写死 0 改为 `agent_water`。
-- 验证：`server/tests/ReportLevelColumnsTest.php` 覆盖“代理直挂总监（中间层全 0）”与“链上总代被 100% 代理占满（总投有值、盈亏 0）”两种场景，全部通过；`MemberScopeIndexTest`/`DeleteNodeReclaimTest`/`SettlementShareReversalTest`/`DescendantManagementTest` 通过；tsc + 构建通过并发布 4 个代理站点。
+- [x] 追加修复：报表 `leftJoin lottery_histories ON code=issue_no` 在福彩3D/排列三共用期号时行膨胀 ×2，金额全翻倍；取数后按 `d.id` 去重。
+- 验证：`server/tests/ReportLevelColumnsTest.php` 覆盖“代理直挂总监（中间层全 0）”“链上总代被 100% 代理占满（总投有值、盈亏 0）”“共享期号不翻倍”三种场景，全部通过；`MemberScopeIndexTest`/`DeleteNodeReclaimTest`/`SettlementShareReversalTest`/`DescendantManagementTest`/`OrganizationDrillDownTest` 通过；tsc + 构建通过并发布 4 个代理站点。
 
 ### 本轮：代理端响应式失效 + 拦货筛选溢出修复（已完成）
 
