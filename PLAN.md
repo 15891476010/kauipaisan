@@ -1,10 +1,21 @@
 # 项目实施计划
 
+### 本轮：报表各层级列按链上占成拆分（已完成）
+
+- [x] 根因：`AgentReport::rows()` 只计算“当前查看者”自己的占成（`currentAllocation`），前端 `MetricRow` 把会员的 `amount`/`member_profit` 原样填进每一个 downline 层级列——导致不在该会员链上的层级（如总监直开代理时的 总代/小股东/大股东）也显示会员总投/盈亏，且盈亏用了会员视角符号（会员 -1022 而非占成方 +1022）。
+- [x] 后端：每行按 `SequentialProfitShare::allocate` 结果聚合 `metrics.levels[level] = {amount, share_base}`（层级在链上 → 总投=会员投注额、share_base=该层占成份额；不在链上 → 无数据）；`aggregate()` 输出 `levels[level] = {amount, water, profit}`，profit = `-share_base`（镜像），water = `|share_base| × water_rate`。无组织且无占成的会员回退到根总监（与结算 rootForSite 一致）。
+- [x] 前端：downline/upline 层级列改读 `metrics.levels[level.key]`，缺省显示 0；self 列“总赚水”由写死 0 改为 `agent_water`。
+- 验证：`server/tests/ReportLevelColumnsTest.php` 覆盖“代理直挂总监（中间层全 0）”与“链上总代被 100% 代理占满（总投有值、盈亏 0）”两种场景，全部通过；`MemberScopeIndexTest`/`DeleteNodeReclaimTest`/`SettlementShareReversalTest`/`DescendantManagementTest` 通过；tsc + 构建通过并发布 4 个代理站点。
+
 ### 本轮：代理端响应式失效 + 拦货筛选溢出修复（已完成）
 
 - [x] 根因：`App.css` 14 处媒体查询写成 `@media (max-width:Xpx) and (min-width:1320px)`（不可能区间，永不命中），全站窄屏/移动端适配（筛选换行、页签滚动、卡片边距等）全部失效，导致拦货页筛选项被压缩、内部控件爆出描边框。
 - [x] 修复：全部去掉错误的 `and (min-width:1320px)`；拦货页残留旧样式块中 `.interception-filter-field input/select` 固定宽度改为 `width:100%;max-width:100%` 贴合悬浮标签框。
-- 验证：oxlint 0 errors；构建发布 4 个代理站点（index-CF_w66vp.js / index-D5uUY7hv.css），产物媒体查询已正常。线上服务器仍为旧包，需另行部署。
+- [x] 补充：下级管理 `.member-filters` 无任何换行处理（不在任何媒体查询里），窄屏下 170px 筛选框被压缩、150px 输入框爆出；改为 `flex-wrap:wrap; height:auto`，输入框 `width:100%;max-width:150px`。
+- [x] 补充2：媒体查询激活后暴露编辑页新问题——≤1050px 时 `.edit-account-panel`（高88px）、`.edit-settings-panel`（131px）、`.credit-section`（78px）、`.interception-section`（125px）定高未解除，内容两行塞进一行高即重叠；`.finance-section` 写死 1200px、`fieldset` 写死 1062px，窄屏溢出外壳。已在 ≤1050px 查询内解除定高、改 `width:100%`。
+- [x] 补充3：`.edit-password input/small` 写死 420px，≤1050px 时父列只剩 210px 爆出；改 `width:100%;max-width:420px`，`.edit-settings-panel > div` 加 `min-width:0`。
+- [x] 补充4：移除 ≤1050px 规则中 `.edit-permission-list` 的 `grid-column:1/-1` 独占行；`.edit-settings-panel` 改 `2fr 3fr` 两列，密码与权限保持并排（≤700px 才单列堆叠）。
+- 验证：构建发布 4 个代理站点（index-BuQXL3zN.css），产物媒体查询正常。线上服务器仍为旧包，需另行部署。
 
 ### 本轮：代理端数字叠列修复（已完成）
 

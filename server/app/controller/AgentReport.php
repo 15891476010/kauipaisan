@@ -114,15 +114,34 @@ final class AgentReport
             // nearest organization receives its percentage first, and only
             // the remainder is passed to its parent.
             $chain=$this->organizationChain($siteId,(int)($row['organization_id']??0),$chainCache);
-            if ($chain===[] && (float)($row['share_rate']??0)>0) {
-                // Legacy members without an organization retain their direct
-                // historical percentage in the report.
-                // Use a non-root sentinel parent so the legacy percentage is
-                // applied instead of being promoted to the mandatory 100%
-                // root allocation by SequentialProfitShare.
-                $chain=[['id'=>0,'parent_id'=>1,'level'=>'agent','share_rate'=>(float)$row['share_rate']]];
+            if ($chain===[]) {
+                if ((float)($row['share_rate']??0)>0) {
+                    // Legacy members without an organization retain their direct
+                    // historical percentage in the report.
+                    // Use a non-root sentinel parent so the legacy percentage is
+                    // applied instead of being promoted to the mandatory 100%
+                    // root allocation by SequentialProfitShare.
+                    $chain=[['id'=>0,'parent_id'=>1,'level'=>'agent','share_rate'=>(float)$row['share_rate']]];
+                } else {
+                    // Members without an organization book everything to the
+                    // root director, matching settlement's root fallback.
+                    $root=OrganizationHierarchy::rootForSite($siteId);
+                    if($root) $chain=[$root];
+                }
             }
             $allocations=SequentialProfitShare::allocate($memberProfit,$chain,$siteCap);
+            // Per-level figures: a level column is populated only when a node
+            // at that level sits in this member's organization chain. Levels
+            // absent from the chain (for example an agent opened directly
+            // under the director, skipping 总代理/股东) stay at zero.
+            $levelBases=[];
+            foreach($allocations as $allocation) {
+                $levelKey=(string)($allocation['node']['level']??'');
+                if($levelKey==='') continue;
+                if(!isset($levelBases[$levelKey])) $levelBases[$levelKey]=['amount'=>0.0,'share_base'=>0.0];
+                $levelBases[$levelKey]['amount']+=$amount;
+                $levelBases[$levelKey]['share_base']+=(float)$allocation['amount'];
+            }
             // Select the allocation belonging to the organization viewing this report.
             $currentOrganizationId=(int)($session['organization_id']??0);
             $currentAllocation=null; foreach($allocations as $allocation){if((int)($allocation['node']['id']??0)===$currentOrganizationId){$currentAllocation=$allocation;break;}}
@@ -147,7 +166,7 @@ final class AgentReport
                 // Hidden aggregation inputs: occupation is calculated on the
                 // member's net P/L after grouping, never by summing absolute
                 // P/L for individual bet lines.
-                'share_base'=>$allocationAmount,'share_rate'=>(float)($currentAllocation['share_rate']??0),'water_rate'=>$waterRate,'has_share'=>$hasShare?1:0];
+                'share_base'=>$allocationAmount,'share_rate'=>(float)($currentAllocation['share_rate']??0),'water_rate'=>$waterRate,'has_share'=>$hasShare?1:0,'levels'=>$levelBases];
         }
         unset($row); return $rows;
     }
@@ -275,9 +294,15 @@ final class AgentReport
     {
         $total=['bet_count'=>0,'amount'=>0.0,'win_amount'=>0.0,'water'=>0.0,'member_profit'=>0.0,'share_amount'=>0.0,'share_profit'=>0.0,'offline_water'=>0.0,'agent_water'=>0.0,'agent_profit'=>0.0,'platform_amount'=>0.0,'platform_profit'=>0.0,'share_base'=>0.0,'share_rate'=>0.0,'water_rate'=>0.0,'has_share'=>0];
         $amountKeys=['bet_count','amount','win_amount','water','member_profit','share_amount','share_profit','offline_water','agent_water','agent_profit','platform_amount','platform_profit','share_base'];
+        $levelTotals=[];
         foreach($rows as $row) {
             $metrics=is_array($row['metrics']??null)?$row['metrics']:[];
             foreach($amountKeys as $key) $total[$key]+=$metrics[$key]??0;
+            foreach((array)($metrics['levels']??[]) as $levelKey=>$levelMetric) {
+                if(!isset($levelTotals[$levelKey])) $levelTotals[$levelKey]=['amount'=>0.0,'share_base'=>0.0];
+                $levelTotals[$levelKey]['amount']+=(float)($levelMetric['amount']??0);
+                $levelTotals[$levelKey]['share_base']+=(float)($levelMetric['share_base']??0);
+            }
 
             // Rates are attributes of the report scope, not monetary values.
             // Never add them once per bet detail: 102 details must still use
@@ -301,8 +326,21 @@ final class AgentReport
         $total['share_base']=$base; $total['share_amount']=$occupation; $total['share_profit']=$shareProfit;
         $total['agent_water']=$water; $total['offline_water']=0.0; $total['agent_profit']=$shareProfit;
         $total['platform_profit']=-$total['member_profit']-$shareProfit;
+        // Per-level columns: 总投 is the member stake that flowed through a
+        // chain node at that level; 盈亏 is the mirror of the member P/L the
+        // level actually booked (so a 100% agent shows +1022 when the member
+        // lost 1022); 赚水 is that level's occupation times the site rate.
+        $total['levels']=[];
+        foreach($levelTotals as $levelKey=>$levelMetric) {
+            $levelBase=(float)$levelMetric['share_base'];
+            $total['levels'][$levelKey]=[
+                'amount'=>$this->number((float)$levelMetric['amount']),
+                'water'=>$this->number(abs($levelBase)*(float)$total['water_rate']),
+                'profit'=>$this->number(-$levelBase),
+            ];
+        }
         unset($total['share_base'],$total['share_rate'],$total['water_rate'],$total['has_share']);
-        foreach($total as $key=>$value) if($key!=='bet_count') $total[$key]=$this->number((float)$value);
+        foreach($total as $key=>$value) if($key!=='bet_count'&&$key!=='levels') $total[$key]=$this->number((float)$value);
         return $total;
     }
 
