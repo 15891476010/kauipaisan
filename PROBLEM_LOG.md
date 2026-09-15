@@ -2418,3 +2418,9 @@
 - 线上机器人数据清洗：12 个 ch* 账号（uid 85-96）为测试残留，robot_accounts 已空但业务数据残留。单事务删除：bet_records 2611、bet_details 9287、user_stop_drops 2152、bills 3、user_lottery_permissions 24、organization_credit_ledger 2295、site_users 12。参考站主单（AgentImportOverviewSync 导入）属正常业务数据，保留。
 - 注意：已结算机器人注单的占成曾移动过组织节点余额（旧时代真实账动），删流水不会回退余额——如需抹平走单独的余额修复口径（balance = 额度 − 下级额度 − 会员持有）。
 - 防复发检查：改码/任何期号选择器的 bet 期号必须按彩种历史 code 过滤；机器人/测试账号下注前先确认其期号来源。
+
+# 2026-09-15：改码页改走“预开奖号码”驱动（用户推翻纯预中奖排序方案）
+
+- 变更：管理员在期号后输入预开奖号码→每条注单按真实结算路径（selectionTokens→lockedOdds→detailPayout）干跑得到预测中奖→命中注单置顶；用户选择改组织层级联动（总监→大股东/小股东/总代理/代理→会员），各级选项标注子树总投/总中/盈亏，改码后经 batch-draw-preview 重算出预览盈亏（异色）。
+- 关键：预览必须与正式结算同一条代码路径（evaluateDetail/evaluateParsedLine 复用 detailPayout），禁止另写一套匹配/赔率规则；改码文本解析走 thirdPartyRebuildLines（与 rebuildRawRecord 一致）。
+- 防复发检查：pending 单无 draw 时 win/profit 返回 null 而不是 0；已结算单 predicted_win 恒为实际 win_amount；预览评估失败逐条降级为 error 不拖垮整批。

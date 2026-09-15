@@ -1377,3 +1377,15 @@
 - [x] 原因：直组行把豹子号的额外豹子腿金额（provider al=[2,2]，每豹子 4元）合并在同一明细行，明细展示按注数均分 → 13 个号各显示 46/13=3.54。
 - [x] 后端 `betDetails`（两份 UserBusiness 同步）：当整行金额恰等于 各X元×(注数+豹子数) 时按豹子 2× 权重分配——豹子号 4 元、普通号 2 元。
 - [x] 验证：13 token/46 元/各2元 实测分配 10×4+3×2=46；php -l 通过。后端即时生效。
+
+## 2026-09-15：改码页重构——预开奖号码 + 组织层级选择 + 盈亏预览
+- [x] `BetSettlement::evaluateDetail`/`evaluateParsedLine`：对已存明细/解析行按开奖号干跑结算口径（tokens→lockedOdds→detailPayout），不写库。
+- [x] `AdminBetBatch::options`：新增 `draw` 参数；返回组织树（organization_nodes 按 site+path）；每用户 `organization_id`/`org_path`/`stats`（总投/总中/盈亏，pending 无 draw 时 win/profit=null）；每注单 `predicted_win`/`record_status`（已结算单恒返回实际中奖）。
+- [x] 新增 `drawPreview`（POST admin/bet-details/batch-draw-preview）：编辑后的原始文本走 thirdPartyRebuildLines 同口径解析→oddsRowFor→evaluateParsedLine，返回每单 总投/总中/盈亏/error，单条失败不拖垮整批。
+- [x] `BetBatchReplaceView.vue`：期号后加“预开奖号码”输入；用户选择改层级联动（站点→总监→各级下级→会员，选项标注层级+总投/总中/盈亏+预览盈亏）；未分配会员挂伪节点；原始注单标题区显示当前会员总投/总中/盈亏+橙色预览组；命中注单置顶+高亮；编辑后 800ms 防抖自动预览；tabs/编辑不重置。
+- [x] 验证：evaluateDetail 对真实明细（900直开900→9000、XX8定位→90、279组六→300）与结算路径一致；evaluateParsedLine 123直/123→1800、组六123开321→1800；7 个回归测试全过；vue-tsc + admin-web 构建通过。
+- 下一步：push + 线上 pull；admin-web 需在 apps/admin-web 重新构建发布。
+
+## 2026-09-15：改码页层级统计展示修正 + 数字口径核实
+- [x] 下拉选项恢复纯“层级 账号”，不再内嵌统计；改为每选中一级在下方追加一行该级子树统计（总投/总中/盈亏+预览），上级行保留不替换。
+- [x] 线上核实“总监3 数字对不上”：页面 119698.5/38250 与库里 福彩3D 期号 2026248 的 29 单完全一致；用户期望的 259365/209250 = 福彩3D(2026248) 119698.5/38250 + 排列三(26248) 139666.5/171000 两个彩种合计——改码页按所选彩种过滤是正确口径，非 bug。
