@@ -354,17 +354,32 @@ final class AdminBetBatch
         $oldAmount=(float)($record['amount']??0); $oldWin=(float)($record['win_amount']??0);
         $userRows=Db::name('site_users')->where('id',$userId)->where('site_id',$siteId)->lock(true)->select()->toArray();
         $user=$userRows[0]??null; if (!$user) throw new \RuntimeException('结算用户不存在，无法重新计算');
-        $balanceBefore=(float)($user['balance']??0); $balanceAfter=$balanceBefore+$oldAmount-$oldWin;
-        Db::name('site_users')->where('id',$userId)->where('site_id',$siteId)->update([
-            'balance'=>number_format($balanceAfter,2,'.',''),
-            'used_balance'=>Db::raw('used_balance + '.number_format($oldAmount,2,'.','')),
-            'updated_at'=>date('Y-m-d H:i:s'),
-        ]);
-        if ($oldWin>0) CreditLedger::write(
-            ['tenant_id'=>(int)$record['tenant_id'],'site_id'=>$siteId],
-            (int)($user['organization_id']??0)?:null,'user',$userId,$userId,$recordId,null,(string)$record['issue_no'],
-            -$oldWin,$balanceBefore,$balanceAfter,'修改注单撤销原中奖结算','settlement'
-        );
+        // Settlement is reporting-only: placing the bet charged used_balance
+        // once and settling never moved balance. Reopening must therefore not
+        // recompute balance from amount/win — that would phantom-debit a won
+        // ticket and push the balance negative. Reverse only the movement a
+        // ledger row actually recorded (old-era settlement rows whose stored
+        // before/after differ), and stay silent otherwise so the rebuild
+        // leaves no visible trace on the member account.
+        $netMovement=0.0;
+        $movementRows=Db::name('organization_credit_ledger')->where('related_bet_record_id',$recordId)
+            ->where('account_type','user')->where('account_id',$userId)->select()->toArray();
+        foreach ($movementRows as $movementRow) {
+            $delta=CreditLedger::recordedMovement($movementRow);
+            if (abs($delta)>=0.005) $netMovement+=$delta;
+        }
+        if (abs($netMovement)>=0.005) {
+            $balanceBefore=(float)($user['balance']??0); $balanceAfter=$balanceBefore-$netMovement;
+            Db::name('site_users')->where('id',$userId)->where('site_id',$siteId)->update([
+                'balance'=>number_format($balanceAfter,2,'.',''),
+                'updated_at'=>date('Y-m-d H:i:s'),
+            ]);
+            CreditLedger::write(
+                ['tenant_id'=>(int)$record['tenant_id'],'site_id'=>$siteId],
+                (int)($user['organization_id']??0)?:null,'user',$userId,$userId,$recordId,null,(string)$record['issue_no'],
+                -$netMovement,$balanceBefore,$balanceAfter,'修改注单撤销原结算','settlement'
+            );
+        }
 
         // Sum the net share ledger for this record. This also handles a record
         // that has already been recalculated before: old settlement and prior
@@ -460,14 +475,15 @@ final class AdminBetBatch
         $formatted=(new QuickEntryParser())->formatText($sourceText);
         if ($wasSettled) {
             $amountDifference=$total-(float)$record['amount'];
-            if (abs($amountDifference)>=0.005) {
+            // The original stake still occupies the member's daily usage, so
+            // only the delta is applied — and only when the bet belongs to the
+            // current business day. Usage from an earlier day was already
+            // reset and must not leak into today's counter.
+            if (abs($amountDifference)>=0.005 && substr((string)($record['placed_at']??''),0,10)===\app\service\DailyScoreUsage::today()) {
                 $userRows=Db::name('site_users')->where('id',(int)$record['user_id'])->where('site_id',(int)$record['site_id'])->lock(true)->select()->toArray();
                 $user=$userRows[0]??null; if (!$user) throw new \RuntimeException('结算用户不存在，无法调整重算金额');
                 $before=(float)$user['balance']+(float)$user['credit_balance']-(float)$user['used_balance'];
-                Db::name('site_users')->where('id',(int)$record['user_id'])->where('site_id',(int)$record['site_id'])->update([
-                    'used_balance'=>Db::raw($amountDifference>0?'used_balance + '.number_format($amountDifference,2,'.',''):'GREATEST(used_balance - '.number_format(abs($amountDifference),2,'.','').', 0)'),
-                    'updated_at'=>date('Y-m-d H:i:s'),
-                ]);
+                \app\service\DailyScoreUsage::change((int)$record['user_id'],$amountDifference);
                 CreditLedger::write(['tenant_id'=>(int)$record['tenant_id'],'site_id'=>(int)$record['site_id']],(int)($user['organization_id']??0)?:null,
                     'user',(int)$record['user_id'],(int)$record['user_id'],$recordId,null,$issue,-$amountDifference,$before,$before-$amountDifference,'修改注单调整下注金额','bet');
             }

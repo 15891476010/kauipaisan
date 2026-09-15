@@ -2405,3 +2405,9 @@
 - 问题：报表/分类账逐行按当前 `organization_profit_shares.share_rate` 实时重算分摊——今天把占成从 100% 改成 80%，昨天已按 100% 结算的注单在报表里也被重算成 80%。
 - 正确做法：已结算注单（won/unwon）一律读 `organization_credit_ledger` 的结算快照（source_type=settlement_share，按 related_bet_record_id 关联，metadata 里有 share_rate/organization_level），每单只计一次（多明细不重复加）；未结算注单才按当前链投影。
 - 防复发检查：`ReportLevelColumnsTest` 覆盖“快照 100% + 实时 80%”断言仍显示快照值；任何按注单/会员聚合占成的报表都不得对 settled 记录用实时 rate 重算。
+
+# 2026-09-15：改码负数余额 + 线上期号脏数据清洗
+
+- 改码负数：`AdminBetBatch::reopenSettledRecord` 按旧模型 `balance += 注额−中奖` 反冲并重复累加 `used_balance`；现行模型结算为纯报表事件（balance 不动）。修复：仅按 user 账户流水 before/after 的净变动反冲，无变动则不写流水（用户端无改码痕迹）；重建注额差额经 DailyScoreUsage 且仅当天注单调整。
+- 期号脏数据：生产库 `lotteries` 存在与真彩种重名的停用测试彩种（id=4 福彩3D/csffc、id=6 排列三/cspls），名下 7127 条 10 位分分彩期号 + 赔率/分类/用户赔率共 454 条。已于线上单事务删除：lottery_histories 7127、lottery_odds 200、lottery_odds_categories 40、user_lottery_odds 214、lotteries 2 行。剩余仅真彩种 id=1(fc3d)/id=2(pl3)。
+- 防复发检查：凡按彩种名查 `lotteries` 的代码必须确认无重名残留；改码/结算路径的反冲只允许基于 ledger 实际账动行，禁止按 amount/win 重算 balance。

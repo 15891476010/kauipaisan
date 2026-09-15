@@ -1,5 +1,13 @@
 # 项目实施计划
 
+### 本轮：改码余额/明细修复 + 改码页用户 Tabs（已完成）
+
+- [x] 负数根因：`AdminBetBatch::reopenSettledRecord` 按旧余额模型反冲（`balance += 注额 − 中奖`、`used_balance += 注额`），但现行模型下结算为纯报表事件、下注只记当日用量——赢单（中奖>注额）直接把 balance 扣成负数，used_balance 也被重复累加。
+- [x] 修复：reopen 只按 `organization_credit_ledger` 中 account_type=user 行里 before/after 实际存在的净变动反冲（新时代记账行 before==after 不产生变动，不写任何"撤销"流水 → 用户端无改码痕迹）；重建时的注额差额改用 `DailyScoreUsage`，且仅当注单属于当天才调整用量。
+- [x] 改码页（admin-web `BetBatchReplaceView`）：多选用户下方新增用户 tabs，切换只过滤当前显示的原始注单，编辑内容按 group key 保留不重置；未保存修改的 tab 显示计数角标。
+- 验证：`php -l` 通过；4 个结算/组织回归通过；admin-web 构建发布。
+- [x] 线上期号脏数据清洗（已执行）：删除停用测试彩种 id=4（福彩3D/csffc）、id=6（排列三/cspls）及其名下 lottery_histories 7127、lottery_odds 200、lottery_odds_categories 40、user_lottery_odds 214，单事务完成；剩余真彩种 id=1 fc3d / id=2 pl3 均启用且期号顺序正常。
+
 ### 本轮：占成历史快照——改占成不回溯已结算注单（已完成）
 
 - [x] 根因：报表/分类账按**当前** `organization_profit_shares.share_rate` 实时重算历史注单，今天改 80% 会把昨天按 100% 结算的注单也重算成 80%。
