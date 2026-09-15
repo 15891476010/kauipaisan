@@ -233,9 +233,14 @@ final class AdminBetBatch
             // 28xxx) would leak into the dropdown and can never be settled.
             ->whereRaw('r.issue_no IN (SELECT code FROM lottery_histories WHERE lottery_id = ?)',[(int)$lottery['id']]);
         if ($siteId!==null) $betIssueQuery->where('r.site_id',$siteId);
+        $betIssues=[];
         foreach ($betIssueQuery->distinct(true)->column('r.issue_no') as $betIssue) {
-            $betIssue=(string)$betIssue; if ($betIssue!=='' && !in_array($betIssue,$issues,true)) $issues[]=$betIssue;
+            $betIssue=(string)$betIssue; if ($betIssue!=='' && !in_array($betIssue,$issues,true)) $betIssues[]=$betIssue;
         }
+        // History rows arrive in draw order; bet-derived issues come back in
+        // arbitrary row order, so sort them explicitly (newest first).
+        usort($betIssues,static function(string $a,string $b):int{return $b<=>$a;});
+        foreach($betIssues as $betIssue) $issues[]=$betIssue;
         $selectedRecordIds=array_values(array_unique(array_filter(array_map('intval',explode(',',(string)$request->param('record_ids',''))),static fn(int $id): bool=>$id>0)));
         $selectedUserIds=[];
         if ($selectedRecordIds!==[]) {
