@@ -22,6 +22,11 @@ class AdminBetBatch
         return $this->delegate->replace($request);
     }
 
+    public function drawPreview(\think\Request $request): \think\response\Json
+    {
+        return $this->delegate->drawPreview($request);
+    }
+
     public function recordOptions(\think\Request $request): \think\response\Json
     {
         return $this->delegate->recordOptions($request);

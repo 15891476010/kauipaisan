@@ -118,6 +118,7 @@ export const updateBetDetail = (
 ) => http.put<never, Envelope<null>>(`/admin/bet-details/${id}`, payload);
 export type BatchBetNumber = {
   record_source_text?: string;
+  record_formatted_text?: string;
   key: string;
   record_id: number;
   detail_id: number;
@@ -125,7 +126,10 @@ export type BatchBetNumber = {
   value: string;
   amount: string;
   source_text: string;
+  record_status?: string;
+  predicted_win?: string | null;
 };
+export type BatchBetStats = { bet: string; win: string | null; profit: string | null };
 export type BatchBetUser = {
   key: string;
   user_id: number;
@@ -133,8 +137,29 @@ export type BatchBetUser = {
   username: string;
   display_name: string;
   site_name: string;
+  organization_id?: number;
+  org_path?: string;
   number_count?: number;
+  stats?: BatchBetStats;
   numbers: BatchBetNumber[];
+};
+export type BatchBetNode = {
+  id: number;
+  site_id: number;
+  site_name: string;
+  parent_id: number;
+  level: string;
+  label: string;
+  name: string;
+  path: string;
+};
+export type BatchBetPreviewResult = {
+  record_id: number;
+  amount?: string;
+  win?: string;
+  profit?: string;
+  won?: boolean;
+  error?: string;
 };
 export type BatchBetLottery = {
   id: number;
@@ -147,14 +172,21 @@ export type BatchBetOptions = {
   lottery: BatchBetLottery | null;
   issue_no: string;
   issues: string[];
+  draw?: string;
+  tree?: BatchBetNode[];
   selected_record_ids?: number[];
   selected_user_ids?: number[];
   users: BatchBetUser[];
 };
-export const getBatchBetOptions = (params?: { lottery_id?: number; lottery?: string; issue_no?: string; user_ids?: number[]; record_ids?: number[] }) =>
+export const getBatchBetOptions = (params?: { lottery_id?: number; lottery?: string; issue_no?: string; draw?: string; user_ids?: number[]; record_ids?: number[] }) =>
   http.get<never, Envelope<BatchBetOptions>>(
     "/admin/bet-details/batch-options",
     { params: { ...params, user_ids: params?.user_ids?.join(','), record_ids: params?.record_ids?.join(',') } },
+  );
+export const previewBatchBetDraw = (payload: { lottery_id?: number; issue_no: string; draw: string; records: { record_id: number; source_text: string }[] }) =>
+  http.post<never, Envelope<{ results: BatchBetPreviewResult[] }>>(
+    "/admin/bet-details/batch-draw-preview",
+    payload,
   );
 export const replaceBatchBetNumbers = (payload: {
   lottery_id: number;

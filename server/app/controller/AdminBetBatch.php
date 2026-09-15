@@ -257,6 +257,10 @@ final class AdminBetBatch
         if ($issue==='') return $this->reply(['lotteries'=>$lotteries,'lottery'=>$lottery,'issue_no'=>'','issues'=>$issues,'users'=>[],'selected_record_ids'=>$selectedRecordIds,'selected_user_ids'=>$selectedUserIds]);
         $requestedUsers=array_values(array_unique(array_filter(array_map('intval',explode(',',(string)$request->param('user_ids',''))),static fn(int $id): bool=>$id>0)));
         if ($requestedUsers===[] && $selectedUserIds!==[]) $requestedUsers=$selectedUserIds;
+        // 预开奖号码：operator knows the draw before the platform syncs it.
+        // Every pending detail is then evaluated against it so totals and
+        // the winning-first ordering match the real settlement outcome.
+        $draw=preg_replace('/\D/','',(string)$request->param('draw',''));
 
         $query=Db::name('bet_details')->alias('d')
             ->join('bet_records r','r.id=d.bet_record_id')
@@ -267,17 +271,59 @@ final class AdminBetBatch
             ->where('r.issue_no',$issue)
             ->whereIn('r.status',['pending','won','unwon'])->whereIn('d.status',['pending','won','unwon']);
         if ($siteId!==null) $query->where('d.site_id',$siteId);
-        if ($requestedUsers!==[]) $query->whereIn('d.user_id',$requestedUsers);
-        $rows=$query->field('d.id,d.user_id,d.site_id,d.number_text,d.amount,d.source_text,r.id AS record_id,r.amount AS record_amount,r.bet_count AS record_bet_count,r.source_text AS record_source_text,r.formatted_text AS record_formatted_text,r.submission_id,u.username,u.display_name,st.name AS site_name')
+        // The full row set stays unfiltered: per-member and per-node totals
+        // must cover every bettor of this issue even before users are picked.
+        $rows=$query->field('d.id,d.user_id,d.site_id,d.number_text,d.amount,d.odds AS detail_odds,d.win_amount AS detail_win,d.status AS detail_status,d.source_text,s.actual_odds,s.play_type AS detail_play_type,r.id AS record_id,r.amount AS record_amount,r.bet_count AS record_bet_count,r.status AS record_status,r.win_amount AS record_win,r.board_code,r.source_text AS record_source_text,r.formatted_text AS record_formatted_text,r.submission_id,u.username,u.display_name,u.organization_id,st.name AS site_name')
             ->order('d.site_id asc')->order('d.user_id asc')->order('d.id asc')->select()->toArray();
+
+        // Group details per record, then evaluate each pending record
+        // against the predicted draw using the real settlement path.
+        $settlement=new BetSettlement();
+        $recordMap=[];
+        foreach ($rows as $row) {
+            $recordId=(int)($row['record_id']??0);
+            if ($recordId<1) continue;
+            if (!isset($recordMap[$recordId])) $recordMap[$recordId]=[
+                'user_key'=>(int)$row['site_id'].'-'.(int)$row['user_id'],
+                'amount'=>(float)($row['record_amount']??0),'win'=>(float)($row['record_win']??0),
+                'status'=>(string)($row['record_status']??'pending'),'board_code'=>(string)($row['board_code']??'A'),
+                'source'=>(string)($row['record_source_text']??''),'details'=>[],
+            ];
+            $recordMap[$recordId]['details'][]=$row;
+        }
+        $predictedWins=[];
+        // Settled records already know their win; expose it even without a
+        // predicted draw so sorting and totals work for opened issues too.
+        foreach ($recordMap as $recordId=>$record)
+            if ($record['status']!=='pending') $predictedWins[$recordId]=$record['win'];
+        if ($draw!=='') {
+            foreach ($recordMap as $recordId=>$record) {
+                if ($record['status']!=='pending') continue;
+                $win=0.0;$unknown=false;
+                foreach ($record['details'] as $detail) {
+                    try {
+                        $eval=$settlement->evaluateDetail(
+                            ['id'=>(int)$detail['id'],'number_text'=>(string)($detail['number_text']??''),'source_text'=>(string)($detail['source_text']??''),
+                             'amount'=>(float)($detail['amount']??0),'odds'=>$detail['detail_odds']??null,'board_code'=>$record['board_code']],
+                            ['actual_odds'=>$detail['actual_odds']??null],
+                            (int)$lottery['id'],$draw,$record['source']);
+                        $win+=$eval['win'];
+                    } catch (\Throwable) { $unknown=true; }
+                }
+                $predictedWins[$recordId]=$unknown?null:$win;
+            }
+        }
+
         $users=[];
+        $userStats=[];
         $seenRecords=[];
         foreach ($rows as $row) {
             $userKey=(int)$row['site_id'].'-'.(int)$row['user_id'];
             if (!isset($users[$userKey])) $users[$userKey]=[
                 'key'=>$userKey,'user_id'=>(int)$row['user_id'],'site_id'=>(int)$row['site_id'],
                 'username'=>(string)($row['username']??'未知用户'),'display_name'=>(string)($row['display_name']??''),
-                'site_name'=>(string)($row['site_name']??''),'number_count'=>0,'numbers'=>[],
+                'site_name'=>(string)($row['site_name']??''),'organization_id'=>(int)($row['organization_id']??0),
+                'number_count'=>0,'numbers'=>[],
             ];
             // The batch editor works on the original ticket as one unit. Do
             // not expose or parse its generated detail numbers here: one
@@ -287,14 +333,52 @@ final class AdminBetBatch
             if ($recordId<1 || isset($seenRecords[$userKey][$recordId])) continue;
             $seenRecords[$userKey][$recordId]=true;
             $users[$userKey]['number_count']++;
+            $record=$recordMap[$recordId];
+            if (!isset($userStats[$userKey])) $userStats[$userKey]=['bet'=>0.0,'win'=>0.0,'unknown'=>false];
+            $userStats[$userKey]['bet']+=$record['amount'];
+            if ($record['status']==='pending') {
+                if (array_key_exists($recordId,$predictedWins)) {
+                    if ($predictedWins[$recordId]===null) $userStats[$userKey]['unknown']=true;
+                    else $userStats[$userKey]['win']+=$predictedWins[$recordId];
+                } else $userStats[$userKey]['unknown']=true;
+            } else $userStats[$userKey]['win']+=$record['win'];
             if ($requestedUsers===[]) continue;
+            $predicted=$predictedWins[$recordId]??null;
             $users[$userKey]['numbers'][]=[
                 'key'=>$recordId.'-raw','record_id'=>$recordId,'detail_id'=>(int)($row['id']??0),'number_index'=>-1,
                 'value'=>'原始注单','amount'=>number_format((float)($row['record_amount']??0),2,'.',''),'source_text'=>(string)($row['source_text']??''),
                 'record_source_text'=>(string)($row['record_source_text']??''),'record_formatted_text'=>(string)($row['record_formatted_text']??''),
+                'record_status'=>$record['status'],'predicted_win'=>$predicted===null?null:number_format($predicted,2,'.',''),
             ];
         }
-        return $this->reply(['lotteries'=>$lotteries,'lottery'=>$lottery,'issue_no'=>$issue,'issues'=>$issues,'selected_record_ids'=>$selectedRecordIds,'selected_user_ids'=>$selectedUserIds,'users'=>array_values($users)]);
+        // Organization tree for the hierarchical picker. Members carry their
+        // node id + path so the frontend can roll subtree totals up per node.
+        $siteIds=array_values(array_unique(array_map('intval',array_column($rows,'site_id'))));
+        $nodePaths=[];
+        $tree=[];
+        if ($siteIds!==[]) {
+            $nodes=Db::name('organization_nodes')->whereIn('site_id',$siteIds)->where('status',1)->whereNull('deleted_at')
+                ->field('id,site_id,parent_id,level,path,name')->order('depth asc')->order('id asc')->select()->toArray();
+            $siteNames=Db::name('sites')->whereIn('id',$siteIds)->column('name','id');
+            foreach ($nodes as $node) {
+                $nodePaths[(int)$node['id']]=(string)($node['path']??'');
+                $tree[]=['id'=>(int)$node['id'],'site_id'=>(int)$node['site_id'],'site_name'=>(string)($siteNames[(int)$node['site_id']]??''),
+                    'parent_id'=>(int)$node['parent_id'],'level'=>(string)($node['level']??''),
+                    'label'=>\app\service\OrganizationHierarchy::LABELS[(string)($node['level']??'')]??(string)($node['level']??''),
+                    'name'=>(string)($node['name']??''),'path'=>(string)($node['path']??'')];
+            }
+        }
+        foreach ($users as $userKey=>$user) {
+            $orgId=(int)$user['organization_id'];
+            $users[$userKey]['org_path']=$orgId>0?($nodePaths[$orgId]??''):'';
+            $stats=$userStats[$userKey]??['bet'=>0.0,'win'=>0.0,'unknown'=>true];
+            $users[$userKey]['stats']=[
+                'bet'=>number_format($stats['bet'],2,'.',''),
+                'win'=>$stats['unknown']?null:number_format($stats['win'],2,'.',''),
+                'profit'=>$stats['unknown']?null:number_format($stats['win']-$stats['bet'],2,'.',''),
+            ];
+        }
+        return $this->reply(['lotteries'=>$lotteries,'lottery'=>$lottery,'issue_no'=>$issue,'issues'=>$issues,'draw'=>$draw,'tree'=>$tree,'selected_record_ids'=>$selectedRecordIds,'selected_user_ids'=>$selectedUserIds,'users'=>array_values($users)]);
     }
 
     /** Replace one selected three-digit token in the original ticket text.
@@ -354,6 +438,60 @@ final class AdminBetBatch
         if ($reasons!==[]) throw new \InvalidArgumentException(implode('；',array_values(array_unique($reasons))));
         if ($lines===[]) throw new \InvalidArgumentException('三方识别未返回当前彩种的有效投注内容');
         return $lines;
+    }
+
+    /**
+     * Dry-run edited original tickets against a predicted draw. Parses each
+     * supplied source text through the same third-party rebuild path used on
+     * save, then evaluates the generated lines with the settlement engine.
+     * Nothing is written; per-record errors are returned instead of failing
+     * the whole batch.
+     */
+    public function drawPreview(Request $request): \think\response\Json
+    {
+        $siteId=$this->scopedSiteId($request);
+        $data=$request->post();
+        $lotteryId=(int)($data['lottery_id']??0); $issue=trim((string)($data['issue_no']??''));
+        $lottery=null;
+        foreach ($this->lotteries($siteId) as $item) if ((int)$item['id']===$lotteryId) { $lottery=$item; break; }
+        if (!$lottery) throw new \InvalidArgumentException('请选择有效彩种');
+        if ($issue==='') throw new \InvalidArgumentException('请选择期号');
+        $draw=preg_replace('/\D/','',(string)($data['draw']??''));
+        if ($draw==='') throw new \InvalidArgumentException('请输入预开奖号码');
+        $rawRecords=$data['records']??null;
+        if (!is_array($rawRecords) || $rawRecords===[] || count($rawRecords)>200) throw new \InvalidArgumentException('请选择需要预览的原始注单');
+        $lotteryName=(string)$lottery['name']; $lotteryId=(int)$lottery['id'];
+        $settlement=new BetSettlement(); $results=[];
+        foreach ($rawRecords as $rawRecord) {
+            if (!is_array($rawRecord)) continue;
+            $recordId=(int)($rawRecord['record_id']??0); $sourceText=(string)($rawRecord['source_text']??'');
+            if ($recordId<1) continue;
+            try {
+                $query=Db::name('bet_records')->where('id',$recordId)->where('issue_no',$issue)->whereIn('status',['pending','won','unwon']);
+                if ($siteId!==null) $query->where('site_id',$siteId);
+                $record=$query->field('id,tenant_id,site_id,user_id,board_code,source_text')->find();
+                if (!$record) throw new \RuntimeException('主单不存在或已不可修改');
+                if (trim($sourceText)==='') throw new \InvalidArgumentException('原始注单不能为空');
+                $lines=$this->thirdPartyRebuildLines($sourceText,$lotteryName,(int)$record['tenant_id'],(int)$record['site_id']);
+                $boardCode=(string)($record['board_code']??'A'); $recordSource=(string)($record['source_text']??'');
+                $total=0.0; $win=0.0;
+                foreach ($lines as $line) {
+                    $numberText=trim((string)($line['number_text']??'')); if ($numberText==='') continue;
+                    $settlementText=trim((string)($line['settlement_text']??$line['parse_text']??$line['raw_text']??$numberText));
+                    $amount=(float)($line['amount']??0); if ($amount<=0) continue;
+                    $odds=$settlement->oddsRowFor($lotteryId,$settlementText,$boardCode);
+                    if (!is_array($odds) || !array_key_exists('odds',$odds) || !is_numeric($odds['odds']) || (float)$odds['odds']<=0)
+                        throw new \InvalidArgumentException('玩法无法唯一匹配赔率，请检查玩法和盘口设置');
+                    $eval=$settlement->evaluateParsedLine($numberText,$settlementText,$amount,(float)$odds['odds'],$draw,$recordSource);
+                    $total+=$amount; $win+=$eval['win'];
+                }
+                $results[]=['record_id'=>$recordId,'amount'=>number_format($total,2,'.',''),'win'=>number_format($win,2,'.',''),
+                    'profit'=>number_format($win-$total,2,'.',''),'won'=>$win>0];
+            } catch (\Throwable $error) {
+                $results[]=['record_id'=>$recordId,'error'=>$error->getMessage()];
+            }
+        }
+        return $this->reply(['results'=>$results]);
     }
 
     /** Undo the financial effects of a settled record before rebuilding it. */

@@ -297,6 +297,47 @@ final class BetSettlement
         return ['matched'=>$matched,'stake'=>$stake,'effective_odds'=>$effectiveOdds,'win'=>$winningStake*$effectiveOdds];
     }
 
+    /**
+     * Dry-run one persisted detail row against a draw string. Reuses the exact
+     * settlement path (selection tokens, locked odds, detailPayout) so the
+     * predicted payout matches what settlement would pay, without writing.
+     *
+     * @return array{win:float,matched:int,odds:float|null}
+     */
+    public function evaluateDetail(array $detail, array $stop, int $lotteryId, string $draw, string $recordSource=''): array
+    {
+        $source=(string)($detail['source_text']??'');
+        $numbers=$this->selectionTokens((string)($detail['number_text']??''),$source);
+        $numbers=array_values(array_filter($numbers,static fn(string $number):bool=>trim($number)!==''));
+        if($numbers===[]){
+            $fallback=trim($source);
+            if($fallback!=='')$numbers=[$fallback];
+        }
+        if($numbers===[])return ['win'=>0.0,'matched'=>0,'odds'=>null];
+        [$odds]=$this->lockedOdds($detail,$stop,$lotteryId,count($numbers));
+        $payout=$this->detailPayout($numbers,$draw,$source,(float)($detail['amount']??0),$odds,$recordSource);
+        return ['win'=>$payout['win'],'matched'=>(int)$payout['matched'],'odds'=>$odds];
+    }
+
+    /**
+     * Dry-run one parsed (not yet persisted) line against a draw string,
+     * for the batch-edit predicted-draw preview.
+     *
+     * @return array{win:float,matched:int}
+     */
+    public function evaluateParsedLine(string $numberText,string $source,float $amount,float $odds,string $draw,string $recordSource=''): array
+    {
+        $numbers=$this->selectionTokens($numberText,$source);
+        $numbers=array_values(array_filter($numbers,static fn(string $number):bool=>trim($number)!==''));
+        if($numbers===[]){
+            $fallback=trim($source);
+            if($fallback!=='')$numbers=[$fallback];
+        }
+        if($numbers===[]||$odds<=0)return ['win'=>0.0,'matched'=>0];
+        $payout=$this->detailPayout($numbers,$draw,$source,$amount,$odds,$recordSource);
+        return ['win'=>$payout['win'],'matched'=>(int)$payout['matched']];
+    }
+
     /** Preserve a compact selection as one wager, including provider marker spacing. */
     public function selectionTokens(string $text,string $source=''): array
     {

@@ -138,6 +138,7 @@ Route::group('api/v1', static function () {
     // reaches AdminBetBatch instead of being swallowed by Resource/index.
     Route::get('admin/bet-records', 'Saas.Resource/index')->append(['resource' => 'bet-records'])->completeMatch();
     Route::get('admin/bet-details/batch-options', 'Saas.AdminBetBatch/options');
+    Route::post('admin/bet-details/batch-draw-preview', 'Saas.AdminBetBatch/drawPreview');
     Route::put('admin/bet-details/batch-replace', 'Saas.AdminBetBatch/replace');
     Route::get('admin/bet-records/batch-options', 'Saas.AdminBetBatch/recordOptions');
     Route::post('admin/bet-records/batch-preview', 'Saas.AdminBetBatch/preview');
