@@ -2399,3 +2399,9 @@
 - 问题：`AgentLedger::details()` 用 `site_users.interception_rate`（组织模型会员恒为 0）计算占成盈亏与贡献度，导致所有会员贡献度显示 0%；真实占成存于 `organization_profit_shares` 的组织边上。
 - 正确做法：占成一律按组织链 `SequentialProfitShare` 分摊，取当前查看者节点的分摊额；会员表 interception_rate 仅作无组织遗留会员的回退。共享方法 `OrganizationHierarchy::shareChain()` 供报表与分类账复用。
 - 防复发检查：`tests/LedgerContributionTest.php` 断言代理视角贡献度 100%、总监视角 0%；任何占成计算不得再读 `site_users.interception_rate` 作为主来源。
+
+# 2026-09-14：改占成把已结算历史注单按新占成重算
+
+- 问题：报表/分类账逐行按当前 `organization_profit_shares.share_rate` 实时重算分摊——今天把占成从 100% 改成 80%，昨天已按 100% 结算的注单在报表里也被重算成 80%。
+- 正确做法：已结算注单（won/unwon）一律读 `organization_credit_ledger` 的结算快照（source_type=settlement_share，按 related_bet_record_id 关联，metadata 里有 share_rate/organization_level），每单只计一次（多明细不重复加）；未结算注单才按当前链投影。
+- 防复发检查：`ReportLevelColumnsTest` 覆盖“快照 100% + 实时 80%”断言仍显示快照值；任何按注单/会员聚合占成的报表都不得对 settled 记录用实时 rate 重算。

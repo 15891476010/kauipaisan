@@ -1,5 +1,11 @@
 # 项目实施计划
 
+### 本轮：占成历史快照——改占成不回溯已结算注单（已完成）
+
+- [x] 根因：报表/分类账按**当前** `organization_profit_shares.share_rate` 实时重算历史注单，今天改 80% 会把昨天按 100% 结算的注单也重算成 80%。
+- [x] 修复：已结算注单（bet_records.status=won/unwon）改用 `organization_credit_ledger` 的结算快照（`metadata.share_rate`/`organization_level` + direction×amount，按 related_bet_record_id 关联、每单只计一次）；未结算注单仍按当前链投影。报表 `rows()` 与分类账 `details()` 同一口径。
+- 验证：`ReportLevelColumnsTest` 新增“结算快照 100% + 实时占成 80%”分支断言仍显示 1000 而非 800；`LedgerContributionTest` 等 9 个回归全部通过。
+
 ### 本轮：分类账贡献度恒 0% 修复（已完成）
 
 - [x] 根因：`AgentLedger::details()` 用会员表 `site_users.interception_rate`（组织模型会员该字段恒 0）算占成 → `share_profit=0` → 贡献度 0%。真实占成在 `organization_profit_shares` 上。

@@ -109,6 +109,35 @@ try {
     $memberB = $makeUser($agentB, $prefix.'_b');
     $makeBet($memberB, 1000, 0);
 
+    // Branch C: a settled record whose allocation snapshot was booked at 100%
+    // share. The live share was later cut to 80% — the report must keep the
+    // booked snapshot, not recompute at the new rate.
+    $agentC = $makeNode($root, 'agent');
+    $makeShare($agentC, $root, 80); // live rate is now 80%
+    $memberC = $makeUser($agentC, $prefix.'_c');
+    $recordC = (int)Db::name('bet_records')->insertGetId([
+        'tenant_id'=>$tenantId, 'site_id'=>$siteId, 'user_id'=>$memberC,
+        'issue_no'=>'RPTLVL001', 'status'=>'unwon',
+        'amount'=>'1000.00', 'win_amount'=>'0.00',
+        'bet_count'=>1, 'placed_at'=>$now, 'created_at'=>$now,
+    ]);
+    Db::name('bet_details')->insert([
+        'tenant_id'=>$tenantId, 'site_id'=>$siteId, 'user_id'=>$memberC, 'bet_record_id'=>$recordC,
+        'issue_no'=>'RPTLVL001', 'number_text'=>'456', 'amount'=>'1000.00',
+        'odds'=>'9.9', 'win_amount'=>'0.00', 'rebate'=>'0.00',
+        'status'=>'unwon', 'placed_at'=>$now,
+    ]);
+    // Settlement-time snapshot: the agent booked the full 1000 at 100%.
+    Db::name('organization_credit_ledger')->insert([
+        'transaction_no'=>'TEST'.bin2hex(random_bytes(6)), 'tenant_id'=>$tenantId, 'site_id'=>$siteId,
+        'organization_id'=>$agentC, 'account_type'=>'organization', 'account_id'=>$agentC,
+        'related_user_id'=>$memberC, 'related_bet_record_id'=>$recordC, 'issue_no'=>'RPTLVL001',
+        'direction'=>'in', 'amount'=>'1000.00', 'balance_before'=>'0.00', 'balance_after'=>'0.00',
+        'reason'=>'本期投注盈利占成', 'source_type'=>'settlement_share', 'category'=>'settlement',
+        'metadata'=>json_encode(['organization_level'=>'agent', 'share_rate'=>100.0, 'share_amount'=>1000.0]),
+        'created_at'=>$now,
+    ]);
+
     $session = ['scope'=>'agent', 'site_id'=>$siteId, 'tenant_id'=>$tenantId, 'organization_id'=>$root, 'user_id'=>0, 'username'=>'report-level-test'];
     Cache::set('token:'.$token, $session, 300);
     $request = (new Request())->withHeader(['authorization'=>'Bearer '.$token])->withGet(['from'=>$today, 'to'=>$today]);
@@ -139,10 +168,16 @@ try {
     check(($b['levels']['general_agent']['amount'] ?? null) === '1000', 'In-chain 总代理 must show stake 1000, got '.var_export($b['levels']['general_agent']['amount'] ?? null, true));
     check(($b['levels']['general_agent']['profit'] ?? null) === '0', 'In-chain saturated 总代理 profit must be 0, got '.var_export($b['levels']['general_agent']['profit'] ?? null, true));
 
+    // Member C: the live share is 80% but the settled snapshot booked 100%
+    // (1000). The report must show the snapshot, not the recomputed 800.
+    $c = $byMember[$prefix.'_c'] ?? null;
+    check($c !== null, 'Member C row missing');
+    check(($c['levels']['agent']['profit'] ?? null) === '1000', 'C agent profit must use the 100% settle-time snapshot (1000), not live 80% (800); got '.var_export($c['levels']['agent']['profit'] ?? null, true));
+
     // Aggregated summary: agent level totals both branches, mid level only B.
     $summary = $data['summary'] ?? [];
-    check(($summary['amount'] ?? null) === '2000', 'Summary amount must be 2000 not doubled, got '.var_export($summary['amount'] ?? null, true));
-    check(($summary['levels']['agent']['profit'] ?? null) === '2000', 'Summary agent profit must be 2000, got '.var_export($summary['levels']['agent']['profit'] ?? null, true));
+    check(($summary['amount'] ?? null) === '3000', 'Summary amount must be 3000 not doubled, got '.var_export($summary['amount'] ?? null, true));
+    check(($summary['levels']['agent']['profit'] ?? null) === '3000', 'Summary agent profit must be 3000, got '.var_export($summary['levels']['agent']['profit'] ?? null, true));
     check(($summary['levels']['general_agent']['amount'] ?? null) === '1000', 'Summary 总代理 amount must be 1000 (branch B only), got '.var_export($summary['levels']['general_agent']['amount'] ?? null, true));
     check(!isset($summary['levels']['shareholder']), 'Summary must not contain levels absent from every chain');
 

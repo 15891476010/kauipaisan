@@ -93,7 +93,7 @@ final class AgentReport
             $marks=implode(',',array_fill(0,count($lotteries),'?'));
             $query->whereRaw('(s.lottery IN ('.$marks.') OR l.name IN ('.$marks.') OR d.lottery_name IN ('.$marks.'))',array_merge($lotteries,$lotteries,$lotteries));
         }
-        $rows=$query->field('d.id,d.user_id,u.username,u.organization_id,u.interception_rate AS share_rate,d.issue_no,d.number_text,d.amount,d.odds,d.win_amount,d.rebate,d.placed_at,s.lottery,s.drop_odds')->select()->toArray();
+        $rows=$query->field('d.id,d.bet_record_id,r.status AS record_status,r.amount AS record_amount,d.user_id,u.username,u.organization_id,u.interception_rate AS share_rate,d.issue_no,d.number_text,d.amount,d.odds,d.win_amount,d.rebate,d.placed_at,s.lottery,s.drop_odds')->select()->toArray();
         // The lottery-history join exists only for name filtering. 福彩3D and
         // 排列三 share the same issue codes, so one detail joins two history
         // rows and would otherwise be counted twice.
@@ -112,6 +112,27 @@ final class AgentReport
         $detailIds=array_map(static fn(array $row): int=>(int)$row['id'],$rows);
         $interceptions=Db::name('agent_interceptions')->whereIn('bet_detail_id',$detailIds)->whereNull('released_at')->field('bet_detail_id,SUM(intercepted_amount) AS intercepted_amount,SUM(bet_amount) AS intercepted_base')->group('bet_detail_id')->select()->toArray();
         $map=[]; foreach($interceptions as $row) $map[(int)$row['bet_detail_id']]=$row;
+        // Settled records keep their per-node allocation snapshot in the
+        // credit ledger (share_rate + amount at settle time). A share-rate
+        // change today must not rewrite what settled bets already booked;
+        // only unsettled rows project with the live chain.
+        $nodeLevels=[];
+        foreach(Db::name('organization_nodes')->where('site_id',$siteId)->field('id,level')->select()->toArray() as $nodeRow) $nodeLevels[(int)$nodeRow['id']]=(string)$nodeRow['level'];
+        $recordIds=array_values(array_unique(array_filter(array_map(static fn(array $row):int=>(int)($row['bet_record_id']??0),$rows))));
+        $settledLedger=[];
+        if($recordIds!==[]){
+            foreach(Db::name('organization_credit_ledger')->where('site_id',$siteId)->where('source_type','settlement_share')->whereIn('related_bet_record_id',$recordIds)->field('related_bet_record_id,organization_id,direction,amount,metadata')->select()->toArray() as $ledgerRow){
+                $meta=is_string($ledgerRow['metadata']??null)?(json_decode((string)$ledgerRow['metadata'],true)?:[]):[];
+                $settledLedger[(int)$ledgerRow['related_bet_record_id']][]=[
+                    'organization_id'=>(int)$ledgerRow['organization_id'],
+                    'level'=>(string)($meta['organization_level']??''),
+                    'share_rate'=>(float)($meta['share_rate']??0),
+                    'booked'=>((string)$ledgerRow['direction']==='in'?1.0:-1.0)*(float)$ledgerRow['amount'],
+                ];
+            }
+        }
+        $appliedRecords=[];
+        $currentOrganizationId=(int)($session['organization_id']??0);
         foreach($rows as &$row) {
             $amount=(float)$row['amount']; $win=(float)$row['win_amount']; $rebate=(float)$row['rebate'];
             $intercepted=(float)($map[(int)$row['id']]['intercepted_amount']??0);
@@ -139,29 +160,59 @@ final class AgentReport
                     if($root) $chain=[$root];
                 }
             }
-            $allocations=SequentialProfitShare::allocate($memberProfit,$chain,$siteCap);
             // Per-level figures: a level column is populated only when a node
             // at that level sits in this member's organization chain. Levels
             // absent from the chain (for example an agent opened directly
             // under the director, skipping 总代理/股东) stay at zero.
             $levelBases=[];
-            foreach($allocations as $allocation) {
-                $levelKey=(string)($allocation['node']['level']??'');
+            $chainLevels=[];
+            foreach($chain as $chainNode) {
+                $levelKey=(string)($chainNode['level']??'');
                 if($levelKey==='') continue;
+                $chainLevels[$levelKey]=true;
                 if(!isset($levelBases[$levelKey])) $levelBases[$levelKey]=['amount'=>0.0,'share_base'=>0.0];
                 $levelBases[$levelKey]['amount']+=$amount;
-                $levelBases[$levelKey]['share_base']+=(float)$allocation['amount'];
             }
-            // Select the allocation belonging to the organization viewing this report.
-            $currentOrganizationId=(int)($session['organization_id']??0);
-            $currentAllocation=null; foreach($allocations as $allocation){if((int)($allocation['node']['id']??0)===$currentOrganizationId){$currentAllocation=$allocation;break;}}
-            $currentAllocation ??= (($currentOrganizationId>0 && $allocations!==[]) ? end($allocations) : null);
-            $allocationAmount=(float)($currentAllocation['amount']??0);
+            $recordId=(int)($row['bet_record_id']??0);
+            $recordLedger=null;
+            if(in_array((string)($row['record_status']??''),['won','unwon'],true)&&isset($settledLedger[$recordId])) $recordLedger=$settledLedger[$recordId];
+            $allocationAmount=0.0;$currentShareRate=0.0;
+            if($recordLedger!==null){
+                // Snapshot: booked amounts count once per record no matter how
+                // many details the record spans; levels that existed at settle
+                // time but left the live chain still surface their stake.
+                if(!isset($appliedRecords[$recordId])){
+                    $appliedRecords[$recordId]=true;
+                    foreach($recordLedger as $entry){
+                        $levelKey=$entry['level']!==''?$entry['level']:(string)($nodeLevels[$entry['organization_id']]??'');
+                        $memberView=-$entry['booked'];
+                        if($levelKey!==''){
+                            if(!isset($levelBases[$levelKey])) $levelBases[$levelKey]=['amount'=>0.0,'share_base'=>0.0];
+                            $levelBases[$levelKey]['share_base']+=$memberView;
+                            if(!isset($chainLevels[$levelKey])) $levelBases[$levelKey]['amount']+=(float)($row['record_amount']??$amount);
+                        }
+                        if($entry['organization_id']===$currentOrganizationId){$allocationAmount+=$memberView;$currentShareRate=$entry['share_rate'];}
+                    }
+                }
+            } else {
+                $allocations=SequentialProfitShare::allocate($memberProfit,$chain,$siteCap);
+                $currentAllocation=null;
+                foreach($allocations as $allocation) {
+                    $levelKey=(string)($allocation['node']['level']??'');
+                    if($levelKey!=='') $levelBases[$levelKey]['share_base']=($levelBases[$levelKey]['share_base']??0)+(float)$allocation['amount'];
+                    if((int)($allocation['node']['id']??0)===$currentOrganizationId)$currentAllocation=$allocation;
+                }
+                // Viewers absent from the member's chain project the root
+                // remainder, matching the previous fallback behavior.
+                $currentAllocation ??= (($currentOrganizationId>0 && $allocations!==[]) ? end($allocations) : null);
+                $allocationAmount=(float)($currentAllocation['amount']??0);
+                $currentShareRate=(float)($currentAllocation['share_rate']??0);
+            }
             // Occupation amount is always displayed as a positive principal.
             // The sign belongs only to occupation P/L: a positive member P/L
             // means the member won and the organization must pay it out.
             $occupationAmount=abs($allocationAmount);
-            $hasShare=(float)($currentAllocation['share_rate']??0)>0;
+            $hasShare=$currentShareRate>0;
             $water=$occupationAmount*$waterRate;
             // The single site-wide 明水 is part of occupation P/L. There is no
             // separate offline/dark-water stream.
@@ -176,7 +227,7 @@ final class AgentReport
                 // Hidden aggregation inputs: occupation is calculated on the
                 // member's net P/L after grouping, never by summing absolute
                 // P/L for individual bet lines.
-                'share_base'=>$allocationAmount,'share_rate'=>(float)($currentAllocation['share_rate']??0),'water_rate'=>$waterRate,'has_share'=>$hasShare?1:0,'levels'=>$levelBases];
+                'share_base'=>$allocationAmount,'share_rate'=>$currentShareRate,'water_rate'=>$waterRate,'has_share'=>$hasShare?1:0,'levels'=>$levelBases];
         }
         unset($row); return $rows;
     }
