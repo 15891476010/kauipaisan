@@ -2411,3 +2411,10 @@
 - 改码负数：`AdminBetBatch::reopenSettledRecord` 按旧模型 `balance += 注额−中奖` 反冲并重复累加 `used_balance`；现行模型结算为纯报表事件（balance 不动）。修复：仅按 user 账户流水 before/after 的净变动反冲，无变动则不写流水（用户端无改码痕迹）；重建注额差额经 DailyScoreUsage 且仅当天注单调整。
 - 期号脏数据：生产库 `lotteries` 存在与真彩种重名的停用测试彩种（id=4 福彩3D/csffc、id=6 排列三/cspls），名下 7127 条 10 位分分彩期号 + 赔率/分类/用户赔率共 454 条。已于线上单事务删除：lottery_histories 7127、lottery_odds 200、lottery_odds_categories 40、user_lottery_odds 214、lotteries 2 行。剩余仅真彩种 id=1(fc3d)/id=2(pl3)。
 - 防复发检查：凡按彩种名查 `lotteries` 的代码必须确认无重名残留；改码/结算路径的反冲只允许基于 ledger 实际账动行，禁止按 amount/win 重算 balance。
+
+# 2026-09-15：期号下拉混入脏期号 + 机器人数据清洗
+
+- 下拉混期号：`AdminBetBatch::options()` 拼装期号列表时，bet 来源期号不校验所属彩种——`s.id IS NULL AND source_text LIKE '参考站%'` 的 fallback 会把福彩格式期号带进排列三下拉，机器人用错格式期号下的单也混入。修复：bet 期号必须 `IN (SELECT code FROM lottery_histories WHERE lottery_id=当前彩种)`。
+- 线上机器人数据清洗：12 个 ch* 账号（uid 85-96）为测试残留，robot_accounts 已空但业务数据残留。单事务删除：bet_records 2611、bet_details 9287、user_stop_drops 2152、bills 3、user_lottery_permissions 24、organization_credit_ledger 2295、site_users 12。参考站主单（AgentImportOverviewSync 导入）属正常业务数据，保留。
+- 注意：已结算机器人注单的占成曾移动过组织节点余额（旧时代真实账动），删流水不会回退余额——如需抹平走单独的余额修复口径（balance = 额度 − 下级额度 − 会员持有）。
+- 防复发检查：改码/任何期号选择器的 bet 期号必须按彩种历史 code 过滤；机器人/测试账号下注前先确认其期号来源。

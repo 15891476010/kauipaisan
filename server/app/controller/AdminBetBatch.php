@@ -226,7 +226,12 @@ final class AdminBetBatch
         $lotteryName=(string)$lottery['name'];
         $betIssueQuery=Db::name('bet_records')->alias('r')->join('bet_details d','d.bet_record_id=r.id')->leftJoin('user_stop_drops s','s.bet_detail_id=d.id')
             ->whereRaw('(s.lottery = ? OR (s.id IS NULL AND r.source_text LIKE ?))',[$lotteryName,'参考站总货概览主单%'])
-            ->whereIn('r.status',['pending','won','unwon'])->whereIn('d.status',['pending','won','unwon']);
+            ->whereIn('r.status',['pending','won','unwon'])->whereIn('d.status',['pending','won','unwon'])
+            // Only issues that exist in this lottery's own history may enter
+            // the selector; otherwise foreign-format codes (a 排列三 ticket
+            // written with a 福彩-style issue, or leftover test issues like
+            // 28xxx) would leak into the dropdown and can never be settled.
+            ->whereRaw('r.issue_no IN (SELECT code FROM lottery_histories WHERE lottery_id = ?)',[(int)$lottery['id']]);
         if ($siteId!==null) $betIssueQuery->where('r.site_id',$siteId);
         foreach ($betIssueQuery->distinct(true)->column('r.issue_no') as $betIssue) {
             $betIssue=(string)$betIssue; if ($betIssue!=='' && !in_array($betIssue,$issues,true)) $issues[]=$betIssue;
