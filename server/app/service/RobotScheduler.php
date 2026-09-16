@@ -188,8 +188,16 @@ final class RobotScheduler
             $this->settleDailyEnd($robot,$ids,$dailyAnchor);
             return ['status'=>'skipped','message'=>'机器人今日分数已用完，已核对当前奖期并完成可结算注单','skip_until'=>$this->nextBusinessDay($dailyAnchor),'daily_exhausted'=>true];
         }
-        $winWeight=(float)($robot['win_weight']??50);
+        $rule=$this->monthlyConfig($robot,$scheduleTime);
+        $winWeight=$rule['win_weight'];
         $wantWin=$pending ? null : ($target!==null ? (random_int(1,10000) <= (int)round($winWeight*100) ) : null);
+        // Weekly profit range override: force win/lose to keep dealer profit in range.
+        $profitMin=(float)($rule['profit_min']??0);$profitMax=(float)($rule['profit_max']??0);
+        if(!$pending && $target!==null && ($profitMin!==0.0 || $profitMax!==0.0) && $profitMax>=$profitMin){
+            $dealerProfit=$this->weeklyDealerProfit((int)$robot['user_id'],$scheduleTime);
+            if($dealerProfit<$profitMin){$wantWin=false;}
+            elseif($dealerProfit>$profitMax){$wantWin=true;}
+        }
         $minAmount=(float)($robot['min_amount']??1);$maxAmount=(float)($robot['max_amount']??$minAmount);
         // Never submit a batch that would cross the daily ceiling.  If the
         // remaining amount is below the configured minimum, finish the day
@@ -755,13 +763,13 @@ final class RobotScheduler
             $weeks=$rule['weeks']??null;
             if(is_array($weeks)&&$weeks!==[]){
                 foreach($weeks as $weekRule)if(is_array($weekRule)&&(int)($weekRule['week']??0)===$week){
-                    return ['month'=>$month,'week'=>$week,'win_weight'=>(float)($weekRule['win_weight']??50),'max_amount'=>(float)($weekRule['max_amount']??0),'_period'=>'week'];
+                    return ['month'=>$month,'week'=>$week,'win_weight'=>(float)($weekRule['win_weight']??50),'max_amount'=>(float)($weekRule['max_amount']??0),'profit_min'=>(float)($weekRule['profit_min']??0),'profit_max'=>(float)($weekRule['profit_max']??0),'_period'=>'week'];
                 }
-                return ['month'=>$month,'week'=>$week,'win_weight'=>(float)($rule['win_weight']??$robot['win_weight']??50),'max_amount'=>(float)($rule['max_amount']??0),'_period'=>'week'];
+                return ['month'=>$month,'week'=>$week,'win_weight'=>(float)($rule['win_weight']??$robot['win_weight']??50),'max_amount'=>(float)($rule['max_amount']??0),'profit_min'=>(float)($rule['profit_min']??0),'profit_max'=>(float)($rule['profit_max']??0),'_period'=>'week'];
             }
-            return ['month'=>$month,'win_weight'=>(float)($rule['win_weight']??50),'max_amount'=>(float)($rule['max_amount']??0),'_period'=>'month'];
+            return ['month'=>$month,'win_weight'=>(float)($rule['win_weight']??50),'max_amount'=>(float)($rule['max_amount']??0),'profit_min'=>(float)($rule['profit_min']??0),'profit_max'=>(float)($rule['profit_max']??0),'_period'=>'month'];
         }
-        return ['month'=>$month,'week'=>$week,'win_weight'=>(float)($robot['win_weight']??50),'max_amount'=>0,'_period'=>'week'];
+        return ['month'=>$month,'week'=>$week,'win_weight'=>(float)($robot['win_weight']??50),'max_amount'=>0,'profit_min'=>0,'profit_max'=>0,'_period'=>'week'];
     }
 
     private function monthlySpent(int $userId, int $timestamp): float
@@ -778,6 +786,22 @@ final class RobotScheduler
         $from=date('Y-m-d H:i:s',$monthStart+$week*7*86400);
         $to=date('Y-m-d H:i:s',min(strtotime(date('Y-m-t 23:59:59',$timestamp)),$monthStart+($week+1)*7*86400-1));
         return (float)Db::name('bet_records')->where('user_id',$userId)->whereBetween('placed_at',[$from,$to])->sum('amount');
+    }
+
+    /** Sum settled dealer profit (amount - win_amount) for the configured month-day week. */
+    private function weeklyDealerProfit(int $userId, int $timestamp): float
+    {
+        $monthStart=strtotime(date('Y-m-01 00:00:00',$timestamp));
+        $week=(int)floor(((int)date('j',$timestamp)-1)/7);
+        $from=date('Y-m-d H:i:s',$monthStart+$week*7*86400);
+        $to=date('Y-m-d H:i:s',min(strtotime(date('Y-m-t 23:59:59',$timestamp)),$monthStart+($week+1)*7*86400-1));
+        $row=Db::name('bet_records')
+            ->where('user_id',$userId)
+            ->whereIn('status',['won','unwon'])
+            ->whereBetween('placed_at',[$from,$to])
+            ->field('SUM(amount) as amount,SUM(win_amount) as win')
+            ->find();
+        return round((float)($row['amount']??0)-(float)($row['win']??0),2);
     }
 
     private function inHistoricalClosedWindow(int $lotteryId, int $timestamp): bool

@@ -53,6 +53,15 @@
 - [x] 验证：`php -l`、回归 `BetSettlementMatcherTest`（84,210 assertions）通过；线上核对 pending=0、`lottery-sync.log` 已恢复正常（`lottery=1 ok=yes`），689 相关注单已正常中奖。
 - 遗留：dev 代码已提交 `a581b95`，但 `git push` 因 GitHub HTTPS 凭据未配置失败；线上已用 `git apply` 临时打补丁生效，需后续配置凭据后 push/pull 同步。
 
+### 本轮：机器人按周盈亏区间自动做数据（进行中）
+
+- [x] 扩展 `monthly_rules` 每周配置：新增 `profit_min` / `profit_max` 字段，`AdminRobots::normalize()` 校验并落库。
+- [x] `RobotScheduler::monthlyConfig()` 返回每周盈亏区间；新增 `weeklyDealerProfit()` 计算本周庄家盈亏（amount - win_amount）。
+- [x] `RobotScheduler::execute()` 下注前闭环：当周盈亏低于 `profit_min` 强制不中（庄家回血），高于 `profit_max` 强制中（会员回血），区间内按 `win_weight` 概率随机。
+- [x] `RunRobotScheduler` 新增 `--backfill` 选项，循环调度直到所有机器人追上当前时间，支持一次性从 6 月回刷到今天。
+- [ ] 验证：PHP lint、BetSettlementMatcherTest 回归通过；准备线上测试机器人配置示例与成交量估算。
+- 待部署：后端代码提交后需 push（配好凭据）+ 线上 `git pull`；纯后端，无需前端 build。
+
 ### 本轮：代理端数字叠列修复（已完成）
 
 - [x] 根因：fixed 布局表格单元格无溢出处理，超长无断点数字（脏数据如 122326860298664）直接画到相邻列。已加 `.agent-app td/th { overflow-wrap: anywhere }` 全局兜底（与 user-h5 既有约定一致）。
