@@ -2478,3 +2478,11 @@
   - 移除 execute 里间隔太短时 `skip_until=time()+5` 的特判，改为走 `failed` 分支；`finish` 失败分支同样按 `_catchup` 使用 `_scheduled_at` 计算 `next_run_at`。
   - `tick()` 中 `finish()` 后 `if (!empty($robot['_catchup'])) usleep(1000000);`
 - 防复发检查：`--backfill` 跑完后 `next_run_at` 必须仍在 6–9 月模拟时间范围内，不能是今天；日志里不得出现 `now` 作为 `_scheduled_at` 的连续 `success`。
+
+### 2026-09-17：hourly_weights 区间格式被误读为 00:00 单时段
+
+- 现象：用户把查询区间切到 2026-07-01 到 2026-08-31 后，发现机器人 15w 没有任何注单；同时 `robot_accounts.next_run_at` 显示该机器人已经追到 2026-09-17。
+- 根因：`RobotScheduler::hourlyWeightState` 直接按数组下标 `$rules[$hour]` 取权重，但 `AdminRobots::normalize` 存的是 `[{"start":"16:00","end":"21:00","weight":100}]` 区间列表。结果 `$rules[0]` 被当成 00:00 的权重，导致机器人只在凌晨 00:00 附近下注；凌晨时段用完全天额度后通过 `nextBusinessDay` 跳到第二天，几天内就追到了今天，7/8 月根本没生成注单。
+- 正确做法：`hourlyWeightState` 必须根据每个规则的 `start`/`end` 判断当前分钟是否落在该时段内，并兼容旧的 24 小时下标数组。
+- 修复：`hourlyWeightState` 改为按 `start`/`end` 分钟区间匹配；清理全部机器人注单并把 `next_run_at` 拉回 2026-06-01 16:00 重新回刷。
+- 防复发检查：配置 `hourly_weights` 为 16:00-21:00 后，回刷日志的 `scheduled_at` 必须出现在 16:00-21:00 之间，而不是 00:00 附近。
