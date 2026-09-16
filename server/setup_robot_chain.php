@@ -29,13 +29,14 @@ require __DIR__.'/vendor/autoload.php';
 
 use think\facade\Db;
 
-$opts = getopt('', ['site:','suffix:','fund::','start::','lotteries::','prefix::','yes::','help::']);
+$opts = getopt('', ['site:','suffix:','acct-suffix::','fund::','start::','lotteries::','prefix::','yes::','help::']);
 if (isset($opts['help'])) {
-    fwrite(STDOUT, "php setup_robot_chain.php --site=<site_id> --suffix=<name_suffix> [--fund=500000] [--start='2026-06-01 16:00:00'] [--lotteries=1,2] [--prefix=robot] [--yes]\n");
+    fwrite(STDOUT, "php setup_robot_chain.php --site=<site_id> --suffix=<name_suffix> [--acct-suffix=<login_suffix>] [--fund=500000] [--start='2026-06-01 16:00:00'] [--lotteries=1,2] [--prefix=robot] [--yes]\n");
     exit(0);
 }
 $siteId = (int)($opts['site'] ?? 0);
 $suffix = trim((string)($opts['suffix'] ?? ''));
+$acctSuffix = trim((string)($opts['acct-suffix'] ?? $suffix));
 $fund   = (float)($opts['fund'] ?? 500000);
 $start  = trim((string)($opts['start'] ?? '2026-06-01 16:00:00'));
 $lotteryIds = array_values(array_filter(array_map('intval', explode(',', (string)($opts['lotteries'] ?? '1,2')))));
@@ -73,11 +74,11 @@ $tenantId = (int)$site['tenant_id'];
 // Chain definition
 // ---------------------------------------------------------------------------
 $levels = [
-    ['level' => 'director',         'name' => '总监'.$suffix,   'account' => 'zongjian'.$suffix,   'code_prefix' => 'DIR', 'share' => 100.0],
-    ['level' => 'shareholder',      'name' => '大股东'.$suffix, 'account' => 'dagudong'.$suffix,   'code_prefix' => 'SH',  'share' => 80.0],
-    ['level' => 'small_shareholder','name' => '小股东'.$suffix, 'account' => 'xiaogudong'.$suffix, 'code_prefix' => 'SS',  'share' => 80.0],
-    ['level' => 'general_agent',    'name' => '总代理'.$suffix, 'account' => 'zongdaili'.$suffix,  'code_prefix' => 'GA',  'share' => 80.0],
-    ['level' => 'agent',            'name' => '代理'.$suffix,   'account' => 'daili'.$suffix,      'code_prefix' => 'AG',  'share' => 20.0],
+    ['level' => 'director',         'name' => '总监'.$suffix,   'account' => 'zongjian'.$acctSuffix,   'code_prefix' => 'DIR', 'share' => 100.0],
+    ['level' => 'shareholder',      'name' => '大股东'.$suffix, 'account' => 'dagudong'.$acctSuffix,   'code_prefix' => 'SH',  'share' => 80.0],
+    ['level' => 'small_shareholder','name' => '小股东'.$suffix, 'account' => 'xiaogudong'.$acctSuffix, 'code_prefix' => 'SS',  'share' => 80.0],
+    ['level' => 'general_agent',    'name' => '总代理'.$suffix, 'account' => 'zongdaili'.$acctSuffix,  'code_prefix' => 'GA',  'share' => 80.0],
+    ['level' => 'agent',            'name' => '代理'.$suffix,   'account' => 'daili'.$acctSuffix,      'code_prefix' => 'AG',  'share' => 20.0],
 ];
 
 $robots = [
@@ -209,8 +210,7 @@ try {
             ->where('site_id', $siteId)->where('username', $spec['account'])->whereNull('deleted_at')->find();
         if ($existing) {
             if ((int)$existing['organization_id'] !== $nodeIds[$spec['level']]) {
-                Db::name('organization_accounts')->where('id', (int)$existing['id'])
-                    ->update(['organization_id' => $nodeIds[$spec['level']], 'updated_at' => $now]);
+                throw new RuntimeException("登录账号 {$spec['account']} 已被其他节点（organization_id={$existing['organization_id']}）占用，请换一个 --acct-suffix");
             }
             continue;
         }
