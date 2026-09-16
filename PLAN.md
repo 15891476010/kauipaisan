@@ -63,7 +63,8 @@
 - [x] 开发库已创建 4 个机器人账号（id 5~8，用户名 robot_5w / robot_10w / robot_15w / robot_20w），挂在 总监1 > 大股东1 > 小股东1 > 总代理1 > 代理1（org=42，site=15）。
 - [x] 已平账并从总监1 逐级分配 500,004.40 分至代理1，再分给 4 个机器人（5/10/15/20 万）；节点 39-42 余额归 0，总监1 余额 3,461,473.76。
 - [x] 已修复历史回刷与 `DailyScoreUsage` 冲突：`UserBusiness::quickPlace` 对 `robotHistoricalBackfill` 按模拟日期 `placed_at` 汇总 `bet_records.amount` 作为已用分数；下注成功后改用 `DailyScoreUsage::changeForPlacedAt($now)`，避免历史用量污染今天 `used_balance`。
-- [x] 4 个机器人已 `running` 并重新启动 `php think robot:run --backfill`（PID 2039191）；回刷日志 `success` 连续为正，注单从 167 条继续增长。
+- [x] `RobotScheduler::tick()` 增加 `BACKFILL_BATCH=10`：回刷模式下同一个机器人一次调度最多连续下 10 单，再进入下一 tick，显著提高追单速度。
+- [x] 4 个机器人已 `running` 并重新启动 `php think robot:run --backfill`（PID 2055876）；从 2026-06-01 开始逐日追单，回刷日志已出现一次 tick `success=10`。
 - [ ] 待完成：历史回刷跑完（预计需要数小时，视模拟时段和每日额度）；跑完后把机器人状态改回 `stopped` 或切为 `php think robot:run` 常驻调度。
 - 待部署：后端代码（UserBusiness 回刷修复 + 新增机器人）提交后需 push（配好凭据）+ 线上 `git pull`；纯后端，无需前端 build。
 

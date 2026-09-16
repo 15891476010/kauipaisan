@@ -18,6 +18,8 @@ use think\facade\Log;
 final class RobotScheduler
 {
     private string $workerToken;
+    /** How many bets to place per due robot in one backfill tick. */
+    private const BACKFILL_BATCH = 10;
 
     public function __construct()
     {
@@ -34,19 +36,23 @@ final class RobotScheduler
             ->order('next_run_at asc')->order('id asc')->limit(100)->select()->toArray();
         $result = ['due' => count($rows), 'claimed' => 0, 'success' => 0, 'skipped' => 0, 'failed' => 0];
         foreach ($rows as $row) {
-            $robot = $this->claim((int)$row['id'], $now);
-            if ($robot === null) continue;
-            $result['claimed']++;
-            try {
-                $outcome = $this->execute($robot, $now);
-                if ($outcome['status'] === 'success') $result['success']++;
-                elseif ($outcome['status'] === 'skipped') $result['skipped']++;
-                else $result['failed']++;
-                $this->finish($robot, $outcome, time());
-            } catch (\Throwable $error) {
-                $result['failed']++;
-                Log::error('robot scheduler failed robot='.$robot['id'].': '.$error->getMessage());
-                $this->finish($robot, ['status' => 'failed', 'message' => $error->getMessage()], time());
+            for ($batch=0; $batch<self::BACKFILL_BATCH; $batch++) {
+                $robot = $this->claim((int)$row['id'], $now);
+                if ($robot === null) break;
+                $result['claimed']++;
+                try {
+                    $outcome = $this->execute($robot, $now);
+                    if ($outcome['status'] === 'success') $result['success']++;
+                    elseif ($outcome['status'] === 'skipped') $result['skipped']++;
+                    else $result['failed']++;
+                    $this->finish($robot, $outcome, time());
+                    if ($outcome['status'] !== 'success' || empty($robot['_catchup'])) break;
+                } catch (\Throwable $error) {
+                    $result['failed']++;
+                    Log::error('robot scheduler failed robot='.$robot['id'].': '.$error->getMessage());
+                    $this->finish($robot, ['status' => 'failed', 'message' => $error->getMessage()], time());
+                    break;
+                }
             }
         }
         return $result;
