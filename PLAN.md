@@ -44,6 +44,15 @@
 - [x] 补充4：移除 ≤1050px 规则中 `.edit-permission-list` 的 `grid-column:1/-1` 独占行；`.edit-settings-panel` 改 `2fr 3fr` 两列，密码与权限保持并排（≤700px 才单列堆叠）。
 - 验证：构建发布 4 个代理站点（index-BuQXL3zN.css），产物媒体查询正常。线上服务器仍为旧包，需另行部署。
 
+### 本轮：福彩 2026249 开奖结算被全包坏单卡死（进行中）
+
+- [x] 线上排查：2026249 共 217 条主单，仅 27 条已结算，190 条 pending；`lottery-sync.log` 285 次同一 `RuntimeException #228822`。
+- [x] 根因确认：`BetSettlement::settleForHistory` 处理 `组三全包2000元福`（明细 #228822，保存为一码 `三 3`）时抛异常并中断整期结算。
+- [x] 代码修复：`settleForHistory` 内层捕获 `Throwable`，坏单落为 unwon 并写审计日志，继续处理其余注单。
+- [ ] 线上补结算：对福彩 2026249 重新执行 `settleForHistory`，处理剩余 190 条 pending（含 689 相关）。
+- [ ] 验证：`php -l`、回归 `BetSettlementMatcherTest`、线上核对 pending=0 及 689 注单正常中奖。
+- 待部署：代码 `git push` 后线上 `git pull`（纯后端，无需前端构建）。
+
 ### 本轮：代理端数字叠列修复（已完成）
 
 - [x] 根因：fixed 布局表格单元格无溢出处理，超长无断点数字（脏数据如 122326860298664）直接画到相邻列。已加 `.agent-app td/th { overflow-wrap: anywhere }` 全局兜底（与 user-h5 既有约定一致）。

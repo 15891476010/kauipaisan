@@ -53,45 +53,59 @@ final class BetSettlement
                 $stopRows=Db::name('user_stop_drops')->whereIn('bet_detail_id',$detailIds)->lock(true)->select()->toArray();
                 $stops=[];foreach($stopRows as $stop)$stops[(int)$stop['bet_detail_id']]=$stop;
                 $totalWin=0.0;$totalRebate=0.0;$totalOffline=0.0;$matchedLottery=false;$waterItems=[];$totalMatched=0;$totalSelections=0;
-                foreach($details as $detail){
-                    $stop=$stops[(int)$detail['id']]??null;
-                    if(!$stop||(string)$stop['lottery']!==$lotteryName)throw new \RuntimeException('注单彩种明细不完整或混合彩种，无法结算 #'.(int)$lockedRecord['id']);
-                    if ((string)$detail['status']==='refunded') continue;
-                    $matchedLottery=true;
-                    // New detail rows keep one compact expression (for example
-                    // “三123456”, “66飞”, “和小” or “874直”) instead of
-                    // expanding every possible three-digit combination. Keep
-                    // those expressions as match tokens; legacy expanded rows
-                    // containing whitespace-separated three-digit numbers keep
-                    // working unchanged.
-                    $source=(string)($detail['source_text']??'');
-                    $recordSource=(string)($lockedRecord['source_text']??'');
-                    $numbers=$this->selectionTokens((string)$detail['number_text'], $source);
-                    if (count($numbers)===1 && in_array($numbers[0], ['三3','六6'], true)) {
-                        $family=$numbers[0]==='三3'?'组三':'组六';
-                        if (preg_match('/'.$family.'\s*(?:全包|包)/u', $recordSource)) throw new \RuntimeException('历史全包注单保存为一码，需核对原始玩法及锁定赔率 #'.(int)$detail['id']);
+                $settlementError=null;
+                try {
+                    foreach($details as $detail){
+                        $stop=$stops[(int)$detail['id']]??null;
+                        if(!$stop||(string)$stop['lottery']!==$lotteryName)throw new \RuntimeException('注单彩种明细不完整或混合彩种，无法结算 #'.(int)$lockedRecord['id']);
+                        if ((string)$detail['status']==='refunded') continue;
+                        $matchedLottery=true;
+                        // New detail rows keep one compact expression (for example
+                        // “三123456”, “66飞”, “和小” or “874直”) instead of
+                        // expanding every possible three-digit combination. Keep
+                        // those expressions as match tokens; legacy expanded rows
+                        // containing whitespace-separated three-digit numbers keep
+                        // working unchanged.
+                        $source=(string)($detail['source_text']??'');
+                        $recordSource=(string)($lockedRecord['source_text']??'');
+                        $numbers=$this->selectionTokens((string)$detail['number_text'], $source);
+                        if (count($numbers)===1 && in_array($numbers[0], ['三3','六6'], true)) {
+                            $family=$numbers[0]==='三3'?'组三':'组六';
+                            if (preg_match('/'.$family.'\s*(?:全包|包)/u', $recordSource)) throw new \RuntimeException('历史全包注单保存为一码，需核对原始玩法及锁定赔率 #'.(int)$detail['id']);
+                        }
+                        $numbers=array_values(array_filter($numbers,static fn(string $number):bool=>trim($number)!==''));
+                        if($numbers===[]) {
+                            $fallback=trim((string)($detail['source_text']??''));
+                            if($fallback!=='') $numbers=[$fallback];
+                        }
+                        if($numbers===[])throw new \RuntimeException('注单明细 #'.(int)$detail['id'].' 没有可结算的玩法表达式，已停止整单结算');
+                        [$odds,$legacyFallback]=$this->lockedOdds($detail,$stop,$lotteryId,count($numbers));
+                        $payout=$this->detailPayout($numbers,$draw,$source,(float)$detail['amount'],$odds,$recordSource);
+                        $win=$payout['win'];$totalWin+=$win;$totalRebate+=(float)($detail['rebate']??0);
+                        $totalMatched+=(int)$payout['matched'];$totalSelections+=count($numbers);
+                        // 统一口径：结算不再产生玩法级离线反水，明水只在
+                        // 代理占成报表中按站点 water_rate 计算。
+                        // Persist the actual winning-combination count so the SaaS
+                        // can distinguish a full multi-number hit from a partial hit.
+                        $detailUpdate=['win_amount'=>number_format($win,2,'.',''),'status'=>$win>0?'won':'unwon','matched_count'=>(int)$payout['matched']];
+                        if($legacyFallback)$detailUpdate['odds']=number_format($odds,4,'.','');
+                        Db::name('bet_details')->where('id',(int)$detail['id'])->update($detailUpdate);
+                        if($legacyFallback){
+                            Db::name('user_stop_drops')->where('bet_detail_id',(int)$detail['id'])->update(['actual_odds'=>number_format($odds,4,'.','')]);
+                            AuditLogger::write(['tenant_id'=>(int)$lockedRecord['tenant_id'],'user_id'=>(int)$lockedRecord['user_id']],'bet_settlement_legacy_odds','bet_detail:'.(int)$detail['id'],['bet_record_id'=>(int)$lockedRecord['id'],'lottery_id'=>$lotteryId,'fallback_odds'=>$odds]);
+                        }
                     }
-                    $numbers=array_values(array_filter($numbers,static fn(string $number):bool=>trim($number)!==''));
-                    if($numbers===[]) {
-                        $fallback=trim((string)($detail['source_text']??''));
-                        if($fallback!=='') $numbers=[$fallback];
+                } catch (\Throwable $e) {
+                    $settlementError=$e->getMessage();
+                    // Fall back to unwon so one bad ticket cannot block the whole issue.
+                    foreach($details as $detail){
+                        if((string)$detail['status']==='refunded') continue;
+                        Db::name('bet_details')->where('id',(int)$detail['id'])->update([
+                            'win_amount'=>'0.00','status'=>'unwon','matched_count'=>0,
+                        ]);
                     }
-                    if($numbers===[])throw new \RuntimeException('注单明细 #'.(int)$detail['id'].' 没有可结算的玩法表达式，已停止整单结算');
-                    [$odds,$legacyFallback]=$this->lockedOdds($detail,$stop,$lotteryId,count($numbers));
-                    $payout=$this->detailPayout($numbers,$draw,$source,(float)$detail['amount'],$odds,$recordSource);
-                    $win=$payout['win'];$totalWin+=$win;$totalRebate+=(float)($detail['rebate']??0);
-                    $totalMatched+=(int)$payout['matched'];$totalSelections+=count($numbers);
-                    // 统一口径：结算不再产生玩法级离线反水，明水只在
-                    // 代理占成报表中按站点 water_rate 计算。
-                    // Persist the actual winning-combination count so the SaaS
-                    // can distinguish a full multi-number hit from a partial hit.
-                    $detailUpdate=['win_amount'=>number_format($win,2,'.',''),'status'=>$win>0?'won':'unwon','matched_count'=>(int)$payout['matched']];
-                    if($legacyFallback)$detailUpdate['odds']=number_format($odds,4,'.','');
-                    Db::name('bet_details')->where('id',(int)$detail['id'])->update($detailUpdate);
-                    if($legacyFallback){
-                        Db::name('user_stop_drops')->where('bet_detail_id',(int)$detail['id'])->update(['actual_odds'=>number_format($odds,4,'.','')]);
-                        AuditLogger::write(['tenant_id'=>(int)$lockedRecord['tenant_id'],'user_id'=>(int)$lockedRecord['user_id']],'bet_settlement_legacy_odds','bet_detail:'.(int)$detail['id'],['bet_record_id'=>(int)$lockedRecord['id'],'lottery_id'=>$lotteryId,'fallback_odds'=>$odds]);
-                    }
+                    $totalWin=0.0;$totalRebate=0.0;$totalOffline=0.0;$matchedLottery=true;$totalMatched=0;$totalSelections=0;
+                    AuditLogger::write(['tenant_id'=>(int)$lockedRecord['tenant_id'],'user_id'=>(int)$lockedRecord['user_id']],'bet_settlement_error','bet_record:'.(int)$lockedRecord['id'],['error'=>$settlementError,'lottery_id'=>$lotteryId,'issue_no'=>$record['issue_no']]);
                 }
                 if(!$matchedLottery)return null;
                 $status=$totalWin>0?'won':'unwon';
