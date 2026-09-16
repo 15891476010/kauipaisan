@@ -59,7 +59,9 @@
 - [x] `RobotScheduler::monthlyConfig()` 返回每周盈亏区间；新增 `weeklyDealerProfit()` 计算本周庄家盈亏（amount - win_amount）。
 - [x] `RobotScheduler::execute()` 下注前闭环：当周盈亏低于 `profit_min` 强制不中（庄家回血），高于 `profit_max` 强制中（会员回血），区间内按 `win_weight` 概率随机。
 - [x] `RunRobotScheduler` 新增 `--backfill` 选项，循环调度直到所有机器人追上当前时间，支持一次性从 6 月回刷到今天。
-- [ ] 验证：PHP lint、BetSettlementMatcherTest 回归通过；准备线上测试机器人配置示例与成交量估算。
+- [x] 验证：PHP lint、BetSettlementMatcherTest 回归通过。
+- [x] 开发库已创建 4 个机器人账号（id 5~8，用户名 robot_5w / robot_10w / robot_15w / robot_20w），挂在 总监1 > 大股东1 > 小股东1 > 总代理1 > 代理1（org=42，site=15）。
+- [ ] 待确认：代理1 及其上级节点余额为负/零，无法给机器人分配每日 50/100/150/20 万分数。需先平账或用户手动上分后，才能把机器人状态改为 `running` 并跑回刷。
 - 待部署：后端代码提交后需 push（配好凭据）+ 线上 `git pull`；纯后端，无需前端 build。
 
 ### 本轮：代理端数字叠列修复（已完成）
