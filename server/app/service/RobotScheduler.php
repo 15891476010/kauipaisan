@@ -67,19 +67,19 @@ final class RobotScheduler
         return Db::transaction(function () use ($id, $now): ?array {
             $robot = Db::name('robot_accounts')->where('id', $id)->lock(true)->find();
             if (!$robot || (string)$robot['status'] !== 'running' || $robot['converted_at'] !== null || empty($robot['next_run_at'])) return null;
-            if (strtotime((string)$robot['next_run_at']) > $now) return null;
+            $nextRunAt = strtotime((string)$robot['next_run_at']);
+            if ($nextRunAt === false || $nextRunAt > $now) return null;
+            // Keep a configured historical start date meaningful: the robot
+            // replays one scheduled slot at a time until it catches up.  The
+            // daily budget below is evaluated against that simulated day.
+            $robot['_catchup'] = $nextRunAt < $now;
+            $robot['_scheduled_at'] = $nextRunAt;
             // Reserve this slot immediately. The final schedule is written
             // after the bet, but another worker can no longer claim it.
             Db::name('robot_accounts')->where('id', $id)->update([
                 'next_run_at' => date('Y-m-d H:i:s', $now + 3600),
                 'updated_at' => date('Y-m-d H:i:s', $now),
             ]);
-            // Keep a configured historical start date meaningful: the robot
-            // replays one scheduled slot at a time until it catches up.  The
-            // daily budget below is evaluated against that simulated day.
-            $scheduled = strtotime((string)$robot['next_run_at']) ?: $now;
-            $robot['_catchup'] = $scheduled < $now;
-            $robot['_scheduled_at'] = $scheduled;
             return $robot;
         });
     }
