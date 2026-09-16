@@ -67,8 +67,11 @@
 - [x] 4 个机器人已 `running` 并重新启动 `php think robot:run --backfill`（PID 2055876）；从 2026-06-01 开始逐日追单，回刷日志已出现一次 tick `success=10`。
 - [x] 六月总盈亏偏差根因：直选单码金额过大，一码中奖即可击穿整周盈亏区间；`weeklyDealerProfit` 因结算滞后无法实时反馈。
 - [x] 修复 `RobotScheduler`：直选改为多码各 X 元生成，并按 `profit_max - profit_min` 限制单码金额；下注成功后立即 `settleForHistory` 使周盈亏实时更新。
-- [x] 已清空 4 个机器人已生成的全部数据（bet_records 2897、details 3022、submissions 2897、stop_drops 3022、ledger 17291 行）并重新回刷（新 PID 2148468）。
-- [ ] 待完成：历史回刷跑完并验证六月会员总盈亏接近庄家输 300 万目标；跑完后把机器人状态改回 `stopped` 或切为 `php think robot:run` 常驻调度。
+- [x] 已清空 4 个机器人已生成的全部数据（bet_records 2897、details 3022、submissions 2897、stop_drops 3022、ledger 17291 行）并重新回刷。
+- [x] 修复 `RobotScheduler::claim`：先读取原始 `next_run_at` 再写 `now+3600` 预留，避免 `_scheduled_at` 被篡改成未来真实时间、历史回刷变成实时下注。
+- [x] 修复 `generateTexts` 短码列表 `random_int` 越界：增加 `$minListCount <= 60` 保护，防止 `min_amount` 与 `perCodeMax` 组合导致非法区间。
+- [x] 修复回刷限频：历史 execute 后 `usleep(1s)` 避免触发 `quickPlace` 的“请求间隔太短”；限频时不再把 `next_run_at` 跳到真实未来，保持模拟时间继续回刷。
+- [ ] 待完成：历史回刷跑完并验证六月会员总盈亏接近庄家输 300 万目标（当前 PID 2264736，已生成 36 条，持续追单中）。
 
 ### 本轮：代理端数字叠列修复（已完成）
 
