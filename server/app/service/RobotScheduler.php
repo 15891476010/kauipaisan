@@ -324,6 +324,11 @@ final class RobotScheduler
                     return ['status' => 'success', 'lottery' => (string)$lottery['name'], 'text' => $text, 'scheduled_at'=>$scheduledAt??$scheduleTime];
                 }
                 if (str_contains($lastMessage, '封盘') || str_contains($lastMessage, '禁止下注') || str_contains($lastMessage, '暂无可下注期号')) return ['status' => 'skipped', 'message' => $lastMessage, 'lottery' => (string)$lottery['name'], 'text' => $text, 'scheduled_at'=>$scheduledAt??$scheduleTime];
+                // Real-time rate limit (e.g. "请求间隔太短"). Back off for a
+                // few real seconds instead of spamming the same simulated slot.
+                if (str_contains($lastMessage, '间隔') || str_contains($lastMessage, '稍息') || str_contains($lastMessage, '过于频繁') || str_contains($lastMessage, 'too many')) {
+                    return ['status' => 'skipped', 'message' => $lastMessage, 'lottery' => (string)$lottery['name'], 'text' => $text, 'scheduled_at'=>$scheduledAt??$scheduleTime, 'skip_until'=>time()+5];
+                }
                 if ($this->shouldRegenerateBet($lastMessage) && $regenerateAttempts < 3) {
                     $regenerateAttempts++;
                     $failedPlayKey = $this->playKey($text);
