@@ -534,15 +534,22 @@ final class AdminBetBatch
         // reversal entries cancel, leaving only the currently active shares.
         $shareRows=Db::name('organization_credit_ledger')->where('related_bet_record_id',$recordId)
             ->where('account_type','organization')->where('source_type','settlement_share')->select()->toArray();
-        $netShares=[];
+        $netShares=[]; $supersededShareIds=[];
         foreach ($shareRows as $shareRow) {
-            $organizationId=(int)($shareRow['account_id']??0); if ($organizationId<1) continue;
-            // Reverse only the movement actually applied to the node balance.
-            // Share entries written by the current settle path are
-            // bookkeeping-only (balance_before == balance_after); replaying
-            // their amounts would subtract funds the balance never received.
             $delta=CreditLedger::recordedMovement($shareRow);
-            if (abs($delta)<0.005) continue;
+            if (abs($delta)<0.005) {
+                // Bookkeeping-only share rows (balance_before == balance_after)
+                // describe a settlement that is about to be superseded. If left
+                // in place every recalculation stacks another batch and reports
+                // multiply-count the shares; deleting them leaves the ledger
+                // identical to a single fresh settlement for this record.
+                $supersededShareIds[]=(int)$shareRow['id'];
+                continue;
+            }
+            // Reverse only the movement actually applied to the node balance.
+            // Replaying bookkeeping amounts would subtract funds the balance
+            // never received.
+            $organizationId=(int)($shareRow['account_id']??0); if ($organizationId<1) continue;
             $netShares[$organizationId]=($netShares[$organizationId]??0)+$delta;
         }
         foreach ($netShares as $organizationId=>$netShare) {
@@ -553,6 +560,7 @@ final class AdminBetBatch
             Db::name('organization_nodes')->where('id',(int)$organizationId)->update(['balance'=>number_format($after,2,'.',''),'updated_at'=>date('Y-m-d H:i:s')]);
             CreditLedger::organizationSettlement($record,(int)$organizationId,$change,$before,$after,'修改注单撤销原结算占成',['recalculation'=>true]);
         }
+        if ($supersededShareIds!==[]) Db::name('organization_credit_ledger')->whereIn('id',$supersededShareIds)->delete();
 
         $billDate=substr((string)($record['placed_at']??''),0,10);
         if ($billDate!=='') {
