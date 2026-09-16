@@ -2466,3 +2466,15 @@
   - `execute()` 中 `quickPlace` 成功后立即 `settleForHistory($history, $lottery)`。
   - 清空 4 个机器人全部历史注单/明细/提交/拦截/ledger 后重新回刷。
 - 防复发检查：新增机器人回刷数据必须抽样核对 `amount`/`win_amount`/`dealer_profit = amount - win_amount` 是否符合 `monthly_rules` 周区间累计；任何单码中奖金额不得大于 `profit_max - profit_min`。
+
+### 2026-09-17：机器人回刷被限频拉回真实时间，导致追单提前结束
+
+- 现象：`php think robot:run --backfill` 启动不久就打印 `backfill complete: no more due robots`，但 `robot_accounts.next_run_at` 被更新到 `2026-09-17 00:0x`，说明历史回填变成了实时下注。
+- 根因：
+  1. 当 `UserBusiness::quickPlace` 返回“请求间隔太短”时，`RobotScheduler::execute` 把 `next_run_at` 的 `skip_until` 设成 `time()+5`（真实未来）。下一次 `claim` 时，`next_run_at` 虽然大于真实 `now`，但再下一轮一旦超过 `now` 就会触发 `_catchup`；此时 `_scheduled_at` 已变成真实时间，机器人开始在真实时间下注，不再追 6 月。
+  2. `RobotScheduler::claim` 先读取 `next_run_at` 然后写 `next_run_at = now + 3600` 预留，`_scheduled_at` 用的是读出来的旧值；若旧值已被真实 `skip_until` 污染，`_scheduled_at` 就是真实时间。
+- 正确做法：历史回刷遇到限频时，`next_run_at` 不能跳到真实未来，必须继续沿着模拟时间推进；`finish()` 对 `_catchup` 永远以 `_scheduled_at`（模拟时间）为基准。同时 `tick()` 在 `_catchup` 每个 execute 后 `usleep(1s)`，从调用频率上避免触发限频。
+- 修复：
+  - 移除 execute 里间隔太短时 `skip_until=time()+5` 的特判，改为走 `failed` 分支；`finish` 失败分支同样按 `_catchup` 使用 `_scheduled_at` 计算 `next_run_at`。
+  - `tick()` 中 `finish()` 后 `if (!empty($robot['_catchup'])) usleep(1000000);`
+- 防复发检查：`--backfill` 跑完后 `next_run_at` 必须仍在 6–9 月模拟时间范围内，不能是今天；日志里不得出现 `now` 作为 `_scheduled_at` 的连续 `success`。
