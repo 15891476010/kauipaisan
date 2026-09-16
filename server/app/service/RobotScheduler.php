@@ -20,7 +20,7 @@ final class RobotScheduler
 {
     private string $workerToken;
     /** How many bets to place per due robot in one backfill tick. */
-    private const BACKFILL_BATCH = 10;
+    private const BACKFILL_BATCH = 100;
     /** Per-combination unit cap for the current execute() pass. */
     private ?float $perCodeMax = null;
 
@@ -54,11 +54,11 @@ final class RobotScheduler
                         $settleQueue[$key] = $outcome['settle'];
                     }
                     $this->finish($robot, $outcome, time());
-                    // In historical backfill, success only sleeps 0.1s to keep
-                    // throughput high; failures (usually rate limit) back off
+                    // In historical backfill, keep throughput high: success
+                    // only pauses 0.05s; failures (usually rate limit) back off
                     // for 0.3s before the next retry.
                     if (!empty($robot['_catchup'])) {
-                        usleep($outcome['status'] === 'success' ? 100000 : 300000);
+                        usleep($outcome['status'] === 'success' ? 50000 : 300000);
                     }
                     if ($outcome['status'] !== 'success' || empty($robot['_catchup'])) break;
                 } catch (\Throwable $error) {
@@ -99,12 +99,14 @@ final class RobotScheduler
             // Keep a configured historical start date meaningful: the robot
             // replays one scheduled slot at a time until it catches up.  The
             // daily budget below is evaluated against that simulated day.
-            $robot['_catchup'] = $nextRunAt < $now;
+            $robot['_catchup'] = $nextRunAt <= $now;
             $robot['_scheduled_at'] = $nextRunAt;
             // Reserve this slot immediately. The final schedule is written
             // after the bet, but another worker can no longer claim it.
+            // Reserve for 60s so a killed worker doesn't leave the robot
+            // sleeping for an hour before another process can claim it.
             Db::name('robot_accounts')->where('id', $id)->update([
-                'next_run_at' => date('Y-m-d H:i:s', $now + 3600),
+                'next_run_at' => date('Y-m-d H:i:s', $now + 60),
                 'updated_at' => date('Y-m-d H:i:s', $now),
             ]);
             return $robot;

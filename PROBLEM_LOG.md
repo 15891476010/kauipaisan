@@ -2496,3 +2496,14 @@
   3. 回刷进程间 sleep：成功 0.1s，失败（通常是限频）0.3s 退避，而不是固定 1s。
   4. 只保留一个 `php think robot:run --backfill` 进程，并停掉 systemd 常驻的实时调度。
 - 防复发检查：运行 `ps aux | grep robot:run` 必须只有 1 个 `php think robot:run --backfill`；日志 `success` 应该明显多于 `skipped`/`failed`。
+
+### 2026-09-17：进程重启后机器人一睡 1 小时 / backfill 提前退出
+
+- 现象：每次杀掉 `robot:run --backfill` 重开后，日志立刻打印 `backfill complete: no more due robots`，实际上机器人只跑到 6 月 6 日左右；`robot_accounts.next_run_at` 都是未来 1 小时以内的时间。
+- 根因 1：`RobotScheduler::claim` 把 `next_run_at` 预占成 `now + 3600`。如果进程在 `finish` 之前被 `pkill` 掉，机器人行里留的是 1 小时后的未来时间，新的进程必须等满 1 小时才会再次调度它。
+- 根因 2：`_catchup = $nextRunAt < $now` 用严格小于，当 `next_run_at` 恰好等于当前秒时会被误判为实时调度，`finish` 用 `now + delay` 写回未来真实时间，于是 `tick` 开始时就无 due 行，直接退出。
+- 正确做法：
+  - `claim` 预占时间改为 `now + 60`， worker 死掉后最多等 1 分钟即可重新认领。
+  - `_catchup` 判定用 `<=`，任何不晚于当前时间的 `next_run_at` 都按历史回刷处理。
+- 修复：已改 `claim` 和 `_catchup`，并把各机器人 `next_run_at` 按最后 `placed_at + 5 分钟` 重置后继续回刷。
+- 防复发检查：重开回刷后，1 分钟内日志应出现 `success` 且 `next_run_at` 应落在历史模拟日期，而不是未来真实时间；`robot_accounts.next_run_at` 不应是 `now + 3600` 形式。
