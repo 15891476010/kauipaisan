@@ -1561,6 +1561,15 @@ final class UserBusiness
         $now=($robotBackfill && $backfillTimestamp!==false)
             ? date('Y-m-d H:i:s',$backfillTimestamp)
             : date('Y-m-d H:i:s');
+        $robotHistoricalBackfill=$robotBackfill && $backfillTimestamp!==false;
+        $dailyUsedForBackfill=0.0;
+        if($robotHistoricalBackfill){
+            $backfillDate=date('Y-m-d',$backfillTimestamp);
+            $dailyUsedForBackfill=(float)Db::name('bet_records')
+                ->where('user_id',(int)$s['user_id'])
+                ->whereBetween('placed_at',["{$backfillDate} 00:00:00","{$backfillDate} 23:59:59"])
+                ->sum('amount');
+        }
         $amount=0.0; $count=0; $groups=[];
         try {
             foreach ($lines as $line) {
@@ -1611,13 +1620,15 @@ final class UserBusiness
         $user=Db::name('site_users')->where('id',$s['user_id'])->where('site_id',$s['site_id'])->whereNull('deleted_at')->field('id,balance,credit_balance,used_balance,used_balance_date')->find();
         if (!$user) return $this->reply(null,'用户不存在或已停用',404);
         $user=DailyScoreUsage::normalize($user);
+        if($robotHistoricalBackfill)$user['used_balance']=$dailyUsedForBackfill;
         $available=(float)$user['balance']+(float)$user['credit_balance']-(float)$user['used_balance']; if ($amount>$available) return $this->reply(null,'可用余额不足，无法下注',422);
         if (!$this->betSubmissionsAvailable()) {
             try {
-                $transactionResult=Db::transaction(function () use ($s,$text,$formattedText,$groups,$amount,$now,$submissionFingerprint): array {
+                $transactionResult=Db::transaction(function () use ($s,$text,$formattedText,$groups,$amount,$now,$submissionFingerprint,$dailyUsedForBackfill,$robotHistoricalBackfill): array {
                     $lockedUser=Db::name('site_users')->where('id',(int)$s['user_id'])->where('site_id',(int)$s['site_id'])->lock(true)->find();
                     if (!$lockedUser) throw new \RuntimeException('用户不存在或已停用');
                     $lockedUser=DailyScoreUsage::normalize($lockedUser);
+                    if($robotHistoricalBackfill)$lockedUser['used_balance']=$dailyUsedForBackfill;
                     $duplicates=$this->recentDuplicateRecords($s,$submissionFingerprint);
                     if($duplicates!==[]){return ['duplicate'=>true,'record_ids'=>array_map(static fn(array $row):int=>(int)$row['id'],$duplicates),'count'=>array_sum(array_map(static fn(array $row):int=>(int)$row['bet_count'],$duplicates)),'amount'=>array_sum(array_map(static fn(array $row):float=>(float)$row['amount'],$duplicates))];}
                     $before=(float)$lockedUser['balance']+(float)$lockedUser['credit_balance']-(float)$lockedUser['used_balance'];
@@ -1638,7 +1649,7 @@ final class UserBusiness
                         CreditLedger::userBet($s,(int)$s['user_id'],$recordAmount,$ledgerBefore,$recordId,$issueNo);
                         $ledgerBefore-=$recordAmount;
                     }
-                    DailyScoreUsage::change((int)$s['user_id'], $amount);
+                    DailyScoreUsage::changeForPlacedAt((int)$s['user_id'], $amount, $now);
                     return ['duplicate'=>false,'record_ids'=>$recordIds];
                 });
             } catch (\Throwable $e) {
@@ -1652,10 +1663,11 @@ final class UserBusiness
             return $this->reply(['record_id'=>(int)$recordIds[0],'record_ids'=>$recordIds,'count'=>$count,'amount'=>number_format($amount,2,'.',''),'formatted_text'=>$formattedText],'下注提交成功');
         }
         try {
-            $transactionResult=Db::transaction(function () use ($s,$text,$formattedText,$groups,$amount,$count,$now,$submissionFingerprint): array {
+            $transactionResult=Db::transaction(function () use ($s,$text,$formattedText,$groups,$amount,$count,$now,$submissionFingerprint,$dailyUsedForBackfill,$robotHistoricalBackfill): array {
                 $lockedUser=Db::name('site_users')->where('id',(int)$s['user_id'])->where('site_id',(int)$s['site_id'])->lock(true)->find();
                 if (!$lockedUser) throw new \RuntimeException('用户不存在或已停用');
                 $lockedUser=DailyScoreUsage::normalize($lockedUser);
+                if($robotHistoricalBackfill)$lockedUser['used_balance']=$dailyUsedForBackfill;
                 $duplicates=$this->recentDuplicateRecords($s,$submissionFingerprint);
                 if($duplicates!==[]){return ['duplicate'=>true,'record_ids'=>array_map(static fn(array $row):int=>(int)$row['id'],$duplicates),'count'=>array_sum(array_map(static fn(array $row):int=>(int)$row['bet_count'],$duplicates)),'amount'=>array_sum(array_map(static fn(array $row):float=>(float)$row['amount'],$duplicates))];}
                 $before=(float)$lockedUser['balance']+(float)$lockedUser['credit_balance']-(float)$lockedUser['used_balance'];
@@ -1692,7 +1704,7 @@ final class UserBusiness
                     CreditLedger::userBet($s,(int)$s['user_id'],$recordAmount,$ledgerBefore,$submissionId,$issueNo);
                     $ledgerBefore-=$recordAmount;
                 }
-                DailyScoreUsage::change((int)$s['user_id'], $amount);
+                DailyScoreUsage::changeForPlacedAt((int)$s['user_id'], $amount, $now);
                 return ['duplicate'=>false,'record_ids'=>$recordIds,'submission_id'=>$submissionId];
             });
         } catch (\Throwable $e) {

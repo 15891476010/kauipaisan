@@ -2441,3 +2441,12 @@
 - 正确做法：`settleForHistory` 必须逐条捕获结算异常：坏单按不中（unwon）落库并写 `bet_settlement_error` 审计日志，其余注单继续正常结算，一张坏单不得阻塞整期。
 - 线上修复：对 2026249 重新执行 `settleForHistory`，坏单 #228822 跳过并置为不中，其余 pending 正常判奖。
 - 防复发检查：开奖同步/结算路径不得因为一个 RuntimeException 退出外层循环；异常必须落到单记录级；回归 `BetSettlementMatcherTest` 保持通过。
+
+# 2026-09-16：机器人历史回刷被 `DailyScoreUsage` 真实日期卡住
+
+- 现象：4 个测试机器人启动历史回刷后，只生成 167 条注单就几乎停止，`skipped` 多、`success` 极少；`UserBusiness` 按真实 `used_balance` 校验可用分数。
+- 根因：历史模式下 `UserBusiness` 下注仍然调用 `DailyScoreUsage::change()`，把模拟过去的注单累加到**今天**的 `site_users.used_balance`；机器人 credit 只有 5/10/15/20 万，一旦今天 `used_balance` 被填满，`available` 变为 0，`quickPlace` 拒绝，回刷中断。
+- 正确做法：历史回刷注单必须按**模拟日期**的 `placed_at` 计算当日已用分数，不能把历史用量污染到今天。`DailyScoreUsage` 改为 `changeForPlacedAt($userId, $amount, $now)`：只有 `placed_at` 是今天才更新 `used_balance`；否则只按 `bet_records` 当日汇总做可用校验。
+- 修复：`UserBusiness::quickPlace` 对 `robotHistoricalBackfill` 额外用 `bet_records` 按模拟日期 `SUM(amount)` 作为 `used_balance` 参与 `available` 校验；两处 `DailyScoreUsage::change()` 替换为 `DailyScoreUsage::changeForPlacedAt(..., $now)`。
+- 验证：重新启动回刷后，日志 `success` 连续为正，`bet_records` 从 167 条持续增长。
+- 防复发检查：任何带 `robot_backfill_at` 的下注路径不得调用按真实日期更新的 `DailyScoreUsage::change()`；回刷可用余额校验必须与 `RobotScheduler::dailySpent()` 同口径（按 `placed_at` 当日汇总）。
