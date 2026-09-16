@@ -207,10 +207,10 @@ final class RobotScheduler
             $dealerProfit=$this->weeklyDealerProfit((int)$robot['user_id'],$scheduleTime);
             if($dealerProfit<$profitMin){$wantWin=false;}
             elseif($dealerProfit>$profitMax){$wantWin=true;}
-            // Cap per-combination stake so one winning number cannot jump
-            // across the whole weekly range. Use 直选 odds (≈900) as the
-            // conservative upper bound; lower-odds plays are then safe too.
-            $this->perCodeMax=max(1.0,round(($profitMax-$profitMin)/900,2));
+            // Cap per-combination stake so one winning 直选 number moves
+            // at most half of the weekly range.  Multi-combo plays are
+            // skipped for historical target control, so 900x odds dominate.
+            $this->perCodeMax=max(1.0,(float)floor(($profitMax-$profitMin)/1800));
         }
         $minAmount=(float)($robot['min_amount']??1);$maxAmount=(float)($robot['max_amount']??$minAmount);
         // Never submit a batch that would cross the daily ceiling.  If the
@@ -411,6 +411,9 @@ final class RobotScheduler
             $maxListCount = min(220, max($minListCount, (int)floor($max / $this->perCodeMax)));
             if ($maxListCount < $minListCount) $maxListCount = $minListCount;
         }
+        // Historical target control should only use 直选 tickets: one
+        // winning number per ticket gives a deterministic dealer result.
+        $onlyDirect = ($targetDraw !== null && $wantWin !== null);
         $rows = Db::name('lottery_odds')->where('lottery_id', (int)$lottery['id'])
             ->where('status', 1)->whereNull('deleted_at')->field('name,category')->order('sort asc')->select()->toArray();
         $candidates = [];
@@ -424,6 +427,11 @@ final class RobotScheduler
             // “福 + three digits”.
             if ($targetDraw !== null && preg_match('/^\d{3}$/', $targetDraw) === 1 && $wantWin !== null
                 && !$this->targetPlayCompatible($name, $category, $targetDraw, $wantWin)) {
+                continue;
+            }
+            // In historical target mode, only straight tickets give a
+            // deterministic single-number win/loss for profit control.
+            if ($onlyDirect && !(str_contains($name, '直选') || $name === '直' || str_contains($name, '单选'))) {
                 continue;
             }
             if (str_contains($name, '全包')) {
@@ -509,10 +517,12 @@ final class RobotScheduler
             if(count($numberList)>=3) {
                 $directUnit=$this->randomUnitForTotal($min,$max,$precision,count($numberList));
                 if($directUnit!==null) $candidates[]=$prefix.implode(' ',$numberList).'直各'.$directUnit.'元';
-                $groupUnit=$this->randomUnitForTotal($min,$max,$precision,count($numberList));
-                if($groupUnit!==null) $candidates[]=$prefix.implode(' ',$numberList).'组各'.$groupUnit.'元';
-                $mixedUnit=$this->randomUnitForTotal($min,$max,$precision,count($numberList)*2);
-                if($mixedUnit!==null) $candidates[]=$prefix.implode(' ',$numberList).'直组各'.$mixedUnit.'元';
+                if(!$onlyDirect) {
+                    $groupUnit=$this->randomUnitForTotal($min,$max,$precision,count($numberList));
+                    if($groupUnit!==null) $candidates[]=$prefix.implode(' ',$numberList).'组各'.$groupUnit.'元';
+                    $mixedUnit=$this->randomUnitForTotal($min,$max,$precision,count($numberList)*2);
+                    if($mixedUnit!==null) $candidates[]=$prefix.implode(' ',$numberList).'直组各'.$mixedUnit.'元';
+                }
             }
         }
         // Occasionally use a much longer scattered list with an explicit
@@ -536,14 +546,16 @@ final class RobotScheduler
                 }
             }
         }
-        $z6Count = (int)preg_match_all('/\d/', $z6Selection = $this->uniqueDigits( max(3,min(9,random_int(4,8))) ) );
-        $z6Ways = max(1, (int)round($z6Count*($z6Count-1)*($z6Count-2)/6));
-        $z6Unit=$this->randomUnitForTotal($min,$max,$precision,$z6Ways);
-        if($z6Unit!==null) $candidates[]=$prefix.$z6Selection.'组六各'.$z6Unit.'元';
-        $z3Count = (int)preg_match_all('/\d/', $z3Selection = $this->uniqueDigits(max(2,min(9,random_int(3,7)))) );
-        $z3Ways = max(1, (int)round($z3Count*($z3Count-1)/2)*2);
-        $z3Unit=$this->randomUnitForTotal($min,$max,$precision,$z3Ways);
-        if($z3Unit!==null) $candidates[]=$prefix.$z3Selection.'组三各'.$z3Unit.'元';
+        if (!$onlyDirect) {
+            $z6Count = (int)preg_match_all('/\d/', $z6Selection = $this->uniqueDigits( max(3,min(9,random_int(4,8))) ) );
+            $z6Ways = max(1, (int)round($z6Count*($z6Count-1)*($z6Count-2)/6));
+            $z6Unit=$this->randomUnitForTotal($min,$max,$precision,$z6Ways);
+            if($z6Unit!==null) $candidates[]=$prefix.$z6Selection.'组六各'.$z6Unit.'元';
+            $z3Count = (int)preg_match_all('/\d/', $z3Selection = $this->uniqueDigits(max(2,min(9,random_int(3,7)))) );
+            $z3Ways = max(1, (int)round($z3Count*($z3Count-1)/2)*2);
+            $z3Unit=$this->randomUnitForTotal($min,$max,$precision,$z3Ways);
+            if($z3Unit!==null) $candidates[]=$prefix.$z3Selection.'组三各'.$z3Unit.'元';
+        }
 
         // Keep a small deterministic fallback for installations whose odds
         // names are custom; quickPlace still performs the authoritative match.
