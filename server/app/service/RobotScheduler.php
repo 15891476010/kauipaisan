@@ -444,7 +444,7 @@ final class RobotScheduler
                 // Spread the straight stake across many numbers so each
                 // winning number is judged independently and a single number
                 // cannot exceed the weekly profit range.
-                if ($maxListCount >= $minListCount) {
+                if ($maxListCount >= $minListCount && $minListCount <= 60) {
                     $listCount = random_int($minListCount, min(60, $maxListCount));
                     $numbers = [];
                     for ($i = 0; $i < $listCount; $i++) {
@@ -504,7 +504,7 @@ final class RobotScheduler
         // deliberately generated in addition to catalog rows so a robot can
         // produce散号、直组、组三 and组六 tickets instead of repeatedly picking
         // the first short catalog format.
-        if ($maxListCount >= $minListCount) {
+        if ($maxListCount >= $minListCount && $minListCount <= 60) {
             $listCount = random_int($minListCount, min(60, $maxListCount));
             $numberList=[];
             for($i=0;$i<$listCount;$i++) {
