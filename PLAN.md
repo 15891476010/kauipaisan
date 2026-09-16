@@ -49,9 +49,9 @@
 - [x] 线上排查：2026249 共 217 条主单，仅 27 条已结算，190 条 pending；`lottery-sync.log` 285 次同一 `RuntimeException #228822`。
 - [x] 根因确认：`BetSettlement::settleForHistory` 处理 `组三全包2000元福`（明细 #228822，保存为一码 `三 3`）时抛异常并中断整期结算。
 - [x] 代码修复：`settleForHistory` 内层捕获 `Throwable`，坏单落为 unwon 并写审计日志，继续处理其余注单。
-- [ ] 线上补结算：对福彩 2026249 重新执行 `settleForHistory`，处理剩余 190 条 pending（含 689 相关）。
-- [ ] 验证：`php -l`、回归 `BetSettlementMatcherTest`、线上核对 pending=0 及 689 注单正常中奖。
-- 待部署：代码 `git push` 后线上 `git pull`（纯后端，无需前端构建）。
+- [x] 线上补结算：补丁生效后开奖同步 cron 自动跑通，2026249 全部 190 条 pending 已结算（won=33, unwon=184）。
+- [x] 验证：`php -l`、回归 `BetSettlementMatcherTest`（84,210 assertions）通过；线上核对 pending=0、`lottery-sync.log` 已恢复正常（`lottery=1 ok=yes`），689 相关注单已正常中奖。
+- 遗留：dev 代码已提交 `a581b95`，但 `git push` 因 GitHub HTTPS 凭据未配置失败；线上已用 `git apply` 临时打补丁生效，需后续配置凭据后 push/pull 同步。
 
 ### 本轮：代理端数字叠列修复（已完成）
 
