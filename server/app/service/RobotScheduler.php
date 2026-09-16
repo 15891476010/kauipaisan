@@ -49,6 +49,9 @@ final class RobotScheduler
                     elseif ($outcome['status'] === 'skipped') $result['skipped']++;
                     else $result['failed']++;
                     $this->finish($robot, $outcome, time());
+                    // In historical backfill, throttle real-world requests to
+                    // avoid the per-account rate limit from quickPlace.
+                    if (!empty($robot['_catchup'])) usleep(1000000);
                     if ($outcome['status'] !== 'success' || empty($robot['_catchup'])) break;
                 } catch (\Throwable $error) {
                     $result['failed']++;
@@ -324,11 +327,6 @@ final class RobotScheduler
                     return ['status' => 'success', 'lottery' => (string)$lottery['name'], 'text' => $text, 'scheduled_at'=>$scheduledAt??$scheduleTime];
                 }
                 if (str_contains($lastMessage, '封盘') || str_contains($lastMessage, '禁止下注') || str_contains($lastMessage, '暂无可下注期号')) return ['status' => 'skipped', 'message' => $lastMessage, 'lottery' => (string)$lottery['name'], 'text' => $text, 'scheduled_at'=>$scheduledAt??$scheduleTime];
-                // Real-time rate limit (e.g. "请求间隔太短"). Back off for a
-                // few real seconds instead of spamming the same simulated slot.
-                if (str_contains($lastMessage, '间隔') || str_contains($lastMessage, '稍息') || str_contains($lastMessage, '过于频繁') || str_contains($lastMessage, 'too many')) {
-                    return ['status' => 'skipped', 'message' => $lastMessage, 'lottery' => (string)$lottery['name'], 'text' => $text, 'scheduled_at'=>$scheduledAt??$scheduleTime, 'skip_until'=>time()+5];
-                }
                 if ($this->shouldRegenerateBet($lastMessage) && $regenerateAttempts < 3) {
                     $regenerateAttempts++;
                     $failedPlayKey = $this->playKey($text);
