@@ -2450,3 +2450,19 @@
 - 修复：`UserBusiness::quickPlace` 对 `robotHistoricalBackfill` 额外用 `bet_records` 按模拟日期 `SUM(amount)` 作为 `used_balance` 参与 `available` 校验；两处 `DailyScoreUsage::change()` 替换为 `DailyScoreUsage::changeForPlacedAt(..., $now)`。
 - 验证：重新启动回刷后，日志 `success` 连续为正，`bet_records` 从 167 条持续增长。
 - 防复发检查：任何带 `robot_backfill_at` 的下注路径不得调用按真实日期更新的 `DailyScoreUsage::change()`；回刷可用余额校验必须与 `RobotScheduler::dailySpent()` 同口径（按 `placed_at` 当日汇总）。
+
+### 2026-09-16：六月会员总盈亏 851 万 vs 庄家输 300 万目标
+
+- 现象：六月 1–30 日会员总盈亏约 851 万，远超用户期望的“庄家输 300 万”。
+- 根因：
+  1. `RobotScheduler::generateTexts` 对 `直选/直/单选` 生成的是“一码全包”票（如 `123直8000元`），单码中奖按约 900 倍赔率可产生 700 万+奖金，直接击穿周盈亏区间。
+  2. `settlePrevious` 在历史回刷时不是即时结算刚下的注单，`weeklyDealerProfit` 仍按“已结算”统计，导致机器人误判自己“还没亏够”，持续生成中奖单直到整体超调。
+- 正确做法：
+  1. 直选必须生成“多码各 X 元”票，每码独立判定；并且单码金额按当周盈亏区间宽度 `profit_max - profit_min` 限制（以 900 倍保守赔率计算），避免一码跨出整个周区间。
+  2. 历史下注成功后立即调用 `settleForHistory` 结算当前奖期，使 `weeklyDealerProfit` 实时更新。
+- 修复：
+  - 增加 `RobotScheduler::$perCodeMax`；`execute()` 根据 `monthly_rules` 的周区间宽度计算单码上限。
+  - `generateTexts` 中直选改为多码列表，并在 `randomUnitForTotal` 中按 `$perCodeMax` 裁剪；`generateExactTotalText` 的 `maxUnit` 改用 `$perCodeMax`。
+  - `execute()` 中 `quickPlace` 成功后立即 `settleForHistory($history, $lottery)`。
+  - 清空 4 个机器人全部历史注单/明细/提交/拦截/ledger 后重新回刷。
+- 防复发检查：新增机器人回刷数据必须抽样核对 `amount`/`win_amount`/`dealer_profit = amount - win_amount` 是否符合 `monthly_rules` 周区间累计；任何单码中奖金额不得大于 `profit_max - profit_min`。

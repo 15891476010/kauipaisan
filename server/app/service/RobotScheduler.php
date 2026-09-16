@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace app\service;
 
 use app\controller\UserBusiness;
+use app\service\BetSettlement;
 use think\Request;
 use think\facade\Cache;
 use think\facade\Db;
@@ -20,6 +21,8 @@ final class RobotScheduler
     private string $workerToken;
     /** How many bets to place per due robot in one backfill tick. */
     private const BACKFILL_BATCH = 10;
+    /** Per-combination unit cap for the current execute() pass. */
+    private ?float $perCodeMax = null;
 
     public function __construct()
     {
@@ -199,10 +202,15 @@ final class RobotScheduler
         $wantWin=$pending ? null : ($target!==null ? (random_int(1,10000) <= (int)round($winWeight*100) ) : null);
         // Weekly profit range override: force win/lose to keep dealer profit in range.
         $profitMin=(float)($rule['profit_min']??0);$profitMax=(float)($rule['profit_max']??0);
-        if(!$pending && $target!==null && ($profitMin!==0.0 || $profitMax!==0.0) && $profitMax>=$profitMin){
+        $this->perCodeMax=null;
+        if(!$pending && $target!==null && ($profitMin!==0.0 || $profitMax!==0.0) && $profitMax>$profitMin){
             $dealerProfit=$this->weeklyDealerProfit((int)$robot['user_id'],$scheduleTime);
             if($dealerProfit<$profitMin){$wantWin=false;}
             elseif($dealerProfit>$profitMax){$wantWin=true;}
+            // Cap per-combination stake so one winning number cannot jump
+            // across the whole weekly range. Use 直选 odds (≈900) as the
+            // conservative upper bound; lower-odds plays are then safe too.
+            $this->perCodeMax=max(1.0,round(($profitMax-$profitMin)/900,2));
         }
         $minAmount=(float)($robot['min_amount']??1);$maxAmount=(float)($robot['max_amount']??$minAmount);
         // Never submit a batch that would cross the daily ceiling.  If the
@@ -301,6 +309,18 @@ final class RobotScheduler
                         'pending_ticket_target_issue'=>null,'pending_ticket_target_draw'=>null,
                         'pending_ticket_created_at'=>null,'pending_ticket_scheduled_at'=>null,
                     ]);
+                    // Settle the historical issue immediately so weekly profit
+                    // control sees the latest win_amount on the next tick.
+                    if ($code === 0 && $target !== null) {
+                        try {
+                            $history = Db::name('lottery_histories')->where('lottery_id', (int)$lottery['id'])->where('code', (string)$target['issue'])->where('is_opened', 1)->find();
+                            if (is_array($history)) {
+                                (new BetSettlement())->settleForHistory($history, $lottery);
+                            }
+                        } catch (\Throwable $e) {
+                            Log::warning('robot immediate settlement failed issue='.$target['issue'].': '.$e->getMessage());
+                        }
+                    }
                     return ['status' => 'success', 'lottery' => (string)$lottery['name'], 'text' => $text, 'scheduled_at'=>$scheduledAt??$scheduleTime];
                 }
                 if (str_contains($lastMessage, '封盘') || str_contains($lastMessage, '禁止下注') || str_contains($lastMessage, '暂无可下注期号')) return ['status' => 'skipped', 'message' => $lastMessage, 'lottery' => (string)$lottery['name'], 'text' => $text, 'scheduled_at'=>$scheduledAt??$scheduleTime];
@@ -383,6 +403,14 @@ final class RobotScheduler
         $prefix = $this->weightedPrefix($robot, (string)$lottery['name'], $allowFuTi);
         $min = $minOverride!==null ? $minOverride : (float)($robot['min_amount'] ?? 1); $max = $maxOverride!==null ? $maxOverride : (float)($robot['max_amount'] ?? $min);
         $precision = max(0, min(2, (int)($robot['amount_precision'] ?? 0)));
+        // Determine how many numbers a straight/list ticket needs so each
+        // per-number unit respects the weekly profit cap.
+        $minListCount = 3; $maxListCount = 60;
+        if ($this->perCodeMax !== null && $this->perCodeMax > 0) {
+            $minListCount = max(3, (int)ceil($min / $this->perCodeMax));
+            $maxListCount = min(220, max($minListCount, (int)floor($max / $this->perCodeMax)));
+            if ($maxListCount < $minListCount) $maxListCount = $minListCount;
+        }
         $rows = Db::name('lottery_odds')->where('lottery_id', (int)$lottery['id'])
             ->where('status', 1)->whereNull('deleted_at')->field('name,category')->order('sort asc')->select()->toArray();
         $candidates = [];
@@ -405,10 +433,24 @@ final class RobotScheduler
                 $multiplier = $this->randomPackageMultiplier($min, $max, $precision);
                 if ($multiplier !== null) $candidates[] = $prefix.$name.$multiplier.'倍';
             } elseif (str_contains($name, '直选') || $name === '直' || str_contains($name, '单选')) {
-                $digits = ($targetDraw !== null && $wantWin !== null && $wantWin)
-                    ? $targetDraw : $this->digits(3);
-                if ($targetDraw !== null && $wantWin === false) $digits = $this->differentDraw($targetDraw);
-                $candidates[] = $prefix.$digits.'直各'.$this->randomUnitForTotal($min,$max,$precision,1).'元';
+                // Spread the straight stake across many numbers so each
+                // winning number is judged independently and a single number
+                // cannot exceed the weekly profit range.
+                if ($maxListCount >= $minListCount) {
+                    $listCount = random_int($minListCount, min(60, $maxListCount));
+                    $numbers = [];
+                    for ($i = 0; $i < $listCount; $i++) {
+                        $n = $this->digits(3);
+                        if ($targetDraw !== null && $wantWin === true && $i === 0) $n = $targetDraw;
+                        if ($targetDraw !== null && $wantWin === false && $n === $targetDraw) $n = $this->differentDraw($targetDraw);
+                        $numbers[] = $n;
+                    }
+                    $numbers = array_values(array_unique($numbers));
+                    if ($targetDraw !== null && $wantWin === true && !in_array($targetDraw, $numbers, true)) $numbers[0] = $targetDraw;
+                    if ($targetDraw !== null && $wantWin === false) $numbers = array_values(array_diff($numbers, [$targetDraw]));
+                    $unit = $this->randomUnitForTotal($min, $max, $precision, count($numbers));
+                    if ($unit !== null) $candidates[] = $prefix.implode(' ', $numbers).'直各'.$unit.'元';
+                }
             } elseif (str_contains($name, '定位') || str_contains($category, '定位')) {
                 $positions = ['百','十','个']; shuffle($positions); $count = (str_contains($name, '二码') || str_contains($category, '二码')) ? 2 : 1; $parts = []; $ways = 1;
                 foreach (array_slice($positions, 0, $count) as $position) {
@@ -419,79 +461,95 @@ final class RobotScheduler
                     if ($targetDraw !== null && $wantWin === false && $digits === $targetDraw[$positionIndex]) $digits = (string)(((int)$digits + 1) % 10);
                     $ways*=strlen($digits); $parts[] = $position.$digits;
                 }
-                $candidates[] = $prefix.implode('', $parts).'各'.$this->randomUnitForTotal($min,$max,$precision,$ways).'元';
+                $unit = $this->randomUnitForTotal($min,$max,$precision,$ways);
+                if ($unit !== null) $candidates[] = $prefix.implode('', $parts).'各'.$unit.'元';
             } elseif (str_contains($name, '复式')) {
                 $count = $this->numberWord((string)$name) ?: 3;
                 $selected = $this->targetSelection($targetDraw, $wantWin, $count, 'compound');
                 $ways=max(1,(int)round($count*($count-1)*($count-2)/6));
-                $candidates[] = $prefix.'复式'.$selected.'各'.$this->randomUnitForTotal($min,$max,$precision,1).'元';
+                $unit = $this->randomUnitForTotal($min,$max,$precision,$ways);
+                if ($unit !== null) $candidates[] = $prefix.'复式'.$selected.'各'.$unit.'元';
             } elseif (str_contains($name, '和值')) {
                 $sum = ($targetDraw !== null && $wantWin !== null && $wantWin) ? array_sum(array_map('intval', str_split($targetDraw))) : random_int(0, 27);
                 if ($targetDraw !== null && $wantWin === false && $sum === array_sum(array_map('intval', str_split($targetDraw)))) $sum = ($sum + 1) % 28;
-                $candidates[] = $prefix.'和值'.$sum.'各'.$this->randomUnitForTotal($min,$max,$precision,1).'元';
+                $unit = $this->randomUnitForTotal($min,$max,$precision,1);
+                if ($unit !== null) $candidates[] = $prefix.'和值'.$sum.'各'.$unit.'元';
             } elseif (str_contains($name, '跨度')) {
                 $span = ($targetDraw !== null && $wantWin !== null && $wantWin) ? ((int)max(str_split($targetDraw)) - (int)min(str_split($targetDraw))) : random_int(0, 9);
                 if ($targetDraw !== null && $wantWin === false && $span === ((int)max(str_split($targetDraw)) - (int)min(str_split($targetDraw)))) $span = ($span + 1) % 10;
-                $candidates[] = $prefix.'跨度'.$span.'各'.$this->randomUnitForTotal($min,$max,$precision,1).'元';
+                $unit = $this->randomUnitForTotal($min,$max,$precision,1);
+                if ($unit !== null) $candidates[] = $prefix.'跨度'.$span.'各'.$unit.'元';
             } elseif (str_contains($name, '胆拖') || str_contains($name, '拖') || str_contains($category, '胆拖')) {
                 $count = (int)preg_replace('/\D/', '', $name); $count = max(2, min(9, $count ?: 2)); $family = str_contains($category, '组六') ? '组六' : '组三';
                 $bankerCount = str_contains($category, '组六2') ? 2 : 1;
                 $bankers = $this->targetBankers($targetDraw, $wantWin, $bankerCount, $family);
                 $drag = $this->uniqueDigitsFrom($count, str_split($bankers));
-                $candidates[] = $prefix.$family.$bankers.'拖'.$drag.'各'.$this->randomUnitForTotal($min,$max,$precision,1).'元';
+                $unit = $this->randomUnitForTotal($min,$max,$precision,1);
+                if ($unit !== null) $candidates[] = $prefix.$family.$bankers.'拖'.$drag.'各'.$unit.'元';
             } elseif (str_contains($name, '组三') && !str_contains($name, '赖')) {
-                $count = $this->numberWord($name) ?: 2; $ways=max(1,(int)round($count*($count-1)/2)*2); $selected=$this->targetSelection($targetDraw,$wantWin,$count,'z3'); $candidates[] = $prefix.'组三'.$this->countLabel($count).'码'.$selected.'各'.$this->randomUnitForTotal($min,$max,$precision,1).'元';
+                $count = $this->numberWord($name) ?: 2; $ways=max(1,(int)round($count*($count-1)/2)*2); $selected=$this->targetSelection($targetDraw,$wantWin,$count,'z3'); $unit = $this->randomUnitForTotal($min,$max,$precision,$ways); if ($unit !== null) $candidates[] = $prefix.'组三'.$this->countLabel($count).'码'.$selected.'各'.$unit.'元';
             } elseif (str_contains($name, '组六') && !str_contains($name, '赖')) {
-                $count = $this->numberWord($name) ?: 3; $ways=max(1,(int)round($count*($count-1)*($count-2)/6)); $selected=$this->targetSelection($targetDraw,$wantWin,$count,'z6'); $label=$count>3?$this->countLabel($count).'码':''; $candidates[] = $prefix.'组六'.$label.$selected.'各'.$this->randomUnitForTotal($min,$max,$precision,1).'元';
+                $count = $this->numberWord($name) ?: 3; $ways=max(1,(int)round($count*($count-1)*($count-2)/6)); $selected=$this->targetSelection($targetDraw,$wantWin,$count,'z6'); $label=$count>3?$this->countLabel($count).'码':''; $unit = $this->randomUnitForTotal($min,$max,$precision,$ways); if ($unit !== null) $candidates[] = $prefix.'组六'.$label.$selected.'各'.$unit.'元';
             }
         }
         // Add the long, loose number-list forms used by operators. These are
         // deliberately generated in addition to catalog rows so a robot can
         // produce散号、直组、组三 and组六 tickets instead of repeatedly picking
         // the first short catalog format.
-        $listCount=random_int(5,12);
-        $numberList=[];
-        for($i=0;$i<$listCount;$i++) {
-            $number=$this->digits(3);
-            if($targetDraw!==null && $wantWin===true && $i===0) $number=$targetDraw;
-            if($targetDraw!==null && $wantWin===false && $number===$targetDraw) $number=$this->differentDraw($targetDraw);
-            $numberList[]=$number;
-        }
-        $numberList=array_values(array_unique($numberList));
-        if(count($numberList)>=3) {
-            $directUnit=$this->randomUnitForTotal($min,$max,$precision,count($numberList));
-            $candidates[]=$prefix.implode(' ',$numberList).'直各'.$directUnit.'元';
-            $groupUnit=$this->randomUnitForTotal($min,$max,$precision,count($numberList));
-            $candidates[]=$prefix.implode(' ',$numberList).'组各'.$groupUnit.'元';
-            $mixedUnit=$this->randomUnitForTotal($min,$max,$precision,count($numberList)*2);
-            $candidates[]=$prefix.implode(' ',$numberList).'直组各'.$mixedUnit.'元';
+        if ($maxListCount >= $minListCount) {
+            $listCount = random_int($minListCount, min(60, $maxListCount));
+            $numberList=[];
+            for($i=0;$i<$listCount;$i++) {
+                $number=$this->digits(3);
+                if($targetDraw!==null && $wantWin===true && $i===0) $number=$targetDraw;
+                if($targetDraw!==null && $wantWin===false && $number===$targetDraw) $number=$this->differentDraw($targetDraw);
+                $numberList[]=$number;
+            }
+            $numberList=array_values(array_unique($numberList));
+            if(count($numberList)>=3) {
+                $directUnit=$this->randomUnitForTotal($min,$max,$precision,count($numberList));
+                if($directUnit!==null) $candidates[]=$prefix.implode(' ',$numberList).'直各'.$directUnit.'元';
+                $groupUnit=$this->randomUnitForTotal($min,$max,$precision,count($numberList));
+                if($groupUnit!==null) $candidates[]=$prefix.implode(' ',$numberList).'组各'.$groupUnit.'元';
+                $mixedUnit=$this->randomUnitForTotal($min,$max,$precision,count($numberList)*2);
+                if($mixedUnit!==null) $candidates[]=$prefix.implode(' ',$numberList).'直组各'.$mixedUnit.'元';
+            }
         }
         // Occasionally use a much longer scattered list with an explicit
         // declared total, e.g. “009 055 … 996福直3元合计543”. The parser
         // validates the total, so calculate it from the generated count and
         // per-number stake rather than printing a guessed value.
-        $longCount=random_int(24, min(220, 1000));
-        $longNumbers=[];
-        while(count($longNumbers)<$longCount) $longNumbers[]=$this->digits(3);
-        $longNumbers=array_values(array_unique($longNumbers));
-        if(count($longNumbers)>=24) {
-            $longUnit=$this->randomUnitForTotal($min,$max,$precision,count($longNumbers)*($prefix==='福体'?2:1));
-            $longTotal=(float)count($longNumbers)*(float)$longUnit*($prefix==='福体'?2:1);
-            if($longTotal >= $min-0.000001 && $longTotal <= $max+0.000001) {
-                $totalLabel=number_format($longTotal,$precision,'.','');
-                $candidates[]=$prefix.implode(' ',$longNumbers).'直'.$longUnit.'元合计'.$totalLabel;
+        $longMin = max(24, $minListCount); $longMax = min(220, $maxListCount);
+        if ($longMax >= $longMin) {
+            $longCount = random_int($longMin, $longMax);
+            $longNumbers=[];
+            while(count($longNumbers)<$longCount) $longNumbers[]=$this->digits(3);
+            $longNumbers=array_values(array_unique($longNumbers));
+            if(count($longNumbers)>=24) {
+                $longUnit=$this->randomUnitForTotal($min,$max,$precision,count($longNumbers)*($prefix==='福体'?2:1));
+                if($longUnit!==null) {
+                    $longTotal=(float)count($longNumbers)*(float)$longUnit*($prefix==='福体'?2:1);
+                    if($longTotal >= $min-0.000001 && $longTotal <= $max+0.000001) {
+                        $totalLabel=number_format($longTotal,$precision,'.','');
+                        $candidates[]=$prefix.implode(' ',$longNumbers).'直'.$longUnit.'元合计'.$totalLabel;
+                    }
+                }
             }
         }
-        $z6Selection=$this->uniqueDigits( max(3,min(9,random_int(4,8))) );
-        $z6Unit=$this->randomUnitForTotal($min,$max,$precision,1);
-        $candidates[]=$prefix.$z6Selection.'组六各'.$z6Unit.'元';
-        $z3Selection=$this->uniqueDigits(max(2,min(9,random_int(3,7))));
-        $z3Unit=$this->randomUnitForTotal($min,$max,$precision,1);
-        $candidates[]=$prefix.$z3Selection.'组三各'.$z3Unit.'元';
+        $z6Count = (int)preg_match_all('/\d/', $z6Selection = $this->uniqueDigits( max(3,min(9,random_int(4,8))) ) );
+        $z6Ways = max(1, (int)round($z6Count*($z6Count-1)*($z6Count-2)/6));
+        $z6Unit=$this->randomUnitForTotal($min,$max,$precision,$z6Ways);
+        if($z6Unit!==null) $candidates[]=$prefix.$z6Selection.'组六各'.$z6Unit.'元';
+        $z3Count = (int)preg_match_all('/\d/', $z3Selection = $this->uniqueDigits(max(2,min(9,random_int(3,7)))) );
+        $z3Ways = max(1, (int)round($z3Count*($z3Count-1)/2)*2);
+        $z3Unit=$this->randomUnitForTotal($min,$max,$precision,$z3Ways);
+        if($z3Unit!==null) $candidates[]=$prefix.$z3Selection.'组三各'.$z3Unit.'元';
 
         // Keep a small deterministic fallback for installations whose odds
         // names are custom; quickPlace still performs the authoritative match.
-        $candidates[] = $prefix.$this->digits(3).'直各'.$this->randomUnitForTotal($min,$max,$precision,1).'元';
+        $directFallback = $this->digits(3);
+        $unit = $this->randomUnitForTotal($min,$max,$precision,1);
+        if($unit!==null) $candidates[] = $prefix.$directFallback.'直各'.$unit.'元';
         $candidates = array_values(array_unique($candidates));
         shuffle($candidates);
         return array_values(array_unique($candidates));
@@ -562,10 +620,11 @@ final class RobotScheduler
         $scale=10**max(0,min(2,$precision));
         $total=(int)round($amount*$scale);
         if($total<1)return null;
-        // A direct single-column stake is capped at 600.  Find a divisor of
-        // the total so every generated column has the same legal unit stake.
-        $maxUnit=(int)round(600*$scale);
-        $minUnit=max(1,(int)ceil((float)($robot['min_amount']??1)*$scale));
+        // Cap per-column unit so a single winning number cannot cross the
+        // weekly profit range. The default 600 is kept for real-time mode.
+        $perCodeMax=(float)($this->perCodeMax ?? 600);
+        $maxUnit=(int)floor($perCodeMax*$scale);
+        $minUnit=$scale; // smallest per-column unit is 1.00 in the configured precision
         $minCount=max(1,(int)ceil($total/$maxUnit));
         $maxCount=min(999,(int)floor($total/$minUnit));
         for($count=$minCount;$count<=$maxCount;$count++){
@@ -620,11 +679,15 @@ final class RobotScheduler
     }
 
     /** Generate a per-combination amount so the whole ticket stays in range. */
-    private function randomUnitForTotal(float $min, float $max, int $precision, int $ways): string
+    private function randomUnitForTotal(float $min, float $max, int $precision, int $ways): ?string
     {
         $ways=max(1,$ways); $scale=10 ** $precision;
         $lo=(int)ceil(($min/$ways)*$scale); $hi=(int)floor(($max/$ways)*$scale);
-        if($hi<$lo)$hi=$lo; $unit=(float)$this->randomAmount($lo/$scale,$hi/$scale,$precision);
+        if($this->perCodeMax!==null && $this->perCodeMax>0){
+            $hi=min($hi,(int)floor($this->perCodeMax*$scale));
+        }
+        if($hi<$lo) return null;
+        $unit=(float)$this->randomAmount($lo/$scale,$hi/$scale,$precision);
         return number_format(max(1/$scale,$unit),$precision,'.','');
     }
 

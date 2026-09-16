@@ -65,8 +65,10 @@
 - [x] 已修复历史回刷与 `DailyScoreUsage` 冲突：`UserBusiness::quickPlace` 对 `robotHistoricalBackfill` 按模拟日期 `placed_at` 汇总 `bet_records.amount` 作为已用分数；下注成功后改用 `DailyScoreUsage::changeForPlacedAt($now)`，避免历史用量污染今天 `used_balance`。
 - [x] `RobotScheduler::tick()` 增加 `BACKFILL_BATCH=10`：回刷模式下同一个机器人一次调度最多连续下 10 单，再进入下一 tick，显著提高追单速度。
 - [x] 4 个机器人已 `running` 并重新启动 `php think robot:run --backfill`（PID 2055876）；从 2026-06-01 开始逐日追单，回刷日志已出现一次 tick `success=10`。
-- [ ] 待完成：历史回刷跑完（预计需要数小时，视模拟时段和每日额度）；跑完后把机器人状态改回 `stopped` 或切为 `php think robot:run` 常驻调度。
-- 待部署：后端代码（UserBusiness 回刷修复 + 新增机器人）提交后需 push（配好凭据）+ 线上 `git pull`；纯后端，无需前端 build。
+- [x] 六月总盈亏偏差根因：直选单码金额过大，一码中奖即可击穿整周盈亏区间；`weeklyDealerProfit` 因结算滞后无法实时反馈。
+- [x] 修复 `RobotScheduler`：直选改为多码各 X 元生成，并按 `profit_max - profit_min` 限制单码金额；下注成功后立即 `settleForHistory` 使周盈亏实时更新。
+- [x] 已清空 4 个机器人已生成的全部数据（bet_records 2897、details 3022、submissions 2897、stop_drops 3022、ledger 17291 行）并重新回刷（新 PID 2148468）。
+- [ ] 待完成：历史回刷跑完并验证六月会员总盈亏接近庄家输 300 万目标；跑完后把机器人状态改回 `stopped` 或切为 `php think robot:run` 常驻调度。
 
 ### 本轮：代理端数字叠列修复（已完成）
 
