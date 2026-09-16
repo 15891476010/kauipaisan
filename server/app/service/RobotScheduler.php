@@ -820,13 +820,27 @@ final class RobotScheduler
     {
         $rules=json_decode((string)($robot['hourly_weights']??'[]'),true);
         $hour=(int)date('H',$timestamp);
+        $minute=(int)date('i',$timestamp);
+        $dayMinutes=$hour*60+$minute;
         if($hour>=21){$next=strtotime(date('Y-m-d 00:00:00',$timestamp))+86400;return ['allowed'=>false,'reason'=>'zero','retry_at'=>$next];}
         // Robots created before hourly weights were introduced have NULL in
         // the column.  Keep them on the new 00:00-21:00 schedule instead of
         // silently allowing bets all night.
         if(!is_array($rules)||$rules===[])return ['allowed'=>true,'reason'=>'allowed','retry_at'=>null];
-        $slot=$hour;$rule=$rules[$slot]??null;$weight=is_array($rule)?(float)($rule['weight']??0):0;
-        $max=0.0;foreach($rules as $item)$max=max($max,(float)(is_array($item)?($item['weight']??0):0));
+        $max=0.0;$weight=0.0;
+        foreach($rules as $idx=>$item){
+            if(!is_array($item))continue;
+            $itemWeight=(float)($item['weight']??0);$max=max($max,$itemWeight);
+            if(isset($item['start'])&&isset($item['end'])){
+                [$sh,$sm]=explode(':',trim((string)$item['start']));[$eh,$em]=explode(':',trim((string)$item['end']));
+                $start=intval($sh)*60+intval($sm);$end=intval($eh)*60+intval($em);
+                if($start<$end ? ($dayMinutes>=$start && $dayMinutes<$end) : ($dayMinutes>=$start || $dayMinutes<$end)){
+                    $weight=max($weight,$itemWeight);
+                }
+            }elseif(is_int($idx)&&$idx>=0&&$idx<24){
+                if($idx===$hour)$weight=$itemWeight;
+            }
+        }
         // A zero-weight hour is disabled for the whole slot.  Advance to the
         // next hour boundary instead of retrying every minute/second.
         if($weight<=0||$max<=0){
