@@ -38,6 +38,7 @@ final class RobotScheduler
             ->where('next_run_at', '<=', date('Y-m-d H:i:s', $now))
             ->order('next_run_at asc')->order('id asc')->limit(100)->select()->toArray();
         $result = ['due' => count($rows), 'claimed' => 0, 'success' => 0, 'skipped' => 0, 'failed' => 0];
+        $settleQueue = [];
         foreach ($rows as $row) {
             for ($batch=0; $batch<self::BACKFILL_BATCH; $batch++) {
                 $robot = $this->claim((int)$row['id'], $now);
@@ -48,10 +49,17 @@ final class RobotScheduler
                     if ($outcome['status'] === 'success') $result['success']++;
                     elseif ($outcome['status'] === 'skipped') $result['skipped']++;
                     else $result['failed']++;
+                    if ($outcome['status'] === 'success' && !empty($outcome['settle'])) {
+                        $key = (int)$outcome['settle']['lottery_id'] . ':' . (string)$outcome['settle']['issue'];
+                        $settleQueue[$key] = $outcome['settle'];
+                    }
                     $this->finish($robot, $outcome, time());
-                    // In historical backfill, throttle real-world requests to
-                    // avoid the per-account rate limit from quickPlace.
-                    if (!empty($robot['_catchup'])) usleep(1000000);
+                    // In historical backfill, success only sleeps 0.1s to keep
+                    // throughput high; failures (usually rate limit) back off
+                    // for 0.3s before the next retry.
+                    if (!empty($robot['_catchup'])) {
+                        usleep($outcome['status'] === 'success' ? 100000 : 300000);
+                    }
                     if ($outcome['status'] !== 'success' || empty($robot['_catchup'])) break;
                 } catch (\Throwable $error) {
                     $result['failed']++;
@@ -59,6 +67,22 @@ final class RobotScheduler
                     $this->finish($robot, ['status' => 'failed', 'message' => $error->getMessage()], time());
                     break;
                 }
+            }
+        }
+        // Settlement is the most expensive part of historical backfill;
+        // settle each unique issue once per tick instead of once per bet.
+        foreach ($settleQueue as $item) {
+            try {
+                $history = Db::name('lottery_histories')
+                    ->where('lottery_id', (int)$item['lottery_id'])
+                    ->where('code', (string)$item['issue'])
+                    ->where('is_opened', 1)
+                    ->find();
+                if (is_array($history)) {
+                    (new BetSettlement())->settleForHistory($history, ['id' => (int)$item['lottery_id'], 'name' => (string)$item['lottery_name']]);
+                }
+            } catch (\Throwable $e) {
+                Log::warning('robot batch settlement failed issue='.(string)$item['issue'].': '.$e->getMessage());
             }
         }
         return $result;
@@ -312,17 +336,10 @@ final class RobotScheduler
                         'pending_ticket_target_issue'=>null,'pending_ticket_target_draw'=>null,
                         'pending_ticket_created_at'=>null,'pending_ticket_scheduled_at'=>null,
                     ]);
-                    // Settle the historical issue immediately so weekly profit
-                    // control sees the latest win_amount on the next tick.
+                    // Defer settlement to the end of the tick so each issue is
+                    // settled once per batch instead of once per bet.
                     if ($code === 0 && $target !== null) {
-                        try {
-                            $history = Db::name('lottery_histories')->where('lottery_id', (int)$lottery['id'])->where('code', (string)$target['issue'])->where('is_opened', 1)->find();
-                            if (is_array($history)) {
-                                (new BetSettlement())->settleForHistory($history, $lottery);
-                            }
-                        } catch (\Throwable $e) {
-                            Log::warning('robot immediate settlement failed issue='.$target['issue'].': '.$e->getMessage());
-                        }
+                        return ['status' => 'success', 'lottery' => (string)$lottery['name'], 'text' => $text, 'scheduled_at'=>$scheduledAt??$scheduleTime, 'settle'=>['lottery_id'=>(int)$lottery['id'], 'lottery_name'=>(string)$lottery['name'], 'issue'=>(string)$target['issue']]];
                     }
                     return ['status' => 'success', 'lottery' => (string)$lottery['name'], 'text' => $text, 'scheduled_at'=>$scheduledAt??$scheduleTime];
                 }
@@ -843,12 +860,13 @@ final class RobotScheduler
         }
         // A zero-weight hour is disabled for the whole slot.  Advance to the
         // next hour boundary instead of retrying every minute/second.
+        // An active slot always fires (weight is an on/off gate), so the
+        // historical backfill can generate a steady stream inside the window.
         if($weight<=0||$max<=0){
             $next=strtotime(date('Y-m-d H:00:00',$timestamp))+3600;
             return ['allowed'=>false,'reason'=>'zero','retry_at'=>$next];
         }
-        $allowed=random_int(1,10000)<=max(1,(int)round($weight/$max*10000));
-        return ['allowed'=>$allowed,'reason'=>$allowed?'allowed':'miss','retry_at'=>$timestamp+60];
+        return ['allowed'=>true,'reason'=>'allowed','retry_at'=>null];
     }
 
     /** Resolve the per-month override; unspecified months use robot defaults. */

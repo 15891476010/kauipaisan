@@ -71,8 +71,10 @@
 - [x] 修复 `RobotScheduler::claim`：先读取原始 `next_run_at` 再写 `now+3600` 预留，避免 `_scheduled_at` 被篡改成未来真实时间、历史回刷变成实时下注。
 - [x] 修复 `generateTexts` 短码列表 `random_int` 越界：增加 `$minListCount <= 60` 保护，防止 `min_amount` 与 `perCodeMax` 组合导致非法区间。
 - [x] 修复回刷限频：历史 execute 后 `usleep(1s)` 避免触发 `quickPlace` 的“请求间隔太短”；限频时不再把 `next_run_at` 跳到真实未来，保持模拟时间继续回刷。
-- [x] 修复 `RobotScheduler::hourlyWeightState`：把 `hourly_weights` 的 `[{start,end,weight}]` 区间格式解析为当前分钟是否落在区间内，不再错误地按数组下标当作 00:00 时段。
-- [~] 待完成：历史回刷跑完并验证六月会员总盈亏接近庄家输 300 万目标（4 个机器人进度：robot_5w/15w/20w 在 6 月 1 日傍晚，robot_10w 已追到 6 月 22 日凌晨；持续追单中）。
+- [x] 修复 `RobotScheduler::hourlyWeightState`：时间段内权重>0 时直接放行，不再随机命中/跳过；同时保留 0 权重时段的跳过逻辑。
+- [x] 提速：历史回刷 `tick` 内同一 issue 每批次只结算一次，减少重复扫描；成功间隔降到 0.1s，失败只退避 0.3s。
+- [x] 停掉 systemd 常驻 `robot:run` 并只保留一个 `php think robot:run --backfill` 进程。
+- [~] 待完成：历史回刷跑完并验证六月会员总盈亏接近庄家输 300 万目标（当前 robot_7/8 已追到 6 月 2 日，robot_5/6 在投注中；持续追单中）。
 
 ### 本轮：代理端数字叠列修复（已完成）
 

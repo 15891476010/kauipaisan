@@ -2486,3 +2486,13 @@
 - 正确做法：`hourlyWeightState` 必须根据每个规则的 `start`/`end` 判断当前分钟是否落在该时段内，并兼容旧的 24 小时下标数组。
 - 修复：`hourlyWeightState` 改为按 `start`/`end` 分钟区间匹配；清理全部机器人注单并把 `next_run_at` 拉回 2026-06-01 16:00 重新回刷。
 - 防复发检查：配置 `hourly_weights` 为 16:00-21:00 后，回刷日志的 `scheduled_at` 必须出现在 16:00-21:00 之间，而不是 00:00 附近。
+
+### 2026-09-17：用户要求回刷提速并保证时间段内 100% 命中
+
+- 用户诉求：回刷太慢，要求“百分之百命中”但“仍按时间段权重打单”。
+- 正确做法：
+  1. 时间段权重只作为开关——`hourly_weights` 里权重>0 的区间直接放行，权重=0 的区间继续跳过；不保留区间内的概率抽奖。
+  2. 结算改为批量：同一奖期在同一 `tick` 批次里只 `settleForHistory` 一次，避免每注都扫描全量 pending 单导致 O(n²)  slowdown。
+  3. 回刷进程间 sleep：成功 0.1s，失败（通常是限频）0.3s 退避，而不是固定 1s。
+  4. 只保留一个 `php think robot:run --backfill` 进程，并停掉 systemd 常驻的实时调度。
+- 防复发检查：运行 `ps aux | grep robot:run` 必须只有 1 个 `php think robot:run --backfill`；日志 `success` 应该明显多于 `skipped`/`failed`。
