@@ -23,6 +23,8 @@ final class RobotScheduler
     private const BACKFILL_BATCH = 100;
     /** Per-combination unit cap for the current execute() pass. */
     private ?float $perCodeMax = null;
+    /** Pool context cache keyed by robot id for this process. */
+    private array $poolContexts = [];
 
     public function __construct()
     {
@@ -231,8 +233,22 @@ final class RobotScheduler
         $wantWin=$pending ? null : ($target!==null ? (random_int(1,10000) <= (int)round($winWeight*100) ) : null);
         // Weekly profit range override: force win/lose to keep dealer profit in range.
         $profitMin=(float)($rule['profit_min']??0);$profitMax=(float)($rule['profit_max']??0);
+        // Director-level pool target: all robots under the same root director
+        // form one pool, and the weekly range is evaluated on the director's
+        // final share — pool member profit × cascade keep × (1 + site water).
+        $dirMin=(float)($rule['dir_profit_min']??0);$dirMax=(float)($rule['dir_profit_max']??0);
+        $pool=$dirMax>$dirMin ? $this->poolContext($robot) : null;
         $this->perCodeMax=null;
-        if(!$pending && $target!==null && ($profitMin!==0.0 || $profitMax!==0.0) && $profitMax>$profitMin){
+        if(!$pending && $target!==null && $pool!==null){
+            $directorProfit=round(-$this->poolWeeklyMemberProfit($pool['user_ids'],$scheduleTime)*$pool['factor'],2);
+            if($directorProfit<$dirMin){$wantWin=false;}
+            elseif($directorProfit>$dirMax){$wantWin=true;}
+            // Convert the director band back to member profit and cap one
+            // winning 直选 number at 1/10 of it, so narrow (flat) weeks stay
+            // inside the range even when a ticket hits.
+            $memberBand=($dirMax-$dirMin)/max(0.0001,$pool['factor']);
+            $this->perCodeMax=max(1.0,(float)floor($memberBand/9000));
+        } elseif(!$pending && $target!==null && ($profitMin!==0.0 || $profitMax!==0.0) && $profitMax>$profitMin){
             $dealerProfit=$this->weeklyDealerProfit((int)$robot['user_id'],$scheduleTime);
             if($dealerProfit<$profitMin){$wantWin=false;}
             elseif($dealerProfit>$profitMax){$wantWin=true;}
@@ -240,6 +256,16 @@ final class RobotScheduler
             // at most half of the weekly range.  Multi-combo plays are
             // skipped for historical target control, so 900x odds dominate.
             $this->perCodeMax=max(1.0,(float)floor(($profitMax-$profitMin)/1800));
+        }
+        // Pool daily turnover cap from the director node settings
+        // (robot_pool.daily_amount). Each robot's own credit still caps its
+        // personal spend; the pool cap is the shared ceiling.
+        if($pool!==null && $pool['daily_amount']>0){
+            $remaining=min($remaining,max(0.0,round($pool['daily_amount']-$this->poolDailySpent($pool['user_ids'],$scheduleTime),2)));
+            if($remaining<=0.000001){
+                $this->settleDailyEnd($robot,$ids,$dailyAnchor);
+                return ['status'=>'skipped','message'=>'机器人池今日总量已打满，已核对当前奖期并完成可结算注单','skip_until'=>$this->nextBusinessDay($dailyAnchor),'daily_exhausted'=>true];
+            }
         }
         $minAmount=(float)($robot['min_amount']??1);$maxAmount=(float)($robot['max_amount']??$minAmount);
         // Never submit a batch that would cross the daily ceiling.  If the
@@ -250,6 +276,18 @@ final class RobotScheduler
             return ['status'=>'skipped','message'=>'机器人今日剩余分数不足一批，已核对当前奖期并完成可结算注单','skip_until'=>$this->nextBusinessDay($dailyAnchor),'daily_exhausted'=>true];
         }
         $maxAmount=min($maxAmount,$remaining);$minAmount=min($minAmount,$maxAmount);
+        // Fill today's quota evenly across the remaining window instead of
+        // drawing from the flat configured range: each ticket is sized near
+        // remaining/slotsLeft with a ±25% jitter, so the daily volume is
+        // actually consumed by the time the window closes.
+        if(!$pending){
+            $slotsLeft=$this->remainingSlots($robot,$scheduleTime);
+            if($slotsLeft>1){
+                $hint=$remaining/$slotsLeft;
+                $minAmount=min($maxAmount,max($minAmount,round($hint*0.75,2)));
+                $maxAmount=min($maxAmount,max($minAmount,round($hint*1.25,2)));
+            }
+        }
         // When the remaining amount fits in one configured batch, construct
         // an exact-total ticket.  This prevents a final random unit/combination
         // rounding from leaving a small, permanently unusable remainder.
@@ -881,13 +919,13 @@ final class RobotScheduler
             $weeks=$rule['weeks']??null;
             if(is_array($weeks)&&$weeks!==[]){
                 foreach($weeks as $weekRule)if(is_array($weekRule)&&(int)($weekRule['week']??0)===$week){
-                    return ['month'=>$month,'week'=>$week,'win_weight'=>(float)($weekRule['win_weight']??50),'max_amount'=>(float)($weekRule['max_amount']??0),'profit_min'=>(float)($weekRule['profit_min']??0),'profit_max'=>(float)($weekRule['profit_max']??0),'_period'=>'week'];
+                    return ['month'=>$month,'week'=>$week,'win_weight'=>(float)($weekRule['win_weight']??50),'max_amount'=>(float)($weekRule['max_amount']??0),'profit_min'=>(float)($weekRule['profit_min']??0),'profit_max'=>(float)($weekRule['profit_max']??0),'dir_profit_min'=>(float)($weekRule['dir_profit_min']??0),'dir_profit_max'=>(float)($weekRule['dir_profit_max']??0),'_period'=>'week'];
                 }
-                return ['month'=>$month,'week'=>$week,'win_weight'=>(float)($rule['win_weight']??$robot['win_weight']??50),'max_amount'=>(float)($rule['max_amount']??0),'profit_min'=>(float)($rule['profit_min']??0),'profit_max'=>(float)($rule['profit_max']??0),'_period'=>'week'];
+                return ['month'=>$month,'week'=>$week,'win_weight'=>(float)($rule['win_weight']??$robot['win_weight']??50),'max_amount'=>(float)($rule['max_amount']??0),'profit_min'=>(float)($rule['profit_min']??0),'profit_max'=>(float)($rule['profit_max']??0),'dir_profit_min'=>(float)($rule['dir_profit_min']??0),'dir_profit_max'=>(float)($rule['dir_profit_max']??0),'_period'=>'week'];
             }
-            return ['month'=>$month,'win_weight'=>(float)($rule['win_weight']??50),'max_amount'=>(float)($rule['max_amount']??0),'profit_min'=>(float)($rule['profit_min']??0),'profit_max'=>(float)($rule['profit_max']??0),'_period'=>'month'];
+            return ['month'=>$month,'win_weight'=>(float)($rule['win_weight']??50),'max_amount'=>(float)($rule['max_amount']??0),'profit_min'=>(float)($rule['profit_min']??0),'profit_max'=>(float)($rule['profit_max']??0),'dir_profit_min'=>(float)($rule['dir_profit_min']??0),'dir_profit_max'=>(float)($rule['dir_profit_max']??0),'_period'=>'month'];
         }
-        return ['month'=>$month,'week'=>$week,'win_weight'=>(float)($robot['win_weight']??50),'max_amount'=>0,'profit_min'=>0,'profit_max'=>0,'_period'=>'week'];
+        return ['month'=>$month,'week'=>$week,'win_weight'=>(float)($robot['win_weight']??50),'max_amount'=>0,'profit_min'=>0,'profit_max'=>0,'dir_profit_min'=>0,'dir_profit_max'=>0,'_period'=>'week'];
     }
 
     private function monthlySpent(int $userId, int $timestamp): float
@@ -920,6 +958,106 @@ final class RobotScheduler
             ->field('SUM(amount) as amount,SUM(win_amount) as win')
             ->find();
         return round((float)($row['amount']??0)-(float)($row['win']??0),2);
+    }
+
+    /**
+     * Robots under the same root director act as one pool.  The pool shares
+     * a weekly profit target measured on the director's final share — after
+     * the sequential share cascade and the site water rate — and optionally
+     * a combined daily turnover configured on the director node settings
+     * (robot_pool.daily_amount).
+     *
+     * @return array{director_id:int,user_ids:array<int,int>,factor:float,daily_amount:float}|null
+     */
+    private function poolContext(array $robot): ?array
+    {
+        $id=(int)($robot['id']??0);
+        if(array_key_exists($id,$this->poolContexts))return $this->poolContexts[$id];
+        $siteId=(int)($robot['site_id']??0);$orgId=(int)($robot['organization_id']??0);
+        $context=null;
+        if($siteId>0&&$orgId>0){
+            $chain=OrganizationHierarchy::shareChain($siteId,$orgId);
+            $director=$chain!==[]?end($chain):null;
+            if(is_array($director)&&(string)($director['level']??'')==='director'){
+                // keep(node)=received×rate, so the director keeps the product
+                // of every child's pass-through (1-rate) times its own rate.
+                $factor=1.0;$last=count($chain)-1;
+                foreach($chain as $i=>$node){
+                    $rate=$i===$last?100.0:max(0.0,min(100.0,(float)($node['share_rate']??0)));
+                    $factor*=($i===$last?$rate:100.0-$rate)/100;
+                }
+                // The report adds site water on top of the occupation amount;
+                // include it so a configured director target matches the
+                // number operators see in the report.
+                $siteSettings=Db::name('sites')->where('id',$siteId)->value('settings');
+                $siteSettings=is_string($siteSettings)?(json_decode($siteSettings,true)?:[]):(is_array($siteSettings)?$siteSettings:[]);
+                $waterRate=max(0.0,min(1.0,(float)($siteSettings['water_rate']??$siteSettings['dark_water_rate']??0.085)));
+                $factor*=1+$waterRate;
+                $dirPath=(string)($director['path']??'');
+                $userIds=[];
+                if($dirPath!==''){
+                    $userIds=Db::name('robot_accounts')->alias('ra')
+                        ->join('organization_nodes n','n.id=ra.organization_id')
+                        ->where('ra.site_id',$siteId)->where('n.site_id',$siteId)->whereNull('n.deleted_at')
+                        ->whereRaw('n.path LIKE ?',[$dirPath.'%'])
+                        ->column('ra.user_id');
+                    $userIds=array_values(array_filter(array_map('intval',$userIds),static fn(int $u):bool=>$u>0));
+                }
+                $directorSettings=is_string($director['settings']??null)?(json_decode((string)$director['settings'],true)?:[]):[];
+                $context=[
+                    'director_id'=>(int)$director['id'],
+                    'user_ids'=>$userIds,
+                    'factor'=>$factor,
+                    'daily_amount'=>max(0.0,(float)($directorSettings['robot_pool']['daily_amount']??0)),
+                ];
+            }
+        }
+        $this->poolContexts[$id]=$context;
+        return $context;
+    }
+
+    /** Pool member profit (win - stake) for the configured month-day week. */
+    private function poolWeeklyMemberProfit(array $userIds,int $timestamp): float
+    {
+        if($userIds===[])return 0.0;
+        $monthStart=strtotime(date('Y-m-01 00:00:00',$timestamp));
+        $week=(int)floor(((int)date('j',$timestamp)-1)/7);
+        $from=date('Y-m-d H:i:s',$monthStart+$week*7*86400);
+        $to=date('Y-m-d H:i:s',min(strtotime(date('Y-m-t 23:59:59',$timestamp)),$monthStart+($week+1)*7*86400-1));
+        $row=Db::name('bet_records')
+            ->whereIn('user_id',$userIds)
+            ->whereIn('status',['won','unwon'])
+            ->whereBetween('placed_at',[$from,$to])
+            ->field('SUM(amount) as amount,SUM(win_amount) as win')
+            ->find();
+        return round((float)($row['win']??0)-(float)($row['amount']??0),2);
+    }
+
+    /** Combined pool turnover for the simulated day. */
+    private function poolDailySpent(array $userIds,int $timestamp): float
+    {
+        if($userIds===[])return 0.0;
+        $day=date('Y-m-d',$timestamp);
+        return (float)Db::name('bet_records')->whereIn('user_id',$userIds)
+            ->whereIn('status',['pending','won','unwon'])
+            ->whereBetween('placed_at',[$day.' 00:00:00',$day.' 23:59:59'])->sum('amount');
+    }
+
+    /** Estimated betting slots left today, so the daily quota fills evenly. */
+    private function remainingSlots(array $robot,int $timestamp): int
+    {
+        $rules=json_decode((string)($robot['hourly_weights']??'[]'),true);
+        $dayMinutes=(int)date('H',$timestamp)*60+(int)date('i',$timestamp);
+        $end=21*60;
+        if(is_array($rules))foreach($rules as $item){
+            if(!is_array($item)||!isset($item['end']))continue;
+            $parts=explode(':',(string)$item['end']);
+            $end=max($end,(int)($parts[0]??0)*60+(int)($parts[1]??0));
+        }
+        $secondsLeft=max(0,$end-$dayMinutes)*60;
+        $min=(float)($robot['interval_min']??3);$max=(float)($robot['interval_max']??$min);
+        $avgSec=max(60.0,(($min+$max)/2)*60);
+        return max(1,(int)floor($secondsLeft/$avgSec));
     }
 
     private function inHistoricalClosedWindow(int $lotteryId, int $timestamp): bool

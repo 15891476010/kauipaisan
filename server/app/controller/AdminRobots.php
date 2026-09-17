@@ -87,12 +87,14 @@ final class AdminRobots
                     if(!is_array($week))continue;
                     $number=(int)($week['week']??0);$weekWeight=(float)($week['win_weight']??$weight);$weekCap=(float)($week['max_amount']??$cap);
                     $profitMin=(float)($week['profit_min']??0);$profitMax=(float)($week['profit_max']??0);
+                    $dirMin=(float)($week['dir_profit_min']??0);$dirMax=(float)($week['dir_profit_max']??0);
                     if($number<1||$number>5)throw new \InvalidArgumentException($month.'周次必须在1-5之间');
                     if($weekWeight<0||$weekWeight>100)throw new \InvalidArgumentException($month.'第'.$number.'周赢单权重必须在 0-100 之间');
                     if($weekCap<0||$weekCap>1000000000)throw new \InvalidArgumentException($month.'第'.$number.'周均衡值无效');
                     if($profitMax<$profitMin)throw new \InvalidArgumentException($month.'第'.$number.'周盈亏区间最大值不能小于最小值');
                     if(abs($profitMin)>1000000000||abs($profitMax)>1000000000)throw new \InvalidArgumentException($month.'第'.$number.'周盈亏区间绝对值过大');
-                    $normalizedWeeks[]=['week'=>$number,'win_weight'=>number_format($weekWeight,2,'.',''),'max_amount'=>number_format($weekCap,2,'.',''),'profit_min'=>number_format($profitMin,2,'.',''),'profit_max'=>number_format($profitMax,2,'.','')];
+                    if($dirMax<$dirMin)throw new \InvalidArgumentException($month.'第'.$number.'周总监盈亏区间最大值不能小于最小值');
+                    $normalizedWeeks[]=['week'=>$number,'win_weight'=>number_format($weekWeight,2,'.',''),'max_amount'=>number_format($weekCap,2,'.',''),'profit_min'=>number_format($profitMin,2,'.',''),'profit_max'=>number_format($profitMax,2,'.',''),'dir_profit_min'=>number_format($dirMin,2,'.',''),'dir_profit_max'=>number_format($dirMax,2,'.','')];
                 }
                 usort($normalizedWeeks,static fn(array $a,array $b):int=>(int)$a['week']<=>(int)$b['week']);
                 return ['month'=>$month,'weeks'=>$normalizedWeeks,'win_weight'=>number_format($weight,2,'.',''),'max_amount'=>number_format($cap,2,'.','')];
