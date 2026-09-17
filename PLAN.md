@@ -1439,3 +1439,15 @@
 - [x] 线上写入新 monthly_rules：6月总监亏约70万/周(≈-300万)、7月±5万持平、8月+12万/周(≈+50万)、9月前3周+20万/周后2周持平(到9-17约+50万)；总监4 settings.robot_pool.daily_amount=200000。
 - [ ] 待办：代码同步到线上后，UPDATE robot_accounts SET status='running',next_run_at='2026-06-01 16:00:00' WHERE id IN (43,44,45,46)，再跑 php think robot:run --backfill。
 - [ ] 验证：6月总监报表盈亏≈-300万、7月≈0、8月≈+50万、9月至今≈+50万；池日量≈20万。
+
+## 2026-09-17：报表多月范围超时优化（AgentReport SQL 聚合）
+- [x] `AgentReport::rows()` 重写：明细按 (会员,期号,结算状态) SQL 分组；已结算占成直接聚合 organization_credit_ledger 的 settlement_share（按 会员+期号+组织+方向），不再逐行跑 SequentialProfitShare；移除 lottery_histories join（期号跨彩种重复会放大行数）；拦截按记录聚合；笔数用 LENGTH 统计兼容空格/逗号分隔。
+- [x] 线上等价 SQL 验证：32,362 明细 → 928 组行 0.29s；账本聚合 5,749 组 0.59s；金额/中奖与 bet_records 原始汇总完全一致。
+- [x] php -l 通过。aggregate/memberRows/monthly 消费接口不变（rows 返回同名字段）。
+- [ ] 待办：代码同步到线上（构建发布）；发布后实测 /agent/reports 6-1~至今 范围响应。
+- [ ] 待办：若下单记录页仍慢，优化 AgentBusiness::detailResponse 的全量 SUM/COUNT（当前量级下分页本身 OK）。
+
+## 2026-09-17：线上回刷结果核对
+- [x] 回刷完成 31,697 单（6-1~9-17 全覆盖），宝塔 kuaipaisanrobot 常驻调度已恢复。
+- [x] 总监4 账本净额：6月 -355万（报表口径×1.085≈-385万，目标-300万，超28%）；7月 -27.5万（目标持平，偏亏）；8月 +44万（≈+48万，目标+50万 ✅）；9月至今 +38万（≈+42万，目标+50万，接近）。
+- 偏差原因：区间内 win_weight 随机打导致随机游走贴边溢出；每周区间独立、月度累计漂移。要贴目标可收紧：6月 dir -72~-62万/周、7月 ±2万/周。

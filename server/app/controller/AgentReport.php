@@ -77,65 +77,80 @@ final class AgentReport
         $siteSettings=is_string($siteSettings)?json_decode($siteSettings,true):(is_array($siteSettings)?$siteSettings:[]);
         $siteCap=max(0,min(100,(float)($siteSettings['max_profit_share_rate']??100)));
         $chainCache=[];
+        // Aggregate in SQL instead of materialising every bet detail: the
+        // report only consumes (member × issue × settled) totals, so months
+        // of history collapse to a few hundred grouped rows instead of tens
+        // of thousands of detail rows processed one by one in PHP.
         $query=Db::name('bet_details')->alias('d')
             ->join('bet_records r','r.id=d.bet_record_id')
             ->join('site_users u','u.id=d.user_id')
             ->leftJoin('user_stop_drops s','s.bet_detail_id=d.id')
-            // Ordinary bets do not have a stop-drop row.  Resolve their
-            // lottery from the issue history instead of filtering on the
-            // nullable stop-drop lottery column.
-            ->leftJoin('lottery_histories lh','lh.code=d.issue_no')
-            ->leftJoin('lotteries l','l.id=lh.lottery_id')
             ->where('d.site_id',$siteId)->where('u.site_id',$siteId)->whereNull('u.deleted_at')->where('d.placed_at','>=',$from.' 00:00:00')->where('d.placed_at','<=',$to.' 23:59:59')
             ->where('r.status','<>','refunded');
         OrganizationHierarchy::applyUserScope($query,$session,'d.user_id');
         if($lotteries!==[]) {
             $marks=implode(',',array_fill(0,count($lotteries),'?'));
-            $query->whereRaw('(s.lottery IN ('.$marks.') OR l.name IN ('.$marks.') OR d.lottery_name IN ('.$marks.'))',array_merge($lotteries,$lotteries,$lotteries));
+            // Ordinary bets do not have a stop-drop row; resolve their lottery
+            // through the issue history via EXISTS so 福彩3D/排列三 sharing the
+            // same issue code cannot duplicate a grouped row.
+            $query->whereRaw('(s.lottery IN ('.$marks.') OR d.lottery_name IN ('.$marks.') OR EXISTS(SELECT 1 FROM lottery_histories lh JOIN lotteries l ON l.id=lh.lottery_id WHERE lh.code=d.issue_no AND l.name IN ('.$marks.')))',array_merge($lotteries,$lotteries,$lotteries));
         }
-        $rows=$query->field('d.id,d.bet_record_id,r.status AS record_status,r.amount AS record_amount,d.user_id,u.username,u.organization_id,u.interception_rate AS share_rate,d.issue_no,d.number_text,d.amount,d.odds,d.win_amount,d.rebate,d.placed_at,s.lottery,s.drop_odds')->select()->toArray();
-        // The lottery-history join exists only for name filtering. 福彩3D and
-        // 排列三 share the same issue codes, so one detail joins two history
-        // rows and would otherwise be counted twice.
-        $seenDetails=[];
-        $rows=array_values(array_filter($rows,static function(array $row)use(&$seenDetails):bool{
-            $detailId=(int)$row['id'];
-            if(isset($seenDetails[$detailId])) return false;
-            $seenDetails[$detailId]=true;
-            return true;
-        }));
+        $rows=$query->field(
+            'd.user_id,u.username,u.organization_id,u.interception_rate AS share_rate,d.issue_no,'.
+            "CASE WHEN r.status IN ('won','unwon') THEN 1 ELSE 0 END AS settled,".
+            'COUNT(d.id) AS detail_count,'.
+            "SUM(LENGTH(d.number_text)-LENGTH(REPLACE(d.number_text,' ',''))+LENGTH(d.number_text)-LENGTH(REPLACE(REPLACE(d.number_text,',',''),'，',''))+1) AS number_count,".
+            'SUM(d.amount) AS amount,SUM(d.win_amount) AS win_amount,SUM(d.rebate) AS rebate,'.
+            'MAX(d.placed_at) AS placed_at'
+        )->group('d.user_id,d.issue_no,settled')->select()->toArray();
         // Imported batches keep the reference report snapshot until it is
         // materialized into local bet tables. Include those rows so a newly
         // created总代理 immediately sees the selected date range and members.
         $rows=array_merge($rows,$this->importedRows($session,$from,$to,$lotteries));
         if($rows===[]) return [];
-        $detailIds=array_map(static fn(array $row): int=>(int)$row['id'],$rows);
-        $interceptions=Db::name('agent_interceptions')->whereIn('bet_detail_id',$detailIds)->whereNull('released_at')->field('bet_detail_id,SUM(intercepted_amount) AS intercepted_amount,SUM(bet_amount) AS intercepted_base')->group('bet_detail_id')->select()->toArray();
-        $map=[]; foreach($interceptions as $row) $map[(int)$row['bet_detail_id']]=$row;
+        // Intercepted amounts aggregate per (member, issue) the same way the
+        // details do; the per-detail whereIn list no longer exists.
+        $interceptMap=[];
+        foreach(Db::name('agent_interceptions')->alias('i')
+            ->join('bet_details d','d.id=i.bet_detail_id')
+            ->join('bet_records r','r.id=d.bet_record_id')
+            ->whereNull('i.released_at')->where('r.site_id',$siteId)->where('r.status','<>','refunded')
+            ->where('d.placed_at','>=',$from.' 00:00:00')->where('d.placed_at','<=',$to.' 23:59:59')
+            ->field('r.user_id,r.issue_no,SUM(i.intercepted_amount) AS intercepted')
+            ->group('r.user_id,r.issue_no')->select()->toArray() as $irow){
+            $interceptMap[(int)$irow['user_id'].'|'.(string)$irow['issue_no']]=(float)$irow['intercepted'];
+        }
         // Settled records keep their per-node allocation snapshot in the
         // credit ledger (share_rate + amount at settle time). A share-rate
         // change today must not rewrite what settled bets already booked;
-        // only unsettled rows project with the live chain.
+        // only unsettled rows project with the live chain.  Booked amounts
+        // aggregate per (member, issue, node) directly in SQL.
         $nodeLevels=[];
         foreach(Db::name('organization_nodes')->where('site_id',$siteId)->field('id,level')->select()->toArray() as $nodeRow) $nodeLevels[(int)$nodeRow['id']]=(string)$nodeRow['level'];
-        $recordIds=array_values(array_unique(array_filter(array_map(static fn(array $row):int=>(int)($row['bet_record_id']??0),$rows))));
         $settledLedger=[];
-        if($recordIds!==[]){
-            foreach(Db::name('organization_credit_ledger')->where('site_id',$siteId)->where('source_type','settlement_share')->whereIn('related_bet_record_id',$recordIds)->field('related_bet_record_id,organization_id,direction,amount,metadata')->select()->toArray() as $ledgerRow){
-                $meta=is_string($ledgerRow['metadata']??null)?(json_decode((string)$ledgerRow['metadata'],true)?:[]):[];
-                $settledLedger[(int)$ledgerRow['related_bet_record_id']][]=[
-                    'organization_id'=>(int)$ledgerRow['organization_id'],
-                    'level'=>(string)($meta['organization_level']??''),
-                    'share_rate'=>(float)($meta['share_rate']??0),
-                    'booked'=>((string)$ledgerRow['direction']==='in'?1.0:-1.0)*(float)$ledgerRow['amount'],
-                ];
-            }
+        $ledgerQuery=Db::name('organization_credit_ledger')->alias('l')
+            ->join('bet_records r','r.id=l.related_bet_record_id')
+            ->where('l.site_id',$siteId)->where('l.source_type','settlement_share')->where('r.status','<>','refunded')
+            ->where('r.placed_at','>=',$from.' 00:00:00')->where('r.placed_at','<=',$to.' 23:59:59');
+        OrganizationHierarchy::applyUserScope($ledgerQuery,$session,'r.user_id');
+        foreach($ledgerQuery->field(
+            'r.user_id,r.issue_no,l.organization_id,l.direction,SUM(l.amount) AS total,'.
+            "JSON_UNQUOTE(JSON_EXTRACT(l.metadata,'$.organization_level')) AS lvl,".
+            "JSON_UNQUOTE(JSON_EXTRACT(l.metadata,'$.share_rate')) AS rate"
+        )->group('r.user_id,r.issue_no,l.organization_id,l.direction')->select()->toArray() as $ledgerRow){
+            $key=(int)$ledgerRow['user_id'].'|'.(string)$ledgerRow['issue_no'];
+            $settledLedger[$key][]=[
+                'organization_id'=>(int)$ledgerRow['organization_id'],
+                'level'=>(string)($ledgerRow['lvl']??''),
+                'share_rate'=>(float)($ledgerRow['rate']??0),
+                'booked'=>((string)$ledgerRow['direction']==='in'?1.0:-1.0)*(float)$ledgerRow['total'],
+            ];
         }
-        $appliedRecords=[];
         $currentOrganizationId=(int)($session['organization_id']??0);
         foreach($rows as &$row) {
             $amount=(float)$row['amount']; $win=(float)$row['win_amount']; $rebate=(float)$row['rebate'];
-            $intercepted=(float)($map[(int)$row['id']]['intercepted_amount']??0);
+            $ledgerKey=(int)($row['user_id']??0).'|'.(string)$row['issue_no'];
+            $intercepted=(float)($interceptMap[$ledgerKey]??0);
             // Occupation is based on the member's own P/L and configured
             // occupation percentage. It is independent of how much capacity
             // was actually intercepted. The single configured water amount
@@ -173,26 +188,23 @@ final class AgentReport
                 if(!isset($levelBases[$levelKey])) $levelBases[$levelKey]=['amount'=>0.0,'share_base'=>0.0];
                 $levelBases[$levelKey]['amount']+=$amount;
             }
-            $recordId=(int)($row['bet_record_id']??0);
             $recordLedger=null;
-            if(in_array((string)($row['record_status']??''),['won','unwon'],true)&&isset($settledLedger[$recordId])) $recordLedger=$settledLedger[$recordId];
+            if((int)($row['settled']??0)===1&&isset($settledLedger[$ledgerKey])) $recordLedger=$settledLedger[$ledgerKey];
             $allocationAmount=0.0;$currentShareRate=0.0;
             if($recordLedger!==null){
-                // Snapshot: booked amounts count once per record no matter how
-                // many details the record spans; levels that existed at settle
-                // time but left the live chain still surface their stake.
-                if(!isset($appliedRecords[$recordId])){
-                    $appliedRecords[$recordId]=true;
-                    foreach($recordLedger as $entry){
-                        $levelKey=$entry['level']!==''?$entry['level']:(string)($nodeLevels[$entry['organization_id']]??'');
-                        $memberView=-$entry['booked'];
-                        if($levelKey!==''){
-                            if(!isset($levelBases[$levelKey])) $levelBases[$levelKey]=['amount'=>0.0,'share_base'=>0.0];
-                            $levelBases[$levelKey]['share_base']+=$memberView;
-                            if(!isset($chainLevels[$levelKey])) $levelBases[$levelKey]['amount']+=(float)($row['record_amount']??$amount);
-                        }
-                        if($entry['organization_id']===$currentOrganizationId){$allocationAmount+=$memberView;$currentShareRate=$entry['share_rate'];}
+                // Snapshot: booked amounts count once per issue group no
+                // matter how many details the group spans; levels that
+                // existed at settle time but left the live chain still
+                // surface their stake.
+                foreach($recordLedger as $entry){
+                    $levelKey=$entry['level']!==''?$entry['level']:(string)($nodeLevels[$entry['organization_id']]??'');
+                    $memberView=-$entry['booked'];
+                    if($levelKey!==''){
+                        if(!isset($levelBases[$levelKey])) $levelBases[$levelKey]=['amount'=>0.0,'share_base'=>0.0];
+                        $levelBases[$levelKey]['share_base']+=$memberView;
+                        if(!isset($chainLevels[$levelKey])) $levelBases[$levelKey]['amount']+=$amount;
                     }
+                    if($entry['organization_id']===$currentOrganizationId){$allocationAmount+=$memberView;$currentShareRate=$entry['share_rate'];}
                 }
             } else {
                 $allocations=SequentialProfitShare::allocate($memberProfit,$chain,$siteCap);
@@ -221,9 +233,9 @@ final class AgentReport
             // occupation P/L is the signed occupation amount plus that water.
             $shareProfit=$direction*($occupationAmount+$water);
             $agentProfit=$shareProfit;
-            $numbers=preg_split('/[\s,，]+/u',trim((string)$row['number_text']),-1,PREG_SPLIT_NO_EMPTY)?:[];
+            $betCount=(int)($row['import_bet_count']??$row['number_count']??0);
             $houseProfit=-$memberProfit;
-            $row['metrics']=['bet_count'=>max(1,(int)($row['import_bet_count']??count($numbers))),'amount'=>$amount,'win_amount'=>$win,'water'=>$rebate,'member_profit'=>$memberProfit,'share_amount'=>$occupationAmount,'share_profit'=>$shareProfit,'offline_water'=>0.0,'agent_water'=>$water,'agent_profit'=>$agentProfit,'platform_amount'=>max(0,$amount-$intercepted),'platform_profit'=>$houseProfit-$shareProfit,
+            $row['metrics']=['bet_count'=>max(1,$betCount),'amount'=>$amount,'win_amount'=>$win,'water'=>$rebate,'member_profit'=>$memberProfit,'share_amount'=>$occupationAmount,'share_profit'=>$shareProfit,'offline_water'=>0.0,'agent_water'=>$water,'agent_profit'=>$agentProfit,'platform_amount'=>max(0,$amount-$intercepted),'platform_profit'=>$houseProfit-$shareProfit,
                 // Hidden aggregation inputs: occupation is calculated on the
                 // member's net P/L after grouping, never by summing absolute
                 // P/L for individual bet lines.
