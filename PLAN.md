@@ -1492,3 +1492,18 @@
 - [x] 浏览器实测（dev 5997端口）：uitest01 子账号（5菜单权限）登录后只见 总货概览/分类账/报表/开奖号码/设置；直达 #/logs|rules|subaccounts|subordinates|intercept 全部跳回 overview；报表根层显示总监1的直属下级 代理2/大股东2/大股东1（非会员），点击 代理2 → organization_id=44 → 面包屑出现"返回上级"，末级代理显示会员行（ch135/ch136）；新建子账号表单9个菜单级开关含日志、规则说明。
 - [x] 性能实测：开发库 6月范围 0.51s、6-1~9-18 全范围 0.6s；分支行金额合计与总计完全一致。
 - [ ] 待办：代码同步线上（构建发布流程）；线上浏览器复验。
+
+## 2026-09-18：总监4 扩容 54 机器人 + 池日量1500万 + 本地识别回刷（进行中）
+- [x] 需求确认：保留老链（大股东4系4机器人+3.1万历史单），新增两棵分支；占成 0/5/15/25/55（总监55%）；14~20 并行回刷（50线程会超出三方AK容量）。
+- [x] 组织树：新节点 大股东1(id 104)/大股东2(112)；其下 小股东1-3、总代理1-4、代理1-6 共15节点；占成边全部按级联（31.25/15.7895/5/0）写入；老链 98→99→100 占成同步改为 31.25/15.7895（历史账本快照不受影响）。
+- [x] 54 会员（uid 112-165）按 6 条代理线分布，前缀 mc/zz/qz/chq；credit 8000~90万 三层（大号~8/中号~18/小号~28）；robot_accounts 47-100 全部 running，历史起点 2026-06-01 16:00，interval 3-25min 分层，单票上限 500~60000。
+- [x] 总监4 settings：robot_pool.daily_amount=1500万，credit_limit 2500万。
+- [x] monthly_rules：6月周带 dir [-160,-150]/[-160,-140]/[-150,-140]/[-150,-140]/[-168,-158]（win_weight 70）；7月 [-50,-45]×5（60）；8月 [+40,+45]×5（35）；9月新增 `daily_targets` 按日目标 ±100~500万有输有赢月度净赢（50）。
+- [x] RobotScheduler：monthlyConfig 透传 daily_targets；execute 按日目标查 poolDailyMemberProfit 控盘（新增方法）；AdminRobots::normalize 保留校验 daily_targets。
+- [x] 修复大额出单失败：盈亏带内 perCodeMax=带宽/9000 限制单码金额，大额 min_amount 无法凑够号码数（>60 上限）→"未找到可匹配赔率"。改为强制输票 cap×8（输票不伤带），号码数上限 60→220；min_amount 降到 100~300 消除日尾死区。
+- [x] 修复槽位浪费：限频失败原会推进 next_run_at 作废槽位（成功率~10%时日量只剩~7%）。finish() 增加 slotRetries：catchup 模式下限频类失败重试同一槽位（≤40次）。
+- [x] **本地识别替代三方**：瓶颈实测是三方识别服务限频（8 AK 全冻结，成功率~10%）。quickPlace 新增 robot_local_parse 分支——仅 robot_scheduler 受保护会话可用，走本地 QuickEntryParser（用户自建解析器，13种格式实测11种通过，未识别类失败由 shouldRegenerateBet 兜底换格式）。吞吐 0.5-4单/s → ~5-11单/s。
+- [x] UserBusiness 双文件确认：调度器实际调用 app\controller\UserBusiness（平铺），User/ 下为旧版；改动落在平铺文件。其 robotHistoricalBackfill 已按模拟日算 used（dailyUsedForBackfill），used_balance 无污染。
+- [x] 20 worker + 常驻 daemon 运行中；API 响应 <1ms；服务器 16 核负载 ~20 可接受。
+- [x] 中期验证：6月w1 dir -158.6万 ∈ [-160,-150] 带内；小号日量=全额度（mc005 0.8万/天打满）；尾部薄日为快跑小号先行，大部队随后填满。
+- [ ] 待办：跑完 6-9 月全程（ETA 数小时）；核对各月报表（6月≈-300万/7月≈-100万/8月持平/9月日波动+月净赢）；旧时代薄日（6月上旬）如需补量做 top-up 重放；收尾 PLAN/PROBLEM_LOG。

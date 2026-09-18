@@ -23,6 +23,8 @@ final class RobotScheduler
     private const BACKFILL_BATCH = 100;
     /** Per-combination unit cap for the current execute() pass. */
     private ?float $perCodeMax = null;
+    /** Per-worker retry counts so a throttled slot can be retried, keyed by robot id. */
+    private array $slotRetries = [];
     /** Pool context cache keyed by robot id for this process. */
     private array $poolContexts = [];
 
@@ -237,17 +239,32 @@ final class RobotScheduler
         // form one pool, and the weekly range is evaluated on the director's
         // final share — pool member profit × cascade keep × (1 + site water).
         $dirMin=(float)($rule['dir_profit_min']??0);$dirMax=(float)($rule['dir_profit_max']??0);
+        // Per-date pool targets override the weekly band: September replays
+        // volatile win/lose days instead of a smooth weekly range.
+        $dailyTargets=is_array($rule['daily_targets']??null)?$rule['daily_targets']:[];
+        $dailyBand=$dailyTargets[date('Y-m-d',$scheduleTime)]??null;
+        if(is_array($dailyBand)){
+            $dirMin=(float)($dailyBand['dir_profit_min']??$dailyBand['min']??$dirMin);
+            $dirMax=(float)($dailyBand['dir_profit_max']??$dailyBand['max']??$dirMax);
+        }
         $pool=$dirMax>$dirMin ? $this->poolContext($robot) : null;
         $this->perCodeMax=null;
         if(!$pending && $target!==null && $pool!==null){
-            $directorProfit=round(-$this->poolWeeklyMemberProfit($pool['user_ids'],$scheduleTime)*$pool['factor'],2);
+            $memberProfit=is_array($dailyBand)
+                ? $this->poolDailyMemberProfit($pool['user_ids'],$scheduleTime)
+                : $this->poolWeeklyMemberProfit($pool['user_ids'],$scheduleTime);
+            $directorProfit=round(-$memberProfit*$pool['factor'],2);
             if($directorProfit<$dirMin){$wantWin=false;}
             elseif($directorProfit>$dirMax){$wantWin=true;}
             // Convert the director band back to member profit and cap one
             // winning 直选 number at 1/10 of it, so narrow (flat) weeks stay
-            // inside the range even when a ticket hits.
+            // inside the range even when a ticket hits.  A forced-loss
+            // ticket cannot hurt the band, so it may stake 8x the cap —
+            // without this, big members can never build a ticket large
+            // enough to reach the pool's daily volume target.
             $memberBand=($dirMax-$dirMin)/max(0.0001,$pool['factor']);
-            $this->perCodeMax=max(1.0,(float)floor($memberBand/9000));
+            $capMult=$wantWin===false?8:1;
+            $this->perCodeMax=max(1.0,(float)floor($memberBand/9000*$capMult));
         } elseif(!$pending && $target!==null && ($profitMin!==0.0 || $profitMax!==0.0) && $profitMax>$profitMin){
             $dealerProfit=$this->weeklyDealerProfit((int)$robot['user_id'],$scheduleTime);
             if($dealerProfit<$profitMin){$wantWin=false;}
@@ -355,7 +372,10 @@ final class RobotScheduler
             // append freshly generated alternatives to this same queue.
             for ($textIndex = 0; $textIndex < count($texts); $textIndex++) {
                 $text = $texts[$textIndex];
-                $post = ['confirmed' => true, 'text' => $text, 'lottery' => (string)$lottery['name'], 'board_code' => 'A'];
+                // Parse the generated ticket locally: the text is produced by
+                // this scheduler, so the rate-limited remote recognition
+                // service is unnecessary and is the throughput bottleneck.
+                $post = ['confirmed' => true, 'text' => $text, 'lottery' => (string)$lottery['name'], 'board_code' => 'A', 'robot_local_parse' => '1'];
                 // Only historical tickets carry a target issue.  A real-time
                 // ticket that was deferred by the weight draw must use the
                 // current live issue when it is finally placed; sending its
@@ -504,8 +524,8 @@ final class RobotScheduler
                 // Spread the straight stake across many numbers so each
                 // winning number is judged independently and a single number
                 // cannot exceed the weekly profit range.
-                if ($maxListCount >= $minListCount && $minListCount <= 60) {
-                    $listCount = random_int($minListCount, min(60, $maxListCount));
+                if ($maxListCount >= $minListCount && $minListCount <= 220) {
+                    $listCount = random_int($minListCount, min(220, $maxListCount));
                     $numbers = [];
                     for ($i = 0; $i < $listCount; $i++) {
                         $n = $this->digits(3);
@@ -564,8 +584,8 @@ final class RobotScheduler
         // deliberately generated in addition to catalog rows so a robot can
         // produce散号、直组、组三 and组六 tickets instead of repeatedly picking
         // the first short catalog format.
-        if ($maxListCount >= $minListCount && $minListCount <= 60) {
-            $listCount = random_int($minListCount, min(60, $maxListCount));
+        if ($maxListCount >= $minListCount && $minListCount <= 220) {
+            $listCount = random_int($minListCount, min(220, $maxListCount));
             $numberList=[];
             for($i=0;$i<$listCount;$i++) {
                 $number=$this->digits(3);
@@ -916,16 +936,16 @@ final class RobotScheduler
         $week=min(5,(int)floor(((int)date('j',$timestamp)-1)/7)+1);
         if(is_array($rules))foreach($rules as $rule){
             if(!is_array($rule)||($rule['month']??'')!==$month)continue;
-            $weeks=$rule['weeks']??null;
+            $weeks=$rule['weeks']??null;$dailyTargets=is_array($rule['daily_targets']??null)?$rule['daily_targets']:[];
             if(is_array($weeks)&&$weeks!==[]){
                 foreach($weeks as $weekRule)if(is_array($weekRule)&&(int)($weekRule['week']??0)===$week){
-                    return ['month'=>$month,'week'=>$week,'win_weight'=>(float)($weekRule['win_weight']??50),'max_amount'=>(float)($weekRule['max_amount']??0),'profit_min'=>(float)($weekRule['profit_min']??0),'profit_max'=>(float)($weekRule['profit_max']??0),'dir_profit_min'=>(float)($weekRule['dir_profit_min']??0),'dir_profit_max'=>(float)($weekRule['dir_profit_max']??0),'_period'=>'week'];
+                    return ['month'=>$month,'week'=>$week,'win_weight'=>(float)($weekRule['win_weight']??50),'max_amount'=>(float)($weekRule['max_amount']??0),'profit_min'=>(float)($weekRule['profit_min']??0),'profit_max'=>(float)($weekRule['profit_max']??0),'dir_profit_min'=>(float)($weekRule['dir_profit_min']??0),'dir_profit_max'=>(float)($weekRule['dir_profit_max']??0),'daily_targets'=>$dailyTargets,'_period'=>'week'];
                 }
-                return ['month'=>$month,'week'=>$week,'win_weight'=>(float)($rule['win_weight']??$robot['win_weight']??50),'max_amount'=>(float)($rule['max_amount']??0),'profit_min'=>(float)($rule['profit_min']??0),'profit_max'=>(float)($rule['profit_max']??0),'dir_profit_min'=>(float)($rule['dir_profit_min']??0),'dir_profit_max'=>(float)($rule['dir_profit_max']??0),'_period'=>'week'];
+                return ['month'=>$month,'week'=>$week,'win_weight'=>(float)($rule['win_weight']??$robot['win_weight']??50),'max_amount'=>(float)($rule['max_amount']??0),'profit_min'=>(float)($rule['profit_min']??0),'profit_max'=>(float)($rule['profit_max']??0),'dir_profit_min'=>(float)($rule['dir_profit_min']??0),'dir_profit_max'=>(float)($rule['dir_profit_max']??0),'daily_targets'=>$dailyTargets,'_period'=>'week'];
             }
-            return ['month'=>$month,'win_weight'=>(float)($rule['win_weight']??50),'max_amount'=>(float)($rule['max_amount']??0),'profit_min'=>(float)($rule['profit_min']??0),'profit_max'=>(float)($rule['profit_max']??0),'dir_profit_min'=>(float)($rule['dir_profit_min']??0),'dir_profit_max'=>(float)($rule['dir_profit_max']??0),'_period'=>'month'];
+            return ['month'=>$month,'win_weight'=>(float)($rule['win_weight']??50),'max_amount'=>(float)($rule['max_amount']??0),'profit_min'=>(float)($rule['profit_min']??0),'profit_max'=>(float)($rule['profit_max']??0),'dir_profit_min'=>(float)($rule['dir_profit_min']??0),'dir_profit_max'=>(float)($rule['dir_profit_max']??0),'daily_targets'=>$dailyTargets,'_period'=>'month'];
         }
-        return ['month'=>$month,'week'=>$week,'win_weight'=>(float)($robot['win_weight']??50),'max_amount'=>0,'profit_min'=>0,'profit_max'=>0,'dir_profit_min'=>0,'dir_profit_max'=>0,'_period'=>'week'];
+        return ['month'=>$month,'week'=>$week,'win_weight'=>(float)($robot['win_weight']??50),'max_amount'=>0,'profit_min'=>0,'profit_max'=>0,'dir_profit_min'=>0,'dir_profit_max'=>0,'daily_targets'=>[],'_period'=>'week'];
     }
 
     private function monthlySpent(int $userId, int $timestamp): float
@@ -1033,6 +1053,20 @@ final class RobotScheduler
         return round((float)($row['win']??0)-(float)($row['amount']??0),2);
     }
 
+    /** Pool member profit (win - stake) for one simulated day. */
+    private function poolDailyMemberProfit(array $userIds,int $timestamp): float
+    {
+        if($userIds===[])return 0.0;
+        $day=date('Y-m-d',$timestamp);
+        $row=Db::name('bet_records')
+            ->whereIn('user_id',$userIds)
+            ->whereIn('status',['won','unwon'])
+            ->whereBetween('placed_at',[$day.' 00:00:00',$day.' 23:59:59'])
+            ->field('SUM(amount) as amount,SUM(win_amount) as win')
+            ->find();
+        return round((float)($row['win']??0)-(float)($row['amount']??0),2);
+    }
+
     /** Combined pool turnover for the simulated day. */
     private function poolDailySpent(array $userIds,int $timestamp): float
     {
@@ -1092,6 +1126,27 @@ final class RobotScheduler
             'execution_at'=>date('Y-m-d H:i:s',$now),
             'scheduled_at'=>date('Y-m-d H:i:s',$scheduledAt),
         ];
+        // Transient upstream rejections (rate limit / busy) must not consume
+        // the scheduled slot during historical backfill: retry the same slot
+        // a bounded number of times instead of advancing past it, or most of
+        // the daily quota is silently lost to throttling.
+        $retryable = $status === 'failed' && !empty($robot['_catchup'])
+            && (str_contains($message,'间隔太短') || str_contains($message,'频率受限') || str_contains($message,'稍后再试') || str_contains($message,'稍后重试'));
+        if ($retryable) {
+            $key=(int)$robot['id'];
+            $tries=$this->slotRetries[$key]??['slot'=>0,'n'=>0];
+            if($tries['slot']!==$scheduledAt)$tries=['slot'=>$scheduledAt,'n'=>0];
+            $tries['n']++;$this->slotRetries[$key]=$tries;
+            if($tries['n']<=40){
+                $data=['next_run_at'=>date('Y-m-d H:i:s',$scheduledAt),'updated_at'=>date('Y-m-d H:i:s',$now),...$diagnostics];
+                $this->appendRunLog($robot,$status,$status,$message,array_merge($logContext,[
+                    'lottery'=>(string)($outcome['lottery']??''),'text'=>(string)($outcome['text']??''),
+                    'weight_miss'=>!empty($outcome['weight_miss']),'retry_slot'=>$tries['n'],'next_run_at'=>$data['next_run_at'],
+                ]));
+                Db::name('robot_accounts')->where('id',(int)$robot['id'])->where('status','running')->update($data);
+                return;
+            }
+        }
         if(($outcome['daily_exhausted']??false)===true || (($outcome['status']??'')==='failed' && preg_match('/余额不足|可用分数不足|会员可用分数不足|分数不足|信用余额不足|余额和信用余额/u',$message))){
             // Exhausting today's score is not a permanent robot failure. Keep
             // it running and wake it at the next local midnight, after the

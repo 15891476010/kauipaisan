@@ -81,6 +81,17 @@ final class AdminRobots
             if($cap<0||$cap>1000000000)throw new \InvalidArgumentException($month.'投注上限无效');
             $weeks=$item['weeks']??null;
             if(is_string($weeks))$weeks=json_decode($weeks,true)?:[];
+            $dailyTargets=$item['daily_targets']??null;
+            if(is_string($dailyTargets))$dailyTargets=json_decode($dailyTargets,true)?:[];
+            $normalizedDaily=[];
+            if(is_array($dailyTargets))foreach($dailyTargets as $date=>$band){
+                $date=trim((string)$date);
+                if(!preg_match('/^\d{4}-\d{2}-\d{2}$/',$date)||!is_array($band))continue;
+                $dMin=(float)($band['dir_profit_min']??$band['min']??0);$dMax=(float)($band['dir_profit_max']??$band['max']??0);
+                if($dMax<$dMin)throw new \InvalidArgumentException($month.' '.$date.' 日盈亏区间最大值不能小于最小值');
+                if(abs($dMin)>1000000000||abs($dMax)>1000000000)throw new \InvalidArgumentException($month.' '.$date.' 日盈亏区间绝对值过大');
+                $normalizedDaily[$date]=['dir_profit_min'=>number_format($dMin,2,'.',''),'dir_profit_max'=>number_format($dMax,2,'.','')];
+            }
             if(is_array($weeks)&&$weeks!==[]){
                 $normalizedWeeks=[];
                 foreach($weeks as $week){
@@ -97,11 +108,11 @@ final class AdminRobots
                     $normalizedWeeks[]=['week'=>$number,'win_weight'=>number_format($weekWeight,2,'.',''),'max_amount'=>number_format($weekCap,2,'.',''),'profit_min'=>number_format($profitMin,2,'.',''),'profit_max'=>number_format($profitMax,2,'.',''),'dir_profit_min'=>number_format($dirMin,2,'.',''),'dir_profit_max'=>number_format($dirMax,2,'.','')];
                 }
                 usort($normalizedWeeks,static fn(array $a,array $b):int=>(int)$a['week']<=>(int)$b['week']);
-                return ['month'=>$month,'weeks'=>$normalizedWeeks,'win_weight'=>number_format($weight,2,'.',''),'max_amount'=>number_format($cap,2,'.','')];
+                return ['month'=>$month,'weeks'=>$normalizedWeeks,'win_weight'=>number_format($weight,2,'.',''),'max_amount'=>number_format($cap,2,'.',''),'daily_targets'=>$normalizedDaily];
             }
             // Keep the old flat shape readable for robots that have not been
             // edited yet; the scheduler treats it as a legacy monthly rule.
-            return ['month'=>$month,'win_weight'=>number_format($weight,2,'.',''),'max_amount'=>number_format($cap,2,'.','')];
+            return ['month'=>$month,'win_weight'=>number_format($weight,2,'.',''),'max_amount'=>number_format($cap,2,'.',''),'daily_targets'=>$normalizedDaily];
         },$monthlyRules),static fn($item)=>is_array($item)));
         $hourlyWeights=$data['hourly_weights']??($current['hourly_weights']??[]);
         if(is_string($hourlyWeights))$hourlyWeights=json_decode($hourlyWeights,true)?:[];
