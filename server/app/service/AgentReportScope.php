@@ -27,6 +27,16 @@ final class AgentReportScope
         return array_merge($session, ['organization_id'=>(int)$this->current['id']]);
     }
 
+    public function currentLevel(): string
+    {
+        return (string)$this->current['level'];
+    }
+
+    public function siteId(): int
+    {
+        return (int)$this->current['site_id'];
+    }
+
     public function context(): array
     {
         $breadcrumbs = [];

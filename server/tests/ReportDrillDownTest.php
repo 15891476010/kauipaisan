@@ -72,6 +72,7 @@ try {
     $userA = $makeUser($agent, $prefix.'a');
     $userB = $makeUser($agent, $prefix.'b');
     $userC = $makeUser($directAgent, $prefix.'c');
+    $userD = $makeUser($agent, $prefix.'d');
     $outsider = $makeUser($otherAgent, $prefix.'x');
     for ($issue = 1; $issue <= 17; $issue++) {
         $makeBet($userA, $prefix.$issue, '福彩3D');
@@ -87,15 +88,19 @@ try {
     $response = $call();
     check($response['code'] === 0, 'Root report failed');
     $data = $response['data'];
-    check(count($data['list']) === 3, 'Root report must list three direct organizations, not all members');
-    $byId = array_column($data['list'], null, 'id');
-    check(isset($byId[$shareholder]), 'Shareholder branch is missing');
-    check($byId[$shareholder]['member'] === '测试大股东' && $byId[$shareholder]['type'] === 'organization', 'Branch label/type is wrong');
-    check($byId[$shareholder]['issue_count'] === 17, 'Two members and pending/settled bets in the same 17 issues must count as 17');
-    check($byId[$shareholder]['summary']['amount'] === '345', 'Branch stake must include the full subtree exactly once');
-    check($byId[$emptyAgent]['issue_count'] === 0 && $byId[$emptyAgent]['summary']['amount'] === '0', 'Empty branch must show zero');
+    check($data['row_label'] === '会员', 'Summary rows must be members');
+    check(count($data['list']) === 4, 'Root report must list all subtree members');
+    check(array_column($data['chain_levels'], 'key') === ['member','small_shareholder','shareholder','director'], 'Director chain columns are wrong');
+    $byName = array_column($data['list'], null, 'member');
+    check($byName[$prefix.'a']['type'] === 'member', 'Rows must be member type');
+    check($byName[$prefix.'a']['chain']['shareholder']['name'] === '测试大股东', 'Member a shareholder chain name is wrong');
+    check($byName[$prefix.'a']['chain']['small_shareholder']['name'] === '测试小股东', 'Member a small-shareholder chain name is wrong');
+    check($byName[$prefix.'a']['chain']['director']['name'] === '测试总监', 'Member a director chain name is wrong');
+    check($byName[$prefix.'a']['issue_count'] === 17, 'Member a must show its own distinct issue count');
+    check($byName[$prefix.'c']['chain']['director']['name'] === '测试总监', 'Direct-agent member must still reach the director column');
+    check($byName[$prefix.'c']['chain']['shareholder'] === null && $byName[$prefix.'c']['chain']['small_shareholder'] === null, 'Skipped chain levels must stay empty');
+    check($byName[$prefix.'d']['summary']['amount'] === '0' && $byName[$prefix.'d']['issue_count'] === 0, 'Member without bets must still appear with zeros');
     check($data['summary']['amount'] === '415' && $data['issue_count'] === 18, 'Root totals or distinct issue count are incorrect');
-    check($data['row_label'] === '大股东 / 代理', 'Mixed direct child levels must be reflected in the name column');
     check(array_column($data['breadcrumbs'], 'id') === [$root], 'Root breadcrumb leaked another organization');
 
     $path = [$root];
@@ -107,8 +112,13 @@ try {
         check($branch['issue_count'] === 17, 'Drill-down changed distinct issue count');
         check((int)Cache::get('token:'.$token)['organization_id'] === $root, 'Browsing must not replace the authenticated root');
     }
-    check($branch['row_label'] === '会员' && count($branch['list']) === 2, 'Agent report must list its members');
-    check(array_unique(array_column($branch['list'], 'type')) === ['member'], 'Leaf rows must not be clickable organizations');
+    check($branch['row_label'] === '会员' && count($branch['list']) === 3, 'Agent report must list its members');
+    check(array_unique(array_column($branch['list'], 'type')) === ['member'], 'Leaf rows must all be members');
+    check(array_column($branch['chain_levels'], 'key') === ['member','agent','general_agent'], 'Agent chain columns are wrong');
+    $agentRow = array_column($branch['list'], null, 'member')[$prefix.'a'];
+    check($agentRow['chain']['agent']['name'] === '测试代理' && $agentRow['chain']['general_agent']['name'] === '测试总代理', 'Agent-level chain labels are wrong');
+    $shareBranch = $call(['organization_id'=>$shareholder])['data'];
+    check(array_column($shareBranch['chain_levels'], 'key') === ['member','general_agent','small_shareholder','shareholder'], 'Shareholder chain columns are wrong');
     $monthly = $call(['organization_id'=>$shareholder], 'monthly')['data'];
     check(count($monthly['list']) === 17 && $monthly['total']['amount'] === '345', 'Monthly report must retain selected subtree');
     $filtered = $call(['lotteries'=>'福彩3D'])['data'];

@@ -1507,3 +1507,14 @@
 - [x] 20 worker + 常驻 daemon 运行中；API 响应 <1ms；服务器 16 核负载 ~20 可接受。
 - [x] 中期验证：6月w1 dir -158.6万 ∈ [-160,-150] 带内；小号日量=全额度（mc005 0.8万/天打满）；尾部薄日为快跑小号先行，大部队随后填满。
 - [ ] 待办：跑完 6-9 月全程（ETA 数小时）；核对各月报表（6月≈-300万/7月≈-100万/8月持平/9月日波动+月净赢）；旧时代薄日（6月上旬）如需补量做 top-up 重放；收尾 PLAN/PROBLEM_LOG。
+
+## 2026-09-18：报表扁平会员视图 + 物化持久化（已部署线上）
+- [x] 需求：报表太卡；改成扁平视图——每行一个会员，列=会员+下两层级名+当前层（总监：会员/小股东/大股东/总监；大股东：会员/总代理/小股东/大股东；小股东：会员/代理/总代理/小股东；总代/代理：会员/代理/总代理）；数据持久化免实时计算。
+- [x] 物化：`report_member_issue` 表按 (会员,期号,彩种,已结算,日) 预聚合（投注/中奖/返点/拦截/账本JSON快照）；`ReportMaterializer` 按日重建，refreshChangedDays 以 bet_records/ledger/interception 三水位增量刷新，今天+昨天常刷兜底（记录无 updated_at）；命令 `report:materialize`（--site/--from/--to 全量，无参=增量）。
+- [x] `AgentReport::rows()` 拆分：day<today 读物化表（join site_users 取实时用户名/组织，防止改名换组失真），day>=today 走原实时分组（未结算投影需要活链）；两源合并同一后处理（链上占成投影/账本快照）。
+- [x] `memberList()`：子树全会员成行（无投注也显示0行），`chain` 按列层级映射祖先组织名（跳级链留空），`chain_levels` 由当前节点层级计算（member+下两层+自身，代理层向上补一级）。
+- [x] 前端：综合报表表头在"会员"后插入链路层级列（report-chain-column），行内组织名可点击下钻（browse 到该组织视角，列随层级切换）；合计行链路列留空。
+- [x] 部署：迁移已跑线上；`report:materialize --from=2026-06-01 --to=2026-09-18` 全量完成（110天1679行，金额与 bet_records 逐日核对分毫不差）；cron `*/5` 增量刷新；4 个 wwwroot dist 已同步。
+- [x] 线上实测：zongjian4a 会话 6-1~9-18 范围 **0.23s**（原数秒级），58 会员行含完整链路标签。
+- [x] 测试：ReportMaterializeTest（分组/彩种过滤/增量刷新/链标签）、ReportDrillDownTest 重写（扁平会员视图+链列+零投注会员+跳级链）、ReportLevelColumnsTest/MemberScopeIndexTest/OrganizationDrillDownTest/DescendantManagementTest 全部通过；前端 tsc/lint 0 错误。
+- 唯一键含 day：同一期号跨天投注会产生两行（各行只挂当日账本，占成/投注聚合线性等价，issue_count 按期号去重）。

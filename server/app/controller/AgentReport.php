@@ -36,7 +36,7 @@ final class AgentReport
         $lotteries=$this->lotteries($request);
         $viewSession=$scope->session($session);
         $rows=$this->rows($viewSession,$from,$to,$lotteries);
-        $groups=$scope->groupedRows($rows,fn(array $group): array=>$this->aggregate($group));
+        $groups=$this->memberList($scope,$viewSession,$rows);
         return $this->reply(array_merge($scope->context(),$groups,['summary'=>$this->aggregate($rows),'report_levels'=>$this->reportLevels($viewSession),'from'=>$from,'to'=>$to,'lotteries'=>$lotteries]));
     }
 
@@ -89,80 +89,26 @@ final class AgentReport
         $siteSettings=is_string($siteSettings)?json_decode($siteSettings,true):(is_array($siteSettings)?$siteSettings:[]);
         $siteCap=max(0,min(100,(float)($siteSettings['max_profit_share_rate']??100)));
         $chainCache=[];
-        // Aggregate in SQL instead of materialising every bet detail: the
-        // report only consumes (member × issue × settled) totals, so months
-        // of history collapse to a few hundred grouped rows instead of tens
-        // of thousands of detail rows processed one by one in PHP.
-        $query=Db::name('bet_details')->alias('d')
-            ->join('bet_records r','r.id=d.bet_record_id')
-            ->join('site_users u','u.id=d.user_id')
-            ->leftJoin('user_stop_drops s','s.bet_detail_id=d.id')
-            ->where('d.site_id',$siteId)->where('u.site_id',$siteId)->whereNull('u.deleted_at')->where('d.placed_at','>=',$from.' 00:00:00')->where('d.placed_at','<=',$to.' 23:59:59')
-            ->where('r.status','<>','refunded');
-        OrganizationHierarchy::applyUserScope($query,$session,'d.user_id');
-        if($lotteries!==[]) {
-            $marks=implode(',',array_fill(0,count($lotteries),'?'));
-            // Ordinary bets do not have a stop-drop row; resolve their lottery
-            // through the issue history via EXISTS so 福彩3D/排列三 sharing the
-            // same issue code cannot duplicate a grouped row.
-            $query->whereRaw('(s.lottery IN ('.$marks.') OR d.lottery_name IN ('.$marks.') OR EXISTS(SELECT 1 FROM lottery_histories lh JOIN lotteries l ON l.id=lh.lottery_id WHERE lh.code=d.issue_no AND l.name IN ('.$marks.')))',array_merge($lotteries,$lotteries,$lotteries));
-        }
-        $rows=$query->field(
-            'd.user_id,u.username,u.organization_id,u.interception_rate AS share_rate,d.issue_no,'.
-            "CASE WHEN r.status IN ('won','unwon') THEN 1 ELSE 0 END AS settled,".
-            'COUNT(d.id) AS detail_count,'.
-            "SUM(LENGTH(d.number_text)-LENGTH(REPLACE(d.number_text,' ',''))+LENGTH(d.number_text)-LENGTH(REPLACE(REPLACE(d.number_text,',',''),'，',''))+1) AS number_count,".
-            'SUM(d.amount) AS amount,SUM(d.win_amount) AS win_amount,SUM(d.rebate) AS rebate,'.
-            'MAX(d.placed_at) AS placed_at'
-        )->group('d.user_id,d.issue_no,settled')->select()->toArray();
+        // Persisted groups carry the whole history; only the current day is
+        // computed live so unsettled projections and just-placed bets stay
+        // exact. This keeps month-range queries at a few thousand rows even
+        // when the betting volume grows by orders of magnitude.
+        $today=date('Y-m-d');
+        $rows=[];
+        $materializedTo=min($to,date('Y-m-d',strtotime($today)-86400));
+        if($from<=$materializedTo)$rows=array_merge($rows,$this->materializedRows($session,$from,$materializedTo,$lotteries));
+        if($to>=$today)$rows=array_merge($rows,$this->liveRows($session,max($from,$today),$to,$lotteries));
         // Imported batches keep the reference report snapshot until it is
         // materialized into local bet tables. Include those rows so a newly
         // created总代理 immediately sees the selected date range and members.
         $rows=array_merge($rows,$this->importedRows($session,$from,$to,$lotteries));
         if($rows===[]) return [];
-        // Intercepted amounts aggregate per (member, issue) the same way the
-        // details do; the per-detail whereIn list no longer exists.
-        $interceptMap=[];
-        foreach(Db::name('agent_interceptions')->alias('i')
-            ->join('bet_details d','d.id=i.bet_detail_id')
-            ->join('bet_records r','r.id=d.bet_record_id')
-            ->whereNull('i.released_at')->where('r.site_id',$siteId)->where('r.status','<>','refunded')
-            ->where('d.placed_at','>=',$from.' 00:00:00')->where('d.placed_at','<=',$to.' 23:59:59')
-            ->field('r.user_id,r.issue_no,SUM(i.intercepted_amount) AS intercepted')
-            ->group('r.user_id,r.issue_no')->select()->toArray() as $irow){
-            $interceptMap[(int)$irow['user_id'].'|'.(string)$irow['issue_no']]=(float)$irow['intercepted'];
-        }
-        // Settled records keep their per-node allocation snapshot in the
-        // credit ledger (share_rate + amount at settle time). A share-rate
-        // change today must not rewrite what settled bets already booked;
-        // only unsettled rows project with the live chain.  Booked amounts
-        // aggregate per (member, issue, node) directly in SQL.
         $nodeLevels=[];
         foreach(Db::name('organization_nodes')->where('site_id',$siteId)->field('id,level')->select()->toArray() as $nodeRow) $nodeLevels[(int)$nodeRow['id']]=(string)$nodeRow['level'];
-        $settledLedger=[];
-        $ledgerQuery=Db::name('organization_credit_ledger')->alias('l')
-            ->join('bet_records r','r.id=l.related_bet_record_id')
-            ->where('l.site_id',$siteId)->where('l.source_type','settlement_share')->where('r.status','<>','refunded')
-            ->where('r.placed_at','>=',$from.' 00:00:00')->where('r.placed_at','<=',$to.' 23:59:59');
-        OrganizationHierarchy::applyUserScope($ledgerQuery,$session,'r.user_id');
-        foreach($ledgerQuery->field(
-            'r.user_id,r.issue_no,l.organization_id,l.direction,SUM(l.amount) AS total,'.
-            "JSON_UNQUOTE(JSON_EXTRACT(l.metadata,'$.organization_level')) AS lvl,".
-            "JSON_UNQUOTE(JSON_EXTRACT(l.metadata,'$.share_rate')) AS rate"
-        )->group('r.user_id,r.issue_no,l.organization_id,l.direction')->select()->toArray() as $ledgerRow){
-            $key=(int)$ledgerRow['user_id'].'|'.(string)$ledgerRow['issue_no'];
-            $settledLedger[$key][]=[
-                'organization_id'=>(int)$ledgerRow['organization_id'],
-                'level'=>(string)($ledgerRow['lvl']??''),
-                'share_rate'=>(float)($ledgerRow['rate']??0),
-                'booked'=>((string)$ledgerRow['direction']==='in'?1.0:-1.0)*(float)$ledgerRow['total'],
-            ];
-        }
         $currentOrganizationId=(int)($session['organization_id']??0);
         foreach($rows as &$row) {
             $amount=(float)$row['amount']; $win=(float)$row['win_amount']; $rebate=(float)$row['rebate'];
-            $ledgerKey=(int)($row['user_id']??0).'|'.(string)$row['issue_no'];
-            $intercepted=(float)($interceptMap[$ledgerKey]??0);
+            $intercepted=(float)($row['intercepted']??0);
             // Occupation is based on the member's own P/L and configured
             // occupation percentage. It is independent of how much capacity
             // was actually intercepted. The single configured water amount
@@ -201,7 +147,7 @@ final class AgentReport
                 $levelBases[$levelKey]['amount']+=$amount;
             }
             $recordLedger=null;
-            if((int)($row['settled']??0)===1&&isset($settledLedger[$ledgerKey])) $recordLedger=$settledLedger[$ledgerKey];
+            if((int)($row['settled']??0)===1&&isset($row['_ledger'])&&is_array($row['_ledger'])) $recordLedger=$row['_ledger'];
             $allocationAmount=0.0;$currentShareRate=0.0;
             if($recordLedger!==null){
                 // Snapshot: booked amounts count once per issue group no
@@ -254,6 +200,110 @@ final class AgentReport
                 'share_base'=>$allocationAmount,'share_rate'=>$currentShareRate,'water_rate'=>$waterRate,'has_share'=>$hasShare?1:0,'levels'=>$levelBases];
         }
         unset($row); return $rows;
+    }
+
+    /**
+     * Live grouping for the current day: identical to the materializer's
+     * output shape so both sources feed the same post-processing loop.
+     * Unsettled bets must project with the live chain, which is exactly
+     * what the persisted rows cannot know in advance.
+     */
+    private function liveRows(array $session,string $from,string $to,array $lotteries): array
+    {
+        $siteId=(int)$session['site_id'];
+        $query=Db::name('bet_details')->alias('d')
+            ->join('bet_records r','r.id=d.bet_record_id')
+            ->join('site_users u','u.id=d.user_id')
+            ->leftJoin('user_stop_drops s','s.bet_detail_id=d.id')
+            ->where('d.site_id',$siteId)->where('u.site_id',$siteId)->whereNull('u.deleted_at')->where('d.placed_at','>=',$from.' 00:00:00')->where('d.placed_at','<=',$to.' 23:59:59')
+            ->where('r.status','<>','refunded');
+        OrganizationHierarchy::applyUserScope($query,$session,'d.user_id');
+        if($lotteries!==[]) {
+            $marks=implode(',',array_fill(0,count($lotteries),'?'));
+            // Ordinary bets do not have a stop-drop row; resolve their lottery
+            // through the issue history via EXISTS so 福彩3D/排列三 sharing the
+            // same issue code cannot duplicate a grouped row.
+            $query->whereRaw('(s.lottery IN ('.$marks.') OR d.lottery_name IN ('.$marks.') OR EXISTS(SELECT 1 FROM lottery_histories lh JOIN lotteries l ON l.id=lh.lottery_id WHERE lh.code=d.issue_no AND l.name IN ('.$marks.')))',array_merge($lotteries,$lotteries,$lotteries));
+        }
+        $rows=$query->field(
+            'd.user_id,u.username,u.organization_id,u.interception_rate AS share_rate,d.issue_no,'.
+            "CASE WHEN r.status IN ('won','unwon') THEN 1 ELSE 0 END AS settled,".
+            'COUNT(d.id) AS detail_count,'.
+            "SUM(LENGTH(d.number_text)-LENGTH(REPLACE(d.number_text,' ',''))+LENGTH(d.number_text)-LENGTH(REPLACE(REPLACE(d.number_text,',',''),'，',''))+1) AS number_count,".
+            'SUM(d.amount) AS amount,SUM(d.win_amount) AS win_amount,SUM(d.rebate) AS rebate,'.
+            'MAX(d.placed_at) AS placed_at'
+        )->group('d.user_id,d.issue_no,settled')->select()->toArray();
+        if($rows===[]) return [];
+        // Intercepted amounts aggregate per (member, issue) the same way the
+        // details do; the per-detail whereIn list no longer exists.
+        $interceptMap=[];
+        foreach(Db::name('agent_interceptions')->alias('i')
+            ->join('bet_details d','d.id=i.bet_detail_id')
+            ->join('bet_records r','r.id=d.bet_record_id')
+            ->whereNull('i.released_at')->where('r.site_id',$siteId)->where('r.status','<>','refunded')
+            ->where('d.placed_at','>=',$from.' 00:00:00')->where('d.placed_at','<=',$to.' 23:59:59')
+            ->field('r.user_id,r.issue_no,SUM(i.intercepted_amount) AS intercepted')
+            ->group('r.user_id,r.issue_no')->select()->toArray() as $irow){
+            $interceptMap[(int)$irow['user_id'].'|'.(string)$irow['issue_no']]=(float)$irow['intercepted'];
+        }
+        // Settled records keep their per-node allocation snapshot in the
+        // credit ledger (share_rate + amount at settle time). A share-rate
+        // change today must not rewrite what settled bets already booked;
+        // only unsettled rows project with the live chain.  Booked amounts
+        // aggregate per (member, issue, node) directly in SQL.
+        $settledLedger=[];
+        $ledgerQuery=Db::name('organization_credit_ledger')->alias('l')
+            ->join('bet_records r','r.id=l.related_bet_record_id')
+            ->where('l.site_id',$siteId)->where('l.source_type','settlement_share')->where('r.status','<>','refunded')
+            ->where('r.placed_at','>=',$from.' 00:00:00')->where('r.placed_at','<=',$to.' 23:59:59');
+        OrganizationHierarchy::applyUserScope($ledgerQuery,$session,'r.user_id');
+        foreach($ledgerQuery->field(
+            'r.user_id,r.issue_no,l.organization_id,l.direction,SUM(l.amount) AS total,'.
+            "JSON_UNQUOTE(JSON_EXTRACT(l.metadata,'$.organization_level')) AS lvl,".
+            "JSON_UNQUOTE(JSON_EXTRACT(l.metadata,'$.share_rate')) AS rate"
+        )->group('r.user_id,r.issue_no,l.organization_id,l.direction')->select()->toArray() as $ledgerRow){
+            $key=(int)$ledgerRow['user_id'].'|'.(string)$ledgerRow['issue_no'];
+            $settledLedger[$key][]=[
+                'organization_id'=>(int)$ledgerRow['organization_id'],
+                'level'=>(string)($ledgerRow['lvl']??''),
+                'share_rate'=>(float)($ledgerRow['rate']??0),
+                'booked'=>((string)$ledgerRow['direction']==='in'?1.0:-1.0)*(float)$ledgerRow['total'],
+            ];
+        }
+        foreach($rows as &$row){
+            $key=(int)$row['user_id'].'|'.(string)$row['issue_no'];
+            $row['intercepted']=$interceptMap[$key]??0;
+            $row['_ledger']=$settledLedger[$key]??null;
+        }
+        unset($row);
+        return $rows;
+    }
+
+    /**
+     * Persisted (member, issue, lottery, settled) groups maintained by
+     * ReportMaterializer. Member attributes join site_users live so a
+     * username or organization change never requires a rebuild.
+     */
+    private function materializedRows(array $session,string $from,string $to,array $lotteries): array
+    {
+        $siteId=(int)$session['site_id'];
+        $query=Db::name('report_member_issue')->alias('m')
+            ->join('site_users u','u.id=m.user_id AND u.site_id=m.site_id')
+            ->where('m.site_id',$siteId)->whereNull('u.deleted_at')
+            ->where('m.day','>=',$from)->where('m.day','<=',$to);
+        OrganizationHierarchy::applyUserScope($query,$session,'m.user_id');
+        if($lotteries!==[])$query->whereIn('m.lottery_name',$lotteries);
+        $rows=$query->field(
+            'm.user_id,u.username,u.organization_id,u.interception_rate AS share_rate,m.issue_no,m.settled,'.
+            'm.detail_count,m.number_count,m.amount,m.win_amount,m.rebate,m.intercepted,m.placed_at,m.ledger_json'
+        )->select()->toArray();
+        foreach($rows as &$row){
+            $json=(string)($row['ledger_json']??'');
+            $row['_ledger']=$json!==''?json_decode($json,true):null;
+            unset($row['ledger_json']);
+        }
+        unset($row);
+        return $rows;
     }
 
     private function importedOrganizationMap(int $batchId,int $siteId): array
@@ -323,6 +373,75 @@ final class AgentReport
         foreach($groups as $group)$list[]=['member'=>$group['member'],'summary'=>$this->aggregate($group['rows'])];
         usort($list,static fn(array $a,array $b):int=>strcmp((string)$a['member'],(string)$b['member']));
         return $list;
+    }
+
+    /**
+     * Flat member view: one row per member under the current node, each
+     * carrying the ancestor organization names shown as chain columns.
+     * Column layout depends on the current node's level — a director sees
+     * 会员/小股东/大股东/总监, a shareholder sees 会员/总代理/小股东/大股东,
+     * and so on, always the two levels below the current node plus itself
+     * (the bottom agent level pads one parent for context).
+     */
+    private function memberList(AgentReportScope $scope,array $session,array $rows): array
+    {
+        // Every member under the current subtree is a row, even when it has
+        // no bets in the range — the chain columns must not drop members
+        // just because the selected period is empty for them.
+        $userQuery=Db::name('site_users')->where('site_id',$scope->siteId())->whereNull('deleted_at')->field('id,username,organization_id');
+        OrganizationHierarchy::applyUserScope($userQuery,$session,'id');
+        $groups=[];
+        foreach($userQuery->select()->toArray() as $user)
+            $groups[(int)$user['id']]=['id'=>(int)$user['id'],'type'=>'member','member'=>(string)$user['username'],'organization_id'=>(int)($user['organization_id']??0),'rows'=>[]];
+        foreach($rows as $row){
+            $uid=(int)($row['user_id']??0);
+            if(!isset($groups[$uid]))$groups[$uid]=['id'=>$uid,'type'=>'member','member'=>(string)($row['username']??'会员'),'organization_id'=>(int)($row['organization_id']??0),'rows'=>[]];
+            $groups[$uid]['rows'][]=$row;
+        }
+        $levelKeys=$this->chainLevels($scope->currentLevel());
+        $siteId=$scope->siteId();
+        $chainCache=[];
+        $list=[];
+        foreach($groups as $group){
+            $chain=[];
+            $orgId=$group['organization_id'];
+            if($orgId>0){
+                if(!isset($chainCache[$orgId])){
+                    $map=[];
+                    foreach(OrganizationHierarchy::shareChain($siteId,$orgId) as $node)$map[(string)($node['level']??'')]=$node;
+                    $chainCache[$orgId]=$map;
+                }
+                foreach($levelKeys as $level){
+                    $key=$level['key']; if($key==='member')continue;
+                    $node=$chainCache[$orgId][$key]??null;
+                    $chain[$key]=$node?['id'=>(int)$node['id'],'name'=>(string)$node['name']]:null;
+                }
+            }
+            $list[]=['id'=>$group['id'],'type'=>'member','member'=>$group['member'],'chain'=>$chain,'issue_count'=>AgentReportScope::issueCount($group['rows']),'summary'=>$this->aggregate($group['rows'])];
+        }
+        usort($list,static fn(array $a,array $b):int=>strcmp($a['member'],$b['member'])?:($a['id']<=>$b['id']));
+        return ['list'=>$list,'chain_levels'=>$levelKeys,'row_label'=>'会员','issue_count'=>AgentReportScope::issueCount($rows)];
+    }
+
+    /**
+     * Ordered column levels for the flat member view: member column first,
+     * then the two organization levels directly below the current node
+     * (lowest first), then the current level. Bottom levels pad upward so
+     * an agent still shows 会员/代理/总代理.
+     */
+    private function chainLevels(string $currentLevel): array
+    {
+        $rank=['member'=>0,'agent'=>1,'general_agent'=>2,'small_shareholder'=>3,'shareholder'=>4,'director'=>5];
+        $byRank=array_flip($rank);
+        $cur=$rank[$currentLevel]??5;
+        $below=[];
+        for($r=$cur-1;$r>=1&&count($below)<2;$r--)$below[]=$r;
+        $cols=array_merge([0],array_reverse($below),[$cur]);
+        for($next=$cur+1;count($cols)<3&&$next<=5;$next++)$cols[]=$next;
+        return array_map(static function(int $r)use($byRank):array{
+            $key=$byRank[$r];
+            return ['key'=>$key,'label'=>OrganizationHierarchy::LABELS[$key]??'会员'];
+        },$cols);
     }
 
     /**
