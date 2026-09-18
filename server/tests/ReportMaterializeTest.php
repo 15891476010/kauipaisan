@@ -79,15 +79,14 @@ try {
     check(in_array('福彩3D', $lotteries, true) && in_array('排列三', $lotteries, true), 'Lottery names must persist for filtering');
 
     $data = $call()['data'];
-    $row = array_values(array_filter($data['list'], static fn($item) => $item['member'] === $prefix.'m'))[0] ?? null;
-    check($row !== null, 'Materialized member row is missing');
+    $row = array_values(array_filter($data['list'], static fn($item) => $item['member'] === '物化代理'))[0] ?? null;
+    check($row !== null && $row['type'] === 'organization', 'Materialized branch row is missing');
     check($row['summary']['amount'] === '180', 'Materialized amount must sum all three groups');
     check($row['issue_count'] === 3, 'Materialized issue count must count each issue once');
-    check(array_column($data['chain_levels'], 'key') === ['member','small_shareholder','shareholder','director'], 'Director chain columns are wrong');
-    check($row['chain']['director']['name'] === '物化总监', 'Materialized view must keep chain labels');
+    check(array_column($data['report_levels'], 'key') === ['small_shareholder','shareholder','director'], 'Director column levels are wrong');
 
     $filtered = $call(['lotteries'=>'福彩3D'])['data'];
-    $frow = array_values(array_filter($filtered['list'], static fn($item) => $item['member'] === $prefix.'m'))[0];
+    $frow = array_values(array_filter($filtered['list'], static fn($item) => $item['member'] === '物化代理'))[0];
     check($frow['summary']['amount'] === '130', 'Lottery filter must apply to materialized rows');
     check($frow['issue_count'] === 2, 'Lottery filter must narrow the issue count');
 
@@ -97,7 +96,7 @@ try {
     check(isset($changed[$yesterday]), 'Changed-day refresh must rebuild the touched day');
     check(Db::name('report_member_issue')->where('site_id', $siteId)->where('user_id', $user)->count() === 4, 'Incremental refresh must persist the new group');
     $again = $call()['data'];
-    $arow = array_values(array_filter($again['list'], static fn($item) => $item['member'] === $prefix.'m'))[0];
+    $arow = array_values(array_filter($again['list'], static fn($item) => $item['member'] === '物化代理'))[0];
     check($arow['summary']['amount'] === '200', 'Incremental refresh must surface the new bet');
 } finally {
     Db::rollback();

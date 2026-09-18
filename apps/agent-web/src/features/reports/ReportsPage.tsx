@@ -7,7 +7,7 @@ import { memo, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { hasAgentPermission } from '../../routePermissions';
-import { getAgentMonthlyReport, getAgentReport, getAgentReportIssues, type AgentMonthlyReportRow, type AgentReportChainLevel, type AgentReportContext, type AgentReportIssue, type AgentReportLevel, type AgentReportMemberRow, type AgentReportMetrics } from '../../api/user';
+import { getAgentMonthlyReport, getAgentReport, getAgentReportIssues, type AgentMonthlyReportRow, type AgentReportContext, type AgentReportIssue, type AgentReportLevel, type AgentReportMemberRow, type AgentReportMetrics } from '../../api/user';
 import { apiErrorMessage } from '../../utils/request';
 
 type ReportMode = 'summary' | 'monthly';
@@ -53,7 +53,7 @@ export const ReportsPage = memo(function ReportsPage({lottery,permissions}:{lott
   const [toPickerValue,setToPickerValue]=useState(()=>calendarDate(today));
   useEffect(()=>{setFromPickerValue(current=>from?(current.format('YYYY-MM-DD')===from?current:calendarDate(from)):calendarDate(today))},[from,today]);
   useEffect(()=>{setToPickerValue(current=>to?(current.format('YYYY-MM-DD')===to?current:calendarDate(to)):calendarDate(today))},[to,today]);
-  const [lotteries,setLotteries]=useState(['福彩3D','排列三']); const [summary,setSummary]=useState(emptyMetrics); const [rows,setRows]=useState<AgentMonthlyReportRow[]>([]); const [memberRows,setMemberRows]=useState<AgentReportMemberRow[]>([]); const [reportLevels,setReportLevels]=useState<AgentReportLevel[]>([]); const [chainLevels,setChainLevels]=useState<AgentReportChainLevel[]>([]); const [loading,setLoading]=useState(true);
+  const [lotteries,setLotteries]=useState(['福彩3D','排列三']); const [summary,setSummary]=useState(emptyMetrics); const [rows,setRows]=useState<AgentMonthlyReportRow[]>([]); const [memberRows,setMemberRows]=useState<AgentReportMemberRow[]>([]); const [reportLevels,setReportLevels]=useState<AgentReportLevel[]>([]); const [loading,setLoading]=useState(true);
   const [issues,setIssues]=useState<AgentReportIssue[]>([]); const [fromIssue,setFromIssue]=useState(''); const [toIssue,setToIssue]=useState('');
   const reportMonth=(from||today).slice(0,7);
   const params=useMemo(()=>({from,to,organization_id:organizationId||undefined,lotteries:mode==='monthly'?(lottery||'__none__'):(lotteries.length?lotteries.join(','):'__none__')}),[from,to,organizationId,lotteries,lottery,mode]);
@@ -76,7 +76,7 @@ export const ReportsPage = memo(function ReportsPage({lottery,permissions}:{lott
     void task.then(response=>{
       if(!active||!response.data.data)return;
       const data=response.data.data;
-      setContext(data);setReportLevels(data.report_levels||[]);setChainLevels((data as {chain_levels?:AgentReportChainLevel[]}).chain_levels||[]);
+      setContext(data);setReportLevels(data.report_levels||[]);
       if('summary' in data){setSummary(data.summary);setMemberRows(data.list);setRows([]);setRowLabel(data.row_label);}
       else{setRows(data.list);setMemberRows([]);setSummary(data.total);}
     }).catch((reason:unknown)=>{
@@ -101,29 +101,28 @@ export const ReportsPage = memo(function ReportsPage({lottery,permissions}:{lott
       {quickRanges.map(item=><button key={item.value} type="button" className={selectedRange===item.value?'active':''} aria-pressed={selectedRange===item.value} onClick={()=>chooseRange(item.value)}>{item.label}</button>)}
     </div>
     {mode==='monthly'&&<div className="agent-reports-month-range"><select className="reports-issue-select" aria-label="月报开始期号" value={fromIssue} onChange={event=>{const value=event.target.value;const issue=issues.find(item=>item.issue_no===value);setSelectedRange(null);setFromIssue(value);if(issue)setFrom(issue.date)}}>{!fromIssue&&<option value="">暂无匹配期号</option>}{issues.map(item=><option key={item.issue_no} value={item.issue_no}>{Number(item.date.slice(5,7))}-{Number(item.date.slice(8,10))}({item.issue_no})</option>)}</select><span>至</span><select className="reports-issue-select" aria-label="月报结束期号" value={toIssue} onChange={event=>{const value=event.target.value;const issue=issues.find(item=>item.issue_no===value);setSelectedRange(null);setToIssue(value);if(issue)setTo(issue.date)}}>{!toIssue&&<option value="">暂无匹配期号</option>}{issues.map(item=><option key={item.issue_no} value={item.issue_no}>{Number(item.date.slice(5,7))}-{Number(item.date.slice(8,10))}({item.issue_no})</option>)}</select></div>}
-    <div className="agent-reports-card">{loading?<div className="agent-reports-loading"><Spin/></div>:error?<div className="agent-reports-loading" role="alert">{error}</div>:<ReportTable mode={mode} rows={rows} memberRows={memberRows} summary={summary} reportLevels={reportLevels} chainLevels={chainLevels} rowLabel={rowLabel} issueCount={context?.issue_count||0} browse={browse}/>}</div>
+    <div className="agent-reports-card">{loading?<div className="agent-reports-loading"><Spin/></div>:error?<div className="agent-reports-loading" role="alert">{error}</div>:<ReportTable mode={mode} rows={rows} memberRows={memberRows} summary={summary} reportLevels={reportLevels} rowLabel={rowLabel} issueCount={context?.issue_count||0} browse={browse}/>}</div>
   </section></ConfigProvider>;
 });
 
-function ReportTable({mode,rows,memberRows,summary,reportLevels,chainLevels,rowLabel,issueCount,browse}:{mode:ReportMode;rows:AgentMonthlyReportRow[];memberRows:AgentReportMemberRow[];summary:AgentReportMetrics;reportLevels:AgentReportLevel[];chainLevels:AgentReportChainLevel[];rowLabel:string;issueCount:number;browse:(id:number)=>void}) {
+function ReportTable({mode,rows,memberRows,summary,reportLevels,rowLabel,issueCount,browse}:{mode:ReportMode;rows:AgentMonthlyReportRow[];memberRows:AgentReportMemberRow[];summary:AgentReportMetrics;reportLevels:AgentReportLevel[];rowLabel:string;issueCount:number;browse:(id:number)=>void}) {
   const levels=reportLevels.length?reportLevels:[{key:'agent',label:'代理',relation:'self' as const}];
   const groups=[{key:'member',label:'会员',relation:'member' as const},...levels].map(group=>({
     ...group,
     titles:group.relation==='member'?['笔数','总投','总中','盈亏']:group.relation==='self'?['占成金额','占成盈亏','离线反水','总赚水','总盈亏']:group.relation==='downline'?['总投','总赚水','盈亏']:['总投','盈亏'],
     className:group.relation==='member'?'member-group':group.relation==='self'?'agent-group':'platform-group',
   }));
-  const chainColumns=mode==='summary'?chainLevels.filter(level=>level.key!=='member'):[];
-  const columns=groups.reduce((count,group)=>count+group.titles.length,1+chainColumns.length);
+  const columns=groups.reduce((count,group)=>count+group.titles.length,1);
   return <div className="agent-reports-table-scroll"><table className="agent-reports-table" style={{minWidth:Math.max(1120,180+(columns-1)*82)}}>
-    <thead><tr><th rowSpan={2} className="report-name-column">{mode==='summary'?rowLabel:'期号'}</th>{chainColumns.map(level=><th key={level.key} rowSpan={2} className="report-chain-column">{level.label}</th>)}{groups.map(group=><th key={group.key} colSpan={group.titles.length} className={group.className}>{group.label}</th>)}</tr><tr>{groups.flatMap(group=>group.titles.map(title=><th key={`${group.key}-${title}`} className={group.className}>{title}</th>))}</tr></thead>
-    <tbody>{mode==='summary'&&memberRows.map(row=><MetricRow key={`${row.type}-${row.id}`} label={<><span className="report-branch-name">{row.type==='organization'?<button type="button" onClick={()=>browse(row.id)}>{row.member}</button>:row.member}</span><small className="report-issue-count">投注 {row.issue_count} 期</small></>} chainCells={chainColumns.map(level=>{const node=row.chain?.[level.key];return <td key={level.key} className="report-chain-column">{node?<button type="button" onClick={()=>browse(node.id)}>{node.name}</button>:'—'}</td>;})} metrics={row.summary} levels={levels}/>)}
+    <thead><tr><th rowSpan={2} className="report-name-column">{mode==='summary'?rowLabel:'期号'}</th>{groups.map(group=><th key={group.key} colSpan={group.titles.length} className={group.className}>{group.label}</th>)}</tr><tr>{groups.flatMap(group=>group.titles.map(title=><th key={`${group.key}-${title}`} className={group.className}>{title}</th>))}</tr></thead>
+    <tbody>{mode==='summary'&&memberRows.map(row=><MetricRow key={`${row.type}-${row.id}`} label={<><span className="report-branch-name">{row.type==='organization'?<button type="button" onClick={()=>browse(row.id)}>{row.member}</button>:row.member}</span><small className="report-issue-count">投注 {row.issue_count} 期</small></>} metrics={row.summary} levels={levels}/>)}
     {mode==='monthly'&&rows.map(row=><MetricRow key={row.issue_no} label={row.issue_no} metrics={row.summary} levels={levels}/>)}
     {(mode==='summary'?memberRows.length:rows.length)===0&&<tr><td colSpan={columns}>当前范围暂无投注数据</td></tr>}
-    <MetricRow label={<>合计<small className="report-issue-count">投注 {issueCount} 期</small></>} chainCells={chainColumns.map(level=><td key={level.key} className="report-chain-column"/>)} metrics={summary} levels={levels} total/></tbody>
+    <MetricRow label={<>合计<small className="report-issue-count">投注 {issueCount} 期</small></>} metrics={summary} levels={levels} total/></tbody>
   </table></div>;
 }
-function MetricRow({label,chainCells,metrics,levels,total=false}:{label:ReactNode;chainCells?:ReactNode[];metrics:AgentReportMetrics;levels:AgentReportLevel[];total?:boolean}) {
-  const cells:ReactNode[]=[<td key="member-label">{label}</td>,...(chainCells??[]),<td key="member-count">{metrics.bet_count}</td>,<td key="member-amount">{show(metrics.amount)}</td>,<td key="member-win">{show(metrics.win_amount)}</td>,<td key="member-profit">{show(metrics.member_profit)}</td>];
+function MetricRow({label,metrics,levels,total=false}:{label:ReactNode;metrics:AgentReportMetrics;levels:AgentReportLevel[];total?:boolean}) {
+  const cells:ReactNode[]=[<td key="member-label">{label}</td>,<td key="member-count">{metrics.bet_count}</td>,<td key="member-amount">{show(metrics.amount)}</td>,<td key="member-win">{show(metrics.win_amount)}</td>,<td key="member-profit">{show(metrics.member_profit)}</td>];
   levels.forEach(level=>{if(level.relation==='self') cells.push(<td key={`${level.key}-share`}>{show(metrics.share_amount)}</td>,<td key={`${level.key}-share-profit`}>{show(metrics.share_profit)}</td>,<td key={`${level.key}-offline`}>0</td>,<td key={`${level.key}-water`}>{show(metrics.agent_water)}</td>,<td key={`${level.key}-profit`}>{show(metrics.agent_profit)}</td>);else{const levelMetrics=metrics.levels?.[level.key];if(level.relation==='downline') cells.push(<td key={`${level.key}-amount`}>{show(levelMetrics?.amount??0)}</td>,<td key={`${level.key}-water`}>{show(levelMetrics?.water??0)}</td>,<td key={`${level.key}-profit`}>{show(levelMetrics?.profit??0)}</td>);else cells.push(<td key={`${level.key}-amount`}>{show(levelMetrics?.amount??0)}</td>,<td key={`${level.key}-profit`}>{show(levelMetrics?.profit??0)}</td>);}});
   return <tr className={total?'report-total-row':''}>{cells}</tr>;
 }

@@ -162,11 +162,10 @@ export type AgentSettingsData = { profile: AgentSettingProfile; lottery: { id: n
 export const getAgentSettings = (params: Record<string, unknown>) => request.get<ApiEnvelope<AgentSettingsData>>('/agent/settings', { params });
 export const saveAgentSettings = (payload: { lottery: string; amounts: Record<string, string>; follow_share: number }) => request.put<ApiEnvelope<{ amounts: Record<string,string>; follow_share: number }>>('/agent/settings', payload);
 export type AgentReportMetrics = { bet_count: number; amount: string; win_amount: string; water: string; member_profit: string; share_amount: string; share_profit: string; agent_water: string; agent_profit: string; platform_amount: string; platform_profit: string; levels?: Record<string, { amount: string; water: string; profit: string }> };
-export type AgentReportMemberRow = { id: number; type: 'organization'|'member'; member: string; level?: OrganizationLevel|'member'; level_label?: string; issue_count: number; chain?: Record<string, { id: number; name: string } | null>; summary: AgentReportMetrics };
+export type AgentReportMemberRow = { id: number; type: 'organization'|'member'; member: string; level?: OrganizationLevel|'member'; level_label?: string; issue_count: number; summary: AgentReportMetrics };
 export type AgentReportNode = { id: number; name: string; level: OrganizationLevel; level_label: string };
 export type AgentReportContext = { current: AgentReportNode; root_organization_id: number; breadcrumbs: AgentReportNode[]; issue_count: number };
-export type AgentReportChainLevel = { key: string; label: string };
-export type AgentReportData = AgentReportContext & { summary: AgentReportMetrics; list: AgentReportMemberRow[]; row_label: string; chain_levels?: AgentReportChainLevel[]; report_levels: AgentReportLevel[] };
+export type AgentReportData = AgentReportContext & { summary: AgentReportMetrics; list: AgentReportMemberRow[]; row_label: string; report_levels: AgentReportLevel[] };
 export type AgentMonthlyReportData = AgentReportContext & { list: AgentMonthlyReportRow[]; total: AgentReportMetrics; report_levels: AgentReportLevel[] };
 export type AgentReportLevel = { key: string; label: string; relation: 'downline'|'self'|'upline' };
 export type AgentOrderDetail = { id: number; bet_record_id: number; order_no: string; username: string; issue_no: string; placed_at: string; number_text: string; category: string; play_type: string; amount: string; odds: string; win_amount: string; downline_rebate: string; received_amount?: string; own_rebate?: string; paid_upstream?: string; rebate_profit?: string; status: string; source: string; ticket: string; path?: string };

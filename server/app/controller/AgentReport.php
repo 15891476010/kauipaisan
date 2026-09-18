@@ -36,7 +36,7 @@ final class AgentReport
         $lotteries=$this->lotteries($request);
         $viewSession=$scope->session($session);
         $rows=$this->rows($viewSession,$from,$to,$lotteries);
-        $groups=$this->memberList($scope,$viewSession,$rows);
+        $groups=$scope->groupedRows($rows,fn(array $group): array=>$this->aggregate($group));
         return $this->reply(array_merge($scope->context(),$groups,['summary'=>$this->aggregate($rows),'report_levels'=>$this->reportLevels($viewSession),'from'=>$from,'to'=>$to,'lotteries'=>$lotteries]));
     }
 
@@ -376,75 +376,6 @@ final class AgentReport
     }
 
     /**
-     * Flat member view: one row per member under the current node, each
-     * carrying the ancestor organization names shown as chain columns.
-     * Column layout depends on the current node's level — a director sees
-     * 会员/小股东/大股东/总监, a shareholder sees 会员/总代理/小股东/大股东,
-     * and so on, always the two levels below the current node plus itself
-     * (the bottom agent level pads one parent for context).
-     */
-    private function memberList(AgentReportScope $scope,array $session,array $rows): array
-    {
-        // Every member under the current subtree is a row, even when it has
-        // no bets in the range — the chain columns must not drop members
-        // just because the selected period is empty for them.
-        $userQuery=Db::name('site_users')->where('site_id',$scope->siteId())->whereNull('deleted_at')->field('id,username,organization_id');
-        OrganizationHierarchy::applyUserScope($userQuery,$session,'id');
-        $groups=[];
-        foreach($userQuery->select()->toArray() as $user)
-            $groups[(int)$user['id']]=['id'=>(int)$user['id'],'type'=>'member','member'=>(string)$user['username'],'organization_id'=>(int)($user['organization_id']??0),'rows'=>[]];
-        foreach($rows as $row){
-            $uid=(int)($row['user_id']??0);
-            if(!isset($groups[$uid]))$groups[$uid]=['id'=>$uid,'type'=>'member','member'=>(string)($row['username']??'会员'),'organization_id'=>(int)($row['organization_id']??0),'rows'=>[]];
-            $groups[$uid]['rows'][]=$row;
-        }
-        $levelKeys=$this->chainLevels($scope->currentLevel());
-        $siteId=$scope->siteId();
-        $chainCache=[];
-        $list=[];
-        foreach($groups as $group){
-            $chain=[];
-            $orgId=$group['organization_id'];
-            if($orgId>0){
-                if(!isset($chainCache[$orgId])){
-                    $map=[];
-                    foreach(OrganizationHierarchy::shareChain($siteId,$orgId) as $node)$map[(string)($node['level']??'')]=$node;
-                    $chainCache[$orgId]=$map;
-                }
-                foreach($levelKeys as $level){
-                    $key=$level['key']; if($key==='member')continue;
-                    $node=$chainCache[$orgId][$key]??null;
-                    $chain[$key]=$node?['id'=>(int)$node['id'],'name'=>(string)$node['name']]:null;
-                }
-            }
-            $list[]=['id'=>$group['id'],'type'=>'member','member'=>$group['member'],'chain'=>$chain,'issue_count'=>AgentReportScope::issueCount($group['rows']),'summary'=>$this->aggregate($group['rows'])];
-        }
-        usort($list,static fn(array $a,array $b):int=>strcmp($a['member'],$b['member'])?:($a['id']<=>$b['id']));
-        return ['list'=>$list,'chain_levels'=>$levelKeys,'row_label'=>'会员','issue_count'=>AgentReportScope::issueCount($rows)];
-    }
-
-    /**
-     * Ordered column levels for the flat member view: member column first,
-     * then the two organization levels directly below the current node
-     * (lowest first), then the current level. Bottom levels pad upward so
-     * an agent still shows 会员/代理/总代理.
-     */
-    private function chainLevels(string $currentLevel): array
-    {
-        $rank=['member'=>0,'agent'=>1,'general_agent'=>2,'small_shareholder'=>3,'shareholder'=>4,'director'=>5];
-        $byRank=array_flip($rank);
-        $cur=$rank[$currentLevel]??5;
-        $below=[];
-        for($r=$cur-1;$r>=1&&count($below)<2;$r--)$below[]=$r;
-        $cols=array_merge([0],array_reverse($below),[$cur]);
-        for($next=$cur+1;count($cols)<3&&$next<=5;$next++)$cols[]=$next;
-        return array_map(static function(int $r)use($byRank):array{
-            $key=$byRank[$r];
-            return ['key'=>$key,'label'=>OrganizationHierarchy::LABELS[$key]??'会员'];
-        },$cols);
-    }
-
-    /**
      * Return only organization levels that are actually related to the
      * current account: all descendants, the current level, and all ancestors.
      * The client uses the relation to choose the appropriate column group.
@@ -456,29 +387,20 @@ final class AgentReport
         $current=$currentId>0?Db::name('organization_nodes')->where('id',$currentId)->where('site_id',$siteId)->whereNull('deleted_at')->find():null;
         if(!$current) $current=OrganizationHierarchy::rootForSite($siteId);
         if(!$current) return [];
-        $currentLevel=(string)$current['level'];
-        $nodes=[];
-        $descendantIds=OrganizationHierarchy::descendantIds((int)$current['id']);
-        if($descendantIds) $nodes=Db::name('organization_nodes')->whereIn('id',$descendantIds)->where('status',1)->whereNull('deleted_at')->select()->toArray();
-        // Keep the current node and its direct parent only. Descendants are
-        // fully included above, but a report must not expose the parent's
-        // parent (or unrelated shareholder/director levels) to this account.
-        $nodes[]=$current;
-        $parentId=(int)($current['parent_id']??0);
-        if($parentId>0){
-            $parent=Db::name('organization_nodes')->where('id',$parentId)->where('site_id',$siteId)->where('status',1)->whereNull('deleted_at')->find();
-            if($parent) $nodes[]=$parent;
-        }
-        $rank=array_flip(array_keys(OrganizationHierarchy::LABELS));
-        $currentRank=(int)($rank[$currentLevel]??0);
-        $levels=[];$seen=[];
-        foreach($nodes as $node){
-            $key=(string)($node['level']??''); if($key===''||isset($seen[$key])) continue; $seen[$key]=true;
-            $nodeRank=(int)($rank[$key]??$currentRank);
-            $relation=$nodeRank>$currentRank?'downline':($nodeRank===$currentRank?'self':'upline');
-            $levels[]=['key'=>$key,'label'=>OrganizationHierarchy::LABELS[$key]??$key,'relation'=>$relation];
-        }
-        usort($levels,static function(array $a,array $b)use($rank):int{return ((int)($rank[$b['key']]??0))<=>((int)($rank[$a['key']]??0));});
+        // Metric column groups follow the viewing level: the two
+        // organization levels directly below the current node plus the
+        // current level itself. A bottom agent has nothing below, so it
+        // pads one parent for context — matching the agreed layout:
+        // 总监→小股东/大股东/总监, 大股东→总代理/小股东/大股东,
+        // 小股东→代理/总代理/小股东, 总代理→代理/总代理, 代理→代理/总代理.
+        $order=array_keys(OrganizationHierarchy::LABELS);
+        $cur=(int)array_search((string)$current['level'],$order,true);
+        $levels=[];
+        for($r=min($cur+2,count($order)-1);$r>$cur;$r--)
+            $levels[]=['key'=>$order[$r],'label'=>OrganizationHierarchy::LABELS[$order[$r]]??$order[$r],'relation'=>'downline'];
+        $levels[]=['key'=>$order[$cur],'label'=>OrganizationHierarchy::LABELS[$order[$cur]]??$order[$cur],'relation'=>'self'];
+        for($r=$cur-1;count($levels)<2&&$r>=0;$r--)
+            $levels[]=['key'=>$order[$r],'label'=>OrganizationHierarchy::LABELS[$order[$r]]??$order[$r],'relation'=>'upline'];
         return $levels;
     }
 
