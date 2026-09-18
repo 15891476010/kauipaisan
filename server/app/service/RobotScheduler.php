@@ -305,6 +305,16 @@ final class RobotScheduler
                 $maxAmount=min($maxAmount,max($minAmount,round($hint*1.25,2)));
             }
         }
+        // A capped band can never stake more than perCodeMax per code, and
+        // the longest list ticket holds 220 codes.  When the paced ticket
+        // demand exceeds that generatable ceiling the schedule deadlocks on
+        // "未找到可匹配赔率" forever; clamp the range so narrow-band days
+        // underfill the quota instead of stalling the robot entirely.
+        if($this->perCodeMax!==null && $this->perCodeMax>0){
+            $genCeil=$this->perCodeMax*220;
+            $maxAmount=min($maxAmount,$genCeil);
+            $minAmount=min($minAmount,$maxAmount);
+        }
         // When the remaining amount fits in one configured batch, construct
         // an exact-total ticket.  This prevents a final random unit/combination
         // rounding from leaving a small, permanently unusable remainder.
