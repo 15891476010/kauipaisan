@@ -4603,10 +4603,15 @@ body {
   outline-offset: 3px;
 }
 .report-issue-count {
-  display: block;
+  display: inline;
+  margin-left: 4px;
   color: #666;
   font-size: 12px;
   font-weight: 400;
+  white-space: nowrap;
+}
+.agent-reports-table tbody td:first-child {
+  white-space: nowrap;
 }
 .agent-reports-table tbody tr {
   background: #fff;
@@ -4615,7 +4620,7 @@ body {
   background: #f9f9f9;
 }
 .agent-reports-table .report-total-row {
-  background: #c7f4f4;
+  background: #cfe6fb;
   font-weight: 700;
 }
 @media (max-width: 900px) {

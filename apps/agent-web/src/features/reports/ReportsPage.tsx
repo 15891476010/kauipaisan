@@ -115,10 +115,10 @@ function ReportTable({mode,rows,memberRows,summary,reportLevels,rowLabel,issueCo
   const columns=groups.reduce((count,group)=>count+group.titles.length,1);
   return <div className="agent-reports-table-scroll"><table className="agent-reports-table" style={{minWidth:Math.max(1120,180+(columns-1)*82)}}>
     <thead><tr><th rowSpan={2} className="report-name-column">{mode==='summary'?rowLabel:'期号'}</th>{groups.map(group=><th key={group.key} colSpan={group.titles.length} className={group.className}>{group.label}</th>)}</tr><tr>{groups.flatMap(group=>group.titles.map(title=><th key={`${group.key}-${title}`} className={group.className}>{title}</th>))}</tr></thead>
-    <tbody>{mode==='summary'&&memberRows.map(row=><MetricRow key={`${row.type}-${row.id}`} label={<><span className="report-branch-name">{row.type==='organization'?<button type="button" onClick={()=>browse(row.id)}>{row.member}</button>:row.member}</span><small className="report-issue-count">投注 {row.issue_count} 期</small></>} metrics={row.summary} levels={levels}/>)}
+    <tbody>{mode==='summary'&&memberRows.map(row=><MetricRow key={`${row.type}-${row.id}`} label={<><span className="report-branch-name">{row.type==='organization'?<button type="button" onClick={()=>browse(row.id)}>{row.member}</button>:row.member}</span><small className="report-issue-count">{row.issue_count}期数</small></>} metrics={row.summary} levels={levels}/>)}
     {mode==='monthly'&&rows.map(row=><MetricRow key={row.issue_no} label={row.issue_no} metrics={row.summary} levels={levels}/>)}
     {(mode==='summary'?memberRows.length:rows.length)===0&&<tr><td colSpan={columns}>当前范围暂无投注数据</td></tr>}
-    <MetricRow label={<>合计<small className="report-issue-count">投注 {issueCount} 期</small></>} metrics={summary} levels={levels} total/></tbody>
+    <MetricRow label={<>合计<small className="report-issue-count">{issueCount}期数</small></>} metrics={summary} levels={levels} total/></tbody>
   </table></div>;
 }
 function MetricRow({label,metrics,levels,total=false}:{label:ReactNode;metrics:AgentReportMetrics;levels:AgentReportLevel[];total?:boolean}) {

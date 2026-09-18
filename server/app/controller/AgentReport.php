@@ -292,7 +292,13 @@ final class AgentReport
             ->where('m.site_id',$siteId)->whereNull('u.deleted_at')
             ->where('m.day','>=',$from)->where('m.day','<=',$to);
         OrganizationHierarchy::applyUserScope($query,$session,'m.user_id');
-        if($lotteries!==[])$query->whereIn('m.lottery_name',$lotteries);
+        if($lotteries!==[]) {
+            $marks=implode(',',array_fill(0,count($lotteries),'?'));
+            // Production bet rows rarely persist a lottery name; resolve it
+            // through the issue history exactly like the live query does so
+            // the 福/体 filter does not silently empty the persisted data.
+            $query->whereRaw('(m.lottery_name IN ('.$marks.') OR EXISTS(SELECT 1 FROM lottery_histories lh JOIN lotteries l ON l.id=lh.lottery_id WHERE lh.code=m.issue_no AND l.name IN ('.$marks.')))',array_merge($lotteries,$lotteries));
+        }
         $rows=$query->field(
             'm.user_id,u.username,u.organization_id,u.interception_rate AS share_rate,m.issue_no,m.settled,'.
             'm.detail_count,m.number_count,m.amount,m.win_amount,m.rebate,m.intercepted,m.placed_at,m.ledger_json'
@@ -387,20 +393,20 @@ final class AgentReport
         $current=$currentId>0?Db::name('organization_nodes')->where('id',$currentId)->where('site_id',$siteId)->whereNull('deleted_at')->find():null;
         if(!$current) $current=OrganizationHierarchy::rootForSite($siteId);
         if(!$current) return [];
-        // Metric column groups follow the viewing level: the two
-        // organization levels directly below the current node plus the
-        // current level itself. A bottom agent has nothing below, so it
-        // pads one parent for context — matching the agreed layout:
-        // 总监→小股东/大股东/总监, 大股东→总代理/小股东/大股东,
-        // 小股东→代理/总代理/小股东, 总代理→代理/总代理, 代理→代理/总代理.
+        // Metric column groups follow the reference report layout: the
+        // level directly below the viewer, the viewer's own level, and the
+        // parent level for context. A top director has no parent, so it
+        // shows the second level down instead — 总监→小股东/大股东/总监,
+        // 大股东→小股东/大股东/总监, 小股东→总代理/小股东/大股东,
+        // 总代理→代理/总代理/小股东, 代理→代理/总代理.
         $order=array_keys(OrganizationHierarchy::LABELS);
         $cur=(int)array_search((string)$current['level'],$order,true);
         $levels=[];
-        for($r=min($cur+2,count($order)-1);$r>$cur;$r--)
+        $belowCount=$cur===0?2:1;
+        for($r=min($cur+$belowCount,count($order)-1);$r>$cur;$r--)
             $levels[]=['key'=>$order[$r],'label'=>OrganizationHierarchy::LABELS[$order[$r]]??$order[$r],'relation'=>'downline'];
         $levels[]=['key'=>$order[$cur],'label'=>OrganizationHierarchy::LABELS[$order[$cur]]??$order[$cur],'relation'=>'self'];
-        for($r=$cur-1;count($levels)<2&&$r>=0;$r--)
-            $levels[]=['key'=>$order[$r],'label'=>OrganizationHierarchy::LABELS[$order[$r]]??$order[$r],'relation'=>'upline'];
+        if($cur>0)$levels[]=['key'=>$order[$cur-1],'label'=>OrganizationHierarchy::LABELS[$order[$cur-1]]??$order[$cur-1],'relation'=>'upline'];
         return $levels;
     }
 

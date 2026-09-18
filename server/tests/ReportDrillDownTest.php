@@ -117,7 +117,10 @@ try {
     check(array_column($branch['report_levels'], 'key') === ['agent','general_agent'], 'Agent column levels are wrong');
     check(array_column($branch['report_levels'], 'relation') === ['self','upline'], 'Agent column relations are wrong');
     $shareBranch = $call(['organization_id'=>$shareholder])['data'];
-    check(array_column($shareBranch['report_levels'], 'key') === ['general_agent','small_shareholder','shareholder'], 'Shareholder column levels are wrong');
+    check(array_column($shareBranch['report_levels'], 'key') === ['small_shareholder','shareholder','director'], 'Shareholder column levels are wrong');
+    check(array_column($shareBranch['report_levels'], 'relation') === ['downline','self','upline'], 'Shareholder column relations are wrong');
+    $smallBranch = $call(['organization_id'=>$small])['data'];
+    check(array_column($smallBranch['report_levels'], 'key') === ['general_agent','small_shareholder','shareholder'], 'Small-shareholder column levels are wrong');
     $monthly = $call(['organization_id'=>$shareholder], 'monthly')['data'];
     check(count($monthly['list']) === 17 && $monthly['total']['amount'] === '345', 'Monthly report must retain selected subtree');
     $filtered = $call(['lotteries'=>'福彩3D'])['data'];
