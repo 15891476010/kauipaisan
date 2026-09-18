@@ -1,5 +1,21 @@
 # 项目实施计划
 
+### 本轮：机器人改码——按比率自动调整已选会员注单（已完成）
+
+- [x] 后端 `AdminBetBatch` 新增 `robotPlan`（纯试算不落库）与 `robotApply`（服务端确定性重算方案，事务内改号+调额、已结算注单回滚重结、审计日志；明细/主单状态变化时拒绝执行）。
+- [x] 口径：比率 = 已选会员目标总中 ÷ 未选会员净亏（未选总投−未选总中）；比率与目标金额双向联动；未选净亏≤0 时比率输入禁用、只能直接输金额。
+- [x] 机器人手段仅限：号码/盘口改写为预开奖口径 + 中奖明细金额按比例缩放（上限 50 倍，分位微调取最接近值）；玩法形态不变，不改注单原始结构；无法翻转的玩法列入 warnings。
+- [x] 翻号覆盖玩法（`robotRewriteSpecs`/`robotRewriteToken`/`robotSourceSpecs`/`robotDanTuo`）：三位号码（直/组三/组六/组及展开组合）、位置掩码 1X3、紧凑选号 `三DDD/六DDD/三赖/六赖/豹/复DDD`、`N位数组`、胆拖四类（组三/组六/单选全/组六2胆拖）、独胆/N胆、双飞/对子、和值单点与区间（归一单点）、和值大小单双、跨度、ND 定位、百十个定位列表（含 `000` 占位/展开组合/紧凑号码三种存储）。多码选号保持码数不变（先补非开奖数字）。落库同步 `bet_details.source_text`、`user_stop_drops.source_text`；仍不可翻的（豹子全包、对子全包等非开奖形态不符即无解的玩法）进 warnings。多码注单每条明细只翻转一个号码 token（用户纠正：不得整串改成同一开奖号），其余号码保留，缺口走金额缩放。
+- [x] 前端 `BetBatchReplaceView`：新增已选/未选会员两组统计（总投/总中/盈亏/盈亏占比/返奖率）、比率↔金额联动输入、"生成改单方案"、方案预览弹窗（汇总+告警+逐单 原文本→新文本/金额→中奖）、确认执行后刷新。
+- [x] 路由 `admin/bet-details/batch-robot-plan` / `batch-robot-apply` + `Saas.AdminBetBatch` 委托 + admin.ts 类型化 API 封装。
+- [x] 验证：`php -l` 通过；`RobotAdjustPlanTest`（翻号+缩放、不可翻玩法告警、独胆/组选多码/胆拖/定位/和值/跨度翻号与落库、apply+当日用量、事务回滚）通过；`SettlementShareReversalTest`/`BetSettlementMatcherTest`(84210 assertions)/`DeleteNodeReclaimTest`/`LedgerContributionTest`/`ReportLevelColumnsTest` 回归通过；`vue-tsc` + admin-web 构建通过并发布 dist（index-zOOwDAn7.js）。仅开发机，未动线上。
+- 用户确认口径：达成金额相近即可、不要求分毫不差；预览展示实际达成值与比率。多码注单每条明细只翻一个号码 token。
+- [x] 方案优先级修正（用户纠正）：已有中奖时优先纯调金额（W0>0 且 T≤W0×50 直接 scale），已中奖明细不再翻号（防同一明细出现重复开奖号）；仅缩放承载不足才翻号。验证：`RobotAdjustPlanTest` 场景 1/1b/4d 通过。
+- [x] 预览金额口径澄清（用户疑问）：金额列是整单总注额，中奖按"中奖号码分摊单注 × 赔率"；方案明细新增 `win_odds`，预览列改"金额（总注）"并增显示"中奖注额 old→new"（=中奖÷赔率）。`robotIssueContext` 输入预开奖号时已结算单也按预开奖试算（cur_win/eval_odds 与 options 口径一致）。验证：`RobotAdjustPlanTest` + `vue-tsc` + 构建发布 dist 通过。
+- [x] 中奖号码高亮（用户需求）：原始注单列 textarea 换成点击编辑的高亮视图——预中奖>0 时预开奖号+中奖表达式（后端 `win_tokens`，覆盖独胆/胆拖等非三位玩法）黄底标出；方案预览 old/new 原文按各自中奖 token 高亮。验证：`php -l` + `vue-tsc` + 构建发布 dist 通过。
+- [x] 调额金额字样同步（用户纠正）：`applyRobotItem` 调额后把 `各N元`→新每注分摊、裸 `N元`→新明细总额，同步 bet_details/user_stop_drops 的 source_text、主单 source_text/formatted_text、bet_submissions；预览 new_source 同规则。验证：`RobotAdjustPlanTest` 通过。
+- [x] 预中奖口径修正（用户纠正）：输入预开奖号码时已结算注单也按预开奖号试算（`options()` 不再跳过 settled），未输入才回退真实结算 win；统计口径同步。验证：`php -l` + `RobotAdjustPlanTest` 通过。注意：落库结算仍按 `lottery_histories` 真实开奖号，预开奖≠真实时存储 win 与预中奖显示会不一致，落库口径是否跟进待用户确认。
+
 ### 本轮：期号下拉过滤 + 线上机器人脏数据清洗（已完成）
 
 - [x] `AdminBetBatch::options()` 期号列表：bet 来源期号必须存在于当前彩种 `lottery_histories`，修复福彩格式/未来期号混入排列三下拉。

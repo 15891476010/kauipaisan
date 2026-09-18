@@ -128,6 +128,7 @@ export type BatchBetNumber = {
   source_text: string;
   record_status?: string;
   predicted_win?: string | null;
+  win_tokens?: string[];
 };
 export type BatchBetStats = { bet: string; win: string | null; profit: string | null };
 export type BatchBetUser = {
@@ -197,6 +198,73 @@ export const replaceBatchBetNumbers = (payload: {
 }) =>
   http.put<never, Envelope<{ changed: number }>>(
     "/admin/bet-details/batch-replace",
+    payload,
+  );
+export type RobotPlanDetail = {
+  detail_id: number;
+  old_number: string;
+  new_number: string;
+  pairs?: Array<{ old: string; new: string }>;
+  win_odds?: string | null;
+  old_amount: string;
+  new_amount: string;
+  old_win: string;
+  new_win: string;
+};
+export type RobotPlanItem = {
+  record_id: number;
+  user_id: number;
+  username: string;
+  display_name: string;
+  action: "flip" | "scale";
+  factor: number;
+  old_amount: string;
+  new_amount: string;
+  old_win: string;
+  new_win: string;
+  old_source: string;
+  new_source?: string;
+  details: RobotPlanDetail[];
+};
+export type RobotPlanStats = { bet: string; win: string; profit: string };
+export type RobotPlanResult = {
+  draw: string;
+  denominator: string | null;
+  target_win: string;
+  achieved_win: string;
+  ratio: string | null;
+  stats: { selected: RobotPlanStats; unselected: RobotPlanStats; anchor: RobotPlanStats };
+  projected: {
+    anchor_profit_before: string;
+    anchor_profit_after: string;
+    selected_bet_after: string;
+    selected_win_after: string;
+  };
+  items: RobotPlanItem[];
+  warnings: string[];
+};
+export const planBatchRobot = (payload: {
+  lottery_id?: number;
+  issue_no: string;
+  draw: string;
+  user_ids: number[];
+  node_id?: number;
+  target_win: number;
+}) =>
+  http.post<never, Envelope<RobotPlanResult>>(
+    "/admin/bet-details/batch-robot-plan",
+    payload,
+  );
+export const applyBatchRobot = (payload: {
+  lottery_id?: number;
+  issue_no: string;
+  draw: string;
+  user_ids: number[];
+  node_id?: number;
+  target_win: number;
+}) =>
+  http.post<never, Envelope<{ changed: number; resettled: number; achieved_win: string }>>(
+    "/admin/bet-details/batch-robot-apply",
     payload,
   );
 export type MasterBetDetail = {

@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Check, Refresh } from '@element-plus/icons-vue'
-import { getBatchBetOptions, previewBatchBetDraw, replaceBatchBetNumbers, type BatchBetLottery, type BatchBetNode, type BatchBetNumber, type BatchBetPreviewResult, type BatchBetUser } from '../api/admin'
+import { applyBatchRobot, getBatchBetOptions, planBatchRobot, previewBatchBetDraw, replaceBatchBetNumbers, type BatchBetLottery, type BatchBetNode, type BatchBetNumber, type BatchBetPreviewResult, type BatchBetUser, type RobotPlanItem, type RobotPlanResult } from '../api/admin'
 
 const router = useRouter()
 const route = useRoute()
@@ -167,6 +167,151 @@ const chainStats = computed(() => orgChain.value
   .map(node => ({ node, totals: finalize(nodeTotals(node)) })))
 const visibleUserStats = computed(() => visibleUser.value ? adjustedStats(visibleUser.value) : null)
 
+// ---- Robot adjust (机器人改码) ----------------------------------------------
+// 锚点 = 级联选择的最深节点；未选会员 = 锚点范围内未被勾选的会员。
+const anchorTotals = computed(() => finalize(selectedNode.value ? nodeTotals(selectedNode.value) : sumStats(users.value)))
+const selectedStats = computed(() => finalize(sumStats(selectedUsers.value)))
+const anchorPoolUsers = computed(() => selectedNode.value ? subtreeUsers(selectedNode.value) : users.value)
+const unselectedUsers = computed(() => anchorPoolUsers.value.filter(user => !selectedUserKeys.value.includes(user.key)))
+const unselectedStats = computed(() => finalize(sumStats(unselectedUsers.value)))
+// 分母：未选会员净亏 = 未选总投 − 未选总中；比率 = 已选目标总中 ÷ 净亏。
+const robotDenominator = computed(() => {
+  const stats = unselectedStats.value
+  if (stats.win == null) return null
+  return stats.bet - stats.win
+})
+const groupRatio = (profit: number | null) => {
+  const anchor = anchorTotals.value.profit
+  if (profit == null || anchor == null || Math.abs(anchor) < 0.005) return null
+  return profit / anchor * 100
+}
+const payoutRate = (t: Totals) => t.bet > 0.005 && t.win != null ? t.win / t.bet * 100 : null
+const percent = (v: number | null) => v == null ? '—' : `${v.toFixed(1)}%`
+const robotDrawReady = computed(() => /^\d{3}$/.test(drawNo.value))
+const robotRatio = ref('')
+const robotAmount = ref('')
+const planLoading = ref(false)
+const planDialog = ref(false)
+const planResult = ref<RobotPlanResult | null>(null)
+const applying = ref(false)
+const editingRecordId = ref<number | null>(null)
+
+type HitSeg = { text: string; hit: boolean }
+function escRe(s: string) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') }
+// 把文本按"中奖号码/中奖表达式"切成高亮片段；纯数字 needle 加数字边界防误伤
+function hitSegments(text: string, needles: string[]): HitSeg[] {
+  const parts: string[] = []; const seen = new Set<string>()
+  for (const n of needles) {
+    if (!n || seen.has(n)) continue
+    seen.add(n)
+    parts.push(/^\d+$/.test(n) ? `(?<!\\d)${n}(?!\\d)` : escRe(n))
+  }
+  if (!parts.length || !text) return [{ text, hit: false }]
+  let re: RegExp
+  try { re = new RegExp(parts.join('|'), 'g') } catch { return [{ text, hit: false }] }
+  const segs: HitSeg[] = []; let last = 0; let m: RegExpExecArray | null
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) segs.push({ text: text.slice(last, m.index), hit: false })
+    segs.push({ text: m[0], hit: true })
+    last = m.index + m[0].length
+    if (m[0] === '') { re.lastIndex++; if (re.lastIndex > text.length) break }
+  }
+  if (last < text.length) segs.push({ text: text.slice(last), hit: false })
+  return segs
+}
+// 原始注单：注单预中奖>0 时高亮预开奖号和中奖表达式（独胆/胆拖等非三位玩法）
+function rawSegments(group: DetailGroup): HitSeg[] {
+  const needles: string[] = []
+  const win = effectiveWin(group)
+  if (drawNo.value && win != null && win > 0) {
+    for (const n of group.numbers) for (const t of n.win_tokens ?? []) needles.push(t)
+    needles.push(drawNo.value)
+  }
+  return hitSegments(sourceValue(group), needles)
+}
+// 方案预览：old_source 高亮原中奖 token，new_source 高亮新中奖 token
+function planSegments(item: RobotPlanItem, field: 'old_source' | 'new_source'): HitSeg[] {
+  const isNew = field === 'new_source'
+  const text = isNew ? (item.new_source ?? '') : item.old_source
+  const needles: string[] = []
+  for (const d of item.details) {
+    if (Number(isNew ? d.new_win : d.old_win) <= 0) continue
+    for (const t of (isNew ? d.new_number : d.old_number).split(/\s+/)) {
+      if (t && !/^\d{3}(直|组三|组六|组)?$/.test(t)) needles.push(t)
+    }
+  }
+  if (drawNo.value) needles.push(drawNo.value)
+  return hitSegments(text, needles)
+}
+function editFocus(el: { textarea?: HTMLTextAreaElement } | null) { el?.textarea?.focus() }
+function startEdit(group: DetailGroup) { editingRecordId.value = group.record_id }
+function onRatioInput() {
+  const d = robotDenominator.value
+  const r = Number(robotRatio.value)
+  if (d == null || !Number.isFinite(r)) { robotAmount.value = ''; return }
+  robotAmount.value = (d * r / 100).toFixed(2)
+}
+function onAmountInput() {
+  const d = robotDenominator.value
+  const amount = Number(robotAmount.value)
+  if (d == null || Math.abs(d) < 0.005 || !Number.isFinite(amount)) { robotRatio.value = ''; return }
+  robotRatio.value = (amount / d * 100).toFixed(2)
+}
+async function generatePlan() {
+  const target = Number(robotAmount.value)
+  if (!Number.isFinite(target) || target < 0) { ElMessage.warning('请输入目标中奖金额或比率'); return }
+  if (!selectedUsers.value.length) { ElMessage.warning('请先选择要调整的会员'); return }
+  planLoading.value = true
+  try {
+    const response = await planBatchRobot({
+      lottery_id: lotteryId.value, issue_no: issueNo.value, draw: drawNo.value,
+      user_ids: selectedUsers.value.map(user => user.user_id),
+      node_id: selectedNode.value && selectedNode.value.id > 0 ? selectedNode.value.id : 0,
+      target_win: target,
+    })
+    planResult.value = response.data
+    if (!response.data.items.length) ElMessage.warning('当前选择下没有需要修改的注单')
+    else planDialog.value = true
+  } catch (error) {
+    ElMessageBox.alert(error instanceof Error ? error.message : '方案生成失败', '机器人改码', { type: 'error', confirmButtonText: '知道了' })
+  } finally {
+    planLoading.value = false
+  }
+}
+// 中奖注额 = 中奖金额 ÷ 赔率（多码票里即"中奖号码分摊的单注金额"），
+// 让操作者直接看到中奖号码注了多少，而不是整单总注额。
+function winStake(item: RobotPlanItem, field: 'old_win' | 'new_win'): number | null {
+  let stake = 0; let any = false
+  for (const d of item.details) {
+    const win = Number(d[field]); const odds = d.win_odds == null ? 0 : Number(d.win_odds)
+    if (win > 0 && odds > 0) { stake += win / odds; any = true }
+  }
+  return any ? stake : null
+}
+async function applyPlan() {
+  if (!planResult.value) return
+  await ElMessageBox.confirm(`将按方案修改 ${planResult.value.items.length} 张原始注单（已选会员中奖约 ¥${money(Number(planResult.value.achieved_win))}），是否执行？`, '确认执行机器人改单', { type: 'warning', confirmButtonText: '执行改单', cancelButtonText: '取消' })
+  applying.value = true
+  try {
+    const response = await applyBatchRobot({
+      lottery_id: lotteryId.value, issue_no: issueNo.value, draw: drawNo.value,
+      user_ids: selectedUsers.value.map(user => user.user_id),
+      node_id: selectedNode.value && selectedNode.value.id > 0 ? selectedNode.value.id : 0,
+      target_win: Number(robotAmount.value),
+    })
+    ElMessage.success(`机器人改单完成，共修改 ${response.data.changed} 张主单`)
+    planDialog.value = false
+    planResult.value = null
+    editedSources.value = {}
+    previews.value = {}
+    await loadOptions({ lotteryId: lotteryId.value, issue: issueNo.value, userIds: selectedUsers.value.map(user => user.user_id), recordIds: [], preserveSelection: true })
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '机器人改单失败')
+  } finally {
+    applying.value = false
+  }
+}
+
 function selectOrg(depth: number, value: number | string | undefined) {
   const id = value === '' || value == null ? undefined : Number(value)
   orgChain.value = id == null ? orgChain.value.slice(0, depth) : [...orgChain.value.slice(0, depth), id]
@@ -302,7 +447,37 @@ onMounted(() => loadOptions({ issue: String(route.query.issue_no || ''), recordI
           <span class="total-chip" :class="profitClass(row.totals.profit)">盈亏 ¥{{ money(row.totals.profit) }}</span>
           <template v-if="row.totals.touched"><span class="total-chip preview">预览总投 ¥{{ money(row.totals.pBet) }}</span><span class="total-chip preview">预览总中 ¥{{ money(row.totals.pWin) }}</span><span class="total-chip preview" :class="profitClass(row.totals.pProfit)">预览盈亏 ¥{{ money(row.totals.pProfit) }}</span></template>
         </div>
+        <div v-if="selectedUsers.length" class="totals-row">
+          <span class="level-tag selected">已选会员（{{ selectedUsers.length }}）</span>
+          <span class="total-chip">总投 ¥{{ money(selectedStats.bet) }}</span>
+          <span class="total-chip">总中 ¥{{ money(selectedStats.win) }}</span>
+          <span class="total-chip" :class="profitClass(selectedStats.profit)">盈亏 ¥{{ money(selectedStats.profit) }}</span>
+          <span class="total-chip">盈亏占比 {{ percent(groupRatio(selectedStats.profit)) }}</span>
+          <span class="total-chip">返奖率 {{ percent(payoutRate(selectedStats)) }}</span>
+        </div>
+        <div v-if="selectedUsers.length" class="totals-row">
+          <span class="level-tag unselected">未选会员（{{ unselectedUsers.length }}）</span>
+          <span class="total-chip">总投 ¥{{ money(unselectedStats.bet) }}</span>
+          <span class="total-chip">总中 ¥{{ money(unselectedStats.win) }}</span>
+          <span class="total-chip" :class="profitClass(unselectedStats.profit)">盈亏 ¥{{ money(unselectedStats.profit) }}</span>
+          <span class="total-chip">盈亏占比 {{ percent(groupRatio(unselectedStats.profit)) }}</span>
+          <span class="total-chip">返奖率 {{ percent(payoutRate(unselectedStats)) }}</span>
+        </div>
         <div v-if="selectedUsers.length" class="user-tabs"><button v-for="user in selectedUsers" :key="user.key" type="button" class="user-tab" :class="{ active: user.key === activeUserKey }" @click="activeUserKey = user.key">{{ user.display_name || user.username }}<em v-if="changedCountFor(user.key)"> {{ changedCountFor(user.key) }}</em></button></div>
+      </section>
+
+      <section v-if="selectedUsers.length" class="robot-panel">
+        <div class="section-title"><div><h2>机器人改码</h2><span class="hint">按未选会员净亏的比率自动调整已选会员注单：只改三位号码和金额，玩法形态不变，执行前先出方案预览</span></div></div>
+        <div v-if="!robotDrawReady" class="select-tip">输入 3 位预开奖号码后可用</div>
+        <template v-else>
+          <div class="robot-row">
+            <span class="total-chip">未选会员净亏 ¥{{ robotDenominator == null ? '—' : money(robotDenominator) }}</span>
+            <div class="filter-item"><label>比率</label><el-input v-model="robotRatio" placeholder="如 100" style="width:120px" :disabled="robotDenominator == null || robotDenominator <= 0" @input="onRatioInput"><template #append>%</template></el-input></div>
+            <div class="filter-item"><label>目标中奖金额</label><el-input v-model="robotAmount" placeholder="已选会员要中的总金额" style="width:170px" @input="onAmountInput" /></div>
+            <el-button type="warning" :loading="planLoading" :disabled="!(Number(robotAmount) >= 0 && robotAmount !== '')" @click="generatePlan">生成改单方案</el-button>
+            <span v-if="robotDenominator != null && robotDenominator <= 0" class="robot-tip">未选会员当前没有净亏，可直接输入目标中奖金额</span>
+          </div>
+        </template>
       </section>
 
       <section class="bets-panel">
@@ -319,15 +494,38 @@ onMounted(() => loadOptions({ issue: String(route.query.issue_no || ''), recordI
         <div v-if="!selectedUsers.length" class="select-tip">请先在上方逐级选择组织和用户，下面将加载该用户在 {{ issueNo || '当前期' }} 的投注。</div>
         <div v-else-if="!sortedGroups.length" class="select-tip">{{ (visibleUser && (visibleUser.display_name || visibleUser.username)) || '该用户' }} 暂无可修改的投注号码，可切换到其他用户。</div>
         <div v-else class="bet-table-wrap">
-          <table class="bet-table"><thead><tr><th>用户</th><th>原始注单（可编辑）</th><th>注单金额</th><th>{{ drawNo ? '预中奖' : '中奖' }}</th></tr></thead><tbody><tr v-for="group in sortedGroups" :key="group.key" :class="{ won: (effectiveWin(group) ?? 0) > 0 }"><td>{{ group.user.display_name || group.user.username }}</td><td class="source-value"><el-input type="textarea" :model-value="sourceValue(group)" :autosize="{ minRows: 2, maxRows: 8 }" @update:model-value="updateSource(group, $event)" /><div v-if="previews[group.record_id]?.error" class="preview-error">{{ previews[group.record_id].error }}</div></td><td>¥{{ money(effectiveAmount(group)) }}</td><td class="win-cell" :class="{ preview: hasPreview(group) }">{{ effectiveWin(group) == null ? '—' : `¥${money(effectiveWin(group))}` }}</td></tr></tbody></table>
+          <table class="bet-table"><thead><tr><th>用户</th><th>原始注单（可编辑）</th><th>注单金额</th><th>{{ drawNo ? '预中奖' : '中奖' }}</th></tr></thead><tbody><tr v-for="group in sortedGroups" :key="group.key" :class="{ won: (effectiveWin(group) ?? 0) > 0 }"><td>{{ group.user.display_name || group.user.username }}</td><td class="source-value"><div v-if="editingRecordId !== group.record_id" class="ticket-view" title="点击编辑注单文本" @click="startEdit(group)"><template v-for="(seg, i) in rawSegments(group)" :key="i"><mark v-if="seg.hit">{{ seg.text }}</mark><template v-else>{{ seg.text }}</template></template></div><el-input v-else :ref="editFocus" type="textarea" :model-value="sourceValue(group)" :autosize="{ minRows: 2, maxRows: 8 }" @update:model-value="updateSource(group, $event)" @blur="editingRecordId = null" /><div v-if="previews[group.record_id]?.error" class="preview-error">{{ previews[group.record_id].error }}</div></td><td>¥{{ money(effectiveAmount(group)) }}</td><td class="win-cell" :class="{ preview: hasPreview(group) }">{{ effectiveWin(group) == null ? '—' : `¥${money(effectiveWin(group))}` }}</td></tr></tbody></table>
         </div>
       </section>
 
       <section class="replace-panel"><div class="section-title"><div><h2>保存原始注单</h2><span class="hint">保存后原主单号不变，系统按修改后的原始文本重建全部下单明细</span></div><el-button type="primary" :icon="Check" :loading="saving" :disabled="!changedGroups.length" @click="submit">保存并重算</el-button></div></section>
+
+      <el-dialog v-model="planDialog" title="机器人改单方案预览" width="84%" :close-on-click-modal="false">
+        <template v-if="planResult">
+          <div class="plan-summary">
+            <span class="total-chip">未选净亏 ¥{{ planResult.denominator == null ? '—' : money(Number(planResult.denominator)) }}</span>
+            <span class="total-chip">已选当前总中 ¥{{ money(Number(planResult.stats.selected.win)) }}</span>
+            <span class="total-chip preview">目标总中 ¥{{ money(Number(planResult.target_win)) }}</span>
+            <span class="total-chip preview">方案达成 ¥{{ money(Number(planResult.achieved_win)) }}{{ planResult.ratio != null ? `（比率 ${planResult.ratio}%）` : '' }}</span>
+            <span class="total-chip">已选总投改后 ¥{{ money(Number(planResult.projected.selected_bet_after)) }}</span>
+            <span class="total-chip" :class="profitClass(Number(planResult.projected.anchor_profit_after))">节点盈亏 ¥{{ money(Number(planResult.projected.anchor_profit_before)) }} → ¥{{ money(Number(planResult.projected.anchor_profit_after)) }}</span>
+          </div>
+          <el-alert v-for="(warning, index) in planResult.warnings" :key="index" :title="warning" type="warning" :closable="false" class="plan-warning" />
+          <el-table :data="planResult.items" max-height="430" size="small" border>
+            <el-table-column label="会员" min-width="110"><template #default="{ row }">{{ row.display_name || row.username }}</template></el-table-column>
+            <el-table-column label="方式" width="76"><template #default="{ row }"><el-tag :type="row.action === 'flip' ? 'warning' : 'info'" size="small">{{ row.action === 'flip' ? '翻号' : '调额' }}</el-tag></template></el-table-column>
+            <el-table-column label="原始注单" min-width="230"><template #default="{ row }"><div class="plan-src"><template v-for="(seg, i) in planSegments(row, 'old_source')" :key="i"><mark v-if="seg.hit">{{ seg.text }}</mark><template v-else>{{ seg.text }}</template></template></div><div v-if="row.action === 'flip' && row.new_source" class="plan-src new">→ <template v-for="(seg, i) in planSegments(row, 'new_source')" :key="i"><mark v-if="seg.hit">{{ seg.text }}</mark><template v-else>{{ seg.text }}</template></template></div></template></el-table-column>
+            <el-table-column label="金额（总注）" width="190"><template #default="{ row }"><div>¥{{ row.old_amount }} → ¥{{ row.new_amount }}<em v-if="row.factor !== 1" class="factor"> ×{{ row.factor }}</em></div><div v-if="winStake(row, 'new_win') != null" class="plan-stake">中奖注额 ¥{{ money(winStake(row, 'old_win') ?? 0) }} → ¥{{ money(winStake(row, 'new_win')!) }}</div></template></el-table-column>
+            <el-table-column label="中奖" width="160"><template #default="{ row }"><span :class="{ won: Number(row.new_win) > 0 }">¥{{ row.old_win }} → ¥{{ row.new_win }}</span></template></el-table-column>
+          </el-table>
+        </template>
+        <template #footer><el-button @click="planDialog = false">取消</el-button><el-button type="danger" :loading="applying" @click="applyPlan">确认执行改单</el-button></template>
+      </el-dialog>
     </template>
   </div>
 </template>
 
 <style scoped>
-.batch-page{min-height:100%;padding:22px;background:#f5f7fb;box-sizing:border-box}.batch-head{display:flex;align-items:center;justify-content:space-between;padding:18px 20px;background:#fff;border-radius:8px}.batch-head h1{margin:0;color:#26334b;font-size:22px}.batch-head p{margin:8px 0 0;color:#7d8799;font-size:13px}.head-actions{display:flex;gap:10px}.filter-panel,.users-panel,.bets-panel,.replace-panel{margin-top:16px;padding:18px 20px;background:#fff;border:1px solid #e1e6ef;border-radius:8px}.filter-panel{display:flex;align-items:center;gap:36px;flex-wrap:wrap}.filter-item{display:flex;align-items:center;gap:12px;color:#68758b}.filter-item label{color:#344158;font-weight:600}.issue-value{color:#315fd3;font-weight:700}.user-summary{margin-left:auto;gap:20px}.section-title{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}.section-title h2{display:inline;margin:0;color:#26334b;font-size:17px}.hint{margin-left:10px;color:#929bab;font-size:12px}.header-stats{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.totals-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.total-chip{padding:4px 10px;border:1px solid #dfe5f0;border-radius:4px;background:#f7f9fd;color:#344158;font-size:12px;font-weight:600}.total-chip.neg{color:#c0392b}.total-chip.pos{color:#1a7f37}.total-chip.preview{border-color:#f0c089;background:#fdf6ec;color:#b25d09}.previewing{color:#b25d09;font-size:12px}.org-picker{display:flex;flex-wrap:wrap;gap:10px}.node-level{font-style:normal;color:#4269c6;font-size:12px;margin-right:6px}.level-tag{padding:4px 10px;border-radius:4px;background:#eef3ff;color:#315fd3;font-size:12px;font-weight:700}.user-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}.user-option{display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid #e1e6ef;border-radius:6px;cursor:pointer}.user-option.selected{border-color:#356ee8;background:#f2f6ff}.user-option span{display:flex;min-width:0;flex:1;flex-direction:column}.user-option b{overflow:hidden;color:#26334b;text-overflow:ellipsis;white-space:nowrap}.user-option small{margin-top:3px;color:#9099aa}.user-option em{font-style:normal;color:#4269c6;font-size:12px}.user-tabs{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.user-tab{padding:7px 16px;border:1px solid #e1e6ef;border-radius:6px;background:#fff;color:#344158;font-size:13px;cursor:pointer}.user-tab em{font-style:normal;color:#e8562d;font-weight:700}.user-tab.active{border-color:#356ee8;background:#f2f6ff;color:#315fd3;font-weight:600}.select-tip,.empty{padding:30px 0;text-align:center;color:#9099aa}.empty{margin-top:16px;background:#fff;border-radius:8px}.bet-table-wrap{overflow:auto}.bet-table{width:100%;border-collapse:collapse;color:#344158;font-size:13px}.bet-table th,.bet-table td{padding:10px 12px;text-align:left;border-bottom:1px solid #edf0f5}.bet-table th{background:#f8faff;color:#68758b;font-weight:600}.bet-table tr:hover td{background:#fafcff}.bet-table tr.won td{background:#fff7f0}.win-cell{font-weight:700;color:#c0392b;white-space:nowrap}.win-cell.preview{color:#b25d09}.preview-error{margin-top:6px;color:#c0392b;font-size:12px}.check-col{width:70px;text-align:center!important}.number-value{font-weight:700;color:#26334b;letter-spacing:.08em}.source-value{min-width:360px;max-width:620px;word-break:break-all;color:#7d8799;line-height:1.6}.number-picker{min-width:220px}.number-picker .el-select{width:220px}.picker-hint{display:block;margin-top:4px;color:#929bab;font-size:12px}.selected-hint{color:#315fd3;font-weight:600}.replace-fields{display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap}.replace-fields label{display:flex;align-items:center;gap:8px;color:#344158;font-weight:600}.replace-fields .el-input{width:100px}.replace-fields .el-button{margin-left:auto;min-width:130px}@media(max-width:700px){.batch-page{padding:12px}.batch-head{align-items:flex-start;gap:14px;flex-direction:column}.head-actions{width:100%}.filter-panel{align-items:flex-start;flex-direction:column;gap:14px}.user-summary{margin-left:0}.replace-fields .el-button{margin-left:0}.bet-table{min-width:900px}}
+.batch-page{min-height:100%;padding:22px;background:#f5f7fb;box-sizing:border-box}.batch-head{display:flex;align-items:center;justify-content:space-between;padding:18px 20px;background:#fff;border-radius:8px}.batch-head h1{margin:0;color:#26334b;font-size:22px}.batch-head p{margin:8px 0 0;color:#7d8799;font-size:13px}.head-actions{display:flex;gap:10px}.filter-panel,.users-panel,.robot-panel,.bets-panel,.replace-panel{margin-top:16px;padding:18px 20px;background:#fff;border:1px solid #e1e6ef;border-radius:8px}.filter-panel{display:flex;align-items:center;gap:36px;flex-wrap:wrap}.filter-item{display:flex;align-items:center;gap:12px;color:#68758b}.filter-item label{color:#344158;font-weight:600}.issue-value{color:#315fd3;font-weight:700}.user-summary{margin-left:auto;gap:20px}.section-title{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}.section-title h2{display:inline;margin:0;color:#26334b;font-size:17px}.hint{margin-left:10px;color:#929bab;font-size:12px}.header-stats{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.totals-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.total-chip{padding:4px 10px;border:1px solid #dfe5f0;border-radius:4px;background:#f7f9fd;color:#344158;font-size:12px;font-weight:600}.total-chip.neg{color:#c0392b}.total-chip.pos{color:#1a7f37}.total-chip.preview{border-color:#f0c089;background:#fdf6ec;color:#b25d09}.previewing{color:#b25d09;font-size:12px}.org-picker{display:flex;flex-wrap:wrap;gap:10px}.node-level{font-style:normal;color:#4269c6;font-size:12px;margin-right:6px}.level-tag{padding:4px 10px;border-radius:4px;background:#eef3ff;color:#315fd3;font-size:12px;font-weight:700}.user-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}.user-option{display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid #e1e6ef;border-radius:6px;cursor:pointer}.user-option.selected{border-color:#356ee8;background:#f2f6ff}.user-option span{display:flex;min-width:0;flex:1;flex-direction:column}.user-option b{overflow:hidden;color:#26334b;text-overflow:ellipsis;white-space:nowrap}.user-option small{margin-top:3px;color:#9099aa}.user-option em{font-style:normal;color:#4269c6;font-size:12px}.user-tabs{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.user-tab{padding:7px 16px;border:1px solid #e1e6ef;border-radius:6px;background:#fff;color:#344158;font-size:13px;cursor:pointer}.user-tab em{font-style:normal;color:#e8562d;font-weight:700}.user-tab.active{border-color:#356ee8;background:#f2f6ff;color:#315fd3;font-weight:600}.select-tip,.empty{padding:30px 0;text-align:center;color:#9099aa}.empty{margin-top:16px;background:#fff;border-radius:8px}.bet-table-wrap{overflow:auto}.bet-table{width:100%;border-collapse:collapse;color:#344158;font-size:13px}.bet-table th,.bet-table td{padding:10px 12px;text-align:left;border-bottom:1px solid #edf0f5}.bet-table th{background:#f8faff;color:#68758b;font-weight:600}.bet-table tr:hover td{background:#fafcff}.bet-table tr.won td{background:#fff7f0}.win-cell{font-weight:700;color:#c0392b;white-space:nowrap}.win-cell.preview{color:#b25d09}.preview-error{margin-top:6px;color:#c0392b;font-size:12px}.check-col{width:70px;text-align:center!important}.number-value{font-weight:700;color:#26334b;letter-spacing:.08em}.source-value{min-width:360px;max-width:620px;word-break:break-all;color:#7d8799;line-height:1.6}.number-picker{min-width:220px}.number-picker .el-select{width:220px}.picker-hint{display:block;margin-top:4px;color:#929bab;font-size:12px}.selected-hint{color:#315fd3;font-weight:600}.replace-fields{display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap}.replace-fields label{display:flex;align-items:center;gap:8px;color:#344158;font-weight:600}.replace-fields .el-input{width:100px}.replace-fields .el-button{margin-left:auto;min-width:130px}@media(max-width:700px){.batch-page{padding:12px}.batch-head{align-items:flex-start;gap:14px;flex-direction:column}.head-actions{width:100%}.filter-panel{align-items:flex-start;flex-direction:column;gap:14px}.user-summary{margin-left:0}.replace-fields .el-button{margin-left:0}.bet-table{min-width:900px}}
+.robot-row{display:flex;flex-wrap:wrap;gap:14px;align-items:center;padding:0 2px}.robot-tip{font-size:12px;color:#b25d09}.level-tag.selected{background:#fdf3e0;color:#b25d09}.level-tag.unselected{background:#f2f4f8;color:#68758b}.plan-summary{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}.plan-warning{margin-bottom:6px}.plan-src{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;white-space:pre-wrap;word-break:break-all}.plan-src.new{color:#b25d09}.factor{color:#b25d09;font-style:normal;font-size:11px}.plan-stake{color:#68758b;font-size:11px;margin-top:2px}.ticket-view{min-height:64px;max-height:220px;overflow-y:auto;padding:6px 8px;border:1px solid transparent;border-radius:4px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;line-height:1.7;white-space:pre-wrap;word-break:break-all;cursor:text;background:#fafbfd}.ticket-view:hover{border-color:#c8d2e3}.ticket-view mark,.plan-src mark{background:#ffe3a3;color:#8a4b00;padding:0 1px;border-radius:2px;font-weight:700}
 </style>

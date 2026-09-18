@@ -149,6 +149,28 @@ final class AdminBetBatch
         return $this->reply(['changed'=>$changed],'主单批量修改完成');
     }
 
+    /**
+     * Detail-level rows for every editable record of one issue. Shared by the
+     * batch options endpoint and the robot planner so both see the same set.
+     */
+    private function issueDetailRows(array $lottery, string $issue, ?int $siteId): array
+    {
+        $lotteryName=(string)$lottery['name'];
+        $query=Db::name('bet_details')->alias('d')
+            ->join('bet_records r','r.id=d.bet_record_id')
+            ->leftJoin('user_stop_drops s','s.bet_detail_id=d.id')
+            ->leftJoin('site_users u','u.id=d.user_id')
+            ->leftJoin('sites st','st.id=d.site_id')
+            ->whereRaw('(s.lottery = ? OR (s.id IS NULL AND r.source_text LIKE ?))',[$lotteryName,'参考站总货概览主单%'])
+            ->where('r.issue_no',$issue)
+            ->whereIn('r.status',['pending','won','unwon'])->whereIn('d.status',['pending','won','unwon']);
+        if ($siteId!==null) $query->where('d.site_id',$siteId);
+        // The full row set stays unfiltered: per-member and per-node totals
+        // must cover every bettor of this issue even before users are picked.
+        return $query->field('d.id,d.user_id,d.site_id,d.number_text,d.amount,d.odds AS detail_odds,d.win_amount AS detail_win,d.status AS detail_status,d.source_text,s.actual_odds,s.play_type AS detail_play_type,r.id AS record_id,r.amount AS record_amount,r.bet_count AS record_bet_count,r.status AS record_status,r.win_amount AS record_win,r.board_code,r.source_text AS record_source_text,r.formatted_text AS record_formatted_text,r.submission_id,r.placed_at,u.username,u.display_name,u.organization_id,st.name AS site_name')
+            ->order('d.site_id asc')->order('d.user_id asc')->order('d.id asc')->select()->toArray();
+    }
+
     private function lotteries(?int $siteId): array
     {
         $query=Db::name('lotteries')->alias('l')->where('l.status',1)->whereNull('l.deleted_at');
@@ -262,19 +284,7 @@ final class AdminBetBatch
         // the winning-first ordering match the real settlement outcome.
         $draw=preg_replace('/\D/','',(string)$request->param('draw',''));
 
-        $query=Db::name('bet_details')->alias('d')
-            ->join('bet_records r','r.id=d.bet_record_id')
-            ->leftJoin('user_stop_drops s','s.bet_detail_id=d.id')
-            ->leftJoin('site_users u','u.id=d.user_id')
-            ->leftJoin('sites st','st.id=d.site_id')
-            ->whereRaw('(s.lottery = ? OR (s.id IS NULL AND r.source_text LIKE ?))',[$lotteryName,'参考站总货概览主单%'])
-            ->where('r.issue_no',$issue)
-            ->whereIn('r.status',['pending','won','unwon'])->whereIn('d.status',['pending','won','unwon']);
-        if ($siteId!==null) $query->where('d.site_id',$siteId);
-        // The full row set stays unfiltered: per-member and per-node totals
-        // must cover every bettor of this issue even before users are picked.
-        $rows=$query->field('d.id,d.user_id,d.site_id,d.number_text,d.amount,d.odds AS detail_odds,d.win_amount AS detail_win,d.status AS detail_status,d.source_text,s.actual_odds,s.play_type AS detail_play_type,r.id AS record_id,r.amount AS record_amount,r.bet_count AS record_bet_count,r.status AS record_status,r.win_amount AS record_win,r.board_code,r.source_text AS record_source_text,r.formatted_text AS record_formatted_text,r.submission_id,u.username,u.display_name,u.organization_id,st.name AS site_name')
-            ->order('d.site_id asc')->order('d.user_id asc')->order('d.id asc')->select()->toArray();
+        $rows=$this->issueDetailRows($lottery,$issue,$siteId);
 
         // Group details per record, then evaluate each pending record
         // against the predicted draw using the real settlement path.
@@ -296,10 +306,13 @@ final class AdminBetBatch
         // predicted draw so sorting and totals work for opened issues too.
         foreach ($recordMap as $recordId=>$record)
             if ($record['status']!=='pending') $predictedWins[$recordId]=$record['win'];
+        $winTokens=[];
         if ($draw!=='') {
+            // An entered predicted draw takes precedence over the real result:
+            // evaluate every record against it, settled records included, so
+            // 预中奖/统计 reflect what the operator intends the draw to be.
             foreach ($recordMap as $recordId=>$record) {
-                if ($record['status']!=='pending') continue;
-                $win=0.0;$unknown=false;
+                $win=0.0;$unknown=false;$tokens=[];
                 foreach ($record['details'] as $detail) {
                     try {
                         $eval=$settlement->evaluateDetail(
@@ -308,9 +321,18 @@ final class AdminBetBatch
                             ['actual_odds'=>$detail['actual_odds']??null],
                             (int)$lottery['id'],$draw,$record['source']);
                         $win+=$eval['win'];
+                        // 中奖明细的非三位 token 是中奖表达式本身（独胆/胆拖/定位/和值
+                        // 等），返回给前端做高亮；三位号码已由预开奖号本身覆盖。
+                        if ($eval['win']>0.005) {
+                            foreach (preg_split('/\s+/u',(string)($detail['number_text']??'')) ?: [] as $tk) {
+                                if ($tk==='' || mb_strlen($tk)<2 || preg_match('/^\d{3}(直|组三|组六|组)?$/u',$tk)===1) continue;
+                                $tokens[]=$tk;
+                            }
+                        }
                     } catch (\Throwable) { $unknown=true; }
                 }
                 $predictedWins[$recordId]=$unknown?null:$win;
+                $winTokens[$recordId]=array_values(array_unique($tokens));
             }
         }
 
@@ -336,12 +358,10 @@ final class AdminBetBatch
             $record=$recordMap[$recordId];
             if (!isset($userStats[$userKey])) $userStats[$userKey]=['bet'=>0.0,'win'=>0.0,'unknown'=>false];
             $userStats[$userKey]['bet']+=$record['amount'];
-            if ($record['status']==='pending') {
-                if (array_key_exists($recordId,$predictedWins)) {
-                    if ($predictedWins[$recordId]===null) $userStats[$userKey]['unknown']=true;
-                    else $userStats[$userKey]['win']+=$predictedWins[$recordId];
-                } else $userStats[$userKey]['unknown']=true;
-            } else $userStats[$userKey]['win']+=$record['win'];
+            if (array_key_exists($recordId,$predictedWins)) {
+                if ($predictedWins[$recordId]===null) $userStats[$userKey]['unknown']=true;
+                else $userStats[$userKey]['win']+=$predictedWins[$recordId];
+            } else $userStats[$userKey]['unknown']=true;
             if ($requestedUsers===[]) continue;
             $predicted=$predictedWins[$recordId]??null;
             $users[$userKey]['numbers'][]=[
@@ -349,6 +369,7 @@ final class AdminBetBatch
                 'value'=>'原始注单','amount'=>number_format((float)($row['record_amount']??0),2,'.',''),'source_text'=>(string)($row['source_text']??''),
                 'record_source_text'=>(string)($row['record_source_text']??''),'record_formatted_text'=>(string)($row['record_formatted_text']??''),
                 'record_status'=>$record['status'],'predicted_win'=>$predicted===null?null:number_format($predicted,2,'.',''),
+                'win_tokens'=>$winTokens[$recordId]??[],
             ];
         }
         // Organization tree for the hierarchical picker. Members carry their
@@ -774,5 +795,837 @@ final class AdminBetBatch
             return $changed;
         });
         return $this->reply(['changed'=>$changed],'批量替换完成');
+    }
+
+    // ------------------------------------------------------------------
+    // 机器人改码：按比率自动把已选会员的注单改到目标中奖金额
+    // ------------------------------------------------------------------
+
+    /**
+     * Load every editable record of one issue and evaluate it against the
+     * predicted draw. Returns [recordId => record] with user/site metadata,
+     * `details` rows, per-detail `eval_win` and the record-level `cur_win`.
+     */
+    private function robotIssueContext(array $lottery, string $issue, string $draw, ?int $siteId): array
+    {
+        $rows=$this->issueDetailRows($lottery,$issue,$siteId);
+        $settlement=new BetSettlement();
+        $records=[];
+        foreach ($rows as $row) {
+            $recordId=(int)($row['record_id']??0);
+            if ($recordId<1) continue;
+            if (!isset($records[$recordId])) $records[$recordId]=[
+                'record_id'=>$recordId,'user_id'=>(int)$row['user_id'],'site_id'=>(int)$row['site_id'],
+                'username'=>(string)($row['username']??''),'display_name'=>(string)($row['display_name']??''),
+                'organization_id'=>(int)($row['organization_id']??0),'board_code'=>(string)($row['board_code']??'A'),
+                'source'=>(string)($row['record_source_text']??''),'formatted'=>(string)($row['record_formatted_text']??''),
+                'status'=>(string)($row['record_status']??'pending'),'amount'=>(float)($row['record_amount']??0),
+                'win'=>(float)($row['record_win']??0),'submission_id'=>(int)($row['submission_id']??0),
+                'placed_at'=>(string)($row['placed_at']??''),'details'=>[],
+            ];
+            $records[$recordId]['details'][]=$row;
+        }
+        foreach ($records as &$record) {
+            $win=0.0;$unknown=false;
+            foreach ($record['details'] as $index=>$detail) {
+                $detailWin=null;$detailOdds=null;
+                if ($draw!=='') {
+                    // 输入了预开奖号码：所有注单（含已结算）按预开奖号试算
+                    try {
+                        $eval=$settlement->evaluateDetail(
+                            ['id'=>(int)$detail['id'],'number_text'=>(string)($detail['number_text']??''),'source_text'=>(string)($detail['source_text']??''),
+                             'amount'=>(float)($detail['amount']??0),'odds'=>$detail['detail_odds']??null,'board_code'=>$record['board_code']],
+                            ['actual_odds'=>$detail['actual_odds']??null],(int)$lottery['id'],$draw,$record['source']);
+                        $detailWin=(float)$eval['win'];
+                        $detailOdds=$eval['odds']===null?null:(float)$eval['odds'];
+                    } catch (\Throwable) { $unknown=true; }
+                } elseif ($record['status']!=='pending') {
+                    $detailWin=(float)($detail['detail_win']??0);
+                    $detailOdds=$detail['detail_odds']===null?null:(float)$detail['detail_odds'];
+                } else $unknown=true;
+                $record['details'][$index]['eval_win']=$detailWin;
+                $record['details'][$index]['eval_odds']=$detailOdds;
+                if ($detailWin===null) $unknown=true; else $win+=$detailWin;
+            }
+            $record['cur_win']=$unknown?null:$win;
+        }
+        unset($record);
+        return $records;
+    }
+
+    /**
+     * Simulate replacing every editable three-digit token of one record with
+     * the predicted draw. Play expressions stay untouched: 直 stays 直,
+     * 组三 stays 组三 — only the digit body changes. Details without a
+     * replaceable token (胆拖/和值/定位/复式/全包 etc.) keep their current
+     * outcome. Returns per-detail results plus the rewritten raw source.
+     */
+    private function robotFlipSimulation(array $record, string $draw, int $lotteryId, BetSettlement $settlement): array
+    {
+        $source=$record['source'];
+        $replaced=[];
+        $details=[];
+        foreach ($record['details'] as $detail) {
+            $current=$detail['eval_win'];
+            $entry=['detail_id'=>(int)$detail['id'],'flippable'=>false,'win'=>$current,
+                'old_number'=>(string)$detail['number_text'],'new_number'=>(string)$detail['number_text'],
+                'new_detail_source'=>(string)$detail['source_text'],'pairs'=>[],
+                'odds'=>$detail['eval_odds']??null];
+            // 已中奖的明细不再翻号：同一明细里再造一个开奖号会产生重复选号，
+            // 多出来的中奖缺口交给金额缩放补。
+            if ($current!==null && $current>0.005) { $details[]=$entry; continue; }
+            if ($current!==null) {
+                foreach ($this->robotRewriteSpecs($detail,$draw) as $spec) {
+                    // Patch the record's raw text through candidate pairs; each
+                    // variant list covers alternate raw wordings of the pick.
+                    $trial=$source;$pending=$replaced;$applied=[];$ok=true;
+                    foreach ($spec['pairs'] as $pair) {
+                        $done=false;
+                        foreach (array_merge([$pair],$pair['alts']??[]) as $variant) {
+                            $old=(string)$variant['old'];$new=(string)$variant['new'];
+                            if ($old===''||$old===$new) { $done=true; break; }
+                            $patched=$this->replaceRawToken($trial,$old,$new);
+                            if ($patched!==$trial) { $trial=$patched;$pending[$old]=true;$applied[]=['old'=>$old,'new'=>$new];$done=true;break; }
+                            // A sibling detail may already have consumed the only
+                            // raw occurrence of this shared token.
+                            if (isset($pending[$old])) { $done=true; break; }
+                        }
+                        if (!$done) { $ok=false; break; }
+                    }
+                    if (!$ok) continue;
+                    $newDetailSource=(string)$detail['source_text'];
+                    foreach (($spec['source_pairs']??$spec['pairs']) as $pair) {
+                        foreach (array_merge([$pair],$pair['alts']??[]) as $variant) {
+                            $patched=$this->replaceRawToken($newDetailSource,(string)$variant['old'],(string)$variant['new']);
+                            if ($patched!==$newDetailSource) { $newDetailSource=$patched; break; }
+                        }
+                    }
+                    try {
+                        $eval=$settlement->evaluateDetail(
+                            ['id'=>(int)$detail['id'],'number_text'=>$spec['new_number'],'source_text'=>$newDetailSource,
+                             'amount'=>(float)$detail['amount'],'odds'=>$detail['detail_odds'],'board_code'=>$record['board_code']],
+                            ['actual_odds'=>$detail['actual_odds']??null],$lotteryId,$draw,$record['source']);
+                        $w=(float)$eval['win'];
+                    } catch (\Throwable) { continue; }
+                    if ($w>(float)$current+0.005) {
+                        $entry['flippable']=true;$entry['win']=$w;$entry['new_number']=$spec['new_number'];
+                        $entry['new_detail_source']=$newDetailSource;$entry['pairs']=$applied;
+                        $entry['odds']=$eval['odds']===null?null:(float)$eval['odds'];
+                        $source=$trial;$replaced=$pending;
+                        break;
+                    }
+                }
+            }
+            $details[]=$entry;
+        }
+        $flipWin=0.0;$known=true;
+        foreach ($details as $d) { if ($d['win']===null) $known=false; else $flipWin+=$d['win']; }
+        return ['details'=>$details,'win'=>$known?$flipWin:null,'new_source'=>$source,'changed'=>$source!==$record['source']];
+    }
+
+    /**
+     * Candidate rewrites that make one detail win under $draw without changing
+     * its play structure. Each spec: new_number (bet_details.number_text),
+     * pairs (fragments patched in the record's raw source), source_pairs
+     * (fragments patched in the detail's own source_text). Pair entries may
+     * carry 'alts' fallbacks for alternate raw wordings.
+     */
+    private function robotRewriteSpecs(array $detail, string $draw): array
+    {
+        $number=trim((string)$detail['number_text']);
+        $dsource=(string)$detail['source_text'];
+        $digits=str_split($draw);
+        $unique=array_values(array_unique($digits));
+        $sum=array_sum(array_map('intval',$digits));
+        $span=max($digits)-min($digits);
+        $specs=[];
+        // Pad a required digit set to $len with non-draw digits first, so
+        // multi-code selections keep their declared code count.
+        $fill=function(array $required,int $len)use($digits):string{
+            $set=array_values(array_unique($required));
+            for($d=0;$d<=9 && count($set)<$len;$d++) {
+                $c=(string)$d;
+                if (!in_array($c,$set,true) && !in_array($c,$digits,true)) $set[]=$c;
+            }
+            for ($i=0;count($set)<$len;$i++) $set[]=$digits[$i%3];
+            return implode('',array_slice($set,0,$len));
+        };
+        $tokens=$number===''?[]:(preg_split('/\s+/',$number)?:[]);
+        $patchPositionLists=function(string $fragSource)use($digits):array{
+            $pairs=[];
+            if (preg_match_all('/([百十个])(?:位)?\s*([0-9]+)/u',$fragSource,$pm,PREG_SET_ORDER)!==false)
+                foreach ($pm as $p) {
+                    $index=['百'=>0,'十'=>1,'个'=>2][$p[1]];$list=(string)$p[2];
+                    if (str_contains($list,$digits[$index])) continue;
+                    $frag=(string)$p[0];
+                    $newFrag=preg_replace('/\d+$/u',substr($list,0,-1).$digits[$index],$frag);
+                    $alt=str_contains($frag,'位')
+                        ? ['old'=>str_replace('位','',$frag),'new'=>str_replace('位','',$newFrag)]
+                        : ['old'=>preg_replace('/^([百十个])/u','$1位',$frag),'new'=>preg_replace('/^([百十个])/u','$1位',$newFrag)];
+                    $pairs[]=['old'=>$frag,'new'=>$newFrag,'alts'=>[$alt]];
+                }
+            return $pairs;
+        };
+
+        // 1) 定位：明细源文本带 百/十/个 选号列表 —— 保持长度、换入开奖位数字；
+        //    展开组合只改一注为开奖号，不要把整串号码都改成同一个
+        $posPairs=$patchPositionLists($dsource);
+        if ($posPairs!==[] || ($dsource!=='' && preg_match('/[百十个]/u',$dsource)===1)) {
+            $newNumber=$number;
+            if ($tokens!==[]) {
+                $parts=[];$flipped=false;
+                foreach ($tokens as $tk) {
+                    if (!$flipped && preg_match('/^\d{3}$/',$tk)===1 && $tk!=='000' && $tk!==$draw) { $parts[]=$draw;$flipped=true;continue; }
+                    $parts[]=$tk;
+                }
+                $newNumber=implode(' ',$parts);
+                foreach ($posPairs as $pair)
+                    foreach (array_merge([$pair],$pair['alts']) as $variant) {
+                        $patched=$this->replaceRawToken($newNumber,$variant['old'],$variant['new']);
+                        if ($patched!==$newNumber) { $newNumber=$patched; break; }
+                    }
+            }
+            $specs[]=['new_number'=>$newNumber===''?$number:$newNumber,'pairs'=>$posPairs,'source_pairs'=>$posPairs];
+        }
+
+        // 2) 逐 token 改写：直选、组选多码、胆拖、独胆、双飞、对子、和值、跨度、定位片段。
+        //    每条明细只翻转一个 token —— 多码注单不应整串改成同一个开奖号，
+        //    需要更多中奖时由缩放金额来补。
+        if ($tokens!==[]) {
+            $pairs=[];$parts=[];$flipped=false;
+            foreach ($tokens as $tk) {
+                $rewrite=$this->robotRewriteToken($tk,$draw,$dsource,$fill,$digits,$unique,$sum,$span,$patchPositionLists);
+                if (!$flipped && $rewrite!==null && $rewrite['new']!==$tk) {
+                    $parts[]=$rewrite['new'];
+                    foreach ($rewrite['pairs'] as $pair) $pairs[]=$pair;
+                    $flipped=true;
+                    continue;
+                }
+                $parts[]=$tk;
+            }
+            if ($flipped) $specs[]=['new_number'=>implode(' ',$parts),'pairs'=>$pairs,'source_pairs'=>$pairs];
+        }
+
+        // 3) 盘口只在明细源文本（占位 000/空号码）：改源文本片段，号码侧同步
+        foreach ($this->robotSourceSpecs($dsource,$draw,$fill,$digits,$unique,$sum,$span) as $spec) {
+            $newNumber=$number;
+            if ($tokens!==[]) {
+                $parts=[];$flipped=false;
+                foreach ($tokens as $tk) {
+                    if ($tk==='000') { $parts[]=$tk; continue; }
+                    if (!$flipped && preg_match('/^\d{2,10}$/',$tk)===1 && $tk!==$draw) { $parts[]=$draw;$flipped=true;continue; }
+                    if ($spec['sel_new']!==null && preg_match('/^(三赖|六赖|三|六|豹|复)(\d{1,10})$/u',$tk,$tm)===1) { $parts[]=$tm[1].$spec['sel_new']; continue; }
+                    $rewrite=$this->robotRewriteToken($tk,$draw,$dsource,$fill,$digits,$unique,$sum,$span,$patchPositionLists);
+                    $parts[]=$rewrite===null?$tk:$rewrite['new'];
+                }
+                $newNumber=implode(' ',$parts);
+            }
+            $specs[]=['new_number'=>$newNumber,'pairs'=>$spec['pairs'],'source_pairs'=>$spec['pairs']];
+        }
+        return $specs;
+    }
+
+    /** Rewrite one selection token so it wins under $draw; null when impossible. */
+    private function robotRewriteToken(string $token,string $draw,string $dsource,callable $fill,array $digits,array $unique,int $sum,int $span,callable $patchPositionLists): ?array
+    {
+        $t=trim($token);
+        if ($t==='') return null;
+        // 三位号码（直/组三/组六/组）：换成开奖号，玩法后缀不变
+        if (preg_match('/^(\d{3})(直|组三|组六|组)?$/u',$t,$m)===1)
+            return $m[1]===$draw ? ['new'=>$t,'pairs'=>[]] : ['new'=>$draw.($m[2]??''),'pairs'=>[['old'=>$m[1],'new'=>$draw]]];
+        // 位置掩码 1X3 / X2X：固定位换成开奖位数字
+        if (preg_match('/^[0-9Xx]{3}$/',$t)===1 && preg_match('/[Xx]/',$t)===1) {
+            $out='';for($i=0;$i<3;$i++)$out.=ctype_digit($t[$i])?$digits[$i]:$t[$i];
+            return ['new'=>$out,'pairs'=>[['old'=>$t,'new'=>$out]]];
+        }
+        // 紧凑选号集合：三DDD 六DDD 三赖D 六赖D 豹D 复DDD
+        if (preg_match('/^(三赖|六赖|三|六|豹|复)(\d{1,10})$/u',$t,$m)===1) {
+            $family=$m[1];
+            if ($family==='三' && count($unique)!==2) return null;
+            if (($family==='六'||$family==='六赖') && count($unique)!==3) return null;
+            if ($family==='三赖' && count($unique)!==2) return null;
+            if ($family==='豹' && count($unique)!==1) return null;
+            $need=in_array($family,['三赖','六赖'],true)?[$digits[0]]:$unique;
+            $sel=$fill($need,strlen($m[2]));
+            return ['new'=>$family.$sel,'pairs'=>[['old'=>$m[2],'new'=>$sel]]];
+        }
+        // 多位选号+组（20组 / 12467组 等合包写法）
+        if (preg_match('/^(\d{2,10})组$/u',$t,$m)===1) {
+            $required=count(array_unique(str_split($m[1])))===2?2:3;
+            if (count($unique)!==$required) return null;
+            $sel=$fill($unique,strlen($m[1]));
+            return ['new'=>$sel.'组','pairs'=>[['old'=>$m[1],'new'=>$sel]]];
+        }
+        // 胆拖：按玩法改胆/拖数字
+        if (preg_match('/^胆(\d{1,2})拖(\d+)$/u',$t,$m)===1) {
+            $danTuo=$this->robotDanTuo($dsource,strlen($m[1]),strlen($m[2]),$unique,$digits,$fill);
+            if ($danTuo===null) return null;
+            $new='胆'.$danTuo[0].'拖'.$danTuo[1];
+            return ['new'=>$new,'pairs'=>[['old'=>$t,'new'=>$new]]];
+        }
+        // 独胆 / N胆
+        if (preg_match('/^(\d)胆$/u',$t,$m)===1)
+            return ['new'=>$digits[0].'胆','pairs'=>[['old'=>$t,'new'=>$digits[0].'胆']]];
+        if (preg_match('/^\d$/',$t)===1 && preg_match('/独胆|(?<!\d)胆/u',$dsource)===1)
+            return ['new'=>$digits[0],'pairs'=>[
+                ['old'=>$t.'独胆','new'=>$digits[0].'独胆','alts'=>[
+                    ['old'=>'独胆'.$t,'new'=>'独胆'.$digits[0]],
+                    ['old'=>$t.'胆','new'=>$digits[0].'胆'],
+                    ['old'=>'胆'.$t,'new'=>'胆'.$digits[0]],
+                ]]]];
+        // 双飞 / 对子
+        if (preg_match('/^(\d{2})(双飞|飞)$/u',$t,$m)===1)
+            return ['new'=>$digits[0].$digits[1].$m[2],'pairs'=>[['old'=>$t,'new'=>$digits[0].$digits[1].$m[2]]]];
+        if (preg_match('/^(\d{2})(对子|对)$/u',$t,$m)===1) {
+            $dup=null;
+            foreach (array_count_values($digits) as $d=>$c) if ($c>=2) { $dup=(string)$d; break; }
+            if ($dup===null) return null;
+            return ['new'=>$dup.$dup.$m[2],'pairs'=>[['old'=>$t,'new'=>$dup.$dup.$m[2]]]];
+        }
+        // 和值/和：区间归一为单点
+        if (preg_match('/^(和|和值)(\d{1,2})(?:-(\d{1,2}))?$/u',$t,$m)===1) {
+            $altPrefix=$m[1]==='和值'?'和':'和值';
+            $alts=[['old'=>$altPrefix.$m[2].(isset($m[3])&&$m[3]!==''?'-'.$m[3]:''),'new'=>$altPrefix.$sum]];
+            return ['new'=>$m[1].$sum,'pairs'=>[['old'=>$t,'new'=>$m[1].$sum,'alts'=>$alts]]];
+        }
+        if (preg_match('/^(和|和值)(大|小|单|双)$/u',$t,$m)===1) {
+            $key=in_array($m[2],['大','小'],true)?($sum>=14?'大':'小'):($sum%2===1?'单':'双');
+            $altPrefix=$m[1]==='和值'?'和':'和值';
+            return ['new'=>$m[1].$key,'pairs'=>[['old'=>$t,'new'=>$m[1].$key,'alts'=>[['old'=>$altPrefix.$m[2],'new'=>$altPrefix.$key]]]]];
+        }
+        // 跨度
+        if (preg_match('/^(跨|跨度)(\d)$/u',$t,$m)===1) {
+            $alt=$m[1]==='跨度'?'跨':'跨度';
+            return ['new'=>$m[1].$span,'pairs'=>[['old'=>$t,'new'=>$m[1].$span,'alts'=>[['old'=>$alt.$m[2],'new'=>$alt.$span]]]]];
+        }
+        // ND 定位（1D/2D/3D）
+        if (preg_match('/^(\d+)D$/i',$t,$m)===1 && (str_contains($dsource,'定位')||preg_match('/[百十个]/u',$dsource)===1)) {
+            $required=str_contains($dsource,'三码定位')?3:(str_contains($dsource,'二码定位')?2:1);
+            $sel=$fill(array_slice($digits,0,$required),strlen($m[1]));
+            return ['new'=>$sel.'D','pairs'=>[['old'=>$t,'new'=>$sel.'D']]];
+        }
+        // 号码内嵌位置片段（百12十3个456定位 / 百位5）
+        if (preg_match('/[百十个]/u',$t)===1) {
+            $pairs=$patchPositionLists($t);
+            if ($pairs===[]) return null;
+            $new=$t;
+            foreach ($pairs as $pair)
+                foreach (array_merge([$pair],$pair['alts']) as $variant) {
+                    $patched=$this->replaceRawToken($new,$variant['old'],$variant['new']);
+                    if ($patched!==$new) { $new=$patched; break; }
+                }
+            return ['new'=>$new,'pairs'=>$pairs];
+        }
+        return null;
+    }
+
+    /** Banker/drag digits that make a drag play win under $draw; null when impossible. */
+    private function robotDanTuo(string $dsource,int $danLen,int $tuoLen,array $unique,array $digits,callable $fill): ?array
+    {
+        $compact=preg_replace('/\s+/u','',$dsource)??$dsource;
+        if (str_contains($compact,'组三胆拖')) {
+            if (count($unique)!==2 || $danLen!==1) return null;
+            return [$unique[0],$fill([$unique[1]],$tuoLen)];
+        }
+        if (str_contains($compact,'组六2胆拖')) {
+            if (count($unique)!==3 || $danLen!==2) return null;
+            return [$unique[0].$unique[1],$fill([$unique[2]],$tuoLen)];
+        }
+        if (str_contains($compact,'单选全胆拖')) {
+            if ($danLen!==1) return null;
+            $rest=array_values(array_diff($unique,[$digits[0]]));
+            return [$digits[0],$fill($rest===[]?[$digits[0]]:$rest,$tuoLen)];
+        }
+        // 组六胆拖
+        if (count($unique)!==3 || $danLen!==1) return null;
+        return [$unique[0],$fill([$unique[1],$unique[2]],$tuoLen)];
+    }
+
+    /** Rewrites for details whose pick only lives in source_text (000/empty numbers). */
+    private function robotSourceSpecs(string $dsource,string $draw,callable $fill,array $digits,array $unique,int $sum,int $span): array
+    {
+        $specs=[];
+        // 胆拖（源文本形态：单选全胆拖 胆1拖234 / 组三胆拖 / 组六胆拖 / 组六2胆拖）
+        if (preg_match('/(单选全胆拖|组六2胆拖|组三胆拖|组六胆拖)\s*胆(\d{1,2})拖(\d+)/u',$dsource,$m)===1) {
+            $danTuo=$this->robotDanTuo($dsource,strlen($m[2]),strlen($m[3]),$unique,$digits,$fill);
+            if ($danTuo!==null)
+                $specs[]=['pairs'=>[['old'=>'胆'.$m[2].'拖'.$m[3],'new'=>'胆'.$danTuo[0].'拖'.$danTuo[1]]],'sel_new'=>null];
+        }
+        // 目录选号：123456 组三六码 / 20 组三两码 / 024567复式六码
+        if (preg_match('/(?<!\d)([0-9]{1,10})\s*(组三赖|组六赖|组三|组六|复式)[一二两三四五六七八九1-9]?码/u',$dsource,$m)===1) {
+            $need=null;
+            if ($m[2]==='组三' && count($unique)===2) $need=$unique;
+            elseif ($m[2]==='组六' && count($unique)===3) $need=$unique;
+            elseif ($m[2]==='复式') $need=$unique;
+            elseif ($m[2]==='组三赖' && count($unique)===2) $need=[$digits[0]];
+            elseif ($m[2]==='组六赖' && count($unique)===3) $need=[$digits[0]];
+            if ($need!==null) {
+                $sel=$fill($need,strlen($m[1]));
+                $specs[]=['pairs'=>[['old'=>$m[1],'new'=>$sel]],'sel_new'=>$sel];
+            }
+        }
+        // 和值/和：区间或单点都归一为开奖和值
+        if (preg_match('/(和值|和)\s*(\d{1,2})\s*-\s*(\d{1,2})/u',$dsource,$m)===1)
+            $specs[]=['pairs'=>[['old'=>$m[0],'new'=>$m[1].$sum]],'sel_new'=>null];
+        elseif (preg_match('/(和值|和)\s*(\d{1,2})(?![\d\s]*-)/u',$dsource,$m)===1)
+            $specs[]=['pairs'=>[['old'=>$m[0],'new'=>$m[1].$sum]],'sel_new'=>null];
+        // 和值大/小/单/双
+        if (preg_match('/(和值|和)(大|小|单|双)/u',$dsource,$m)===1) {
+            $key=in_array($m[2],['大','小'],true)?($sum>=14?'大':'小'):($sum%2===1?'单':'双');
+            if ($m[2]!==$key) $specs[]=['pairs'=>[['old'=>$m[0],'new'=>$m[1].$key]],'sel_new'=>null];
+        }
+        // 跨度
+        if (preg_match('/跨度\s*(\d)/u',$dsource,$m)===1)
+            $specs[]=['pairs'=>[['old'=>$m[0],'new'=>'跨度'.$span]],'sel_new'=>null];
+        return $specs;
+    }
+
+    /**
+     * Core planner shared by robotPlan (dry-run preview) and robotApply.
+     * 比率口径：已选会员目标总中 ÷ 未选会员净亏（未选总投−未选总中）。
+     * 手段仅限换三位号码 token 与按比例缩放中奖明细金额，玩法形态不变。
+     */
+    private function buildRobotPlan(array $lottery, string $issue, string $draw, array $userIds, float $targetWin, int $nodeId, ?int $siteId): array
+    {
+        $records=$this->robotIssueContext($lottery,$issue,$draw,$siteId);
+        if ($records===[]) throw new \InvalidArgumentException('该期号没有可操作的注单');
+        $siteIds=array_values(array_unique(array_map(static fn(array $r):int=>(int)$r['site_id'],$records)));
+        $nodePaths=[];
+        if ($siteIds!==[]) {
+            foreach (Db::name('organization_nodes')->whereIn('site_id',$siteIds)->whereNull('deleted_at')->field('id,path')->select()->toArray() as $node)
+                $nodePaths[(int)$node['id']]=(string)($node['path']??'');
+        }
+        $anchorPath=null;
+        if ($nodeId>0) {
+            $anchorPath=$nodePaths[$nodeId]??null;
+            if ($anchorPath===null) throw new \InvalidArgumentException('所选组织节点不存在或已删除');
+        }
+        $selectedSet=[];
+        foreach ($userIds as $uid) $selectedSet[(int)$uid]=true;
+        // 每个会员的注单聚合 + 是否在所选层级节点范围内
+        $userStats=[];
+        foreach ($records as $record) {
+            $uid=(int)$record['user_id'];
+            if (!isset($userStats[$uid])) $userStats[$uid]=['bet'=>0.0,'win'=>0.0,'unknown'=>false,'selected'=>isset($selectedSet[$uid]),'in_pool'=>false];
+            $orgId=(int)$record['organization_id'];
+            if ($anchorPath===null || ($orgId>0 && isset($nodePaths[$orgId]) && $anchorPath!=='' && str_starts_with($nodePaths[$orgId],$anchorPath)))
+                $userStats[$uid]['in_pool']=true;
+            $userStats[$uid]['bet']+=$record['amount'];
+            if ($record['cur_win']===null) $userStats[$uid]['unknown']=true; else $userStats[$uid]['win']+=$record['cur_win'];
+        }
+        $selBet=0.0;$selWin=0.0;$unselBet=0.0;$unselWin=0.0;$unknown=false;
+        foreach ($userStats as $uid=>$st) {
+            if ($st['unknown'] && ($st['selected'] || $st['in_pool'])) $unknown=true;
+            if ($st['selected']) { $selBet+=$st['bet']; $selWin+=$st['win']; }
+            elseif ($st['in_pool']) { $unselBet+=$st['bet']; $unselWin+=$st['win']; }
+        }
+        if ($unknown) throw new \InvalidArgumentException('存在无法按预开奖号码试算的注单，请检查注单数据');
+        $denominator=$unselBet-$unselWin; // 未选会员净亏（会员口径）
+
+        $settlement=new BetSettlement();
+        $selected=[];
+        foreach ($records as $record) {
+            if (!isset($selectedSet[(int)$record['user_id']])) continue;
+            $record['sim']=$this->robotFlipSimulation($record,$draw,(int)$lottery['id'],$settlement);
+            $selected[]=$record;
+        }
+        if ($selected===[]) throw new \InvalidArgumentException('所选会员在该期号没有可操作的注单');
+
+        $W0=0.0; foreach ($selected as $record) $W0+=(float)$record['cur_win'];
+        $T=$targetWin;
+        $warnings=[];
+        $items=[];
+        $maxFactor=50.0;
+        if ($T-$W0>0.005) {
+            // 需要额外中奖：已有中奖注单时优先纯调金额（不改号码），
+            // 缩放承载（50 倍）不足才翻号补充基础中奖。
+            if ($W0>0.005 && $T<=$W0*$maxFactor+0.005) {
+                $k=$T/$W0;
+                foreach ($selected as $record) if ($record['cur_win']>0.005) $items[]=$this->robotScaleItem($record,$k);
+            } else {
+                $candidates=[];
+                foreach ($selected as $record) {
+                    $gain=(float)$record['sim']['win']-$record['cur_win'];
+                    if ($record['sim']['win']!==null && $gain>0.005) $candidates[]=$record;
+                }
+                usort($candidates,static fn(array $a,array $b):int=>$b['sim']['win']<=>$a['sim']['win']);
+                $cumV=0.0;$cumW=0.0;$chosen=[];
+                foreach ($candidates as $record) {
+                    if ($cumV>=$T-$W0+$cumW-0.005) break;
+                    $chosen[]=$record;$cumV+=$record['sim']['win'];$cumW+=$record['cur_win'];
+                }
+                if ($cumV>0.005) {
+                    $k=($T-$W0+$cumW)/$cumV;
+                    if ($k>$maxFactor) { $warnings[]='目标金额超出可翻转注单的承载能力，已按单注最大放大 '.$maxFactor.' 倍生成';$k=$maxFactor; }
+                    foreach ($chosen as $record) $items[]=$this->robotFlipItem($record,$k);
+                } else {
+                    // 没有可翻号码的注单：只能放大已有中奖注单的金额
+                    if ($W0<=0.005) throw new \InvalidArgumentException('已选会员没有可改为中奖的注单，无法达到目标中奖金额');
+                    $k=$T/$W0;
+                    if ($k>$maxFactor) { $warnings[]='目标金额超出已中奖注单的承载能力，已按单注最大放大 '.$maxFactor.' 倍生成';$k=$maxFactor; }
+                    foreach ($selected as $record) if ($record['cur_win']>0.005) $items[]=$this->robotScaleItem($record,$k);
+                }
+            }
+            $unflippable=0;
+            foreach ($selected as $record) if ($record['cur_win']<=0.005 && ($record['sim']['win']===null || $record['sim']['win']<=$record['cur_win']+0.005)) $unflippable++;
+            if ($unflippable>0) $warnings[]=$unflippable.' 条已选注单的玩法在预开奖号码下无法中奖或不可改号，未纳入方案';
+        } elseif ($W0-$T>0.005) {
+            // 目标低于当前中奖：按比例收缩已中奖明细金额
+            $k=$T/$W0;
+            foreach ($selected as $record) if ($record['cur_win']>0.005) $items[]=$this->robotScaleItem($record,$k);
+        }
+        // Untouched selected records keep their current win; the plan items
+        // only need to cover the residual target.
+        $touchedIds=[];$untouchedWin=0.0;
+        foreach ($items as $item) $touchedIds[(int)$item['record_id']]=true;
+        foreach ($selected as $record) if (!isset($touchedIds[(int)$record['record_id']])) $untouchedWin+=$record['cur_win'];
+        $items=$this->robotFineTune($items,$T-$untouchedWin);
+        $achieved=$untouchedWin;$betDelta=0.0;
+        foreach ($items as $item) { $achieved+=(float)$item['new_win']; $betDelta+=(float)$item['new_amount']-(float)$item['old_amount']; }
+        $poolBet=$selBet+$unselBet;$poolWin=$selWin+$unselWin;
+        $anchorBefore=$poolBet-$poolWin;
+        $anchorAfter=$anchorBefore+$betDelta+($W0-$achieved);
+        return [
+            'draw'=>$draw,
+            'denominator'=>number_format($denominator,2,'.',''),
+            'target_win'=>number_format($T,2,'.',''),
+            'achieved_win'=>number_format($achieved,2,'.',''),
+            'ratio'=>$denominator>0.005?number_format($achieved/$denominator*100,2,'.',''):null,
+            'stats'=>[
+                'selected'=>['bet'=>number_format($selBet,2,'.',''),'win'=>number_format($selWin,2,'.',''),'profit'=>number_format($selWin-$selBet,2,'.','')],
+                'unselected'=>['bet'=>number_format($unselBet,2,'.',''),'win'=>number_format($unselWin,2,'.',''),'profit'=>number_format($unselWin-$unselBet,2,'.','')],
+                'anchor'=>['bet'=>number_format($poolBet,2,'.',''),'win'=>number_format($poolWin,2,'.',''),'profit'=>number_format($anchorBefore,2,'.','')],
+            ],
+            'projected'=>[
+                'anchor_profit_before'=>number_format($anchorBefore,2,'.',''),
+                'anchor_profit_after'=>number_format($anchorAfter,2,'.',''),
+                'selected_bet_after'=>number_format($selBet+$betDelta,2,'.',''),
+                'selected_win_after'=>number_format($achieved,2,'.',''),
+            ],
+            'items'=>$items,
+            'warnings'=>$warnings,
+        ];
+    }
+
+    /** Build a flip plan item: number tokens become the draw, winning details scaled by $k. */
+    private function robotFlipItem(array $record, float $k): array
+    {
+        $newAmount=0.0;$newWin=0.0;$details=[];$newSource=(string)$record['sim']['new_source'];
+        foreach ($record['sim']['details'] as $sim) {
+            $oldAmount=$this->robotDetailAmount($record,(int)$sim['detail_id']);
+            $win=$sim['win']===null?0.0:(float)$sim['win'];
+            $amt=$oldAmount;
+            if ($win>0.005 && $oldAmount>0.005 && abs($k-1)>0.000001) {
+                $amt=max(0.01,round($oldAmount*$k,2));
+                $win=$win*$amt/$oldAmount;
+            }
+            // 金额字样同步进预览文本（落库按同规则重写）
+            if ($amt!==$oldAmount) {
+                $simSource=(string)($sim['new_detail_source']??'');
+                $patchedSource=$this->robotAmountSourceText($simSource,$amt,$this->robotPickCount((string)$sim['new_number']));
+                if ($patchedSource!==$simSource) $newSource=$this->replaceFirstText($newSource,$simSource,$patchedSource);
+            }
+            $newAmount+=$amt;$newWin+=$win;
+            $details[]=['detail_id'=>(int)$sim['detail_id'],'old_number'=>$sim['old_number'],'new_number'=>$sim['new_number'],
+                'new_detail_source'=>$sim['new_detail_source']??'',
+                'pairs'=>$sim['pairs'],'win_odds'=>$sim['odds']===null?null:number_format((float)$sim['odds'],4,'.',''),
+                'old_amount'=>number_format($oldAmount,2,'.',''),'new_amount'=>number_format($amt,2,'.',''),
+                'old_win'=>number_format($this->robotDetailWin($record,(int)$sim['detail_id']),2,'.',''),
+                'new_win'=>number_format($win,2,'.','')];
+        }
+        return ['record_id'=>(int)$record['record_id'],'user_id'=>(int)$record['user_id'],
+            'username'=>$record['username'],'display_name'=>$record['display_name'],
+            'action'=>'flip','factor'=>round($k,4),'old_amount'=>number_format($record['amount'],2,'.',''),
+            'new_amount'=>number_format($newAmount,2,'.',''),'old_win'=>number_format($record['cur_win'],2,'.',''),
+            'new_win'=>number_format($newWin,2,'.',''),'old_source'=>$record['source'],'new_source'=>$newSource,
+            'details'=>$details];
+    }
+
+    /**
+     * Absorb cent-rounding drift: nudge the last scaled winning detail so the
+     * plan lands on the target win as closely as the 0.01 amount grid allows.
+     */
+    private function robotFineTune(array $items, float $target): array
+    {
+        if ($items===[]) return $items;
+        $achieved=0.0;
+        foreach ($items as $item) $achieved+=(float)$item['new_win'];
+        $diff=$target-$achieved;
+        if (abs($diff)<0.005) return $items;
+        for ($i=count($items)-1;$i>=0;$i--) {
+            for ($j=count($items[$i]['details'])-1;$j>=0;$j--) {
+                $win=(float)$items[$i]['details'][$j]['new_win'];
+                $amt=(float)$items[$i]['details'][$j]['new_amount'];
+                if ($win<=0.005 || $amt<=0.005) continue;
+                $perYuan=$win/$amt;
+                $adjAmt=max(0.01,round($amt+$diff/$perYuan,2));
+                $items[$i]['details'][$j]['new_amount']=number_format($adjAmt,2,'.','');
+                $items[$i]['details'][$j]['new_win']=number_format($perYuan*$adjAmt,2,'.','');
+                $newAmount=0.0;$newWin=0.0;
+                foreach ($items[$i]['details'] as $d) { $newAmount+=(float)$d['new_amount']; $newWin+=(float)$d['new_win']; }
+                $items[$i]['new_amount']=number_format($newAmount,2,'.','');
+                $items[$i]['new_win']=number_format($newWin,2,'.','');
+                return $items;
+            }
+        }
+        return $items;
+    }
+
+    /** Build a scale plan item: only details that already win get their amount scaled. */
+    private function robotScaleItem(array $record, float $k): array
+    {
+        $newAmount=0.0;$newWin=0.0;$details=[];$newSource=(string)$record['source'];
+        foreach ($record['details'] as $detail) {
+            $oldAmount=(float)$detail['amount'];
+            $win=$detail['eval_win']===null?0.0:(float)$detail['eval_win'];
+            $amt=$oldAmount;$newDetailWin=$win;
+            if ($win>0.005) {
+                $amt=max(0.01,round($oldAmount*$k,2)); $newDetailWin=$win*$amt/$oldAmount;
+                // 金额字样同步进预览文本（落库按同规则重写）
+                $detailSource=(string)($detail['source_text']??'');
+                $patchedSource=$this->robotAmountSourceText($detailSource,$amt,$this->robotPickCount((string)$detail['number_text']));
+                if ($patchedSource!==$detailSource) $newSource=$this->replaceFirstText($newSource,$detailSource,$patchedSource);
+            }
+            $newAmount+=$amt;$newWin+=$newDetailWin;
+            $details[]=['detail_id'=>(int)$detail['id'],'old_number'=>(string)$detail['number_text'],'new_number'=>(string)$detail['number_text'],
+                'pairs'=>[],'win_odds'=>$detail['eval_odds']===null?null:number_format((float)$detail['eval_odds'],4,'.',''),
+                'old_amount'=>number_format($oldAmount,2,'.',''),'new_amount'=>number_format($amt,2,'.',''),
+                'old_win'=>number_format($win,2,'.',''),'new_win'=>number_format($newDetailWin,2,'.','')];
+        }
+        return ['record_id'=>(int)$record['record_id'],'user_id'=>(int)$record['user_id'],
+            'username'=>$record['username'],'display_name'=>$record['display_name'],
+            'action'=>'scale','factor'=>round($k,4),'old_amount'=>number_format($record['amount'],2,'.',''),
+            'new_amount'=>number_format($newAmount,2,'.',''),'old_win'=>number_format($record['cur_win'],2,'.',''),
+            'new_win'=>number_format($newWin,2,'.',''),'old_source'=>$record['source'],'new_source'=>$newSource,
+            'details'=>$details];
+    }
+
+    /**
+     * Rewrite the amount wording inside a detail source after scaling:
+     * `各N元`/`每N元` becomes the new per-pick share (new total ÷ picks),
+     * a bare `N元` becomes the new detail total. Keeps the stored ticket
+     * text consistent with the amount column so the member-facing view
+     * does not show a stale stake.
+     */
+    private function robotAmountSourceText(string $text, float $newAmount, int $pickCount): string
+    {
+        if ($text==='') return $text;
+        $perPick=$pickCount>0 ? $newAmount/$pickCount : $newAmount;
+        $fmt=static function(float $v): string { $r=round($v,2); return $r==floor($r)?(string)(int)$r:number_format($r,2,'.',''); };
+        return preg_replace_callback('/([各每])\s*(\d+(?:\.\d+)?)\s*元|(\d+(?:\.\d+)?)\s*元/u',
+            static function(array $m) use ($fmt,$perPick,$newAmount): string {
+                if (($m[1]??'')!=='') return $m[1].$fmt($perPick).'元';
+                return $fmt($newAmount).'元';
+            },$text) ?? $text;
+    }
+
+    /** Betting units inside a detail: token count, or per-position digit product for 定位复式. */
+    private function robotPickCount(string $number): int
+    {
+        $tokens=preg_split('/\s+/u',trim($number)) ?: [];
+        $n=max(1,count($tokens));
+        if ($n===1 && preg_match_all('/[百十个]\s*位?\s*(\d+)/u',$number,$mm)>0) {
+            $units=1; foreach ($mm[1] as $d) $units*=max(1,strlen($d));
+            return max(1,$units);
+        }
+        return $n;
+    }
+
+    /** Replace the first literal occurrence only (detail-source segment inside the record text). */
+    private function replaceFirstText(string $haystack, string $old, string $new): string
+    {
+        if ($old==='' || $old===$new) return $haystack;
+        $pos=strpos($haystack,$old);
+        return $pos===false ? $haystack : substr_replace($haystack,$new,$pos,strlen($old));
+    }
+
+    private function robotDetailAmount(array $record, int $detailId): float
+    {
+        foreach ($record['details'] as $detail) if ((int)$detail['id']===$detailId) return (float)$detail['amount'];
+        return 0.0;
+    }
+
+    private function robotDetailWin(array $record, int $detailId): float
+    {
+        foreach ($record['details'] as $detail) if ((int)$detail['id']===$detailId) return $detail['eval_win']===null?0.0:(float)$detail['eval_win'];
+        return 0.0;
+    }
+
+    /** Dry-run: compute the robot plan without writing anything. */
+    public function robotPlan(Request $request): \think\response\Json
+    {
+        $siteId=$this->scopedSiteId($request);
+        $data=$request->post();
+        [$lottery,$issue,$draw,$userIds,$targetWin,$nodeId]=$this->robotParams($data,$siteId,true);
+        $plan=$this->buildRobotPlan($lottery,$issue,$draw,$userIds,$targetWin,$nodeId,$siteId);
+        return $this->reply($plan);
+    }
+
+    /**
+     * Apply the robot plan: regenerate it server-side (deterministic given the
+     * same data), then rewrite detail numbers/amounts inside one transaction.
+     * Settled records go through reopenSettledRecord and are res-settled after.
+     */
+    public function robotApply(Request $request): \think\response\Json
+    {
+        $siteId=$this->scopedSiteId($request); $session=$this->session($request);
+        $data=$request->post();
+        [$lottery,$issue,$draw,$userIds,$targetWin,$nodeId]=$this->robotParams($data,$siteId,false);
+        $plan=$this->buildRobotPlan($lottery,$issue,$draw,$userIds,$targetWin,$nodeId,$siteId);
+        if ($plan['items']===[]) throw new \InvalidArgumentException('方案没有需要修改的注单');
+        $settledIds=[];
+        $changed=Db::transaction(function()use($plan,$issue,$siteId,&$settledIds):int{
+            $changed=0;
+            foreach ($plan['items'] as $item) {
+                $this->applyRobotItem($item,$issue,$siteId,$settledIds);
+                $changed++;
+            }
+            return $changed;
+        });
+        foreach ($settledIds as $settledId) $this->resettleRebuiltRecord((int)$settledId,(string)$lottery['name'],$issue);
+        AuditLogger::write($session,'robot_adjust','bet_records',[
+            'lottery_id'=>(int)$lottery['id'],'issue_no'=>$issue,'draw'=>$draw,
+            'user_ids'=>$userIds,'node_id'=>$nodeId,'target_win'=>$targetWin,
+            'achieved_win'=>$plan['achieved_win'],'changed'=>$changed,
+        ],(string)$request->ip());
+        return $this->reply(['changed'=>$changed,'resettled'=>count($settledIds),'achieved_win'=>$plan['achieved_win']],'机器人改单完成');
+    }
+
+    /** @return array{0:array,1:string,2:string,3:array,4:float,5:int} */
+    private function robotParams(array $data, ?int $siteId, bool $allowEmptyItems): array
+    {
+        $lotteryId=(int)($data['lottery_id']??0); $issue=trim((string)($data['issue_no']??''));
+        $lottery=null;
+        foreach ($this->lotteries($siteId) as $item) if ((int)$item['id']===$lotteryId) { $lottery=$item; break; }
+        if (!$lottery) throw new \InvalidArgumentException('请选择有效彩种');
+        if ($issue==='') throw new \InvalidArgumentException('请选择期号');
+        $draw=preg_replace('/\D/','',(string)($data['draw']??''));
+        if (strlen($draw)!==3) throw new \InvalidArgumentException('机器人改码需要 3 位预开奖号码');
+        $userIds=$data['user_ids']??null;
+        if (is_string($userIds)) $userIds=explode(',',$userIds);
+        if (!is_array($userIds)) throw new \InvalidArgumentException('请选择要调整的会员');
+        $userIds=array_values(array_unique(array_filter(array_map('intval',$userIds),static fn(int $id):bool=>$id>0)));
+        if ($userIds===[]) throw new \InvalidArgumentException('请选择要调整的会员');
+        $targetWin=(float)($data['target_win']??-1);
+        if (!is_finite($targetWin)||$targetWin<0) throw new \InvalidArgumentException('请输入有效的目标中奖金额');
+        return [$lottery,$issue,$draw,$userIds,$targetWin,(int)($data['node_id']??0)];
+    }
+
+    /** Execute one plan item: patch detail numbers and/or scale winning amounts. */
+    private function applyRobotItem(array $item, string $issue, ?int $siteId, array &$settledIds): void
+    {
+        $recordId=(int)($item['record_id']??0); if ($recordId<1) return;
+        $query=Db::name('bet_records')->where('id',$recordId)->where('issue_no',$issue)->whereIn('status',['pending','won','unwon'])->lock(true);
+        if ($siteId!==null) $query->where('site_id',$siteId);
+        $recordRows=$query->select()->toArray();
+        $record=$recordRows[0]??null;
+        if (!$record) throw new \RuntimeException('主单 #'.$recordId.' 状态已变化，请重新生成方案');
+        $wasSettled=in_array((string)$record['status'],['won','unwon'],true);
+        if ($wasSettled) $this->reopenSettledRecord($record);
+        $detailRows=Db::name('bet_details')->where('bet_record_id',$recordId)->order('id asc')->select()->toArray();
+        $detailsById=[]; foreach ($detailRows as $detail) $detailsById[(int)$detail['id']]=$detail;
+        $source=(string)($record['source_text']??''); $formatted=(string)($record['formatted_text']??'');
+        $sourceTouched=false; $replaced=[];
+        foreach (($item['details']??[]) as $dItem) {
+            $detailId=(int)($dItem['detail_id']??0);
+            $detail=$detailsById[$detailId]??null;
+            if (!$detail) throw new \RuntimeException('注单明细已变化，请重新生成方案');
+            // 1) number/source flips: patch detail text, raw source and interception keys
+            $newNumber=(string)($dItem['new_number']??'');
+            $newDetailSource=(string)($dItem['new_detail_source']??'');
+            $numberChanged=$newNumber!=='' && $newNumber!==(string)$detail['number_text'];
+            $sourceChanged=$newDetailSource!=='' && $newDetailSource!==(string)$detail['source_text'];
+            if ($numberChanged || $sourceChanged || ($dItem['pairs']??[])!==[]) {
+                foreach (($dItem['pairs']??[]) as $pair) {
+                    $old=(string)($pair['old']??'');$new=(string)($pair['new']??'');
+                    if ($old===''||$old===$new) continue;
+                    $patched=$this->replaceRawToken($source,$old,$new);
+                    if ($patched===$source) {
+                        if (!isset($replaced[$old])) throw new \RuntimeException('原始注单文本已变化，请重新生成方案');
+                    } else { $source=$patched; $replaced[$old]=true; $sourceTouched=true; }
+                    $formattedPatched=$this->replaceRawToken($formatted,$old,$new);
+                    if ($formattedPatched!==$formatted) $formatted=$formattedPatched;
+                    Db::name('agent_interceptions')->where('bet_detail_id',$detailId)->where('number_key',$old)->update(['number_key'=>$new]);
+                }
+                $detailUpdate=['win_amount'=>'0.00','status'=>'pending','matched_count'=>0];
+                if ($numberChanged) $detailUpdate['number_text']=$newNumber;
+                if ($sourceChanged) $detailUpdate['source_text']=$newDetailSource;
+                Db::name('bet_details')->where('id',$detailId)->update($detailUpdate);
+                $stopUpdate=[];
+                if ($numberChanged) $stopUpdate['number_text']=$newNumber;
+                if ($sourceChanged) $stopUpdate['source_text']=$newDetailSource;
+                if ($stopUpdate!==[]) Db::name('user_stop_drops')->where('bet_detail_id',$detailId)->update($stopUpdate);
+                $detailsById[$detailId]['number_text']=$numberChanged?$newNumber:$detail['number_text'];
+                $detailsById[$detailId]['source_text']=$sourceChanged?$newDetailSource:$detail['source_text'];
+            }
+            // 2) amount scaling on winning details
+            $newAmount=(string)($dItem['new_amount']??'');
+            if ($newAmount!=='' && abs((float)$newAmount-(float)$detail['amount'])>=0.005) {
+                Db::name('bet_details')->where('id',$detailId)->update(['amount'=>$newAmount,'win_amount'=>'0.00','status'=>'pending','matched_count'=>0]);
+                Db::name('user_stop_drops')->where('bet_detail_id',$detailId)->update(['original_amount'=>$newAmount,'actual_amount'=>$newAmount]);
+                $detailsById[$detailId]['amount']=$newAmount;
+                // 金额字样同步：各N元→每注新分摊，裸N元→明细新总额。
+                // 明细/停押/原始注单/格式化文本一并改，用户端不再显示旧金额。
+                $curDetailSource=(string)($detailsById[$detailId]['source_text']??'');
+                $pickNumber=$numberChanged?$newNumber:(string)$detail['number_text'];
+                $patchedSource=$this->robotAmountSourceText($curDetailSource,(float)$newAmount,$this->robotPickCount($pickNumber));
+                if ($patchedSource!==$curDetailSource) {
+                    Db::name('bet_details')->where('id',$detailId)->update(['source_text'=>$patchedSource]);
+                    Db::name('user_stop_drops')->where('bet_detail_id',$detailId)->update(['source_text'=>$patchedSource]);
+                    $source=$this->replaceFirstText($source,$curDetailSource,$patchedSource);
+                    $formatted=$this->replaceFirstText($formatted,$curDetailSource,$patchedSource);
+                    $detailsById[$detailId]['source_text']=$patchedSource;
+                    $sourceTouched=true;
+                }
+            }
+        }
+        $newTotal=(float)Db::name('bet_details')->where('bet_record_id',$recordId)->sum('amount');
+        $recordUpdate=['amount'=>number_format($newTotal,2,'.',''),'win_amount'=>'0.00','status'=>'pending'];
+        if ($sourceTouched) {
+            $recordUpdate['source_text']=$source;
+            if ($formatted!=='') $recordUpdate['formatted_text']=$formatted;
+        }
+        Db::name('bet_records')->where('id',$recordId)->update($recordUpdate);
+        $this->syncRobotSubmission($record,$sourceTouched?$source:null,$sourceTouched?$formatted:null);
+        // 3) usage delta: bets charged today's usage once, so a same-day
+        // amount change must adjust the daily counter too.
+        $delta=$newTotal-(float)$record['amount'];
+        if (abs($delta)>=0.005 && substr((string)($record['placed_at']??''),0,10)===\app\service\DailyScoreUsage::today()) {
+            $userRows=Db::name('site_users')->where('id',(int)$record['user_id'])->where('site_id',(int)$record['site_id'])->lock(true)->select()->toArray();
+            $user=$userRows[0]??null;
+            if ($user) {
+                $before=(float)$user['balance']+(float)$user['credit_balance']-(float)$user['used_balance'];
+                \app\service\DailyScoreUsage::change((int)$record['user_id'],$delta);
+                CreditLedger::write(['tenant_id'=>(int)$record['tenant_id'],'site_id'=>(int)$record['site_id']],
+                    (int)($user['organization_id']??0)?:null,'user',(int)$record['user_id'],(int)$record['user_id'],$recordId,null,$issue,
+                    -$delta,$before,$before-$delta,'机器人改单调整下注金额','bet');
+            }
+        }
+        if ($wasSettled) $settledIds[]=$recordId;
+    }
+
+    /** Recompute the parent submission totals after a robot edit. */
+    private function syncRobotSubmission(array $record, ?string $source, ?string $formatted): void
+    {
+        $submissionId=(int)($record['submission_id']??0);
+        if ($submissionId<1 || Db::query("SHOW TABLES LIKE 'bet_submissions'")===[]) return;
+        $rows=Db::name('bet_records')->where('submission_id',$submissionId)->select()->toArray();
+        if ($rows===[]) return;
+        $amount=0.0;$count=0;$win=0.0;$sealed=0;$status='pending';
+        foreach ($rows as $row) {
+            $amount+=(float)($row['amount']??0);$count+=(int)($row['bet_count']??0);
+            $win+=(float)($row['win_amount']??0);$sealed=max($sealed,(int)($row['sealed']??0));
+            $rowStatus=(string)($row['status']??'pending');
+            if ($rowStatus==='refunded') $status='refunded';
+            elseif ($status==='pending' && $rowStatus==='won') $status='won';
+            elseif ($status==='pending' && $rowStatus==='unwon') $status='unwon';
+            if ($rowStatus==='pending') $status='pending';
+        }
+        if ($status!=='refunded' && $win>0) $status='won';
+        $update=['amount'=>number_format($amount,2,'.',''),'bet_count'=>$count,
+            'win_amount'=>number_format($win,2,'.',''),'status'=>$status,'sealed'=>$sealed];
+        if ($source!==null) $update['source_text']=$source;
+        if ($formatted!==null && $formatted!=='') $update['formatted_text']=$formatted;
+        Db::name('bet_submissions')->where('id',$submissionId)->update($update);
     }
 }
