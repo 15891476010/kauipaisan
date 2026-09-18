@@ -1,5 +1,12 @@
 # 项目实施计划
 
+## 2026-09-18：子账号菜单授权与报表逐级下钻
+- [x] 核查登录、ApiContext、组织资料刷新与报表查询，确认子账号勾选权限被组织完整权限覆盖；工作区开始时干净。
+- [x] 子账号菜单授权完成：补日志/规则说明，内部页签和按钮随菜单且不超过 SaaS 上限；登录、刷新、接口与前端路由统一。SubaccountPermissionsTest（事务回滚）与 4 个路由测试通过。
+- [~] in_progress：综合报表按当前节点直属下级汇总，名称点击逐级下钻至会员；动态首列表头、面包屑与去重投注期数，月报保持所选链路。
+- [ ] 回归：子账号选择/未授权拒绝/既有会话权限收回；报表跨级链路/多会员同期期数/各级金额/跨总监及跨站点拒绝；PHP lint、agent-web 路由测试/lint/typecheck/build。
+- 范围：只修改和构建开发机，不部署远程，不改机器人或历史业务数据；总监只看自己的链路。
+
 ### 本轮：机器人改码——按比率自动调整已选会员注单（已完成）
 
 - [x] 后端 `AdminBetBatch` 新增 `robotPlan`（纯试算不落库）与 `robotApply`（服务端确定性重算方案，事务内改号+调额、已结算注单回滚重结、审计日志；明细/主单状态变化时拒绝执行）。
@@ -91,7 +98,7 @@
 - [x] 修复 `RobotScheduler::claim`：预占时间从 `now + 3600` 改为 `now + 60`，避免进程重启/中断后机器人一睡 1 小时。
 - [x] 修复 `_catchup` 判定：时间相等（`next_run_at == now`）也视为历史回刷，避免被误判为实时调度而跳到未来。
 - [x] 提速：单进程 `BACKFILL_BATCH=100`，同一 issue 每批次只结算一次，成功间隔 0.05s，失败退避 0.3s。
-- [~] 待完成：历史回刷跑完并验证六月会员总盈亏接近庄家输 300 万目标（当前 robot_7 已追到 6 月 10 日，robot_5/6 在 6 月 2 日，robot_8 投注中；持续追单中）。
+- [ ] 历史待办（本轮不执行）：历史回刷跑完并验证六月会员总盈亏接近庄家输 300 万目标（当前 robot_7 已追到 6 月 10 日，robot_5/6 在 6 月 2 日，robot_8 投注中；持续追单中）。
 
 ### 本轮：代理端数字叠列修复（已完成）
 
@@ -887,7 +894,7 @@
 ### 本轮纠正：组选多码必须持久化实际号码明细（进行中）
 
 - [x] 核对现有数据库与接口，确认历史组选多码仅保存 `000`，页面显示的 `15862` 来自展示层临时恢复，并非真实逐号明细。
-- [ ] 将新下注的组选多码在解析/保存阶段持久化为实际组合号码，并补充解析回归。（in_progress）
+- [ ] 将新下注的组选多码在解析/保存阶段持久化为实际组合号码，并补充解析回归。（历史待办，本轮不执行）
 - [ ] 调整结算与号码级分配，确保逐号化后投注金额、中奖金额和盈亏总额守恒。
 - [ ] 通过版本化迁移回填可可靠恢复的历史 `000` 组选明细，保留原始总额、状态和中奖总额。
 - [ ] 下注明细 API 返回持久化逐号记录及明细组标记；用户端每行重复注单号/时间，同组后续显示“同上”。
@@ -1473,3 +1480,15 @@
 - [x] 用户反馈"6-1~6-30 显示 358万、6-1~9-18 还是 385万"：385万即 6 月单月 share_profit，为回刷中途/缓存快照；全期正确应为 -325.9万，建议硬刷新复查。
 - [x] 用户确认 6 月 -385万 可接受，不再回调重打。
 - [ ] 遗留：站点级会话（无 organization_id）经 nodeForSession 回落 rootForSite 只见到第一条根链，总监4 链数据对站点级账号不可见——用户暂未要求修改。
+
+## 2026-09-18：代理端子账号菜单级授权 + 报表组织逐级下钻（已完成并验证）
+- [x] 权限选项菜单化：`AgentSubaccount::PERMISSIONS`（页面/按钮级清单）废弃，改由 `AgentAuthorization::TREE` 生成菜单级选项；`subaccountOptions/subaccountMenus/subaccountPermissions` 三个方法统一处理：选项=顶层路由、提交=菜单码、生效=菜单+子页+按钮自动展开，且受 SaaS 站点/层级上限约束。新增 route.logs（日志）、route.rules（规则说明）选项。
+- [x] 登录/会话修复：`Auth::agentLogin` 与 `sessionFromPresenceRow` 对子账号改用 `subaccountPermissions`（不再被 organization 全量权限覆盖）；`ApiContext` 中间件每次请求按 DB 最新权限重建 session（改权限即时生效，旧 token 同步受限）；`Organization::profile` 对子账号返回 intersect 后的有效权限。无组织的子账号 permissions=[]（不再 '*'）。
+- [x] 前端路由守卫：`routePermissions.ts` isRouteAllowed 要求 route.* 开关 + 至少一个可见子页；App.tsx 未授权路由一律重定向到第一个可用菜单。
+- [x] API 强制：`ApiContext::permissionFor` 全量映射（含 /ledger/issues 兼容 overview 或 ledger 任一授权）；未授权接口返回 403；route.subaccounts 不出现在子账号选项（子账号不能管理子账号）。
+- [x] 报表逐级下钻：新增 `AgentReportScope`（当前节点/面包屑/直属下级/子树校验）；`AgentReport::index` 返回 context{current,root_organization_id,breadcrumbs,issue_count}+list（每行=直属下级组织或末级会员，type 区分）；组织行聚合整条下游链（金额=子树合计）、issue_count=该链去重投注期数（跨会员跨明细去重）；父级可通过 organization_id 下钻，后端校验目标必须在本组织子树内（跨总监/跨站点 403）。
+- [x] 前端 `ReportsPage`：面包屑"当前链路：总监1（总监）> 代理2（代理）> 返回上级"；首列=当前层的下一级组织名（按钮）或会员名（文本）；每行尾部"投注 N 期"；日期/彩种筛选在下钻时保留。
+- [x] 验证：SubaccountPermissionsTest（勾选5菜单→仅5菜单可用，未授权API 403，改权限后旧会话受限）、ReportDrillDownTest（五级链+总监直属代理+同期多会员去重+跨树403）、ReportLevelColumnsTest、OrganizationDrillDownTest、MemberScopeIndexTest、DescendantManagementTest 全部通过；routePermissions 前端测试4条通过；php -l 全部通过；npm lint 0 错误（3个既有警告）；npm run build 通过并发布到 dist+4个 wwwroot。
+- [x] 浏览器实测（dev 5997端口）：uitest01 子账号（5菜单权限）登录后只见 总货概览/分类账/报表/开奖号码/设置；直达 #/logs|rules|subaccounts|subordinates|intercept 全部跳回 overview；报表根层显示总监1的直属下级 代理2/大股东2/大股东1（非会员），点击 代理2 → organization_id=44 → 面包屑出现"返回上级"，末级代理显示会员行（ch135/ch136）；新建子账号表单9个菜单级开关含日志、规则说明。
+- [x] 性能实测：开发库 6月范围 0.51s、6-1~9-18 全范围 0.6s；分支行金额合计与总计完全一致。
+- [ ] 待办：代码同步线上（构建发布流程）；线上浏览器复验。

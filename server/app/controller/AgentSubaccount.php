@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace app\controller;
 
 use app\service\AccountPresence;
+use app\service\AgentAuthorization;
 use app\service\OrganizationHierarchy;
 use app\service\PasswordPolicy;
 use think\Request;
@@ -12,13 +13,6 @@ use think\facade\Db;
 
 final class AgentSubaccount
 {
-    public const PERMISSIONS = [
-        'overview' => '总货概览', 'order_details' => '总货明细', 'bet_details' => '投注明细', 'winning_details' => '中奖明细', 'refunds' => '查看退码',
-        'reports' => '综合报表', 'monthly_reports' => '月报表', 'results' => '开奖号码', 'contribution' => '贡献度',
-        'daily_ledger' => '日分类账', 'monthly_ledger' => '月分类账', 'daily_path' => '日路径账', 'monthly_path' => '月路径账',
-        'interception_details' => '拦货明细', 'interception_winning' => '拦货中奖', 'interception_plate' => '拦货盘', 'subordinates' => '下级管理',
-    ];
-
     private function reply(mixed $data = null, string $message = 'ok', int $code = 0): \think\response\Json
     {
         return json(['code' => $code, 'message' => $message, 'data' => $data, 'request_id' => bin2hex(random_bytes(8))]);
@@ -52,8 +46,7 @@ final class AgentSubaccount
         $drawHistoryLimit = $configuredLimit > 0 ? min(200, $configuredLimit) : 80;
         $issues = Db::name('lottery_histories')->alias('h')->join('site_lotteries sl', 'sl.lottery_id=h.lottery_id')->where('sl.site_id', $siteId)->where('h.draw_day', '>=', date('Y-m-01'))->where('h.draw_day', '<=', date('Y-m-t'))->field('h.code AS issue_no,h.draw_day AS date')->order('h.draw_day desc')->order('h.code desc')->limit($drawHistoryLimit)->select()->toArray();
         $seen = []; $issueList = []; foreach ($issues as $row) if (!isset($seen[(string)$row['issue_no']])) { $seen[(string)$row['issue_no']] = true; $issueList[] = $row; }
-        $allowed=array_map('strval',(array)($session['permissions']??[]));
-        $permissionList = []; foreach (self::PERMISSIONS as $key => $label) if(in_array('*',$allowed,true)||in_array($key,$allowed,true))$permissionList[] = ['key' => $key, 'label' => $label];
+        $permissionList=AgentAuthorization::subaccountOptions((array)($session['permissions']??[]));
         return $this->reply(['permissions' => $permissionList, 'lotteries' => $lotteries, 'issues' => $issueList]);
     }
 
@@ -115,7 +108,7 @@ final class AgentSubaccount
         $agentId=(int)Db::name('sites')->where('id',$siteId)->value('agent_id');
         if(Db::name('agent_admins')->where('agent_id',$agentId)->where('username',$username)->whereNull('deleted_at')->find()||Db::name('site_admins')->where('site_id',$siteId)->where('username',$username)->whereNull('deleted_at')->find()||Db::name('sites')->where('id',$siteId)->where('manager_username',$username)->whereNull('deleted_at')->find()) throw new \InvalidArgumentException('账号名与现有主账号重复');
         if ($passwordRequired) PasswordPolicy::assertValid((string)($data['password'] ?? ''),$username);
-        $permissions = array_values(array_intersect(array_keys(self::PERMISSIONS), array_map('strval', (array)($data['permissions'] ?? []))));
+        $permissions = AgentAuthorization::subaccountMenus($data['permissions'] ?? []);
         $validLotteryIds = array_map('intval', Db::name('site_lotteries')->where('site_id', $siteId)->column('lottery_id')); $lotteryPermissions = array_values(array_intersect($validLotteryIds, array_map('intval', (array)($data['lottery_permissions'] ?? []))));
         return ['username' => $username, 'display_name' => $displayName, 'permissions' => json_encode($permissions, JSON_UNESCAPED_UNICODE), 'lottery_permissions' => json_encode($lotteryPermissions), 'report_limit_enabled' => !empty($data['report_limit_enabled']) ? 1 : 0, 'report_from_issue' => trim((string)($data['report_from_issue'] ?? '')) ?: null, 'report_to_issue' => trim((string)($data['report_to_issue'] ?? '')) ?: null, 'status' => (int)($data['status'] ?? 1) === 0 ? 0 : 1];
     }
@@ -123,13 +116,13 @@ final class AgentSubaccount
     private function format(array $row): array
     {
         foreach (['permissions', 'lottery_permissions'] as $key) { $decoded = json_decode((string)($row[$key] ?? ''), true); $row[$key] = is_array($decoded) ? $decoded : []; }
+        $row['permissions']=AgentAuthorization::subaccountMenus($row['permissions']);
         unset($row['password'], $row['deleted_at']); return $row;
     }
 
     private function allowedPermissions(array $requested,array $session): array
     {
-        $allowed=array_map('strval',(array)($session['permissions']??[]));
-        if(in_array('*',$allowed,true))return array_values(array_intersect(array_keys(self::PERMISSIONS),array_map('strval',$requested)));
-        return array_values(array_intersect(array_map('strval',$requested),$allowed));
+        $allowed=array_column(AgentAuthorization::subaccountOptions((array)($session['permissions']??[])),'key');
+        return array_values(array_intersect(AgentAuthorization::subaccountMenus($requested),$allowed));
     }
 }

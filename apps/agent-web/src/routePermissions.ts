@@ -55,6 +55,7 @@ export function routeKey(pathname: string): string {
 
 export function isRouteAllowed(pathname: string, context: RouteAccessContext): boolean {
   const key = routeKey(pathname);
+  if (context.isSubaccount && key === "subaccounts") return false;
   if (context.permissions.includes("*")) return key in routePermissions;
   if (!(key in routePermissions)) return false;
   const routePermission = routePermissionCodes[key];

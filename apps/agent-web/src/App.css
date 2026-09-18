@@ -4557,24 +4557,56 @@ body {
 .agent-reports-table thead tr:nth-child(2) th {
   height: 31px;
 }
-.agent-reports-table th:first-child {
-  width: 122px;
+.agent-reports-table .report-name-column {
+  width: 180px;
   background: #fff;
 }
-.agent-reports-table .member-group,
-.agent-reports-table thead tr:nth-child(2) th:nth-child(-n + 5) {
+.agent-reports-table .member-group {
   background: #fffec7;
 }
-.agent-reports-table .agent-group,
-.agent-reports-table
-  thead
-  tr:nth-child(2)
-  th:nth-child(n + 6):nth-child(-n + 10) {
+.agent-reports-table .agent-group {
   background: #ffd59b;
 }
-.agent-reports-table .platform-group,
-.agent-reports-table thead tr:nth-child(2) th:nth-child(n + 11) {
+.agent-reports-table .platform-group {
   background: #ffd4ee;
+}
+.agent-report-breadcrumbs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 25px;
+  background: #fff;
+  border-bottom: 1px solid #d7d7d7;
+}
+.agent-report-breadcrumbs > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.agent-app .agent-report-breadcrumbs button,
+.agent-app .report-branch-name button {
+  display: inline;
+  width: auto;
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #006400;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.agent-app .agent-report-breadcrumbs button:focus-visible,
+.agent-app .report-branch-name button:focus-visible {
+  outline: 2px solid #006400;
+  outline-offset: 3px;
+}
+.report-issue-count {
+  display: block;
+  color: #666;
+  font-size: 12px;
+  font-weight: 400;
 }
 .agent-reports-table tbody tr {
   background: #fff;

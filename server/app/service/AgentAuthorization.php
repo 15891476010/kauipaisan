@@ -102,6 +102,47 @@ final class AgentAuthorization
         return $normalized;
     }
 
+    public static function subaccountMenus(mixed $value): array
+    {
+        $items=is_string($value)?json_decode($value,true):$value;
+        $items=is_array($items)?array_map('strval',$items):[];
+        $selected=[];
+        foreach(self::TREE as $route){
+            if($route['code']==='route.subaccounts')continue;
+            $codes=array_merge([$route['code']],array_column($route['children'],'code'));
+            if(in_array('*',$items,true)||array_intersect($codes,$items)!==[])$selected[]=$route['code'];
+        }
+        return $selected;
+    }
+
+    public static function subaccountPermissions(mixed $value,array $ceiling): array
+    {
+        $menus=self::subaccountMenus($value);
+        $allowed=self::expandLegacyRoutes($ceiling);
+        $permissions=[];
+        foreach(self::TREE as $route){
+            if(!in_array($route['code'],$menus,true))continue;
+            if(!in_array('*',$allowed,true)&&!in_array($route['code'],$allowed,true))continue;
+            $permissions[]=$route['code'];
+            foreach($route['children'] as $child){
+                if(in_array('*',$allowed,true)||in_array($child['code'],$allowed,true))$permissions[]=$child['code'];
+            }
+        }
+        return $permissions;
+    }
+
+    public static function subaccountOptions(array $ceiling): array
+    {
+        $permissions=self::subaccountPermissions(['*'],$ceiling);
+        $options=[];
+        foreach(self::TREE as $route){
+            if(!in_array($route['code'],$permissions,true))continue;
+            if(array_intersect(array_column($route['children'],'code'),$permissions)===[])continue;
+            $options[]=['key'=>$route['code'],'label'=>match($route['code']){'route.ledger'=>'贡献度','route.settings'=>'设置',default=>$route['label']}];
+        }
+        return $options;
+    }
+
     public static function normalizeForLevel(mixed $value,string $level): array
     {
         $allowed=self::codesForLevel($level);

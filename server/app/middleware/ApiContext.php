@@ -75,7 +75,7 @@ final class ApiContext
                 if(!$activeSubaccount) { if($token!=='')Cache::delete('token:'.$token); return $this->cors(json(['code'=>401,'message'=>'子账号已停用或删除','data'=>null,'request_id'=>bin2hex(random_bytes(8))],401)); }
                 $activeNode=Db::name('organization_nodes')->where('id',(int)($activeSubaccount['organization_id']??0))->where('site_id',(int)($agentSession['site_id']??0))->where('status',1)->whereNull('deleted_at')->find();
                 if(!$activeNode) { if($token!=='')Cache::delete('token:'.$token); return $this->cors(json(['code'=>401,'message'=>'当前组织已停用或删除','data'=>null,'request_id'=>bin2hex(random_bytes(8))],401)); }
-                $permissions=OrganizationHierarchy::effectivePermissions((int)$activeSubaccount['organization_id'],OrganizationHierarchy::decodePermissions($activeSubaccount['permissions']??null));
+                $permissions=OrganizationHierarchy::subaccountPermissions((int)$activeSubaccount['organization_id'],$activeSubaccount['permissions']??null);
                 $lotteryPermissions=json_decode((string)($activeSubaccount['lottery_permissions']??''),true);if(!is_array($lotteryPermissions))$lotteryPermissions=[];
                 $refreshed=array_merge($agentSession,['organization_id'=>(int)$activeSubaccount['organization_id'],'permissions'=>$permissions,'lottery_permissions'=>$lotteryPermissions,'report_limit_enabled'=>(int)($activeSubaccount['report_limit_enabled']??0),'report_from_issue'=>$activeSubaccount['report_from_issue']??null,'report_to_issue'=>$activeSubaccount['report_to_issue']??null]);
                 if($refreshed!==$agentSession&&$token!=='')Cache::set('token:'.$token,$refreshed,(int)env('TOKEN_TTL',7200));$agentSession=$refreshed;
@@ -174,7 +174,7 @@ final class ApiContext
         if (str_contains($path,'/profit-shares')) return in_array($method,['PUT','PATCH'],true)?'organization.update':'organization.manage';
         if (preg_match('#/organizations/\d+/accounts$#',$path)===1) return $method==='POST'?'organization.create':'organization.manage';
         if (str_contains($path,'/organizations')) return match($method){'POST'=>'organization.create','PUT','PATCH'=>'organization.update','DELETE'=>'organization.delete',default=>'organization.manage'};
-        if (str_contains($path,'/ledger/issues')) return 'route.ledger';
+        if (str_contains($path,'/ledger/issues')) return '__overview_or_ledger__';
         if (str_contains($path,'/interceptions/issues') || str_contains($path,'/interceptions/categories')) return 'route.intercept';
         if (str_contains($path,'/members')) return match($method){'POST'=>'member.create','PUT','PATCH'=>'member.update',default=>'subordinates'};
         if (str_contains($path,'/results')) return 'results';
@@ -196,6 +196,7 @@ final class ApiContext
 
     private function hasAgentPermission(array $permissions,string $required): bool
     {
+        if($required==='__overview_or_ledger__')return $this->hasAgentPermission($permissions,'route.overview')||$this->hasAgentPermission($permissions,'route.ledger');
         if(in_array('*',$permissions,true))return true;
         if(!in_array($required,$permissions,true))return false;
         $route=match(true){

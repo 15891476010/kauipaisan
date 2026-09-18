@@ -114,6 +114,11 @@ final class OrganizationHierarchy
         return AgentAuthorization::sitePermissions((int)$node['site_id'],(string)$node['level']);
     }
 
+    public static function subaccountPermissions(int $organizationId,mixed $permissions): array
+    {
+        return AgentAuthorization::subaccountPermissions($permissions,self::effectivePermissions($organizationId));
+    }
+
     public static function rebuildPath(int $id): void
     {
         $node=Db::name('organization_nodes')->where('id',$id)->find();

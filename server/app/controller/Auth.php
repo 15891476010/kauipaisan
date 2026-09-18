@@ -161,7 +161,7 @@ final class Auth
         if (!$platformSite && !in_array($accountTable,['organization_accounts','agent_subaccounts'],true) && ($agentId < 1 || !Db::name('agents')->where('id',$agentId)->where('status',1)->find())) { $this->log($request,['username'=>$username], 'login_failed', 'agent'); return $this->reply(null,'当前代理已停用',403); }
 
         $isSubaccount=$accountTable==='agent_subaccounts';
-        $permissions=$accountTable==='organization_accounts'||$accountTable==='agent_subaccounts'?OrganizationHierarchy::effectivePermissions($organizationId,OrganizationHierarchy::decodePermissions($account['permissions']??null)):['*'];
+        $permissions=$isSubaccount?OrganizationHierarchy::subaccountPermissions($organizationId,$account['permissions']??null):($accountTable==='organization_accounts'?OrganizationHierarchy::effectivePermissions($organizationId):['*']);
         $lotteryPermissions=$isSubaccount?(json_decode((string)($account['lottery_permissions']??''),true)?:[]):['*'];
         if (in_array($accountTable,['organization_accounts','agent_subaccounts'],true) && ($organizationId<1 || $organizationLevel==='' || !Db::name('organization_nodes')->where('id',$organizationId)->where('site_id',$siteId)->where('status',1)->whereNull('deleted_at')->find())) { $this->log($request,['username'=>$username], 'login_failed', 'agent'); return $this->reply(null,'当前组织已停用或删除',403); }
         $accountType=match($accountTable){'site_admins'=>'site_admin','agent_subaccounts'=>'agent_subaccount','organization_accounts'=>'organization_account','sites'=>'legacy_site_admin',default=>'agent_admin'};
@@ -239,8 +239,9 @@ final class Auth
         if($scope==='user'){$session['user_type']='site-user';$session['must_change_password']=(int)($account['must_change_password']??0);return $session;}
         $session['organization_id']=isset($account['organization_id'])?(int)$account['organization_id']:null;
         $session['is_subaccount']=$type==='agent_subaccount'?1:0;
-        if($session['organization_id']){$session['organization_level']=(string)Db::name('organization_nodes')->where('id',$session['organization_id'])->value('level');$session['permissions']=OrganizationHierarchy::effectivePermissions($session['organization_id'],OrganizationHierarchy::decodePermissions($account['permissions']??null));}
-        else $session['permissions']=['*'];
+        if($session['organization_id']){$session['organization_level']=(string)Db::name('organization_nodes')->where('id',$session['organization_id'])->value('level');$session['permissions']=$session['is_subaccount']?OrganizationHierarchy::subaccountPermissions($session['organization_id'],$account['permissions']??null):OrganizationHierarchy::effectivePermissions($session['organization_id']);}
+        else $session['permissions']=$session['is_subaccount']?[]:['*'];
+        if($session['is_subaccount'])foreach(['report_limit_enabled','report_from_issue','report_to_issue'] as $key)$session[$key]=$account[$key]??null;
         $session['lottery_permissions']=$type==='agent_subaccount'?(json_decode((string)($account['lottery_permissions']??''),true)?:[]):['*'];
         $session['must_change_password']=(int)($account['must_change_password']??0);
         return $session;

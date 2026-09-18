@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace app\controller;
 
 use app\service\OrganizationHierarchy;
+use app\service\AgentReportScope;
 use app\service\SequentialProfitShare;
 use think\Request;
 use think\facade\Cache;
@@ -27,17 +28,28 @@ final class AgentReport
 
     public function index(Request $request): \think\response\Json
     {
-        $session=$this->session($request); $siteId=(int)$session['site_id'];
-        try { [$from,$to]=$this->dates($request,$session); } catch (\InvalidArgumentException $e) { return $this->reply(null,$e->getMessage(),422); } $lotteries=$this->lotteries($request);
-        $rows=$this->rows($session,$from,$to,$lotteries);
-        return $this->reply(['summary'=>$this->aggregate($rows),'list'=>$this->memberRows($rows),'report_levels'=>$this->reportLevels($session),'from'=>$from,'to'=>$to,'lotteries'=>$lotteries]);
+        $session=$this->session($request);
+        try {
+            [$from,$to]=$this->dates($request,$session);
+            $scope=new AgentReportScope($session,(int)$request->param('organization_id',0));
+        } catch (\InvalidArgumentException $e) { return $this->reply(null,$e->getMessage(),422); }
+        $lotteries=$this->lotteries($request);
+        $viewSession=$scope->session($session);
+        $rows=$this->rows($viewSession,$from,$to,$lotteries);
+        $groups=$scope->groupedRows($rows,fn(array $group): array=>$this->aggregate($group));
+        return $this->reply(array_merge($scope->context(),$groups,['summary'=>$this->aggregate($rows),'report_levels'=>$this->reportLevels($viewSession),'from'=>$from,'to'=>$to,'lotteries'=>$lotteries]));
     }
 
     public function monthly(Request $request): \think\response\Json
     {
-        $session=$this->session($request); $siteId=(int)$session['site_id'];
-        try { [$from,$to]=$this->dates($request,$session); } catch (\InvalidArgumentException $e) { return $this->reply(null,$e->getMessage(),422); } $lotteries=$this->lotteries($request);
-        $rows=$this->rows($session,$from,$to,$lotteries); $groups=[];
+        $session=$this->session($request);
+        try {
+            [$from,$to]=$this->dates($request,$session);
+            $scope=new AgentReportScope($session,(int)$request->param('organization_id',0));
+        } catch (\InvalidArgumentException $e) { return $this->reply(null,$e->getMessage(),422); }
+        $lotteries=$this->lotteries($request);
+        $viewSession=$scope->session($session);
+        $rows=$this->rows($viewSession,$from,$to,$lotteries); $groups=[];
         foreach($rows as $row) {
             $issue=(string)$row['issue_no'];
             if(!isset($groups[$issue])) $groups[$issue]=[];
@@ -46,7 +58,7 @@ final class AgentReport
         $list=[];
         foreach($groups as $issue=>$group) $list[]=['issue_no'=>$issue,'draw_date'=>$this->issueDate($group),'summary'=>$this->aggregate($group)];
         usort($list,static fn(array $a,array $b): int=>strcmp((string)$b['issue_no'],(string)$a['issue_no']));
-        return $this->reply(['list'=>$list,'total'=>$this->aggregate($rows),'report_levels'=>$this->reportLevels($session),'from'=>$from,'to'=>$to,'lotteries'=>$lotteries]);
+        return $this->reply(array_merge($scope->context(),['list'=>$list,'total'=>$this->aggregate($rows),'issue_count'=>AgentReportScope::issueCount($rows),'report_levels'=>$this->reportLevels($viewSession),'from'=>$from,'to'=>$to,'lotteries'=>$lotteries]));
     }
 
     public function issues(Request $request): \think\response\Json
@@ -263,6 +275,7 @@ final class AgentReport
     private function importedRows(array $session,string $from,string $to,array $lotteries): array
     {
         $siteId=(int)$session['site_id']; $target=(int)($session['organization_id']??0); $out=[]; $seen=[];
+        if($lotteries!==[]&&!in_array('福彩3D',$lotteries,true))return [];
         $allowed=$target>0?array_values(array_unique(array_merge([$target],array_map('intval',OrganizationHierarchy::descendantIds($target))))):[];
         $batches=Db::name('agent_import_batches')->where('tenant_id',(int)($session['tenant_id']??1))->where('site_id',$siteId)->where('status','completed')->where('from_date','<=',$to)->where('to_date','>=',$from);
         foreach($batches->order('id desc')->limit(20)->select()->toArray() as $batch){
@@ -282,7 +295,7 @@ final class AgentReport
                 // local organization created from that member's `pi` parent;
                 // only old batches without a tree snapshot fall back to the
                 // selected target organization.
-                $organizationId=(int)($organizationMap[trim((string)($source['mi']??''))]??$target);
+                $organizationId=(int)($organizationMap[trim((string)($source['mi']??''))]??$batch['target_organization_id']);
                 if($allowed!==[]&&!in_array($organizationId,$allowed,true))continue;
                 $out[]=['id'=>0,'user_id'=>$pseudo,'username'=>$name,'organization_id'=>$organizationId,'share_rate'=>0,'issue_no'=>$issue,'number_text'=>'0','amount'=>$amount,'odds'=>null,'win_amount'=>0,'rebate'=>0,'placed_at'=>$placed,'lottery'=>'福彩3D','drop_odds'=>null,'import_bet_count'=>$count];
             }}

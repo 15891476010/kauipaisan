@@ -144,9 +144,13 @@ try {
     $request->setMethod('GET');
 
     $data = decoded((new AgentReport())->index($request));
-    $list = $data['list'] ?? [];
     $byMember = [];
-    foreach ($list as $memberRow) $byMember[(string)$memberRow['member']] = $memberRow['summary'];
+    foreach ([$agentA, $agentB, $agentC] as $target) {
+        $memberRequest = (new Request())->withHeader(['authorization'=>'Bearer '.$token])->withGet(['from'=>$today, 'to'=>$today, 'organization_id'=>$target]);
+        $memberRequest->setMethod('GET');
+        $list = decoded((new AgentReport())->index($memberRequest))['list'] ?? [];
+        foreach ($list as $memberRow) $byMember[(string)$memberRow['member']] = $memberRow['summary'];
+    }
 
     // Member A: chain is member -> agent -> director. The agent booked the
     // full 1000 loss as +1000 profit; 总代理/股东 columns must stay zero.
