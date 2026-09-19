@@ -162,19 +162,19 @@ final class OrganizationHierarchy
     public static function shareRowMetrics(float $amount,float $memberProfit,float $waterRate,array $edges,int $viewerOrgId,bool $viewerIsRoot): array
     {
         $houseProfit=-$memberProfit;
-        $n=count($edges);$levelData=[];$viewerIdx=-1;$childIdx=-1;$arr=1.0;$prevAttr=0.0;
+        $n=count($edges);$levelData=[];$viewerIdx=-1;$childIdx=-1;$arr=1.0;
         foreach($edges as $i=>$edge){
             $attr=$amount*$arr;                                   // 承接总投：到达本级的剩余本金
             $shareAmount=$edge['rate']*$attr;                     // 占成金额 = 边率×承接额
             $shareProfit=$edge['rate']*$arr*$houseProfit-$waterRate*$shareAmount; // 占成盈亏 = 有效份额×净结果 − 水钱×占成金额
-            // 离线反水：本级按下一级的承接额收水钱；叶子级（下面是会员）和
-            // 顶端老板级不收——老板是水钱的承担方。
-            $waterIncome=($i>0&&$i<$n-1)?$waterRate*$prevAttr:0.0;
+            // 离线反水：本级按自己的承接总投收水钱（下一级切完占成后上交的
+            // 本金），叶子级贴着会员也收；顶端老板级不收——它是水钱承担方。
+            $waterIncome=$i<$n-1?$waterRate*$attr:0.0;
             $income=($i>0?$levelData[$i-1]['share_profit']:0.0)+$waterIncome;
             $levelData[$i]=['level'=>$edge['level'],'attr'=>$attr,'share_amount'=>$shareAmount,'share_profit'=>$shareProfit,'water_income'=>$waterIncome,'profit'=>$income+$memberProfit*$arr,'arr'=>$arr];
             if((int)$edge['id']===$viewerOrgId)$viewerIdx=$i;
             if((int)$edge['parent_id']===$viewerOrgId)$childIdx=$i;
-            $prevAttr=$attr;$arr*=(1.0-$edge['rate']);
+            $arr*=(1.0-$edge['rate']);
         }
         // Residual book escaping the whole chain lands on the platform.
         $platformAmount=$amount*$arr;$platformProfit=$houseProfit*$arr-$waterRate*$platformAmount;
@@ -199,7 +199,8 @@ final class OrganizationHierarchy
             $agentWater=-$subtreeWater;
             $agentProfit+=$shareProfit+$agentWater;
         } else {
-            $offlineWater=$childIdx>=0?$waterRate*$levelData[$childIdx]['attr']:0.0;
+            // 本级离线反水 = 8.5%×本级承接总投（本级收到的本金）。
+            $offlineWater=$viewerIdx>=0?$levelData[$viewerIdx]['water_income']:0.0;
             $agentWater=$offlineWater;
             $agentProfit+=$offlineWater;
             if($viewerIdx>=0){$uplineAmount=$amount*$levelData[$viewerIdx]['arr'];$uplineProfit=$houseProfit*$levelData[$viewerIdx]['arr']-$waterRate*$uplineAmount;}
