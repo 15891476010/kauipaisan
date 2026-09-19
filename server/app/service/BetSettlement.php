@@ -226,6 +226,8 @@ final class BetSettlement
         $siteSettings=Db::name('sites')->where('id',(int)$record['site_id'])->value('settings');
         $siteSettings=is_string($siteSettings)?json_decode($siteSettings,true):(is_array($siteSettings)?$siteSettings:[]);
         $siteCap=max(0,min(100,(float)($siteSettings['max_profit_share_rate']??100)));
+        $waterRate=max(0,min(1,(float)($siteSettings['water_rate']??$siteSettings['dark_water_rate']??0.085)));
+        $turnover=(float)($record['amount']??0);
         $chain=[];$visited=[];
         while($nodeId>0&&!in_array($nodeId,$visited,true)){
             $visited[]=$nodeId;$node=Db::name('organization_nodes')->where('id',$nodeId)->whereNull('deleted_at')->lock(true)->find();if(!$node)break;
@@ -238,7 +240,15 @@ final class BetSettlement
         // e.g. 10,000 at 20% -> 2,000 to the agent, then 8,000 reaches the
         // parent and its own percentage is applied to that 8,000.
         foreach(SequentialProfitShare::allocate($houseProfit,$chain,$siteCap) as $allocation){
-            $node=$allocation['node'];$amount=$allocation['amount'];
+            $node=$allocation['node'];
+            // The booked share is the level's share result net of water: the
+            // edge rate applies to the residual book arriving at the level,
+            // and the site water rate is charged on the occupied amount
+            // (edge rate × arriving fraction × turnover).
+            $arriveRatio=$houseProfit!=0.0?$allocation['incoming_amount']/$houseProfit:0.0;
+            $occupied=$allocation['share_rate']/100*$arriveRatio*$turnover;
+            $waterCost=round($waterRate*$occupied,2);
+            $amount=round($allocation['amount']-$waterCost,2);
             if(abs($amount)<0.005)continue;
             CreditLedger::organizationSettlement(
                 $record,(int)$node['id'],$amount,(float)$node['balance'],(float)$node['balance'],
@@ -250,6 +260,8 @@ final class BetSettlement
                     'incoming_amount'=>$allocation['incoming_amount'],
                     'share_rate'=>$allocation['share_rate'],
                     'share_amount'=>$allocation['amount'],
+                    'occupied_amount'=>$occupied,
+                    'water_cost'=>$waterCost,
                     'remaining_amount'=>$allocation['remaining_amount'],
                 ],
             );

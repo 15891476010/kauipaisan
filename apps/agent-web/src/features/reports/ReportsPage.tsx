@@ -22,7 +22,7 @@ const quickRanges: Array<{ value: QuickRange; label: string }> = [
 const calendarDate = (value: string) => dayjs(value).locale('zh-cn');
 const calendarContainer = (trigger: HTMLElement) => trigger.parentElement || document.body;
 const lotteryOptions = [{ label: '福', value: '福彩3D' }, { label: '体', value: '排列三' }];
-const emptyMetrics: AgentReportMetrics = { bet_count: 0, amount: '0', win_amount: '0', water: '0', member_profit: '0', share_amount: '0', share_profit: '0', agent_water: '0', agent_profit: '0', platform_amount: '0', platform_profit: '0' };
+const emptyMetrics: AgentReportMetrics = { bet_count: 0, amount: '0', win_amount: '0', water: '0', member_profit: '0', share_amount: '0', share_profit: '0', offline_water: '0', agent_water: '0', agent_profit: '0', platform_amount: '0', platform_profit: '0' };
 
 function localDate(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
@@ -109,7 +109,7 @@ function ReportTable({mode,rows,memberRows,summary,reportLevels,rowLabel,issueCo
   const levels=reportLevels.length?reportLevels:[{key:'agent',label:'代理',relation:'self' as const}];
   const groups=[{key:'member',label:'会员',relation:'member' as const},...levels].map(group=>({
     ...group,
-    titles:group.relation==='member'?['笔数','总投','总中','盈亏']:group.relation==='self'?['占成金额','占成盈亏','离线反水','总赚水','总盈亏']:group.relation==='downline'?['总投','总赚水','盈亏']:['总投','盈亏'],
+    titles:group.relation==='member'?['笔数','总投','总中','盈亏']:group.relation==='self'?['占成金额','占成盈亏','离线反水','总赚水','总盈亏']:group.relation==='downline'?['总投','总赚水','盈亏','占成金额','占成盈亏']:['总投','盈亏'],
     className:group.relation==='member'?'member-group':group.relation==='self'?'agent-group':'platform-group',
   }));
   const columns=groups.reduce((count,group)=>count+group.titles.length,1);
@@ -123,6 +123,6 @@ function ReportTable({mode,rows,memberRows,summary,reportLevels,rowLabel,issueCo
 }
 function MetricRow({label,metrics,levels,total=false}:{label:ReactNode;metrics:AgentReportMetrics;levels:AgentReportLevel[];total?:boolean}) {
   const cells:ReactNode[]=[<td key="member-label">{label}</td>,<td key="member-count">{metrics.bet_count}</td>,<td key="member-amount">{show(metrics.amount)}</td>,<td key="member-win">{show(metrics.win_amount)}</td>,<td key="member-profit">{show(metrics.member_profit)}</td>];
-  levels.forEach(level=>{if(level.relation==='self') cells.push(<td key={`${level.key}-share`}>{show(metrics.share_amount)}</td>,<td key={`${level.key}-share-profit`}>{show(metrics.share_profit)}</td>,<td key={`${level.key}-offline`}>0</td>,<td key={`${level.key}-water`}>{show(metrics.agent_water)}</td>,<td key={`${level.key}-profit`}>{show(metrics.agent_profit)}</td>);else{const levelMetrics=metrics.levels?.[level.key];if(level.relation==='downline') cells.push(<td key={`${level.key}-amount`}>{show(levelMetrics?.amount??0)}</td>,<td key={`${level.key}-water`}>{show(levelMetrics?.water??0)}</td>,<td key={`${level.key}-profit`}>{show(levelMetrics?.profit??0)}</td>);else cells.push(<td key={`${level.key}-amount`}>{show(levelMetrics?.amount??0)}</td>,<td key={`${level.key}-profit`}>{show(levelMetrics?.profit??0)}</td>);}});
+  levels.forEach(level=>{if(level.relation==='self') cells.push(<td key={`${level.key}-share`}>{show(metrics.share_amount)}</td>,<td key={`${level.key}-share-profit`}>{show(metrics.share_profit)}</td>,<td key={`${level.key}-offline`}>{show(metrics.offline_water)}</td>,<td key={`${level.key}-water`}>{show(metrics.agent_water)}</td>,<td key={`${level.key}-profit`}>{show(metrics.agent_profit)}</td>);else{const levelMetrics=metrics.levels?.[level.key];if(level.relation==='downline') cells.push(<td key={`${level.key}-amount`}>{show(levelMetrics?.amount??0)}</td>,<td key={`${level.key}-water`}>{show(levelMetrics?.water??0)}</td>,<td key={`${level.key}-profit`}>{show(levelMetrics?.profit??0)}</td>,<td key={`${level.key}-share-amount`}>{show(levelMetrics?.share_amount??0)}</td>,<td key={`${level.key}-share-profit`}>{show(levelMetrics?.share_profit??0)}</td>);else cells.push(<td key={`${level.key}-amount`}>{show(levelMetrics?.amount??0)}</td>,<td key={`${level.key}-profit`}>{show(levelMetrics?.profit??0)}</td>);}});
   return <tr className={total?'report-total-row':''}>{cells}</tr>;
 }

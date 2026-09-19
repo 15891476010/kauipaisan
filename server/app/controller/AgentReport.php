@@ -5,7 +5,6 @@ namespace app\controller;
 
 use app\service\OrganizationHierarchy;
 use app\service\AgentReportScope;
-use app\service\SequentialProfitShare;
 use think\Request;
 use think\facade\Cache;
 use think\facade\Db;
@@ -103,101 +102,52 @@ final class AgentReport
         // created总代理 immediately sees the selected date range and members.
         $rows=array_merge($rows,$this->importedRows($session,$from,$to,$lotteries));
         if($rows===[]) return [];
-        $nodeLevels=[];
-        foreach(Db::name('organization_nodes')->where('site_id',$siteId)->field('id,level')->select()->toArray() as $nodeRow) $nodeLevels[(int)$nodeRow['id']]=(string)$nodeRow['level'];
+        $nodeLevels=[];$nodeParents=[];
+        foreach(Db::name('organization_nodes')->where('site_id',$siteId)->field('id,level,parent_id')->select()->toArray() as $nodeRow) {
+            $id=(int)$nodeRow['id']; $nodeLevels[$id]=(string)$nodeRow['level']; $nodeParents[$id]=(int)$nodeRow['parent_id'];
+        }
         $currentOrganizationId=(int)($session['organization_id']??0);
+        $viewerIsRoot=($nodeParents[$currentOrganizationId]??1)===0;
+        $viewerLevel=(string)($nodeLevels[$currentOrganizationId]??'');
+        // Canonical order is root-first; the upline column carries the level
+        // directly above the viewer's level.
+        $canonicalOrder=OrganizationHierarchy::LEVELS;
+        $viewerPos=$viewerLevel!==''?array_search($viewerLevel,$canonicalOrder,true):false;
+        $uplineLevelKey=($viewerPos!==false&&$viewerPos>0)?$canonicalOrder[$viewerPos-1]:'';
         foreach($rows as &$row) {
             $amount=(float)$row['amount']; $win=(float)$row['win_amount']; $rebate=(float)$row['rebate'];
-            $intercepted=(float)($row['intercepted']??0);
-            // Occupation is based on the member's own P/L and configured
-            // occupation percentage. It is independent of how much capacity
-            // was actually intercepted. The single configured water amount
-            // is based on the occupation amount.
+            // Occupation follows the reference model: every organization
+            // level holds an independent slice of the member turnover — its
+            // edge rate applied to the residual book arriving at it — and
+            // pays the site water rate on that occupied amount. A level's
+            // income is the share its children booked plus offline water on
+            // their attributed turnover; the residual book keeps flowing
+            // upward and the top node bears the remaining water cost.
             $memberProfit=$win+$rebate-$amount;
-            // Use the same remaining-profit allocation as settlement: the
-            // nearest organization receives its percentage first, and only
-            // the remainder is passed to its parent.
-            $chain=$this->organizationChain($siteId,(int)($row['organization_id']??0),$chainCache);
-            if ($chain===[]) {
-                if ((float)($row['share_rate']??0)>0) {
-                    // Legacy members without an organization retain their direct
-                    // historical percentage in the report.
-                    // Use a non-root sentinel parent so the legacy percentage is
-                    // applied instead of being promoted to the mandatory 100%
-                    // root allocation by SequentialProfitShare.
-                    $chain=[['id'=>0,'parent_id'=>1,'level'=>'agent','share_rate'=>(float)$row['share_rate']]];
-                } else {
-                    // Members without an organization book everything to the
-                    // root director, matching settlement's root fallback.
-                    $root=OrganizationHierarchy::rootForSite($siteId);
-                    if($root) $chain=[$root];
+            // Settled rows replay the settle-time rate snapshot merged onto
+            // the live tree (snapshot rate wins, absent nodes keep rate 0);
+            // unsettled rows project with the live chain.
+            $snapshot=null;
+            if((int)($row['settled']??0)===1&&!empty($row['_ledger'])&&is_array($row['_ledger'])){
+                $snapshot=[];
+                foreach($row['_ledger'] as $entry){
+                    $id=(int)($entry['organization_id']??0);
+                    $level=(string)($entry['level']??'');
+                    if($level===''&&$id>0)$level=$nodeLevels[$id]??'';
+                    if($level==='')continue;
+                    $snapshot[$id]=['level'=>$level,'rate'=>max(0,min($siteCap,(float)($entry['share_rate']??0)))/100.0];
                 }
             }
-            // Per-level figures: a level column is populated only when a node
-            // at that level sits in this member's organization chain. Levels
-            // absent from the chain (for example an agent opened directly
-            // under the director, skipping 总代理/股东) stay at zero.
-            $levelBases=[];
-            $chainLevels=[];
-            foreach($chain as $chainNode) {
-                $levelKey=(string)($chainNode['level']??'');
-                if($levelKey==='') continue;
-                $chainLevels[$levelKey]=true;
-                if(!isset($levelBases[$levelKey])) $levelBases[$levelKey]=['amount'=>0.0,'share_base'=>0.0];
-                $levelBases[$levelKey]['amount']+=$amount;
+            $edges=OrganizationHierarchy::shareEdges($siteId,(int)($row['organization_id']??0),$chainCache,$snapshot,$nodeLevels,$nodeParents,$siteCap,(float)($row['share_rate']??0));
+            $computed=OrganizationHierarchy::shareRowMetrics($amount,$memberProfit,$waterRate,$edges,$currentOrganizationId,$viewerIsRoot);
+            $levelBases=$computed['levels'];
+            if((int)$computed['viewer_idx']>=0&&!$viewerIsRoot&&$uplineLevelKey!==''){
+                // The residual book arriving at the viewer is shown under the
+                // upline level column.
+                $levelBases[$uplineLevelKey]=['amount'=>$computed['upline_amount'],'water'=>0.0,'profit'=>$computed['upline_profit'],'share_amount'=>0.0,'share_profit'=>0.0];
             }
-            $recordLedger=null;
-            if((int)($row['settled']??0)===1&&isset($row['_ledger'])&&is_array($row['_ledger'])) $recordLedger=$row['_ledger'];
-            $allocationAmount=0.0;$currentShareRate=0.0;
-            if($recordLedger!==null){
-                // Snapshot: booked amounts count once per issue group no
-                // matter how many details the group spans; levels that
-                // existed at settle time but left the live chain still
-                // surface their stake.
-                foreach($recordLedger as $entry){
-                    $levelKey=$entry['level']!==''?$entry['level']:(string)($nodeLevels[$entry['organization_id']]??'');
-                    $memberView=-$entry['booked'];
-                    if($levelKey!==''){
-                        if(!isset($levelBases[$levelKey])) $levelBases[$levelKey]=['amount'=>0.0,'share_base'=>0.0];
-                        $levelBases[$levelKey]['share_base']+=$memberView;
-                        if(!isset($chainLevels[$levelKey])) $levelBases[$levelKey]['amount']+=$amount;
-                    }
-                    if($entry['organization_id']===$currentOrganizationId){$allocationAmount+=$memberView;$currentShareRate=$entry['share_rate'];}
-                }
-            } else {
-                $allocations=SequentialProfitShare::allocate($memberProfit,$chain,$siteCap);
-                $currentAllocation=null;
-                foreach($allocations as $allocation) {
-                    $levelKey=(string)($allocation['node']['level']??'');
-                    if($levelKey!=='') $levelBases[$levelKey]['share_base']=($levelBases[$levelKey]['share_base']??0)+(float)$allocation['amount'];
-                    if((int)($allocation['node']['id']??0)===$currentOrganizationId)$currentAllocation=$allocation;
-                }
-                // Viewers absent from the member's chain project the root
-                // remainder, matching the previous fallback behavior.
-                $currentAllocation ??= (($currentOrganizationId>0 && $allocations!==[]) ? end($allocations) : null);
-                $allocationAmount=(float)($currentAllocation['amount']??0);
-                $currentShareRate=(float)($currentAllocation['share_rate']??0);
-            }
-            // Occupation amount is always displayed as a positive principal.
-            // The sign belongs only to occupation P/L: a positive member P/L
-            // means the member won and the organization must pay it out.
-            $occupationAmount=abs($allocationAmount);
-            $hasShare=$currentShareRate>0;
-            $water=$occupationAmount*$waterRate;
-            // The single site-wide 明水 is part of occupation P/L. There is no
-            // separate offline/dark-water stream.
-            $direction=$memberProfit>0?-1.0:1.0;
-            // Confirmed formula: water money = occupation amount × 0.085;
-            // occupation P/L is the signed occupation amount plus that water.
-            $shareProfit=$direction*($occupationAmount+$water);
-            $agentProfit=$shareProfit;
             $betCount=(int)($row['import_bet_count']??$row['number_count']??0);
-            $houseProfit=-$memberProfit;
-            $row['metrics']=['bet_count'=>max(1,$betCount),'amount'=>$amount,'win_amount'=>$win,'water'=>$rebate,'member_profit'=>$memberProfit,'share_amount'=>$occupationAmount,'share_profit'=>$shareProfit,'offline_water'=>0.0,'agent_water'=>$water,'agent_profit'=>$agentProfit,'platform_amount'=>max(0,$amount-$intercepted),'platform_profit'=>$houseProfit-$shareProfit,
-                // Hidden aggregation inputs: occupation is calculated on the
-                // member's net P/L after grouping, never by summing absolute
-                // P/L for individual bet lines.
-                'share_base'=>$allocationAmount,'share_rate'=>$currentShareRate,'water_rate'=>$waterRate,'has_share'=>$hasShare?1:0,'levels'=>$levelBases];
+            $row['metrics']=['bet_count'=>max(1,$betCount),'amount'=>$amount,'win_amount'=>$win,'water'=>$rebate,'member_profit'=>$memberProfit,'share_amount'=>$computed['share_amount'],'share_profit'=>$computed['share_profit'],'offline_water'=>$computed['offline_water'],'agent_water'=>$computed['agent_water'],'agent_profit'=>$computed['agent_profit'],'platform_amount'=>$computed['platform_amount'],'platform_profit'=>$computed['platform_profit'],'levels'=>$levelBases];
         }
         unset($row); return $rows;
     }
@@ -412,54 +362,25 @@ final class AgentReport
 
     private function aggregate(array $rows): array
     {
-        $total=['bet_count'=>0,'amount'=>0.0,'win_amount'=>0.0,'water'=>0.0,'member_profit'=>0.0,'share_amount'=>0.0,'share_profit'=>0.0,'offline_water'=>0.0,'agent_water'=>0.0,'agent_profit'=>0.0,'platform_amount'=>0.0,'platform_profit'=>0.0,'share_base'=>0.0,'share_rate'=>0.0,'water_rate'=>0.0,'has_share'=>0];
-        $amountKeys=['bet_count','amount','win_amount','water','member_profit','share_amount','share_profit','offline_water','agent_water','agent_profit','platform_amount','platform_profit','share_base'];
+        $total=['bet_count'=>0,'amount'=>0.0,'win_amount'=>0.0,'water'=>0.0,'member_profit'=>0.0,'share_amount'=>0.0,'share_profit'=>0.0,'offline_water'=>0.0,'agent_water'=>0.0,'agent_profit'=>0.0,'platform_amount'=>0.0,'platform_profit'=>0.0];
+        $amountKeys=['bet_count','amount','win_amount','water','member_profit','share_amount','share_profit','offline_water','agent_water','agent_profit','platform_amount','platform_profit'];
+        $levelKeys=['amount','water','profit','share_amount','share_profit'];
         $levelTotals=[];
         foreach($rows as $row) {
             $metrics=is_array($row['metrics']??null)?$row['metrics']:[];
             foreach($amountKeys as $key) $total[$key]+=$metrics[$key]??0;
             foreach((array)($metrics['levels']??[]) as $levelKey=>$levelMetric) {
-                if(!isset($levelTotals[$levelKey])) $levelTotals[$levelKey]=['amount'=>0.0,'share_base'=>0.0];
-                $levelTotals[$levelKey]['amount']+=(float)($levelMetric['amount']??0);
-                $levelTotals[$levelKey]['share_base']+=(float)($levelMetric['share_base']??0);
+                if(!isset($levelTotals[$levelKey])) $levelTotals[$levelKey]=array_fill_keys($levelKeys,0.0);
+                foreach($levelKeys as $key) $levelTotals[$levelKey][$key]+=(float)($levelMetric[$key]??0);
             }
-
-            // Rates are attributes of the report scope, not monetary values.
-            // Never add them once per bet detail: 102 details must still use
-            // 0.085, rather than the erroneous 0.085 * 102 = 8.67.
-            foreach(['share_rate','water_rate'] as $key) {
-                $rate=(float)($metrics[$key]??0);
-                if($rate>0) $total[$key]=$rate;
-            }
-            if((int)($metrics['has_share']??0)===1) $total['has_share']=1;
         }
-        // Rebuild all organization-side figures from the grouped member net
-        // P/L. This prevents mixed winning/losing details from inflating the
-        // occupation amount (e.g. 1328.20 vs the correct 1200.76).
-        // share_base already contains each line's signed allocation; summing
-        // it preserves per-member rates without multiplying one aggregate by
-        // a repeated rate value.
-        $base=(float)$total['share_base']; $occupation=abs($base);
-        $water=$occupation*(float)$total['water_rate']; $hasShare=(int)$total['has_share']>0;
-        $direction=$total['member_profit']>0?-1.0:1.0;
-        $shareProfit=$direction*($occupation+$water);
-        $total['share_base']=$base; $total['share_amount']=$occupation; $total['share_profit']=$shareProfit;
-        $total['agent_water']=$water; $total['offline_water']=0.0; $total['agent_profit']=$shareProfit;
-        $total['platform_profit']=-$total['member_profit']-$shareProfit;
-        // Per-level columns: 总投 is the member stake that flowed through a
-        // chain node at that level; 盈亏 is the mirror of the member P/L the
-        // level actually booked (so a 100% agent shows +1022 when the member
-        // lost 1022); 赚水 is that level's occupation times the site rate.
+        // Every figure is linear in the member book (share rate × turnover or
+        // × net result), so per-row values sum exactly to the group totals.
         $total['levels']=[];
         foreach($levelTotals as $levelKey=>$levelMetric) {
-            $levelBase=(float)$levelMetric['share_base'];
-            $total['levels'][$levelKey]=[
-                'amount'=>$this->number((float)$levelMetric['amount']),
-                'water'=>$this->number(abs($levelBase)*(float)$total['water_rate']),
-                'profit'=>$this->number(-$levelBase),
-            ];
+            $total['levels'][$levelKey]=[];
+            foreach($levelKeys as $key) $total['levels'][$levelKey][$key]=$this->number((float)$levelMetric[$key]);
         }
-        unset($total['share_base'],$total['share_rate'],$total['water_rate'],$total['has_share']);
         foreach($total as $key=>$value) if($key!=='bet_count'&&$key!=='levels') $total[$key]=$this->number((float)$value);
         return $total;
     }

@@ -5,4 +5,5 @@ return ['commands'=>[
     'robot:run'=>\app\command\RunRobotScheduler::class,
     'quick-entry:health-check'=>\app\command\CheckThirdPartyQuickEntryAccounts::class,
     'report:materialize'=>\app\command\ReportMaterialize::class,
+    'ledger:reclean-share'=>\app\command\RecleanShareLedger::class,
 ]];

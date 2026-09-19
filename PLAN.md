@@ -1526,3 +1526,18 @@
 - [x] 前端回退链路名列，恢复指标列组渲染；memberList/chainLevels 死代码移除。
 - [x] 线上验证：总监4 6-1~9-18 0.20s 返回 3 个直属下级行（大股东1/2/4），列组正确；下钻大股东4 → 小股东4 + 列切换为大股东层级布局。
 - [x] 澄清"全是0"：9 月范围新会员尚无数据（回刷还在 6 月推进），非数据丢失；老会员 9 月数据正常。钻取视图下不再出现全会员零行。
+
+### 本轮：报表占成口径对齐参考系统（进行中）
+
+- [x] `AgentReport::rows()` 占成改为参考模型——占成金额=边率×承接总投，占成盈亏=占成率×净结果−水钱×占成金额；离线反水=水钱率×下级承接总投（叶子与顶端不收）；直属下级行盈亏按三列守恒（−本级收入−上级残余）；总监为老板不收离线反水且承担子树水钱（赚水列显示负值）。
+- [x] 前端 ReportsPage：下级层补"占成金额/占成盈亏"两列，self 离线反水列从硬编码 0 改为真实值；类型补 offline_water 与 levels.share_*。
+- [x] ReportLevelColumnsTest 断言更新为新口径并通过；ReportDrillDown/ReportMaterialize/LedgerContribution/SequentialProfitShare/SettlementShareReversal/WaterLedger 全部回归通过；agent-web tsc 通过。
+
+### 数据清洗与入账口径（本轮完成）
+
+- [x] `ledger:reclean-share` 命令：按新口径重算历史 `settlement_share` 入账（入账=份额盈亏−水钱×占成金额，占成金额=边率×承接率×注单总投），本地站点15已清洗 36377 条、合计扣水 629,864.57，自动备份表 `organization_credit_ledger_bak_20260919235553`。
+- [x] `BetSettlement::allocateOrganizationProfit` 未来入账改为净额（扣水），metadata 增加 `occupied_amount`/`water_cost`。
+- [x] `AgentLedger`（分类账/贡献度）改用共享的 `OrganizationHierarchy::shareRowMetrics`，占成金额=边率×承接总投、明水=水钱率×占成金额、盈亏含下级份额盈亏+离线反水。
+- [x] 物化表已重建 72 行，内嵌账本快照与清洗后金额一致。
+- [x] 回归：报表层级/钻取/物化/账本贡献/撤销/水钱测试全部通过。
+- [ ] 生产机：推送代码 → build.sh 更新 → `php think ledger:reclean-share --apply` → `php think report:materialize --from=2026-06-01` 全量重建。
