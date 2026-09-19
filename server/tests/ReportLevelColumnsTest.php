@@ -201,10 +201,12 @@ try {
     check(($summary['levels']['general_agent']['profit'] ?? null) === '85', 'Summary 总代理 盈亏 must be +85 (conservation: −viewer income), got '.var_export($summary['levels']['general_agent']['profit'] ?? null, true));
     check(!isset($summary['levels']['shareholder']), 'Summary must not contain levels absent from every chain');
 
-    // The director is the boss: it keeps the child shares but pays the
-    // subtree's water, so its 赚水 is negative.
+    // The director is the boss: it receives no offline rebate (0), but the
+    // water the subtree collected is still its cost — carried as negative
+    // 赚水 and inside its total P/L.
     check(($summary['share_amount'] ?? null) === '0', 'Viewer share amount must be 0 after a 100% agent, got '.var_export($summary['share_amount'] ?? null, true));
-    check(($summary['offline_water'] ?? null) === '-85', 'Director offline water must be -85 (boss bears subtree water), got '.var_export($summary['offline_water'] ?? null, true));
+    check(($summary['offline_water'] ?? null) === '0', 'Director offline water must be 0 (boss receives no offline rebate), got '.var_export($summary['offline_water'] ?? null, true));
+    check(($summary['agent_water'] ?? null) === '-85', 'Director 总赚水 must be -85 (boss bears subtree water cost), got '.var_export($summary['agent_water'] ?? null, true));
     check(($summary['agent_profit'] ?? null) === '1745', 'Director 总盈亏 must be 1745 (915−85+915), got '.var_export($summary['agent_profit'] ?? null, true));
 } finally {
     Db::rollback();

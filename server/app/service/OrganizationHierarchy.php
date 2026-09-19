@@ -102,10 +102,12 @@ final class OrganizationHierarchy
      * rate × Π(1−rates below)).
      *
      * With a settle-time ledger snapshot (entries keyed by organization id,
-     * holding rate fractions and levels) the snapshot rate wins; live-chain
-     * nodes absent from the snapshot keep rate 0 because they provably booked
-     * nothing at settle time, and snapshot nodes no longer in the live chain
-     * are re-inserted by level order so the settled structure stays complete.
+     * holding rate fractions and levels) the snapshot alone supplies the
+     * chain — the member may have moved branches since, so the live tree is
+     * NOT merged in (merging would double-count levels and inflate water).
+     * $lineOrgId is the member's organization at settle time (ledger
+     * metadata); it is prepended as a zero-rate leaf when it booked nothing,
+     * so the level above still earns its offline water on the member book.
      *
      * @param array<int,array<int,array<string,mixed>>> $chainCache
      * @param array<int,array{rate:float,level:string}>|null $snapshot
@@ -113,34 +115,32 @@ final class OrganizationHierarchy
      * @param array<int,int> $nodeParents
      * @return array<int,array{id:int,level:string,parent_id:int,rate:float}>
      */
-    public static function shareEdges(int $siteId,int $memberOrgId,array &$chainCache,?array $snapshot,array $nodeLevels,array $nodeParents,float $siteCap,float $fallbackRate=0.0): array
+    public static function shareEdges(int $siteId,int $memberOrgId,array &$chainCache,?array $snapshot,array $nodeLevels,array $nodeParents,float $siteCap,float $fallbackRate=0.0,int $lineOrgId=0): array
     {
+        if($snapshot!==null){
+            $order=array_flip(array_reverse(self::LEVELS));
+            $edges=[];
+            foreach($snapshot as $orgId=>$entry){
+                $level=(string)($entry['level']??'');
+                if($level==='')$level=(string)($nodeLevels[$orgId]??'');
+                if($level==='')continue;
+                $edges[]=['id'=>(int)$orgId,'level'=>$level,'parent_id'=>(int)($nodeParents[$orgId]??0),'rate'=>(float)$entry['rate']];
+            }
+            if($lineOrgId>0&&!isset($snapshot[$lineOrgId])){
+                $edges[]=['id'=>$lineOrgId,'level'=>(string)($nodeLevels[$lineOrgId]??'agent'),'parent_id'=>(int)($nodeParents[$lineOrgId]??0),'rate'=>0.0];
+            }
+            usort($edges,static function(array $a,array $b) use($order): int{return($order[$a['level']]??99)<=>($order[$b['level']]??99);});
+            return $edges;
+        }
         $chain=$memberOrgId>0?($chainCache[$memberOrgId]??=self::shareChain($siteId,$memberOrgId)):[];
         if($chain===[]){
             $chain=$fallbackRate>0
                 ?[['id'=>0,'parent_id'=>1,'level'=>'agent','share_rate'=>$fallbackRate]]
                 :(($root=self::rootForSite($siteId))?[$root]:[]);
         }
-        $edges=[];$seen=[];
+        $edges=[];
         foreach($chain as $node){
-            $id=(int)$node['id'];$seen[$id]=true;
-            $rate=$snapshot!==null?(float)($snapshot[$id]['rate']??0.0):max(0,min($siteCap,(float)($node['share_rate']??0)))/100.0;
-            $edges[]=['id'=>$id,'level'=>(string)($node['level']??''),'parent_id'=>(int)($node['parent_id']??0),'rate'=>$rate];
-        }
-        if($snapshot!==null){
-            $extra=[];
-            foreach($snapshot as $orgId=>$entry){
-                if(isset($seen[$orgId]))continue;
-                $level=(string)($entry['level']??'');
-                if($level==='')$level=(string)($nodeLevels[$orgId]??'');
-                if($level==='')continue;
-                $extra[]=['id'=>$orgId,'level'=>$level,'parent_id'=>(int)($nodeParents[$orgId]??0),'rate'=>(float)$entry['rate']];
-            }
-            if($extra!==[]){
-                $order=array_flip(array_reverse(self::LEVELS));
-                $edges=array_merge($edges,$extra);
-                usort($edges,static function(array $a,array $b) use($order): int{return($order[$a['level']]??99)<=>($order[$b['level']]??99);});
-            }
+            $edges[]=['id'=>(int)$node['id'],'level'=>(string)($node['level']??''),'parent_id'=>(int)($node['parent_id']??0),'rate'=>max(0,min($siteCap,(float)($node['share_rate']??0)))/100.0];
         }
         return $edges;
     }
@@ -188,13 +188,19 @@ final class OrganizationHierarchy
             $shareAmount=$platformAmount;$shareProfit=$platformProfit;
         }
         if($childIdx>=0)$agentProfit=$levelData[$childIdx]['share_profit'];
+        $agentWater=0.0;
         if($viewerIsRoot){
             $subtreeWater=0.0;
             foreach($levelData as $i=>$ld){ if($viewerIdx>=0&&$i>=$viewerIdx)continue; $subtreeWater+=$ld['water_income']; }
-            $offlineWater=-$subtreeWater;
-            $agentProfit+=$shareProfit+$offlineWater;
+            // The boss receives no offline rebate (it is the payer, not a
+            // recipient) — the column stays 0 while the water cost the whole
+            // subtree collects is borne inside its total P/L and reported as
+            // negative 赚水.
+            $agentWater=-$subtreeWater;
+            $agentProfit+=$shareProfit+$agentWater;
         } else {
             $offlineWater=$childIdx>=0?$waterRate*$levelData[$childIdx]['attr']:0.0;
+            $agentWater=$offlineWater;
             $agentProfit+=$offlineWater;
             if($viewerIdx>=0){$uplineAmount=$amount*$levelData[$viewerIdx]['arr'];$uplineProfit=$houseProfit*$levelData[$viewerIdx]['arr']-$waterRate*$uplineAmount;}
         }
@@ -207,7 +213,7 @@ final class OrganizationHierarchy
             if($ld['level']===''||($viewerIdx>=0&&$i>=$viewerIdx))continue;
             $levels[$ld['level']]=['amount'=>$ld['attr'],'water'=>$ld['water_income'],'profit'=>$ld['profit'],'share_amount'=>$ld['share_amount'],'share_profit'=>$ld['share_profit']];
         }
-        return ['levels'=>$levels,'share_amount'=>$shareAmount,'share_profit'=>$shareProfit,'viewer_rate'=>$viewerRate,'viewer_idx'=>$viewerIdx,'offline_water'=>$offlineWater,'agent_water'=>$offlineWater,'agent_profit'=>$agentProfit,'upline_amount'=>$uplineAmount,'upline_profit'=>$uplineProfit,'platform_amount'=>$platformAmount,'platform_profit'=>$platformProfit];
+        return ['levels'=>$levels,'share_amount'=>$shareAmount,'share_profit'=>$shareProfit,'viewer_rate'=>$viewerRate,'viewer_idx'=>$viewerIdx,'offline_water'=>$offlineWater,'agent_water'=>$agentWater,'agent_profit'=>$agentProfit,'upline_amount'=>$uplineAmount,'upline_profit'=>$uplineProfit,'platform_amount'=>$platformAmount,'platform_profit'=>$platformProfit];
     }
 
     public static function accountContext(array $account): array

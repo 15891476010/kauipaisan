@@ -60,13 +60,14 @@ final class AgentLedger
         // ledger (settle-time rates win); only unsettled rows project with
         // the live chain so a rate change never rewrites settled history.
         $recordIds=array_values(array_unique(array_filter(array_map(static fn(array $row):int=>(int)($row['bet_record_id']??0),$rows))));
-        $settledLedger=[];
+        $settledLedger=[];$settledLineOrg=[];
         if($recordIds!==[]){
             foreach(Db::name('organization_credit_ledger')->where('site_id',(int)$session['site_id'])->where('source_type','settlement_share')->whereIn('related_bet_record_id',$recordIds)->field('related_bet_record_id,organization_id,metadata')->select()->toArray() as $ledgerRow){
                 $rid=(int)$ledgerRow['related_bet_record_id'];$orgId=(int)$ledgerRow['organization_id'];
                 $meta=is_string($ledgerRow['metadata']??null)?(json_decode((string)$ledgerRow['metadata'],true)?:[]):[];
                 $level=(string)($meta['organization_level']??($nodeLevels[$orgId]??''));
                 $settledLedger[$rid][$orgId]=['level'=>$level,'rate'=>max(0,min($siteCap,(float)($meta['share_rate']??0)))/100.0];
+                if(empty($settledLineOrg[$rid]))$settledLineOrg[$rid]=(int)($meta['line_organization_id']??0);
             }
         }
         foreach($rows as &$row){$amount=(float)$row['amount'];$win=(float)$row['win_amount'];$rebate=(float)$row['rebate'];$memberProfit=$win+$rebate-$amount;$intercepted=(float)($map[(int)$row['id']]['intercepted']??0);
@@ -78,7 +79,7 @@ final class AgentLedger
             $memberOrg=(int)($row['organization_id']??0);
             $recordId=(int)($row['bet_record_id']??0);$isSettled=in_array((string)($row['record_status']??''),['won','unwon'],true);
             $snapshot=$isSettled?($settledLedger[$recordId]??null):null;
-            $edges=OrganizationHierarchy::shareEdges((int)$session['site_id'],$memberOrg,$chainCache,$snapshot,$nodeLevels,$nodeParents,$siteCap,max(0,min(100,(float)($row['member_share_rate']??0))));
+            $edges=OrganizationHierarchy::shareEdges((int)$session['site_id'],$memberOrg,$chainCache,$snapshot,$nodeLevels,$nodeParents,$siteCap,max(0,min(100,(float)($row['member_share_rate']??0))),(int)($settledLineOrg[$recordId]??0));
             $computed=OrganizationHierarchy::shareRowMetrics($amount,$memberProfit,$waterRate,$edges,$viewerOrg,$viewerIsRoot);
             $water=round($computed['share_amount']*$waterRate,2);$numbers=preg_split('/[\s,，]+/u',trim((string)$row['number_text']),-1,PREG_SPLIT_NO_EMPTY)?:[];$row['bet_count']=max(1,count($numbers));$row['intercepted']=$intercepted;$row['requested_share']=(float)($map[(int)$row['id']]['requested']??0);$row['share_rate']=$computed['viewer_rate']*100;$row['water']=$water;$row['offline_water']=$computed['offline_water'];$row['bright_water']=$water;$row['house_profit']=-$memberProfit;$row['share_profit']=$computed['share_profit'];$row['agent_profit']=$computed['agent_profit'];}unset($row);return$rows;
     }

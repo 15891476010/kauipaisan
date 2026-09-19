@@ -124,21 +124,24 @@ final class AgentReport
             // their attributed turnover; the residual book keeps flowing
             // upward and the top node bears the remaining water cost.
             $memberProfit=$win+$rebate-$amount;
-            // Settled rows replay the settle-time rate snapshot merged onto
-            // the live tree (snapshot rate wins, absent nodes keep rate 0);
-            // unsettled rows project with the live chain.
-            $snapshot=null;
+            // Settled rows replay the settle-time chain verbatim: the ledger
+            // snapshot alone supplies the edges (the member may have moved
+            // branches since), with the settle-time line org kept as the leaf
+            // so the level above still earns water on the member book.
+            // Unsettled rows project with the live chain.
+            $snapshot=null;$lineOrgId=0;
             if((int)($row['settled']??0)===1&&!empty($row['_ledger'])&&is_array($row['_ledger'])){
                 $snapshot=[];
                 foreach($row['_ledger'] as $entry){
                     $id=(int)($entry['organization_id']??0);
+                    if($lineOrgId===0)$lineOrgId=(int)($entry['line_org']??0);
                     $level=(string)($entry['level']??'');
                     if($level===''&&$id>0)$level=$nodeLevels[$id]??'';
                     if($level==='')continue;
                     $snapshot[$id]=['level'=>$level,'rate'=>max(0,min($siteCap,(float)($entry['share_rate']??0)))/100.0];
                 }
             }
-            $edges=OrganizationHierarchy::shareEdges($siteId,(int)($row['organization_id']??0),$chainCache,$snapshot,$nodeLevels,$nodeParents,$siteCap,(float)($row['share_rate']??0));
+            $edges=OrganizationHierarchy::shareEdges($siteId,(int)($row['organization_id']??0),$chainCache,$snapshot,$nodeLevels,$nodeParents,$siteCap,(float)($row['share_rate']??0),$lineOrgId);
             $computed=OrganizationHierarchy::shareRowMetrics($amount,$memberProfit,$waterRate,$edges,$currentOrganizationId,$viewerIsRoot);
             $levelBases=$computed['levels'];
             if((int)$computed['viewer_idx']>=0&&!$viewerIsRoot&&$uplineLevelKey!==''){
@@ -210,13 +213,15 @@ final class AgentReport
         foreach($ledgerQuery->field(
             'r.user_id,r.issue_no,l.organization_id,l.direction,SUM(l.amount) AS total,'.
             "JSON_UNQUOTE(JSON_EXTRACT(l.metadata,'$.organization_level')) AS lvl,".
-            "JSON_UNQUOTE(JSON_EXTRACT(l.metadata,'$.share_rate')) AS rate"
+            "JSON_UNQUOTE(JSON_EXTRACT(l.metadata,'$.share_rate')) AS rate,".
+            "MAX(JSON_UNQUOTE(JSON_EXTRACT(l.metadata,'$.line_organization_id'))) AS line_org"
         )->group('r.user_id,r.issue_no,l.organization_id,l.direction')->select()->toArray() as $ledgerRow){
             $key=(int)$ledgerRow['user_id'].'|'.(string)$ledgerRow['issue_no'];
             $settledLedger[$key][]=[
                 'organization_id'=>(int)$ledgerRow['organization_id'],
                 'level'=>(string)($ledgerRow['lvl']??''),
                 'share_rate'=>(float)($ledgerRow['rate']??0),
+                'line_org'=>(int)($ledgerRow['line_org']??0),
                 'booked'=>((string)$ledgerRow['direction']==='in'?1.0:-1.0)*(float)$ledgerRow['total'],
             ];
         }

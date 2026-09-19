@@ -1540,4 +1540,14 @@
 - [x] `AgentLedger`（分类账/贡献度）改用共享的 `OrganizationHierarchy::shareRowMetrics`，占成金额=边率×承接总投、明水=水钱率×占成金额、盈亏含下级份额盈亏+离线反水。
 - [x] 物化表已重建 72 行，内嵌账本快照与清洗后金额一致。
 - [x] 回归：报表层级/钻取/物化/账本贡献/撤销/水钱测试全部通过。
-- [ ] 生产机：推送代码 → build.sh 更新 → `php think ledger:reclean-share --apply` → `php think report:materialize --from=2026-06-01` 全量重建。
+- [x] 生产机：已清洗 713,052 条（备份 `organization_credit_ledger_bak_20260920001936`），物化重建 112 天 3166 行。
+
+### 本轮：结算快照双链修复 + 老板离线反水归零（进行中）
+
+- [x] `OrganizationHierarchy::shareEdges`：已结算行改为只用账本快照重建链（不再与活链合并），`line_organization_id` 补叶级边；修复会员跨分支迁移后新旧链并存导致的占成/水钱重复计。
+- [x] `AgentReport`/`AgentLedger` 快照查询补 `line_organization_id`；`ReportMaterializer::ledgerDay` 同步（需重建物化表生效）。
+- [x] `AgentReportScope::groupedRows`：已结算行按快照组织解析归属分支（历史归属正确），未结算行仍按当前组织。
+- [x] 老板（根级 viewer）离线反水列改 0——它不收离线反水；子树水钱成本仍体现为负的总赚水并进总盈亏。
+- [x] 生产库实测验证：7-01 行 占成金额=55%×总投、占成盈亏=份额×净结果−8.5%×占成金额、守恒成立；迁移会员的 7 月注单正确回到旧分支行。
+- [x] 回归：ReportLevelColumns（断言已更新）/DrillDown/Materialize/LedgerContribution/SequentialProfitShare/SettlementShareReversal/WaterLedger 全过；php -l 全过。
+- [ ] 生产部署后：`php think report:materialize --from=2026-06-01` 重建物化表（补 line_org 使叶级水钱完整）。
