@@ -61,16 +61,6 @@ final class AgentReportScope
         }
         foreach ($rows as $row) {
             $organizationId = (int)($row['organization_id'] ?? 0);
-            // A settled row belongs to the branch that booked it at settle
-            // time. Members may have moved branches since, so resolve the
-            // branch from the ledger snapshot orgs instead of the live
-            // membership.
-            if ((int)($row['settled'] ?? 0) === 1 && !empty($row['_ledger']) && is_array($row['_ledger'])) {
-                foreach ($row['_ledger'] as $entry) {
-                    $oid = (int)($entry['organization_id'] ?? 0);
-                    if ($oid > 0 && isset($branches[$oid])) { $organizationId = $oid; break; }
-                }
-            }
             $childId = $branches[$organizationId] ?? 0;
             if ($childId > 0 && isset($groups['organization:'.$childId])) {
                 $key = 'organization:'.$childId;

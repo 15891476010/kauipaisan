@@ -1546,7 +1546,7 @@
 
 - [x] `OrganizationHierarchy::shareEdges`：已结算行改为只用账本快照重建链（不再与活链合并），`line_organization_id` 补叶级边；修复会员跨分支迁移后新旧链并存导致的占成/水钱重复计。
 - [x] `AgentReport`/`AgentLedger` 快照查询补 `line_organization_id`；`ReportMaterializer::ledgerDay` 同步（需重建物化表生效）。
-- [x] `AgentReportScope::groupedRows`：已结算行按快照组织解析归属分支（历史归属正确），未结算行仍按当前组织。
+- [x] `AgentReportScope::groupedRows`：行归属保持按会员**当前**组织（用户明确历史要跟着会员走——"打了这么多天不能白做"）；占成/水钱仍按快照链算，归属与口径解耦。
 - [x] 老板（根级 viewer）离线反水列改 0——它不收离线反水；子树水钱成本仍体现为负的总赚水并进总盈亏。
 - [x] 生产库实测验证：7-01 行 占成金额=55%×总投、占成盈亏=份额×净结果−8.5%×占成金额、守恒成立；迁移会员的 7 月注单正确回到旧分支行。
 - [x] 回归：ReportLevelColumns（断言已更新）/DrillDown/Materialize/LedgerContribution/SequentialProfitShare/SettlementShareReversal/WaterLedger 全过；php -l 全过。
