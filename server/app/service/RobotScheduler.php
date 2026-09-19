@@ -205,6 +205,19 @@ final class RobotScheduler
                 ? ['issue'=>(string)$robot['pending_ticket_target_issue'],'draw'=>(string)($robot['pending_ticket_target_draw']??'')]
                 : null)
             : $this->historicalTarget($lottery, !empty($robot['_catchup']) ? (int)$robot['_scheduled_at'] : null);
+        // A catch-up slot belonging to today's still-pending issue cannot be
+        // placed yet — the draw that decides the ticket direction only exists
+        // once the issue opens.  Defer until the open time instead of spinning
+        // on "机器人目标开奖期号无效" every interval.
+        if($target===null && !empty($robot['_catchup'])){
+            $pendingIssue=Db::name('lottery_histories')->where('lottery_id',(int)$lottery['id'])
+                ->where('is_opened',0)->where('open_time','>',date('Y-m-d H:i:s',$scheduleTime))
+                ->order('open_time asc')->order('id asc')->find();
+            $until=is_array($pendingIssue)&&!empty($pendingIssue['open_time'])
+                ? strtotime((string)$pendingIssue['open_time'])+60
+                : $this->nextBusinessDay($scheduleTime);
+            return ['status'=>'skipped','message'=>'目标期号尚未开奖，顺延至开奖后回补','lottery'=>(string)$lottery['name'],'skip_until'=>$until];
+        }
         // The robot's configured score is a daily hard ceiling.  It is the
         // fixed score allocation on the robot member account (cash plus
         // credit); winnings never increase it.  DailyScoreUsage resets the
@@ -536,16 +549,7 @@ final class RobotScheduler
                 // cannot exceed the weekly profit range.
                 if ($maxListCount >= $minListCount && $minListCount <= 220) {
                     $listCount = random_int($minListCount, min(220, $maxListCount));
-                    $numbers = [];
-                    for ($i = 0; $i < $listCount; $i++) {
-                        $n = $this->digits(3);
-                        if ($targetDraw !== null && $wantWin === true && $i === 0) $n = $targetDraw;
-                        if ($targetDraw !== null && $wantWin === false && $n === $targetDraw) $n = $this->differentDraw($targetDraw);
-                        $numbers[] = $n;
-                    }
-                    $numbers = array_values(array_unique($numbers));
-                    if ($targetDraw !== null && $wantWin === true && !in_array($targetDraw, $numbers, true)) $numbers[0] = $targetDraw;
-                    if ($targetDraw !== null && $wantWin === false) $numbers = array_values(array_diff($numbers, [$targetDraw]));
+                    $numbers = $this->uniqueDraws($listCount, $targetDraw, $wantWin);
                     $unit = $this->randomUnitForTotal($min, $max, $precision, count($numbers));
                     if ($unit !== null) $candidates[] = $prefix.implode(' ', $numbers).'直各'.$unit.'元';
                 }
@@ -578,9 +582,13 @@ final class RobotScheduler
                 $unit = $this->randomUnitForTotal($min,$max,$precision,1);
                 if ($unit !== null) $candidates[] = $prefix.'跨度'.$span.'各'.$unit.'元';
             } elseif (str_contains($name, '胆拖') || str_contains($name, '拖') || str_contains($category, '胆拖')) {
-                $count = (int)preg_replace('/\D/', '', $name); $count = max(2, min(9, $count ?: 2)); $family = str_contains($category, '组六') ? '组六' : '组三';
-                $bankerCount = str_contains($category, '组六2') ? 2 : 1;
-                $bankers = $this->targetBankers($targetDraw, $wantWin, $bankerCount, $family);
+                $family = str_contains($category, '组六') ? '组六' : '组三';
+                // “组六NN拖…” trips the parser's 组六 two-digit guard — the
+                // generated wording is not a valid ticket, so only offer the
+                // 组三 banker form.
+                if ($family === '组六') continue;
+                $count = (int)preg_replace('/\D/', '', $name); $count = max(2, min(9, $count ?: 2));
+                $bankers = $this->targetBankers($targetDraw, $wantWin, 1, $family);
                 $drag = $this->uniqueDigitsFrom($count, str_split($bankers));
                 $unit = $this->randomUnitForTotal($min,$max,$precision,1);
                 if ($unit !== null) $candidates[] = $prefix.$family.$bankers.'拖'.$drag.'各'.$unit.'元';
@@ -596,14 +604,7 @@ final class RobotScheduler
         // the first short catalog format.
         if ($maxListCount >= $minListCount && $minListCount <= 220) {
             $listCount = random_int($minListCount, min(220, $maxListCount));
-            $numberList=[];
-            for($i=0;$i<$listCount;$i++) {
-                $number=$this->digits(3);
-                if($targetDraw!==null && $wantWin===true && $i===0) $number=$targetDraw;
-                if($targetDraw!==null && $wantWin===false && $number===$targetDraw) $number=$this->differentDraw($targetDraw);
-                $numberList[]=$number;
-            }
-            $numberList=array_values(array_unique($numberList));
+            $numberList=$this->uniqueDraws($listCount,$targetDraw,$wantWin);
             if(count($numberList)>=3) {
                 $directUnit=$this->randomUnitForTotal($min,$max,$precision,count($numberList));
                 if($directUnit!==null) $candidates[]=$prefix.implode(' ',$numberList).'直各'.$directUnit.'元';
@@ -622,9 +623,7 @@ final class RobotScheduler
         $longMin = max(24, $minListCount); $longMax = min(220, $maxListCount);
         if ($longMax >= $longMin) {
             $longCount = random_int($longMin, $longMax);
-            $longNumbers=[];
-            while(count($longNumbers)<$longCount) $longNumbers[]=$this->digits(3);
-            $longNumbers=array_values(array_unique($longNumbers));
+            $longNumbers=$this->uniqueDraws($longCount,$targetDraw,$wantWin);
             if(count($longNumbers)>=24) {
                 $longUnit=$this->randomUnitForTotal($min,$max,$precision,count($longNumbers)*($prefix==='福体'?2:1));
                 if($longUnit!==null) {
@@ -794,6 +793,28 @@ final class RobotScheduler
     }
 
     private function digits(int $length): string { $out = ''; for ($i=0; $i<$length; $i++) $out .= (string)random_int(0, 9); return $out; }
+    /**
+     * Draw unique 3-digit numbers until $count are collected. A fixed number
+     * of random draws dedupes to fewer entries, which previously left list
+     * tickets below the paced minimum on narrow-band days and deadlocked the
+     * robot on "未找到可匹配赔率". $wantWin forces the target draw in (true)
+     * or out (false) of the list.
+     * @return array<int,string>
+     */
+    private function uniqueDraws(int $count, ?string $targetDraw = null, ?bool $wantWin = null): array
+    {
+        $pool = 1000 - ($targetDraw !== null && $wantWin === false ? 1 : 0);
+        $count = max(1, min($count, $pool));
+        $numbers = [];
+        if ($targetDraw !== null && $wantWin === true && preg_match('/^\d{3}$/', $targetDraw) === 1) $numbers[$targetDraw] = true;
+        $guard = $count * 8 + 64;
+        while (count($numbers) < $count && $guard-- > 0) {
+            $n = $this->digits(3);
+            if ($targetDraw !== null && $wantWin === false && $n === $targetDraw) continue;
+            $numbers[$n] = true;
+        }
+        return array_keys($numbers);
+    }
     private function uniqueDigits(int $length): string { return $this->uniqueDigitsFrom($length, []); }
     private function uniqueDigitsFrom(int $length, array $exclude): string { $pool=array_values(array_diff(range(0,9),array_map('intval',$exclude))); shuffle($pool); return implode('',array_slice($pool,0,max(1,min(count($pool),$length)))); }
     private function numberWord(string $name): int { foreach(['九'=>9,'八'=>8,'七'=>7,'六'=>6,'五'=>5,'四'=>4,'三'=>3,'二'=>2,'两'=>2,'一'=>1] as $word=>$value) if(str_contains($name,$word)) return $value; if(preg_match('/([2-9])码/u',$name,$m))return (int)$m[1]; return 0; }
