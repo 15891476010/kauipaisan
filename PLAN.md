@@ -1550,4 +1550,4 @@
 - [x] 老板（根级 viewer）离线反水列改 0——它不收离线反水；子树水钱成本仍体现为负的总赚水并进总盈亏。
 - [x] 生产库实测验证：7-01 行 占成金额=55%×总投、占成盈亏=份额×净结果−8.5%×占成金额、守恒成立；迁移会员的 7 月注单正确回到旧分支行。
 - [x] 回归：ReportLevelColumns（断言已更新）/DrillDown/Materialize/LedgerContribution/SequentialProfitShare/SettlementShareReversal/WaterLedger 全过；php -l 全过。
-- [ ] 生产部署后：`php think report:materialize --from=2026-06-01` 重建物化表（补 line_org 使叶级水钱完整）。
+- [x] 生产已部署并重建物化表（112天/3166行）；实测 7-01：离线反水=0、总赚水为负（含叶级水钱，大股东4行 -50150 = 8.5%×59万承接）、行按结算时归属正确分布。
