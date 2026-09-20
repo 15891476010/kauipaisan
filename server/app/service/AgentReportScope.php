@@ -20,6 +20,19 @@ final class AgentReportScope
             ->where('tenant_id', (int)$session['tenant_id'])->whereLike('path', (string)$root['path'].'%')
             ->whereNull('deleted_at')->field('id,parent_id,name,level,path')->order('depth asc,id asc')->select()->toArray();
         $this->nodes = array_column($rows, null, 'id');
+        // 展示名规则：有代号（账号 display_name）用代号，否则用账号，最后才退回节点昵称。
+        $accounts = $this->nodes ? Db::name('organization_accounts')->whereIn('organization_id', array_keys($this->nodes))
+            ->whereNull('deleted_at')->order('id asc')->field('organization_id,username,display_name')->select()->toArray() : [];
+        $byNode = [];
+        foreach ($accounts as $account) {
+            $id = (int)$account['organization_id'];
+            if (isset($byNode[$id])) continue;
+            $byNode[$id] = ['account_username'=>(string)$account['username'], 'account_display_name'=>(string)$account['display_name']];
+        }
+        foreach ($byNode as $id=>$fields) {
+            if (isset($this->nodes[$id])) $this->nodes[$id] += $fields;
+            if ($id === (int)$this->current['id']) $this->current += $fields;
+        }
     }
 
     public function session(array $session): array
@@ -56,7 +69,7 @@ final class AgentReportScope
             if (!str_starts_with((string)$node['path'], $path) || $id === $currentId) continue;
             $branches[$id] = (int)explode('/', substr((string)$node['path'], strlen($path)))[0];
             if ((int)$node['parent_id'] === $currentId) {
-                $groups['organization:'.$id] = ['id'=>(int)$id, 'type'=>'organization', 'member'=>$node['name'], 'level'=>$node['level'], 'rows'=>[]];
+                $groups['organization:'.$id] = ['id'=>(int)$id, 'type'=>'organization', 'member'=>$this->displayName($node), 'level'=>$node['level'], 'rows'=>[]];
             }
         }
         foreach ($rows as $row) {
@@ -67,7 +80,8 @@ final class AgentReportScope
             } elseif ($organizationId === $currentId || ($organizationId === 0 && (int)$this->current['parent_id'] === 0)) {
                 $id = (int)$row['user_id'];
                 $key = 'member:'.$id;
-                $groups[$key] ??= ['id'=>$id, 'type'=>'member', 'member'=>$row['username'], 'level'=>'member', 'rows'=>[]];
+                $memberName = trim((string)($row['display_name'] ?? '')) !== '' ? (string)$row['display_name'] : (string)$row['username'];
+                $groups[$key] ??= ['id'=>$id, 'type'=>'member', 'member'=>$memberName, 'level'=>'member', 'rows'=>[]];
             } else {
                 continue;
             }
@@ -102,6 +116,14 @@ final class AgentReportScope
 
     private function nodeView(array $node): array
     {
-        return ['id'=>(int)$node['id'], 'name'=>(string)$node['name'], 'level'=>(string)$node['level'], 'level_label'=>OrganizationHierarchy::LABELS[$node['level']] ?? $node['level']];
+        return ['id'=>(int)$node['id'], 'name'=>$this->displayName($node), 'level'=>(string)$node['level'], 'level_label'=>OrganizationHierarchy::LABELS[$node['level']] ?? $node['level']];
+    }
+
+    private function displayName(array $node): string
+    {
+        $code = trim((string)($node['account_display_name'] ?? ''));
+        if ($code !== '') return $code;
+        $username = trim((string)($node['account_username'] ?? ''));
+        return $username !== '' ? $username : (string)$node['name'];
     }
 }

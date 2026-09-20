@@ -7,6 +7,14 @@
 - [ ] 回归：子账号选择/未授权拒绝/既有会话权限收回；报表跨级链路/多会员同期期数/各级金额/跨总监及跨站点拒绝；PHP lint、agent-web 路由测试/lint/typecheck/build。
 - 范围：只修改和构建开发机，不部署远程，不改机器人或历史业务数据；总监只看自己的链路。
 
+### 本轮：代理端名称显示规则 + 头部自适应宽度与子账号标记（已完成）
+
+- [x] 名称显示规则统一为"代号(display_name)>账号(username)>昵称兜底"：`AgentReportScope` 节点加载时左连 `organization_accounts` 补 `account_username`/`account_display_name`，`displayName()` 统一取值；报表第一列组织行不再显示节点 `name` 昵称，面包屑/当前节点 `nodeView` 同规则；会员行 `AgentReport.liveRows`/`materializedRows` 补选 `u.display_name`，`groupedRows`/`memberRows` 按代号优先。
+- [x] 明细/列表会员列同规则：`AgentBusiness.detailResponse`/`betRecords`/`refunds`、`AgentInterception.detailRow`、`AgentLedger.contribution`/`ledgerRows` 均补 `u.display_name` 并按代号优先输出。
+- [x] 头部账号框自适应内容宽度：`.agent-account-box`/`.agent-account-field`/`.agent-account-value` 固定宽度改 `max-content`（保留最小宽），input 换 span；两处媒体查询 260px 固定宽同步放开。
+- [x] 子账号标记：`isSubaccount` 时账号值后追加橙色 `agent-subaccount-badge`"子账号"（`#e8640c`）。
+- 验证：5 个 PHP 文件 `php -l` 通过；`tsc --noEmit` 无错误；agent-web 构建发布 dist + 4 个代理站点目录，产物 CSS 含 badge 规则。
+
 ### 本轮：代理端报表样式——内容区沿用表头配色 + 去掉总监/小股东总投列（已完成）
 
 - [x] `ReportsPage.tsx`：`director`/`small_shareholder` 层级（`noInvestLevels`）标题过滤"总投"，`MetricRow` 跳过对应 `amount` 单元格；tbody 各单元格按组加 `member-group`/`agent-group`/`platform-group` 类。

@@ -1135,9 +1135,8 @@ body {
 .agent-account-box {
   position: relative;
   display: flex;
-  width: 158px;
+  width: max-content;
   min-width: 158px;
-  max-width: 158px;
   height: 87px;
   flex: 0 0 auto;
   align-items: center;
@@ -1154,9 +1153,8 @@ body {
 .agent-account-field {
   position: relative;
   display: flex;
-  width: 138px;
+  width: max-content;
   min-width: 138px;
-  max-width: 138px;
   height: 40px;
   box-sizing: border-box;
   align-items: center;
@@ -1182,13 +1180,11 @@ body {
 }
 .agent-account-field .agent-account-value {
   display: block;
-  width: 100%;
+  width: auto;
   min-width: 0;
-  max-width: 100%;
   height: 20px;
   margin: 0;
   padding: 0;
-  overflow: hidden;
   border: 0;
   outline: 0;
   background: transparent;
@@ -1196,7 +1192,15 @@ body {
   font-size: 16px;
   line-height: 20px;
   text-align: left;
-  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-subaccount-badge {
+  margin-left: 6px;
+  color: #e8640c;
+  font-size: 14px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 20px;
   white-space: nowrap;
 }
 /* Keep the legacy account rules from reintroducing the two-column/grid layout. */
@@ -7772,11 +7776,11 @@ body .ant-modal-confirm-info .ant-modal-confirm-icon { color:#006400; }
     transform: translateY(-2px);
   }
   .agent-app .agent-account-box {
-    width: 260px !important;
-    min-width: 260px !important;
-    max-width: 260px !important;
+    width: max-content !important;
+    min-width: 0 !important;
+    max-width: none !important;
     height: 100px !important;
-    flex: 0 0 260px !important;
+    flex: 0 0 auto !important;
   }
   .agent-app .agent-navigation {
     width: 899px !important;
@@ -7810,11 +7814,11 @@ body .ant-modal-confirm-info .ant-modal-confirm-icon { color:#006400; }
     transform: translateY(-2px);
   }
   .agent-app .agent-account-box {
-    width: 260px !important;
-    min-width: 260px !important;
-    max-width: 260px !important;
+    width: max-content !important;
+    min-width: 0 !important;
+    max-width: none !important;
     height: 100px !important;
-    flex: 0 0 260px !important;
+    flex: 0 0 auto !important;
   }
   .agent-app .agent-navigation {
     width: 899px !important;

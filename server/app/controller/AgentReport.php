@@ -179,7 +179,7 @@ final class AgentReport
             $query->whereRaw('(s.lottery IN ('.$marks.') OR d.lottery_name IN ('.$marks.') OR EXISTS(SELECT 1 FROM lottery_histories lh JOIN lotteries l ON l.id=lh.lottery_id WHERE lh.code=d.issue_no AND l.name IN ('.$marks.')))',array_merge($lotteries,$lotteries,$lotteries));
         }
         $rows=$query->field(
-            'd.user_id,u.username,u.organization_id,u.interception_rate AS share_rate,d.issue_no,'.
+            'd.user_id,u.username,u.display_name,u.organization_id,u.interception_rate AS share_rate,d.issue_no,'.
             "CASE WHEN r.status IN ('won','unwon') THEN 1 ELSE 0 END AS settled,".
             'COUNT(d.id) AS detail_count,'.
             "SUM(LENGTH(d.number_text)-LENGTH(REPLACE(d.number_text,' ',''))+LENGTH(d.number_text)-LENGTH(REPLACE(REPLACE(d.number_text,',',''),'，',''))+1) AS number_count,".
@@ -257,7 +257,7 @@ final class AgentReport
             $query->whereRaw('(m.lottery_name IN ('.$marks.') OR EXISTS(SELECT 1 FROM lottery_histories lh JOIN lotteries l ON l.id=lh.lottery_id WHERE lh.code=m.issue_no AND l.name IN ('.$marks.')))',array_merge($lotteries,$lotteries));
         }
         $rows=$query->field(
-            'm.user_id,u.username,u.organization_id,u.interception_rate AS share_rate,m.issue_no,m.settled,'.
+            'm.user_id,u.username,u.display_name,u.organization_id,u.interception_rate AS share_rate,m.issue_no,m.settled,'.
             'm.detail_count,m.number_count,m.amount,m.win_amount,m.rebate,m.intercepted,m.placed_at,m.ledger_json'
         )->select()->toArray();
         foreach($rows as &$row){
@@ -329,7 +329,7 @@ final class AgentReport
         $groups=[];
         foreach($rows as $row){
             $key=(string)($row['user_id']??$row['username']??'');
-            if(!isset($groups[$key]))$groups[$key]=['member'=>(string)($row['username']??'会员'),'rows'=>[]];
+            if(!isset($groups[$key]))$groups[$key]=['member'=>trim((string)($row['display_name']??''))!==''?(string)$row['display_name']:(string)($row['username']??'会员'),'rows'=>[]];
             $groups[$key]['rows'][]=$row;
         }
         $list=[];

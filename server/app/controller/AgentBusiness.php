@@ -191,9 +191,10 @@ final class AgentBusiness
         $total=(int)($summary['total']??0);
         [$page,$size]=$this->page($request);
         $sort=(string)$request->param('sort','desc')==='asc'?'asc':'desc';
-        $rows=$query->field('d.id,d.bet_record_id,r.submission_id,r.external_order_no,d.external_order_no,d.board_code,d.issue_no,d.number_text,d.category,d.amount,d.odds,d.win_amount,d.rebate,d.status,d.placed_at,d.source_text,u.username,COALESCE(s.play_type,d.category) play_type,s.lottery,r.source_text record_source')
+        $rows=$query->field('d.id,d.bet_record_id,r.submission_id,r.external_order_no,d.external_order_no,d.board_code,d.issue_no,d.number_text,d.category,d.amount,d.odds,d.win_amount,d.rebate,d.status,d.placed_at,d.source_text,u.username,u.display_name,COALESCE(s.play_type,d.category) play_type,s.lottery,r.source_text record_source')
             ->order('d.placed_at',$sort)->order('d.id',$sort)->page($page,$size)->select()->toArray();
         foreach ($rows as &$row) {
+            $row['username']=trim((string)($row['display_name']??''))!==''?$row['display_name']:$row['username'];
             $amount=(float)$row['amount']; $rebate=(float)$row['rebate']; $win=(float)$row['win_amount'];
             $displayPlay=(string)($row['play_type']??''); $displaySource=(string)($row['source_text']??'');
             if (str_contains($displayPlay,'双飞') || str_contains($displaySource,'对子')) {
@@ -271,13 +272,14 @@ final class AgentBusiness
         $query->where('r.board_code',$this->boardCode($request));
         $total=(clone $query)->count();
         [$page,$size]=$this->page($request);
-        $rows=$query->field('r.id,r.submission_id,r.external_order_no,r.board_code,r.issue_no,r.source_text,r.formatted_text,r.bet_count,r.amount,r.win_amount,r.status,r.sealed,r.placed_at,u.username')
+        $rows=$query->field('r.id,r.submission_id,r.external_order_no,r.board_code,r.issue_no,r.source_text,r.formatted_text,r.bet_count,r.amount,r.win_amount,r.status,r.sealed,r.placed_at,u.username,u.display_name')
             ->order('r.placed_at','desc')->order('r.id','desc')->page($page,$size)->select()->toArray();
         $ids=array_map('intval',array_column($rows,'id')); $wins=[];
         if ($ids) {
             foreach (Db::name('bet_details')->whereIn('bet_record_id',$ids)->where('board_code',$this->boardCode($request))->where('status','won')->field('bet_record_id,COUNT(*) win_count')->group('bet_record_id')->select()->toArray() as $row) $wins[(int)$row['bet_record_id']]=(int)$row['win_count'];
         }
         foreach ($rows as &$row) {
+            $row['username']=trim((string)($row['display_name']??''))!==''?$row['display_name']:$row['username'];
             $row['order_no']=$this->orderNumber($row);
             $row['amount']=number_format((float)$row['amount'],2,'.','');
             $row['win_amount']=number_format((float)$row['win_amount'],2,'.','');
@@ -299,9 +301,10 @@ final class AgentBusiness
         if ($account !== '') $query->whereLike('u.username','%'.$account.'%');
         $this->issueRange($query,$request,'r.issue_no');
         $total=(clone $query)->count(); [$page,$size]=$this->page($request);
-        $rows=$query->field('r.id,r.submission_id,r.board_code,r.issue_no,r.bet_count,r.amount,r.placed_at,r.refunded_at,u.username')
+        $rows=$query->field('r.id,r.submission_id,r.board_code,r.issue_no,r.bet_count,r.amount,r.placed_at,r.refunded_at,u.username,u.display_name')
             ->order('r.refunded_at','desc')->order('r.id','desc')->page($page,$size)->select()->toArray();
         foreach ($rows as &$row) {
+            $row['username']=trim((string)($row['display_name']??''))!==''?$row['display_name']:$row['username'];
             $row['amount']=number_format((float)$row['amount'],2,'.','');
             $row['refunded_at']=$row['refunded_at'] ?: $row['placed_at'];
         }

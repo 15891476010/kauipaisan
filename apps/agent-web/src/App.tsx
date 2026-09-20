@@ -523,7 +523,8 @@ function AgentMain({ name, onLogout, announcement, siteName }: { name: string; o
           <div className="account agent-account-box">
             <label className="account-field account-current agent-account-field">
               <span className="agent-account-label">账号</span>
-              <input className="agent-account-value" value={`${currentLevelLabel}：${name}`} readOnly />
+              <span className="agent-account-value">{currentLevelLabel}：{name}</span>
+              {isSubaccount && <em className="agent-subaccount-badge">子账号</em>}
             </label>
           </div>
         </div>
