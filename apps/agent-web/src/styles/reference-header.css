@@ -5,9 +5,9 @@
 }
 
 .agent-app .agent-account-field {
-  width: 122px !important;
+  width: max-content !important;
   min-width: 122px !important;
-  max-width: 122px !important;
+  max-width: none !important;
   height: 40px !important;
   margin: 8px 5px 0 !important;
   padding: 7px 15px 0 !important;
