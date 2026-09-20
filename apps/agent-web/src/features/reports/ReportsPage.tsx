@@ -105,11 +105,13 @@ export const ReportsPage = memo(function ReportsPage({lottery,permissions}:{lott
   </section></ConfigProvider>;
 });
 
+// 总监/小股东层级不显示"总投"列。
+const noInvestLevels=new Set(['director','small_shareholder']);
 function ReportTable({mode,rows,memberRows,summary,reportLevels,rowLabel,issueCount,browse}:{mode:ReportMode;rows:AgentMonthlyReportRow[];memberRows:AgentReportMemberRow[];summary:AgentReportMetrics;reportLevels:AgentReportLevel[];rowLabel:string;issueCount:number;browse:(id:number)=>void}) {
   const levels=reportLevels.length?reportLevels:[{key:'agent',label:'代理',relation:'self' as const}];
   const groups=[{key:'member',label:'会员',relation:'member' as const},...levels].map(group=>({
     ...group,
-    titles:group.relation==='member'?['笔数','总投','总中','盈亏']:group.relation==='self'?['总投','占成金额','占成盈亏','离线反水','总赚水','总盈亏']:group.relation==='downline'?['总投','总赚水','盈亏','占成金额','占成盈亏']:['总投','盈亏'],
+    titles:(group.relation==='member'?['笔数','总投','总中','盈亏']:group.relation==='self'?['总投','占成金额','占成盈亏','离线反水','总赚水','总盈亏']:group.relation==='downline'?['总投','总赚水','盈亏','占成金额','占成盈亏']:['总投','盈亏']).filter(title=>!(noInvestLevels.has(group.key)&&title==='总投')),
     className:group.relation==='member'?'member-group':group.relation==='self'?'agent-group':'platform-group',
   }));
   const columns=groups.reduce((count,group)=>count+group.titles.length,1);
@@ -122,7 +124,21 @@ function ReportTable({mode,rows,memberRows,summary,reportLevels,rowLabel,issueCo
   </table></div>;
 }
 function MetricRow({label,metrics,levels,total=false}:{label:ReactNode;metrics:AgentReportMetrics;levels:AgentReportLevel[];total?:boolean}) {
-  const cells:ReactNode[]=[<td key="member-label">{label}</td>,<td key="member-count">{metrics.bet_count}</td>,<td key="member-amount">{show(metrics.amount)}</td>,<td key="member-win">{show(metrics.win_amount)}</td>,<td key="member-profit">{show(metrics.member_profit)}</td>];
-  levels.forEach(level=>{if(level.relation==='self') cells.push(<td key={`${level.key}-amount`}>{show(metrics.viewer_amount)}</td>,<td key={`${level.key}-share`}>{show(metrics.share_amount)}</td>,<td key={`${level.key}-share-profit`}>{show(metrics.share_profit)}</td>,<td key={`${level.key}-offline`}>{show(metrics.offline_water)}</td>,<td key={`${level.key}-water`}>{show(metrics.agent_water)}</td>,<td key={`${level.key}-profit`}>{show(metrics.agent_profit)}</td>);else{const levelMetrics=metrics.levels?.[level.key];if(level.relation==='downline') cells.push(<td key={`${level.key}-amount`}>{show(levelMetrics?.amount??0)}</td>,<td key={`${level.key}-water`}>{show(levelMetrics?.water??0)}</td>,<td key={`${level.key}-profit`}>{show(levelMetrics?.profit??0)}</td>,<td key={`${level.key}-share-amount`}>{show(levelMetrics?.share_amount??0)}</td>,<td key={`${level.key}-share-profit`}>{show(levelMetrics?.share_profit??0)}</td>);else cells.push(<td key={`${level.key}-amount`}>{show(levelMetrics?.amount??0)}</td>,<td key={`${level.key}-profit`}>{show(levelMetrics?.profit??0)}</td>);}});
+  const cells:ReactNode[]=[<td key="member-label">{label}</td>,<td key="member-count" className="member-group">{metrics.bet_count}</td>,<td key="member-amount" className="member-group">{show(metrics.amount)}</td>,<td key="member-win" className="member-group">{show(metrics.win_amount)}</td>,<td key="member-profit" className="member-group">{show(metrics.member_profit)}</td>];
+  levels.forEach(level=>{
+    const cls=level.relation==='self'?'agent-group':'platform-group';
+    const levelMetrics=metrics.levels?.[level.key];
+    const hideAmount=noInvestLevels.has(level.key);
+    if(level.relation==='self'){
+      if(!hideAmount) cells.push(<td key={`${level.key}-amount`} className={cls}>{show(metrics.viewer_amount)}</td>);
+      cells.push(<td key={`${level.key}-share`} className={cls}>{show(metrics.share_amount)}</td>,<td key={`${level.key}-share-profit`} className={cls}>{show(metrics.share_profit)}</td>,<td key={`${level.key}-offline`} className={cls}>{show(metrics.offline_water)}</td>,<td key={`${level.key}-water`} className={cls}>{show(metrics.agent_water)}</td>,<td key={`${level.key}-profit`} className={cls}>{show(metrics.agent_profit)}</td>);
+    } else if(level.relation==='downline'){
+      if(!hideAmount) cells.push(<td key={`${level.key}-amount`} className={cls}>{show(levelMetrics?.amount??0)}</td>);
+      cells.push(<td key={`${level.key}-water`} className={cls}>{show(levelMetrics?.water??0)}</td>,<td key={`${level.key}-profit`} className={cls}>{show(levelMetrics?.profit??0)}</td>,<td key={`${level.key}-share-amount`} className={cls}>{show(levelMetrics?.share_amount??0)}</td>,<td key={`${level.key}-share-profit`} className={cls}>{show(levelMetrics?.share_profit??0)}</td>);
+    } else {
+      if(!hideAmount) cells.push(<td key={`${level.key}-amount`} className={cls}>{show(levelMetrics?.amount??0)}</td>);
+      cells.push(<td key={`${level.key}-profit`} className={cls}>{show(levelMetrics?.profit??0)}</td>);
+    }
+  });
   return <tr className={total?'report-total-row':''}>{cells}</tr>;
 }

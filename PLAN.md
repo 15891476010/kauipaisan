@@ -7,6 +7,12 @@
 - [ ] 回归：子账号选择/未授权拒绝/既有会话权限收回；报表跨级链路/多会员同期期数/各级金额/跨总监及跨站点拒绝；PHP lint、agent-web 路由测试/lint/typecheck/build。
 - 范围：只修改和构建开发机，不部署远程，不改机器人或历史业务数据；总监只看自己的链路。
 
+### 本轮：代理端报表样式——内容区沿用表头配色 + 去掉总监/小股东总投列（已完成）
+
+- [x] `ReportsPage.tsx`：`director`/`small_shareholder` 层级（`noInvestLevels`）标题过滤"总投"，`MetricRow` 跳过对应 `amount` 单元格；tbody 各单元格按组加 `member-group`/`agent-group`/`platform-group` 类。
+- [x] `App.css`：tbody 组色与表头一致（会员 `#fffec7`、本级 `#ffd59b`、其他层级 `#ffd4ee`），首列白底对齐白色表头，`report-total-row` 合计行保留 `#cfe6fb` 区分。
+- 验证：agent-web 构建通过并发布 dist + 4 个代理站点目录（kps-shareholder/kps-director/kps-general-agent/kps-agent）。
+
 ### 本轮：机器人改码——按比率自动调整已选会员注单（已完成）
 
 - [x] 后端 `AdminBetBatch` 新增 `robotPlan`（纯试算不落库）与 `robotApply`（服务端确定性重算方案，事务内改号+调额、已结算注单回滚重结、审计日志；明细/主单状态变化时拒绝执行）。
