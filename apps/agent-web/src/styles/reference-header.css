@@ -33,3 +33,13 @@
   height: 22px !important;
   font-size: 22px !important;
 }
+
+/* Keep the account value in normal flow: the legacy ".account-field span" rule
+   absolutely-positions every span (label + value) to the top-left corner, which
+   stacked the value on top of the floating "账号" label. Reset it so the value
+   sits inline next to the 子账号 badge on one line. */
+.agent-app .agent-account-field .agent-account-value {
+  position: static !important;
+  top: auto !important;
+  left: auto !important;
+}
