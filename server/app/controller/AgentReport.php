@@ -138,7 +138,7 @@ final class AgentReport
                     $level=(string)($entry['level']??'');
                     if($level===''&&$id>0)$level=$nodeLevels[$id]??'';
                     if($level==='')continue;
-                    $snapshot[$id]=['level'=>$level,'rate'=>max(0,min($siteCap,(float)($entry['share_rate']??0)))/100.0];
+                    $snapshot[$id]=['level'=>$level,'rate'=>max(0,min($siteCap,(float)($entry['share_rate']??0)))/100.0,'mode'=>(string)($entry['rate_mode']??'edge')];
                 }
             }
             $edges=OrganizationHierarchy::shareEdges($siteId,(int)($row['organization_id']??0),$chainCache,$snapshot,$nodeLevels,$nodeParents,$siteCap,(float)($row['share_rate']??0),$lineOrgId);
@@ -150,7 +150,7 @@ final class AgentReport
                 $levelBases[$uplineLevelKey]=['amount'=>$computed['upline_amount'],'water'=>0.0,'profit'=>$computed['upline_profit'],'share_amount'=>0.0,'share_profit'=>0.0];
             }
             $betCount=(int)($row['import_bet_count']??$row['number_count']??0);
-            $row['metrics']=['bet_count'=>max(1,$betCount),'amount'=>$amount,'win_amount'=>$win,'water'=>$rebate,'member_profit'=>$memberProfit,'share_amount'=>$computed['share_amount'],'share_profit'=>$computed['share_profit'],'offline_water'=>$computed['offline_water'],'agent_water'=>$computed['agent_water'],'agent_profit'=>$computed['agent_profit'],'platform_amount'=>$computed['platform_amount'],'platform_profit'=>$computed['platform_profit'],'levels'=>$levelBases];
+            $row['metrics']=['bet_count'=>max(1,$betCount),'amount'=>$amount,'win_amount'=>$win,'water'=>$rebate,'member_profit'=>$memberProfit,'viewer_amount'=>$computed['viewer_amount'],'share_amount'=>$computed['share_amount'],'share_profit'=>$computed['share_profit'],'offline_water'=>$computed['offline_water'],'agent_water'=>$computed['agent_water'],'agent_profit'=>$computed['agent_profit'],'platform_amount'=>$computed['platform_amount'],'platform_profit'=>$computed['platform_profit'],'levels'=>$levelBases];
         }
         unset($row); return $rows;
     }
@@ -214,6 +214,7 @@ final class AgentReport
             'r.user_id,r.issue_no,l.organization_id,l.direction,SUM(l.amount) AS total,'.
             "JSON_UNQUOTE(JSON_EXTRACT(l.metadata,'$.organization_level')) AS lvl,".
             "JSON_UNQUOTE(JSON_EXTRACT(l.metadata,'$.share_rate')) AS rate,".
+            "JSON_UNQUOTE(JSON_EXTRACT(l.metadata,'$.rate_mode')) AS rate_mode,".
             "MAX(JSON_UNQUOTE(JSON_EXTRACT(l.metadata,'$.line_organization_id'))) AS line_org"
         )->group('r.user_id,r.issue_no,l.organization_id,l.direction')->select()->toArray() as $ledgerRow){
             $key=(int)$ledgerRow['user_id'].'|'.(string)$ledgerRow['issue_no'];
@@ -221,6 +222,7 @@ final class AgentReport
                 'organization_id'=>(int)$ledgerRow['organization_id'],
                 'level'=>(string)($ledgerRow['lvl']??''),
                 'share_rate'=>(float)($ledgerRow['rate']??0),
+                'rate_mode'=>(($m=(string)($ledgerRow['rate_mode']??''))!==''?$m:'edge'),
                 'line_org'=>(int)($ledgerRow['line_org']??0),
                 'booked'=>((string)$ledgerRow['direction']==='in'?1.0:-1.0)*(float)$ledgerRow['total'],
             ];
@@ -367,8 +369,8 @@ final class AgentReport
 
     private function aggregate(array $rows): array
     {
-        $total=['bet_count'=>0,'amount'=>0.0,'win_amount'=>0.0,'water'=>0.0,'member_profit'=>0.0,'share_amount'=>0.0,'share_profit'=>0.0,'offline_water'=>0.0,'agent_water'=>0.0,'agent_profit'=>0.0,'platform_amount'=>0.0,'platform_profit'=>0.0];
-        $amountKeys=['bet_count','amount','win_amount','water','member_profit','share_amount','share_profit','offline_water','agent_water','agent_profit','platform_amount','platform_profit'];
+        $total=['bet_count'=>0,'amount'=>0.0,'win_amount'=>0.0,'water'=>0.0,'member_profit'=>0.0,'viewer_amount'=>0.0,'share_amount'=>0.0,'share_profit'=>0.0,'offline_water'=>0.0,'agent_water'=>0.0,'agent_profit'=>0.0,'platform_amount'=>0.0,'platform_profit'=>0.0];
+        $amountKeys=['bet_count','amount','win_amount','water','member_profit','viewer_amount','share_amount','share_profit','offline_water','agent_water','agent_profit','platform_amount','platform_profit'];
         $levelKeys=['amount','water','profit','share_amount','share_profit'];
         $levelTotals=[];
         foreach($rows as $row) {

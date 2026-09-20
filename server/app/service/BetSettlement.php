@@ -241,12 +241,10 @@ final class BetSettlement
         // parent and its own percentage is applied to that 8,000.
         foreach(SequentialProfitShare::allocate($houseProfit,$chain,$siteCap) as $allocation){
             $node=$allocation['node'];
-            // The booked share is the level's share result net of water: the
-            // edge rate applies to the residual book arriving at the level,
-            // and the site water rate is charged on the occupied amount
-            // (edge rate × arriving fraction × turnover).
-            $arriveRatio=$houseProfit!=0.0?$allocation['incoming_amount']/$houseProfit:0.0;
-            $occupied=$allocation['share_rate']/100*$arriveRatio*$turnover;
+            // The booked share is the level's direct fraction of the member
+            // result net of water: occupied amount = share_rate × turnover;
+            // the site water rate is charged on that occupied amount.
+            $occupied=$allocation['share_rate']/100*$turnover;
             $waterCost=round($waterRate*$occupied,2);
             $amount=round($allocation['amount']-$waterCost,2);
             if(abs($amount)<0.005)continue;
@@ -254,7 +252,8 @@ final class BetSettlement
                 $record,(int)$node['id'],$amount,(float)$node['balance'],(float)$node['balance'],
                 $amount>=0?'本期投注盈利占成':'本期投注亏损承担',
                 [
-                    'allocation_method'=>'sequential_remainder',
+                    'allocation_method'=>'direct_share',
+                    'rate_mode'=>'direct',
                     'line_organization_id'=>(int)($user['organization_id']??0),
                     'organization_level'=>(string)($node['level']??''),
                     'incoming_amount'=>$allocation['incoming_amount'],

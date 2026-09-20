@@ -66,7 +66,7 @@ final class AgentLedger
                 $rid=(int)$ledgerRow['related_bet_record_id'];$orgId=(int)$ledgerRow['organization_id'];
                 $meta=is_string($ledgerRow['metadata']??null)?(json_decode((string)$ledgerRow['metadata'],true)?:[]):[];
                 $level=(string)($meta['organization_level']??($nodeLevels[$orgId]??''));
-                $settledLedger[$rid][$orgId]=['level'=>$level,'rate'=>max(0,min($siteCap,(float)($meta['share_rate']??0)))/100.0];
+                $settledLedger[$rid][$orgId]=['level'=>$level,'rate'=>max(0,min($siteCap,(float)($meta['share_rate']??0)))/100.0,'mode'=>(string)($meta['rate_mode']??'edge')];
                 if(empty($settledLineOrg[$rid]))$settledLineOrg[$rid]=(int)($meta['line_organization_id']??0);
             }
         }

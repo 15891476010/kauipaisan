@@ -178,13 +178,16 @@ final class ReportMaterializer
                 'r.user_id,r.issue_no,r.lottery_name,l.organization_id,l.direction,SUM(l.amount) AS total,' .
                 "JSON_UNQUOTE(JSON_EXTRACT(l.metadata,'$.organization_level')) AS lvl," .
                 "JSON_UNQUOTE(JSON_EXTRACT(l.metadata,'$.share_rate')) AS rate," .
+                "JSON_UNQUOTE(JSON_EXTRACT(l.metadata,'$.rate_mode')) AS rate_mode," .
                 "MAX(JSON_UNQUOTE(JSON_EXTRACT(l.metadata,'$.line_organization_id'))) AS line_org"
             )->group('r.user_id,r.issue_no,r.lottery_name,l.organization_id,l.direction')->select()->toArray() as $row) {
             $key = (int)$row['user_id'] . '|' . (string)$row['issue_no'] . '|' . (string)($row['lottery_name'] ?? '');
+            $mode = (string)($row['rate_mode'] ?? '');
             $out[$key][] = [
                 'organization_id' => (int)$row['organization_id'],
                 'level' => (string)($row['lvl'] ?? ''),
                 'share_rate' => (float)($row['rate'] ?? 0),
+                'rate_mode' => $mode !== '' ? $mode : 'edge',
                 'line_org' => (int)($row['line_org'] ?? 0),
                 'booked' => ((string)$row['direction'] === 'in' ? 1.0 : -1.0) * (float)$row['total'],
             ];

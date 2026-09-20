@@ -124,12 +124,22 @@ final class OrganizationHierarchy
                 $level=(string)($entry['level']??'');
                 if($level==='')$level=(string)($nodeLevels[$orgId]??'');
                 if($level==='')continue;
-                $edges[]=['id'=>(int)$orgId,'level'=>$level,'parent_id'=>(int)($nodeParents[$orgId]??0),'rate'=>(float)$entry['rate']];
+                $edges[]=['id'=>(int)$orgId,'level'=>$level,'parent_id'=>(int)($nodeParents[$orgId]??0),'rate'=>(float)$entry['rate'],'mode'=>(string)($entry['mode']??'edge')];
             }
             if($lineOrgId>0&&!isset($snapshot[$lineOrgId])){
-                $edges[]=['id'=>$lineOrgId,'level'=>(string)($nodeLevels[$lineOrgId]??'agent'),'parent_id'=>(int)($nodeParents[$lineOrgId]??0),'rate'=>0.0];
+                $edges[]=['id'=>$lineOrgId,'level'=>(string)($nodeLevels[$lineOrgId]??'agent'),'parent_id'=>(int)($nodeParents[$lineOrgId]??0),'rate'=>0.0,'mode'=>'direct'];
             }
             usort($edges,static function(array $a,array $b) use($order): int{return($order[$a['level']]??99)<=>($order[$b['level']]??99);});
+            // Legacy snapshots store edge rates (a fraction of the residual
+            // arriving at the node); normalize them into direct fractions of
+            // the member book. Entries booked after the direct-share switch
+            // carry mode 'direct' and pass through unchanged.
+            $residual=1.0;
+            foreach($edges as &$e){
+                if($e['mode']==='direct'){$residual=max(0.0,$residual-$e['rate']);continue;}
+                $raw=min(1.0,max(0.0,$e['rate']));$e['rate']=$raw*$residual;$residual=max(0.0,$residual*(1.0-$raw));
+            }
+            unset($e);
             return $edges;
         }
         $chain=$memberOrgId>0?($chainCache[$memberOrgId]??=self::shareChain($siteId,$memberOrgId)):[];
@@ -139,6 +149,7 @@ final class OrganizationHierarchy
                 :(($root=self::rootForSite($siteId))?[$root]:[]);
         }
         $edges=[];
+        // Configured share_rate is a direct fraction of the member turnover.
         foreach($chain as $node){
             $edges[]=['id'=>(int)$node['id'],'level'=>(string)($node['level']??''),'parent_id'=>(int)($node['parent_id']??0),'rate'=>max(0,min($siteCap,(float)($node['share_rate']??0)))/100.0];
         }
@@ -146,14 +157,14 @@ final class OrganizationHierarchy
     }
 
     /**
-     * Per-book share metrics for one member's aggregated turnover, computed
-     * the way the reference system does: each level's occupied amount is its
-     * edge rate × the residual book arriving at it; its share P/L is rate ×
-     * the member net result − water rate × the occupied amount; a level's
-     * income is the share its children booked plus offline water on their
-     * attributed book. The top node (the boss) earns no offline water and
-     * bears the water the subtree collects, so its water column is a cost.
-     * The direct child's displayed profit uses the conservation identity:
+     * Per-book share metrics for one member's aggregated turnover. Share
+     * rates are direct fractions of the member turnover: occupied amount =
+     * rate × 总投, share P/L = rate × member net result − water rate ×
+     * occupied amount. The attributed book (承接总投) arriving at a level is
+     * 总投 × (1 − Σ rates below). Every level — including the boss — earns
+     * water on its own attributed book (water rate × 承接总投); a level's
+     * income is the share its children booked plus that water. The direct
+     * child's displayed profit uses the conservation identity:
      * −(viewer income + upline residual).
      *
      * @param array<int,array{id:int,level:string,parent_id:int,rate:float}> $edges leaf→root
@@ -162,48 +173,46 @@ final class OrganizationHierarchy
     public static function shareRowMetrics(float $amount,float $memberProfit,float $waterRate,array $edges,int $viewerOrgId,bool $viewerIsRoot): array
     {
         $houseProfit=-$memberProfit;
-        $n=count($edges);$levelData=[];$viewerIdx=-1;$childIdx=-1;$arr=1.0;
+        $levelData=[];$viewerIdx=-1;$childIdx=-1;$arr=1.0;
         foreach($edges as $i=>$edge){
-            $attr=$amount*$arr;                                   // 承接总投：到达本级的剩余本金
-            $shareAmount=$edge['rate']*$attr;                     // 占成金额 = 边率×承接额
-            $shareProfit=$edge['rate']*$arr*$houseProfit-$waterRate*$shareAmount; // 占成盈亏 = 有效份额×净结果 − 水钱×占成金额
-            // 离线反水：本级按自己的承接总投收水钱（下一级切完占成后上交的
-            // 本金），叶子级贴着会员也收；顶端老板级不收——它是水钱承担方。
-            $waterIncome=$i<$n-1?$waterRate*$attr:0.0;
+            $attr=$amount*$arr;                                   // 承接总投 = 总投×(1−下方累计占比)
+            $shareAmount=$edge['rate']*$amount;                   // 占成金额 = 占成比率×总投（直比）
+            $shareProfit=$edge['rate']*$houseProfit-$waterRate*$shareAmount; // 占成盈亏 = 占比×净结果 − 水钱×占成金额
+            // 赚水：每一级（含顶端老板）都按本级承接总投收水钱，水钱由上级/平台出。
+            $waterIncome=$waterRate*$attr;
             $income=($i>0?$levelData[$i-1]['share_profit']:0.0)+$waterIncome;
             $levelData[$i]=['level'=>$edge['level'],'attr'=>$attr,'share_amount'=>$shareAmount,'share_profit'=>$shareProfit,'water_income'=>$waterIncome,'profit'=>$income+$memberProfit*$arr,'arr'=>$arr];
             if((int)$edge['id']===$viewerOrgId)$viewerIdx=$i;
             if((int)$edge['parent_id']===$viewerOrgId)$childIdx=$i;
-            $arr*=(1.0-$edge['rate']);
+            $arr=max(0.0,$arr-$edge['rate']);
         }
         // Residual book escaping the whole chain lands on the platform.
         $platformAmount=$amount*$arr;$platformProfit=$houseProfit*$arr-$waterRate*$platformAmount;
-        $shareAmount=0.0;$shareProfit=0.0;$offlineWater=0.0;$agentProfit=0.0;$uplineAmount=0.0;$uplineProfit=0.0;$viewerRate=0.0;
+        $shareAmount=0.0;$shareProfit=0.0;$offlineWater=0.0;$agentProfit=0.0;$uplineAmount=0.0;$uplineProfit=0.0;$viewerRate=0.0;$viewerAmount=0.0;$viewerWater=0.0;
         if($viewerIdx>=0){
             $viewer=$levelData[$viewerIdx];
             $shareAmount=$viewer['share_amount'];$shareProfit=$viewer['share_profit'];$viewerRate=$edges[$viewerIdx]['rate'];
+            $viewerAmount=$viewer['attr'];$viewerWater=$viewer['water_income'];
         } elseif($viewerIsRoot){
             // Snapshot chains may stop below the viewer; the residual
             // arriving above the listed edges is then the root's own book.
             $shareAmount=$platformAmount;$shareProfit=$platformProfit;
+            $viewerAmount=$platformAmount;$viewerWater=$waterRate*$platformAmount;
         }
         if($childIdx>=0)$agentProfit=$levelData[$childIdx]['share_profit'];
-        $agentWater=0.0;
         if($viewerIsRoot){
-            $subtreeWater=0.0;
-            foreach($levelData as $i=>$ld){ if($viewerIdx>=0&&$i>=$viewerIdx)continue; $subtreeWater+=$ld['water_income']; }
-            // The boss receives no offline rebate (it is the payer, not a
-            // recipient) — the column stays 0 while the water cost the whole
-            // subtree collects is borne inside its total P/L and reported as
-            // negative 赚水.
-            $agentWater=-$subtreeWater;
+            // 老板不拿离线反水（列显示 0）；总赚水只算本级承接上的水钱，
+            // 不再是全树之和。
+            $agentWater=$viewerWater;
             $agentProfit+=$shareProfit+$agentWater;
         } else {
-            // 本级离线反水 = 8.5%×本级承接总投（本级收到的本金）。
-            $offlineWater=$viewerIdx>=0?$levelData[$viewerIdx]['water_income']:0.0;
+            // 本级离线反水/总赚水 = 水钱率×本级承接总投。
+            $offlineWater=$viewerWater;
             $agentWater=$offlineWater;
             $agentProfit+=$offlineWater;
-            if($viewerIdx>=0){$uplineAmount=$amount*$levelData[$viewerIdx]['arr'];$uplineProfit=$houseProfit*$levelData[$viewerIdx]['arr']-$waterRate*$uplineAmount;}
+            // The upline column carries the book that actually flows past the
+            // viewer: 承接残余 = 到达本级的部分 − 本级占走的直比。
+            if($viewerIdx>=0){$uplineArr=max(0.0,$levelData[$viewerIdx]['arr']-$viewerRate);$uplineAmount=$amount*$uplineArr;$uplineProfit=$houseProfit*$uplineArr-$waterRate*$uplineAmount;}
         }
         // 守恒：直属下级行的盈亏 = −(本级收入 + 上级残余)。
         if($childIdx>=0)$levelData[$childIdx]['profit']=-($agentProfit+$uplineProfit);
@@ -214,7 +223,7 @@ final class OrganizationHierarchy
             if($ld['level']===''||($viewerIdx>=0&&$i>=$viewerIdx))continue;
             $levels[$ld['level']]=['amount'=>$ld['attr'],'water'=>$ld['water_income'],'profit'=>$ld['profit'],'share_amount'=>$ld['share_amount'],'share_profit'=>$ld['share_profit']];
         }
-        return ['levels'=>$levels,'share_amount'=>$shareAmount,'share_profit'=>$shareProfit,'viewer_rate'=>$viewerRate,'viewer_idx'=>$viewerIdx,'offline_water'=>$offlineWater,'agent_water'=>$agentWater,'agent_profit'=>$agentProfit,'upline_amount'=>$uplineAmount,'upline_profit'=>$uplineProfit,'platform_amount'=>$platformAmount,'platform_profit'=>$platformProfit];
+        return ['levels'=>$levels,'share_amount'=>$shareAmount,'share_profit'=>$shareProfit,'viewer_rate'=>$viewerRate,'viewer_idx'=>$viewerIdx,'viewer_amount'=>$viewerAmount,'offline_water'=>$offlineWater,'agent_water'=>$agentWater,'agent_profit'=>$agentProfit,'upline_amount'=>$uplineAmount,'upline_profit'=>$uplineProfit,'platform_amount'=>$platformAmount,'platform_profit'=>$platformProfit];
     }
 
     public static function accountContext(array $account): array

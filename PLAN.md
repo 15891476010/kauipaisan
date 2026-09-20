@@ -1558,3 +1558,17 @@
 - [x] `2码拖N`（组六2胆拖）生成的"组六NN拖"被解析器组六守卫拒绝 → 生成时跳过组六胆拖；实测 2339 张实时票零组六胆拖。
 - [x] catch-up 目标期未开奖 → 顺延至该期 open_time+60s，不再每分钟刷"期号无效"。
 - [ ] 生产部署后观察 4 个卡死机器人（zz01/qz01/mc102/mc001）自动恢复回刷。
+
+### 本轮：占成率改存直比 + 水钱本级口径 + 总监列总投（进行中）
+
+- [x] 占成语义翻转：`share_rate` 从"边率（对残余本金）"改为"直比（对会员总投）"——占成金额 = rate×总投，承接总投 = 总投×(1−下方占比之和)。
+- [x] `SequentialProfitShare::allocate`：各层直接分 `占比×净结果`，占比合计>100% 截断、<100% 残余归平台；移除根节点强制 100% 兜底。
+- [x] `BetSettlement`：occupied=占比×总投；metadata 写入 `rate_mode=direct`。
+- [x] `shareEdges`：旧账本快照（无 rate_mode 标记）按边率自动换算直比；新快照与活链直接按直比。
+- [x] `shareRowMetrics`：水钱=8.5%×本级承接（含顶端）；老板离线反水=0、总赚水=本级水钱（不再全树合计）；新增 `viewer_amount`（本级承接）。
+- [x] 报表/分类账/物化器快照带 `rate_mode`；metrics 输出 `viewer_amount`。
+- [x] 前端 ReportsPage：本级自列加"总投"列（承接额）。
+- [x] `Organization`：同级兄弟占比合计≤100% 校验；总监占成自动=100−下级占比和。
+- [x] 迁移命令 `share:to-direct`（边率→直比，干跑预览已验证换算正确）。
+- [x] 回归：SequentialProfitShare/DB/ReportLevelColumns/DrillDown/Materialize/LedgerContribution/SettlementShareReversal/WaterLedger 全过；tsc 无错。
+- [ ] 生产部署：pull → `php think share:to-direct` 预览 → `--apply` 写库 → `report:materialize` 重建（快照带 mode）。**顺序敏感**：迁移前新代码会把边率当直比算错。
