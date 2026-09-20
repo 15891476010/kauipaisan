@@ -58,6 +58,7 @@ final class RobotScheduler
                         $settleQueue[$key] = $outcome['settle'];
                     }
                     $this->finish($robot, $outcome, time());
+                    $this->releaseClaim((int)$row['id']);
                     // In historical backfill, keep throughput high: success
                     // only pauses 0.05s; failures (usually rate limit) back off
                     // for 0.3s before the next retry.
@@ -69,6 +70,7 @@ final class RobotScheduler
                     $result['failed']++;
                     Log::error('robot scheduler failed robot='.$robot['id'].': '.$error->getMessage());
                     $this->finish($robot, ['status' => 'failed', 'message' => $error->getMessage()], time());
+                    $this->releaseClaim((int)$row['id']);
                     break;
                 }
             }
@@ -92,29 +94,46 @@ final class RobotScheduler
         return $result;
     }
 
-    /** Claim a due row in a short transaction, preventing duplicate workers. */
+    /** Claim a due row via a Redis lock, preventing duplicate workers. */
     private function claim(int $id, int $now): ?array
     {
-        return Db::transaction(function () use ($id, $now): ?array {
-            $robot = Db::name('robot_accounts')->where('id', $id)->lock(true)->find();
-            if (!$robot || (string)$robot['status'] !== 'running' || $robot['converted_at'] !== null || empty($robot['next_run_at'])) return null;
-            $nextRunAt = strtotime((string)$robot['next_run_at']);
-            if ($nextRunAt === false || $nextRunAt > $now) return null;
-            // Keep a configured historical start date meaningful: the robot
-            // replays one scheduled slot at a time until it catches up.  The
-            // daily budget below is evaluated against that simulated day.
-            $robot['_catchup'] = $nextRunAt <= $now;
-            $robot['_scheduled_at'] = $nextRunAt;
-            // Reserve this slot immediately. The final schedule is written
-            // after the bet, but another worker can no longer claim it.
-            // Reserve for 60s so a killed worker doesn't leave the robot
-            // sleeping for an hour before another process can claim it.
-            Db::name('robot_accounts')->where('id', $id)->update([
-                'next_run_at' => date('Y-m-d H:i:s', $now + 60),
-                'updated_at' => date('Y-m-d H:i:s', $now),
-            ]);
-            return $robot;
-        });
+        // Reserving through next_run_at is unsafe: a worker killed mid-slot
+        // leaves a real-time value behind, and the next claimer then treats
+        // the robot as a real-time slot and jumps it past the whole catch-up
+        // range. A Redis lock expires on its own and never corrupts the
+        // historical schedule.
+        try {
+            $locked = Cache::store('redis')->handler()
+                ->set('robot:claim:'.$id, (string)$now, ['nx', 'ex' => 120]);
+        } catch (\Throwable $e) {
+            return null;
+        }
+        if (!$locked) return null;
+        $robot = Db::name('robot_accounts')->where('id', $id)->find();
+        if (!$robot || (string)$robot['status'] !== 'running' || $robot['converted_at'] !== null || empty($robot['next_run_at'])) {
+            $this->releaseClaim($id);
+            return null;
+        }
+        $nextRunAt = strtotime((string)$robot['next_run_at']);
+        if ($nextRunAt === false || $nextRunAt > $now) {
+            $this->releaseClaim($id);
+            return null;
+        }
+        // Keep a configured historical start date meaningful: the robot
+        // replays one scheduled slot at a time until it catches up.  The
+        // daily budget below is evaluated against that simulated day.
+        $robot['_catchup'] = $nextRunAt <= $now;
+        $robot['_scheduled_at'] = $nextRunAt;
+        return $robot;
+    }
+
+    private function releaseClaim(int $id): void
+    {
+        try {
+            Cache::store('redis')->handler()->del('robot:claim:'.$id);
+        } catch (\Throwable $e) {
+            // The 120s TTL is the fallback release path.
+        }
     }
 
     /** @return array{status:string,message?:string,lottery?:string,text?:string} */
