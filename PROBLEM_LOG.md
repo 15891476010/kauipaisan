@@ -8,6 +8,12 @@
 - 隔离要求：总监4只可看自身链路，不能看总监3；不得以无组织会话为理由开放全站权限。此前对“站点级主账号”的推断不作为授权依据。
 - 防复发：覆盖子账号旧权限格式、空权限、未勾选菜单、SaaS 上限、跨总监/跨站点/上级参数篡改及多会员同期期数回归；不修改历史盈亏和机器人。
 
+### 代理端名称显示：组织 display_name 与 name 相同视为昵称，隐藏规则误伤 span
+
+- 纠正1：把 input 换成 span 做自适应宽度后，旧规则 `.account-field > span:not(.agent-account-label){display:none}` 把账号值隐藏。改元素类型前先查针对该标签的隐藏/覆盖规则。
+- 纠正2：组织账号 `display_name` 常与节点 `name` 相同（都是"大股东1"），此时是昵称不是代号。组织行取值：`account_display_name` 与 `name` 不同才算代号优先，否则用 `account_username`，兜底 `name`；会员 display_name 即代号，保持代号优先。
+- 防复发检查：`大股东1`(display_name=name)→`dagudong1`；`总监 2`(display_name=总监)→`总监`；会员 `机器人-20万`→代号。
+
 ### 机器人改码：调额必须同步文本里的金额字样
 
 - 纠正：调额落库只更新了 `amount` 列，`source_text`/`formatted_text` 里仍写"各10元"，用户端原始注单显示的注额与实际不符。

@@ -1208,7 +1208,7 @@ body {
   display: flex;
   grid-column: auto;
 }
-.agent-account-box .account-field > span:not(.agent-account-label) {
+.agent-account-box .account-field > span:not(.agent-account-label):not(.agent-account-value) {
   display: none;
 }
 /* The shell, rather than the text itself, is centered in the header identity area. */

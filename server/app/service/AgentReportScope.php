@@ -121,8 +121,10 @@ final class AgentReportScope
 
     private function displayName(array $node): string
     {
+        // 组织账号的 display_name 与节点 name 一致时是昵称，不是代号；
+        // 只有两者不同才按代号显示，否则回到登录账号。
         $code = trim((string)($node['account_display_name'] ?? ''));
-        if ($code !== '') return $code;
+        if ($code !== '' && $code !== trim((string)$node['name'])) return $code;
         $username = trim((string)($node['account_username'] ?? ''));
         return $username !== '' ? $username : (string)$node['name'];
     }
