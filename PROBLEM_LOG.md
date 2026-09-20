@@ -2679,3 +2679,13 @@
 - 配置迁移：`php think share:to-direct [--site=N] [--apply]`；部署顺序：pull→预览→apply→重建物化。
 
 **防复发**：改占成率时必须确认"存的是对总投的直比"；SequentialProfitShareTest/ReportLevelColumnsTest 的夹具即直比语义参考。
+
+## 常驻守护进程不热加载（2026-09-20）
+
+**现象**：机器人修复代码已部署，但 4 个回刷机器人仍按旧逻辑每分钟失败"未找到可匹配赔率"，两天没进度。
+
+**根因**：`robot:run`/`--backfill` 是常驻 PHP 进程，git pull 不会重载内存中的旧类。生产上 3 个进程均为 9-18 启动的旧代码，其中 2 个是脱离 supervisor 的手动孤儿进程。
+
+**修法**：`supervisorctl -c /etc/supervisor/supervisord.conf restart kuaipaisanrobot`；孤儿进程需手动 kill；如需并行追单再 `nohup php think robot:run --backfill &` 用新代码拉起。
+
+**防复发**：凡改 `RobotScheduler`、`BetSettlement` 等由常驻进程使用的代码，部署清单必须包含重启对应守护进程；检查 `ps aux|grep robot:run` 确认没有过期孤儿进程。

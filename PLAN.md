@@ -1557,7 +1557,7 @@
 - [x] 回刷死锁根因：窄带 wantWin=true → perCodeMax=11 → 需 220 个不重复号凑 min，随机抽取去重后仅 ~197 → 单位超 cap → 恒失败。`uniqueDraws` 抽到唯一数够数，生产库实测 20/20 成功（修复前 0/20）。
 - [x] `2码拖N`（组六2胆拖）生成的"组六NN拖"被解析器组六守卫拒绝 → 生成时跳过组六胆拖；实测 2339 张实时票零组六胆拖。
 - [x] catch-up 目标期未开奖 → 顺延至该期 open_time+60s，不再每分钟刷"期号无效"。
-- [ ] 生产部署后观察 4 个卡死机器人（zz01/qz01/mc102/mc001）自动恢复回刷。
+- [x] 生产部署后发现守护进程仍是旧代码（robot:run 常驻不热加载）→ 重启 supervisor 进程 + 清理孤儿 backfill，4 个机器人已全部恢复连续出票回刷。
 
 ### 本轮：占成率改存直比 + 水钱本级口径 + 总监列总投（进行中）
 
@@ -1571,4 +1571,4 @@
 - [x] `Organization`：同级兄弟占比合计≤100% 校验；总监占成自动=100−下级占比和。
 - [x] 迁移命令 `share:to-direct`（边率→直比，干跑预览已验证换算正确）。
 - [x] 回归：SequentialProfitShare/DB/ReportLevelColumns/DrillDown/Materialize/LedgerContribution/SettlementShareReversal/WaterLedger 全过；tsc 无错。
-- [ ] 生产部署：pull → `php think share:to-direct` 预览 → `--apply` 写库 → `report:materialize` 重建（快照带 mode）。**顺序敏感**：迁移前新代码会把边率当直比算错。
+- [x] 生产已部署：share:to-direct --apply（50条，总监4链转 0/5/15/25/55）+ 物化重建 112天3176行。HTTP 实测 9-19 报表 18 分支全有数。
