@@ -243,6 +243,7 @@ export type RobotPlanResult = {
   amount_unchanged: boolean;
   plan_token: string;
   selected_robot_ids: number[];
+  scope_user_ids: number[];
   items: RobotPlanItem[];
   warnings: string[];
 };

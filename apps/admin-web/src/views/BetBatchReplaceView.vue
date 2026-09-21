@@ -27,7 +27,8 @@ let previewTimer: ReturnType<typeof setTimeout> | undefined
 
 const selectedUsers = computed(() => users.value.filter(user => selectedUserKeys.value.includes(user.key)))
 const selectedRobotKeys = ref<string[]>([])
-const selectedRobots = computed(() => users.value.filter(user => selectedRobotKeys.value.includes(user.key) && user.is_robot))
+const scopeRobots = computed(() => selectedUsers.value.filter(user => user.is_robot))
+const selectedRobots = computed(() => scopeRobots.value.filter(user => selectedRobotKeys.value.includes(user.key)))
 type DetailGroup = { key: string; user: BatchBetUser; record_id: number; source_text: string; numbers: BatchBetNumber[] }
 const detailGroups = computed<DetailGroup[]>(() => selectedUsers.value.flatMap(user => {
   const groups = new Map<number, DetailGroup>()
@@ -145,22 +146,12 @@ const selectedNode = computed(() => {
     ? rootNodes.value.find(node => node.id === id)
     : tree.value.find(node => node.id === id)
 })
-// Members selectable at the current cascade position: direct members of the
-// selected node (or the unassigned bucket for the pseudo node).
-const memberOptions = computed(() => {
-  const node = selectedNode.value
-  if (!node) return []
-  if (node.id === pseudoId.value) return users.value.filter(user => user.site_id === activeSite.value && (!user.organization_id || !nodePathById.value.has(user.organization_id)))
-  return users.value.filter(user => user.organization_id === node.id)
-})
 const subtreeUsers = (node: BatchBetNode) => node.id === pseudoId.value
   ? users.value.filter(user => user.site_id === node.site_id && (!user.organization_id || !nodePathById.value.has(user.organization_id)))
   : users.value.filter(user => user.site_id === node.site_id && !!user.org_path && node.path !== '' && user.org_path.startsWith(node.path))
 function nodeTotals(node: BatchBetNode) { return finalize(sumStats(subtreeUsers(node))) }
 function nodeLabel(node: BatchBetNode) { return `${node.label} ${node.name}` }
-function memberLabel(user: BatchBetUser) {
-  return `${user.display_name || user.username}（${user.username}，${user.number_count ?? user.numbers.length}条）`
-}
+function memberLabel(user: BatchBetUser) { return `${user.display_name || user.username}（${user.username}，${user.number_count ?? user.numbers.length}条）` }
 // Every selected level keeps its own stats row — picking a deeper node adds a
 // row instead of replacing the director's totals.
 const chainStats = computed(() => orgChain.value
@@ -169,14 +160,10 @@ const chainStats = computed(() => orgChain.value
   .map(node => ({ node, totals: finalize(nodeTotals(node)) })))
 const visibleUserStats = computed(() => visibleUser.value ? adjustedStats(visibleUser.value) : null)
 
-// ---- Robot adjust (机器人改码) ----------------------------------------------
-// 锚点 = 级联选择的最深节点；当天口径由服务端统计锚点内全部会员和机器人。
+// ---- Organization-scope number adjustment ---------------------------------
+// 锚点 = 级联选择的最深节点；服务端按锚点整棵子树解析会员范围。
 const anchorTotals = computed(() => finalize(selectedNode.value ? nodeTotals(selectedNode.value) : sumStats(users.value)))
 const selectedStats = computed(() => finalize(sumStats(selectedUsers.value)))
-const anchorPoolUsers = computed(() => selectedNode.value ? subtreeUsers(selectedNode.value) : users.value)
-const unselectedUsers = computed(() => anchorPoolUsers.value.filter(user => !selectedUserKeys.value.includes(user.key)))
-const unselectedStats = computed(() => finalize(sumStats(unselectedUsers.value)))
-const robotOptions = computed(() => anchorPoolUsers.value.filter(user => user.is_robot))
 const groupRatio = (profit: number | null) => {
   const anchor = anchorTotals.value.profit
   if (profit == null || anchor == null || Math.abs(anchor) < 0.005) return null
@@ -191,6 +178,9 @@ const planDialog = ref(false)
 const planResult = ref<RobotPlanResult | null>(null)
 const applying = ref(false)
 const editingRecordId = ref<number | null>(null)
+function selectAllRobots() { selectedRobotKeys.value = scopeRobots.value.map(user => user.key); planResult.value = null }
+function clearSelectedRobots() { selectedRobotKeys.value = []; planResult.value = null }
+function changeSelectedRobots(values: string[]) { selectedRobotKeys.value = values; planResult.value = null }
 
 type HitSeg = { text: string; hit: boolean }
 function escRe(s: string) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') }
@@ -245,7 +235,7 @@ async function generatePlan() {
   const target = Number(robotAmount.value)
   if (!Number.isFinite(target) || robotAmount.value.trim() === '') { ElMessage.warning('请输入正数或负数目标盈亏'); return }
   if (!selectedNode.value || selectedNode.value.id <= 0) { ElMessage.warning('请先选择目标组织层级'); return }
-  if (!selectedRobots.value.length) { ElMessage.warning('请选择要改码的机器人'); return }
+  if (!selectedRobots.value.length) { ElMessage.warning('请选择要自动改码的机器人'); return }
   planLoading.value = true
   try {
     const response = await planBatchRobot({
@@ -258,14 +248,14 @@ async function generatePlan() {
     if (!response.data.items.length) ElMessage.warning('当前选择下没有需要修改的注单')
     else planDialog.value = true
   } catch (error) {
-    ElMessageBox.alert(error instanceof Error ? error.message : '方案生成失败', '机器人改码', { type: 'error', confirmButtonText: '知道了' })
+    ElMessageBox.alert(error instanceof Error ? error.message : '方案生成失败', '机器人自动改码', { type: 'error', confirmButtonText: '知道了' })
   } finally {
     planLoading.value = false
   }
 }
 async function applyPlan() {
   if (!planResult.value) return
-  await ElMessageBox.confirm(`将只修改 ${planResult.value.items.length} 张机器人注单的号码，金额保持不变；预计层级盈亏 ¥${money(Number(planResult.value.daily_profit_after))}。是否执行？`, '确认执行机器人改单', { type: 'warning', confirmButtonText: '执行改单', cancelButtonText: '取消' })
+  await ElMessageBox.confirm(`将只修改 ${planResult.value.items.length} 张所选机器人注单的号码，金额保持不变；预计层级盈亏 ¥${money(Number(planResult.value.daily_profit_after))}。是否执行？`, '确认执行机器人改单', { type: 'warning', confirmButtonText: '执行改单', cancelButtonText: '取消' })
   applying.value = true
   try {
     const response = await applyBatchRobot({
@@ -291,13 +281,14 @@ async function applyPlan() {
 function selectOrg(depth: number, value: number | string | undefined) {
   const id = value === '' || value == null ? undefined : Number(value)
   orgChain.value = id == null ? orgChain.value.slice(0, depth) : [...orgChain.value.slice(0, depth), id]
-  // Edited sources stay keyed by record so navigating the tree never loses
-  // work; only the member selection follows the new position.
-  selectedUserKeys.value = []
+  const rangeUsers = selectedNode.value ? subtreeUsers(selectedNode.value) : []
+  selectedUserKeys.value = rangeUsers.map(user => user.key)
   selectedRobotKeys.value = []
+  planResult.value = null
   ensureActiveUser()
+  if (rangeUsers.length) void loadOptions({ lotteryId: lotteryId.value, issue: issueNo.value, userIds: rangeUsers.map(user => user.user_id), recordIds: [], preserveSelection: true })
 }
-function changeSite(value: number) { activeSite.value = value; orgChain.value = []; selectedUserKeys.value = []; selectedRobotKeys.value = [] }
+function changeSite(value: number) { activeSite.value = value; orgChain.value = []; selectedUserKeys.value = []; selectedRobotKeys.value = []; planResult.value = null }
 
 // ---- Loading / preview ------------------------------------------------------
 const initialRecordIds = computed(() => {
@@ -327,6 +318,8 @@ async function loadOptions(params: { lotteryId?: number; issue?: string; userIds
       previews.value = {}
       if (!activeSite.value || !siteIds.value.includes(activeSite.value)) activeSite.value = siteIds.value[0]
     }
+    const validRobotKeys = new Set(scopeRobots.value.map(user => user.key))
+    selectedRobotKeys.value = selectedRobotKeys.value.filter(key => validRobotKeys.has(key))
     ensureActiveUser()
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : '批量修改数据加载失败')
@@ -335,7 +328,7 @@ async function loadOptions(params: { lotteryId?: number; issue?: string; userIds
   }
 }
 
-function resetSelection() { orgChain.value = []; selectedUserKeys.value = []; editedSources.value = {}; previews.value = {} }
+function resetSelection() { orgChain.value = []; selectedUserKeys.value = []; selectedRobotKeys.value = []; planResult.value = null; editedSources.value = {}; previews.value = {} }
 function changeLottery(value: number) { drawNo.value = ''; resetSelection(); void loadOptions({ lotteryId: value, recordIds: [] }) }
 function changeIssue(value: string) { drawNo.value = ''; resetSelection(); void loadOptions({ lotteryId: lotteryId.value, issue: value, recordIds: [] }) }
 let drawTimer: ReturnType<typeof setTimeout> | undefined
@@ -345,12 +338,6 @@ function onDrawInput() {
     void loadOptions({ lotteryId: lotteryId.value, issue: issueNo.value, userIds: selectedUsers.value.map(user => user.user_id), recordIds: [], preserveSelection: true })
     schedulePreview()
   }, 400)
-}
-function changeUsers(values: string[]) {
-  selectedUserKeys.value = values
-  ensureActiveUser()
-  const userIds = selectedUsers.value.map(user => user.user_id)
-  void loadOptions({ lotteryId: lotteryId.value, issue: issueNo.value, userIds, recordIds: [], preserveSelection: true })
 }
 function sourceValue(group: { key: string; source_text: string }) { return editedSources.value[group.key] ?? group.source_text }
 function updateSource(group: { key: string }, value: string) { editedSources.value[group.key] = value; schedulePreview() }
@@ -411,11 +398,10 @@ onMounted(() => loadOptions({ issue: String(route.query.issue_no || ''), recordI
     <section v-if="!users.length && !loading" class="empty">该彩种当前期号没有可修改的投注</section>
     <template v-else>
       <section class="users-panel">
-        <div class="section-title"><div><h2>选择用户</h2><span class="hint">按层级选择：站点 → 总监 → 下级组织 → 会员；选项内标注该层级本期总投/总中/盈亏</span></div><span class="selected-hint">已选 {{ selectedUserKeys.length }} 人</span></div>
+        <div class="section-title"><div><h2>选择改单范围</h2><span class="hint">选择总监时包含其全部下级会员；继续选择股东或代理时，范围自动缩小到该层级子树</span></div><span class="selected-hint">范围内会员 {{ selectedUserKeys.length }} 人</span></div>
         <div class="org-picker">
           <el-select v-if="siteList.length > 1" :model-value="activeSite" placeholder="请选择站点" style="width:180px" @update:model-value="(value: number | string) => changeSite(Number(value))"><el-option v-for="site in siteList" :key="site.id" :label="site.name" :value="site.id" /></el-select>
           <el-select v-for="(options, depth) in chainLevels" :key="depth" :model-value="orgChain[depth]" clearable filterable :placeholder="depth === 0 ? '请选择总监' : '请选择下级组织'" style="width:240px" @update:model-value="(value: number | string | undefined) => selectOrg(depth, value)"><el-option v-for="node in options" :key="node.id" :label="nodeLabel(node)" :value="node.id"><em class="node-level">{{ node.label }}</em>{{ node.name }}</el-option></el-select>
-          <el-select v-if="memberOptions.length" v-model="selectedUserKeys" multiple collapse-tags collapse-tags-tooltip filterable placeholder="请选择用户（可多选）" style="min-width:320px;flex:1" @change="changeUsers"><el-option v-for="user in memberOptions" :key="user.key" :label="memberLabel(user)" :value="user.key" /></el-select>
         </div>
         <div v-for="row in chainStats" :key="row.node.id" class="totals-row">
           <span class="level-tag">{{ row.node.label }} {{ row.node.name }}</span>
@@ -425,31 +411,26 @@ onMounted(() => loadOptions({ issue: String(route.query.issue_no || ''), recordI
           <template v-if="row.totals.touched"><span class="total-chip preview">预览总投 ¥{{ money(row.totals.pBet) }}</span><span class="total-chip preview">预览总中 ¥{{ money(row.totals.pWin) }}</span><span class="total-chip preview" :class="profitClass(row.totals.pProfit)">预览盈亏 ¥{{ money(row.totals.pProfit) }}</span></template>
         </div>
         <div v-if="selectedUsers.length" class="totals-row">
-          <span class="level-tag selected">已选会员（{{ selectedUsers.length }}）</span>
+          <span class="level-tag selected">范围内会员（{{ selectedUsers.length }}）</span>
           <span class="total-chip">总投 ¥{{ money(selectedStats.bet) }}</span>
           <span class="total-chip">总中 ¥{{ money(selectedStats.win) }}</span>
           <span class="total-chip" :class="profitClass(selectedStats.profit)">盈亏 ¥{{ money(selectedStats.profit) }}</span>
           <span class="total-chip">盈亏占比 {{ percent(groupRatio(selectedStats.profit)) }}</span>
           <span class="total-chip">返奖率 {{ percent(payoutRate(selectedStats)) }}</span>
         </div>
-        <div v-if="selectedUsers.length" class="totals-row">
-          <span class="level-tag unselected">未选会员（{{ unselectedUsers.length }}）</span>
-          <span class="total-chip">总投 ¥{{ money(unselectedStats.bet) }}</span>
-          <span class="total-chip">总中 ¥{{ money(unselectedStats.win) }}</span>
-          <span class="total-chip" :class="profitClass(unselectedStats.profit)">盈亏 ¥{{ money(unselectedStats.profit) }}</span>
-          <span class="total-chip">盈亏占比 {{ percent(groupRatio(unselectedStats.profit)) }}</span>
-          <span class="total-chip">返奖率 {{ percent(payoutRate(unselectedStats)) }}</span>
-        </div>
         <div v-if="selectedUsers.length" class="user-tabs"><button v-for="user in selectedUsers" :key="user.key" type="button" class="user-tab" :class="{ active: user.key === activeUserKey }" @click="activeUserKey = user.key">{{ user.display_name || user.username }}<em v-if="changedCountFor(user.key)"> {{ changedCountFor(user.key) }}</em></button></div>
       </section>
 
       <section v-if="selectedNode && selectedNode.id > 0" class="robot-panel">
-        <div class="section-title"><div><h2>机器人改码</h2><span class="hint">统计所选层级当天全部会员和机器人，只修改已选机器人号码，任何投注金额都保持不变</span></div></div>
+        <div class="section-title"><div><h2>机器人自动改码</h2><span class="hint">从当前层级及其全部下级机器人中全选或多选；只有勾选的机器人进入自动改码范围</span></div></div>
         <div v-if="!robotDrawReady" class="select-tip">输入 3 位预开奖号码后可用</div>
         <template v-else>
           <div class="robot-row">
             <span class="level-tag">{{ selectedNode.label }} {{ selectedNode.name }}</span>
-            <el-select v-model="selectedRobotKeys" multiple collapse-tags collapse-tags-tooltip filterable placeholder="请选择要改码的机器人" style="min-width:320px"><el-option v-for="user in robotOptions" :key="user.key" :label="memberLabel(user)" :value="user.key" /></el-select>
+            <span class="scope-count">机器人 {{ selectedRobots.length }} / {{ scopeRobots.length }}</span>
+            <el-button size="small" :disabled="!scopeRobots.length || selectedRobots.length === scopeRobots.length" @click="selectAllRobots">全选</el-button>
+            <el-button size="small" :disabled="!selectedRobots.length" @click="clearSelectedRobots">清空</el-button>
+            <el-select :model-value="selectedRobotKeys" multiple collapse-tags collapse-tags-tooltip filterable placeholder="请选择要自动改码的机器人" style="min-width:360px;flex:1" @update:model-value="changeSelectedRobots"><el-option v-for="user in scopeRobots" :key="user.key" :label="memberLabel(user)" :value="user.key" /></el-select>
             <div class="filter-item"><label>层级目标盈亏</label><el-input v-model="robotAmount" placeholder="正数赢，负数输" style="width:170px" /></div>
             <el-button type="warning" :loading="planLoading" :disabled="robotAmount.trim() === '' || !selectedRobots.length" @click="generatePlan">生成改单方案</el-button>
             <span class="robot-tip">口径：当天总中−总投，结果允许在目标上下 30% 内</span>
@@ -468,7 +449,7 @@ onMounted(() => loadOptions({ issue: String(route.query.issue_no || ''), recordI
             <span v-if="previewing" class="previewing">预览计算中…</span>
           </div>
         </div>
-        <div v-if="!selectedUsers.length" class="select-tip">请先在上方逐级选择组织和用户，下面将加载该用户在 {{ issueNo || '当前期' }} 的投注。</div>
+        <div v-if="!selectedUsers.length" class="select-tip">请先在上方选择组织层级，下面将自动加载该层级全部会员在 {{ issueNo || '当前期' }} 的投注。</div>
         <div v-else-if="!sortedGroups.length" class="select-tip">{{ (visibleUser && (visibleUser.display_name || visibleUser.username)) || '该用户' }} 暂无可修改的投注号码，可切换到其他用户。</div>
         <div v-else class="bet-table-wrap">
           <table class="bet-table"><thead><tr><th>用户</th><th>原始注单（可编辑）</th><th>注单金额</th><th>{{ drawNo ? '预中奖' : '中奖' }}</th></tr></thead><tbody><tr v-for="group in sortedGroups" :key="group.key" :class="{ won: (effectiveWin(group) ?? 0) > 0 }"><td>{{ group.user.display_name || group.user.username }}</td><td class="source-value"><div v-if="editingRecordId !== group.record_id" class="ticket-view" title="点击编辑注单文本" @click="startEdit(group)"><template v-for="(seg, i) in rawSegments(group)" :key="i"><mark v-if="seg.hit">{{ seg.text }}</mark><template v-else>{{ seg.text }}</template></template></div><el-input v-else :ref="editFocus" type="textarea" :model-value="sourceValue(group)" :autosize="{ minRows: 2, maxRows: 8 }" @update:model-value="updateSource(group, $event)" @blur="editingRecordId = null" /><div v-if="previews[group.record_id]?.error" class="preview-error">{{ previews[group.record_id].error }}</div></td><td>¥{{ money(effectiveAmount(group)) }}</td><td class="win-cell" :class="{ preview: hasPreview(group) }">{{ effectiveWin(group) == null ? '—' : `¥${money(effectiveWin(group))}` }}</td></tr></tbody></table>

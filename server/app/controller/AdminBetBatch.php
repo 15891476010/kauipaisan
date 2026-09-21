@@ -362,7 +362,7 @@ final class AdminBetBatch
                 if ($predictedWins[$recordId]===null) $userStats[$userKey]['unknown']=true;
                 else $userStats[$userKey]['win']+=$predictedWins[$recordId];
             } else $userStats[$userKey]['unknown']=true;
-            if ($requestedUsers===[]) continue;
+            if ($requestedUsers===[] || !in_array((int)$row['user_id'],$requestedUsers,true)) continue;
             $predicted=$predictedWins[$recordId]??null;
             $users[$userKey]['numbers'][]=[
                 'key'=>$recordId.'-raw','record_id'=>$recordId,'detail_id'=>(int)($row['id']??0),'number_index'=>-1,
@@ -805,7 +805,7 @@ final class AdminBetBatch
     }
 
     // ------------------------------------------------------------------
-    // 机器人改码：按比率自动把已选会员的注单改到目标中奖金额
+    // 层级自动改码：按组织子树把会员注单调整到目标盈亏
     // ------------------------------------------------------------------
 
     /**
@@ -1315,11 +1315,11 @@ final class AdminBetBatch
     }
 
     /**
-     * Number-only planner used by the SaaS robot control. The signed target is
+     * Number-only planner used by the SaaS organization control. The signed target is
      * the selected node's member-side daily P/L (total win - total stake): a
      * positive value means the node's members win, a negative value means
-     * they lose. Every account in the node contributes to the baseline, while
-     * only explicitly selected robot accounts may be rewritten.
+     * they lose. Every account in the selected organization subtree contributes
+     * to the baseline, while only explicitly selected robot accounts may be rewritten.
      */
     private function buildNumberOnlyRobotPlan(array $lottery,string $issue,string $draw,array $userIds,float $targetProfit,int $nodeId,?int $siteId): array
     {
@@ -1329,29 +1329,33 @@ final class AdminBetBatch
         $anchorPath=(string)($node['path']??'');
         if($anchorPath==='') throw new \InvalidArgumentException('所选组织节点路径无效');
 
-        $robotIds=array_values(array_unique(array_map('intval',Db::name('robot_accounts')->whereIn('user_id',$userIds)->column('user_id'))));
-        sort($robotIds);
-        $requested=$userIds;sort($requested);
-        if($robotIds!==$requested) throw new \InvalidArgumentException('只允许选择机器人账号进行自动改码');
-
-        $records=$this->robotIssueContext($lottery,$issue,$draw,(int)$node['site_id']);
-        $selected=[];$day='';
-        foreach($records as $record){
-            if(!in_array((int)$record['user_id'],$robotIds,true)) continue;
-            $userNode=Db::name('organization_nodes')->where('id',(int)$record['organization_id'])->where('site_id',(int)$node['site_id'])->whereNull('deleted_at')->field('path')->find();
-            if(!$userNode || !str_starts_with((string)$userNode['path'],$anchorPath)) throw new \InvalidArgumentException('已选机器人不属于目标组织节点');
-            if($record['cur_win']===null) throw new \InvalidArgumentException('存在无法按预开奖号码试算的机器人注单');
-            $recordDay=substr((string)$record['placed_at'],0,10);
-            if($recordDay==='') throw new \RuntimeException('机器人注单缺少下单日期');
-            if($day!=='' && $recordDay!==$day) throw new \InvalidArgumentException('一次方案只能处理同一天的机器人注单');
-            $day=$recordDay;$selected[]=$record;
-        }
-        if($selected===[]) throw new \InvalidArgumentException('所选机器人在该期号没有可操作的注单');
-
         $scopeUserIds=array_values(array_unique(array_map('intval',Db::name('site_users')->alias('u')
             ->join('organization_nodes n','n.id=u.organization_id')->where('u.site_id',(int)$node['site_id'])
             ->whereNull('u.deleted_at')->whereNull('n.deleted_at')->whereLike('n.path',$anchorPath.'%')->column('u.id'))));
-        if($scopeUserIds===[]) throw new \InvalidArgumentException('目标组织节点下没有会员或机器人');
+        sort($scopeUserIds);
+        if($scopeUserIds===[]) throw new \InvalidArgumentException('目标组织节点下没有会员');
+
+        $requestedRobotIds=array_values(array_unique(array_filter(array_map('intval',$userIds),static fn(int $id):bool=>$id>0)));
+        sort($requestedRobotIds);
+        if($requestedRobotIds===[]) throw new \InvalidArgumentException('请选择要自动改码的机器人');
+        $robotIds=array_values(array_unique(array_map('intval',Db::name('robot_accounts')
+            ->where('site_id',(int)$node['site_id'])->whereIn('user_id',$requestedRobotIds)->column('user_id'))));
+        sort($robotIds);
+        if($robotIds!==$requestedRobotIds) throw new \InvalidArgumentException('自动改码范围只能选择机器人账号');
+        if(array_diff($robotIds,$scopeUserIds)!==[]) throw new \InvalidArgumentException('所选机器人不属于当前组织层级');
+
+        $records=$this->robotIssueContext($lottery,$issue,$draw,(int)$node['site_id']);
+        $selected=[];$day='';$unavailableRecords=0;
+        foreach($records as $record){
+            if(!in_array((int)$record['user_id'],$robotIds,true)) continue;
+            $recordDay=substr((string)$record['placed_at'],0,10);
+            if($recordDay==='') throw new \RuntimeException('会员注单缺少下单日期');
+            if($day!=='' && $recordDay!==$day) throw new \InvalidArgumentException('一次方案只能处理同一天的会员注单');
+            $day=$recordDay;
+            if($record['cur_win']===null){$unavailableRecords++;continue;}
+            $selected[]=$record;
+        }
+        if($selected===[]) throw new \InvalidArgumentException('所选机器人在该期号没有可操作的注单');
         $dailyRows=Db::name('bet_records')->where('site_id',(int)$node['site_id'])->whereIn('user_id',$scopeUserIds)
             ->where('placed_at','>=',$day.' 00:00:00')->where('placed_at','<=',$day.' 23:59:59')->where('status','<>','refunded')
             ->field('id,user_id,issue_no,status,amount,win_amount')->order('id asc')->select()->toArray();
@@ -1395,8 +1399,9 @@ final class AdminBetBatch
         }
         $within=$inside($after);
         $warnings=[];
+        if($unavailableRecords>0)$warnings[]=$unavailableRecords.' 张机器人注单无法按预开奖号码试算，已跳过';
         if($unmodifiable>0)$warnings[]=$unmodifiable.' 张机器人注单在保持金额和玩法不变时没有可用改号结果';
-        if(!$within)$warnings[]='当前已选机器人号码容量不足，最接近结果仍超出目标上下 30% 区间';
+        if(!$within)$warnings[]='当前所选机器人可改号码容量不足，最接近结果仍超出目标上下 30% 区间';
         if($items===[]&&abs($after-$before)<0.005)$warnings[]=$within?'当前结果已在目标区间内，无需改码':'没有找到可使结果接近目标的号码改动';
 
         $state=[];
@@ -1405,14 +1410,14 @@ final class AdminBetBatch
             $details=[];foreach($record['details'] as $detail)$details[]=[(int)$detail['id'],(string)$detail['number_text'],number_format((float)$detail['amount'],2,'.',''),(string)$detail['source_text']];
             $state[]=['selected',(int)$record['record_id'],(string)$record['status'],(string)$record['source'],$details];
         }
-        $token=hash('sha256',json_encode([$nodeId,$issue,$draw,$robotIds,number_format($targetProfit,2,'.',''),$state,array_column($items,'record_id')],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
+        $token=hash('sha256',json_encode([$nodeId,$issue,$draw,$scopeUserIds,$robotIds,number_format($targetProfit,2,'.',''),$state,array_column($items,'record_id')],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
         return [
             'draw'=>$draw,'day'=>$day,'node'=>['id'=>(int)$node['id'],'site_id'=>(int)$node['site_id'],'level'=>(string)$node['level'],'name'=>(string)$node['name']],
             'target_profit'=>number_format($targetProfit,2,'.',''),'target_min'=>number_format($targetMin,2,'.',''),'target_max'=>number_format($targetMax,2,'.',''),
             'daily_profit_before'=>number_format($before,2,'.',''),'daily_profit_after'=>number_format($after,2,'.',''),
             'daily_bet'=>number_format($dailyBet,2,'.',''),'daily_win_before'=>number_format($dailyWin,2,'.',''),
             'daily_win_after'=>number_format($dailyWin+($after-$before),2,'.',''),'within_tolerance'=>$within,
-            'amount_unchanged'=>true,'plan_token'=>$token,'selected_robot_ids'=>$robotIds,'items'=>$items,'warnings'=>$warnings,
+            'amount_unchanged'=>true,'plan_token'=>$token,'scope_user_ids'=>$scopeUserIds,'selected_robot_ids'=>$robotIds,'items'=>$items,'warnings'=>$warnings,
         ];
     }
 
@@ -1647,7 +1652,7 @@ final class AdminBetBatch
         $plan=$this->buildNumberOnlyRobotPlan($lottery,$issue,$draw,$userIds,$targetProfit,$nodeId,$siteId);
         $planToken=trim((string)($data['plan_token']??''));
         if($planToken===''||!hash_equals((string)$plan['plan_token'],$planToken)) throw new \RuntimeException('方案数据已变化，请重新生成预览');
-        if(!$plan['within_tolerance']) throw new \RuntimeException('当前方案未达到目标上下 30% 区间，请增加可调整机器人后重试');
+        if(!$plan['within_tolerance']) throw new \RuntimeException('当前方案未达到目标上下 30% 区间，请调整目标或组织范围后重试');
         $settledIds=[];
         $amountBefore=$this->robotAmountSnapshot($plan['items']);
         $changed=Db::transaction(function()use($plan,$issue,$siteId,&$settledIds,$amountBefore):int{
@@ -1664,10 +1669,11 @@ final class AdminBetBatch
         (new \app\service\ReportMaterializer())->refreshDay((int)$plan['node']['site_id'] ?: (int)($siteId??0),(string)$plan['day']);
         AuditLogger::write($session,'robot_adjust','bet_records',[
             'lottery_id'=>(int)$lottery['id'],'issue_no'=>$issue,'draw'=>$draw,
-            'user_ids'=>$userIds,'node_id'=>$nodeId,'target_profit'=>$targetProfit,
+            'scope_user_ids'=>$plan['scope_user_ids'],'scope_user_count'=>count($plan['scope_user_ids']),
+            'selected_robot_ids'=>$plan['selected_robot_ids'],'selected_robot_count'=>count($plan['selected_robot_ids']),'node_id'=>$nodeId,'target_profit'=>$targetProfit,
             'achieved_profit'=>$plan['daily_profit_after'],'amount_unchanged'=>true,'changed'=>$changed,
         ],(string)$request->ip());
-        return $this->reply(['changed'=>$changed,'resettled'=>count($settledIds),'achieved_profit'=>$plan['daily_profit_after'],'amount_unchanged'=>true],'机器人只改号码完成');
+        return $this->reply(['changed'=>$changed,'resettled'=>count($settledIds),'achieved_profit'=>$plan['daily_profit_after'],'amount_unchanged'=>true],'所选机器人只改号码完成');
     }
 
     /** @return array{0:array,1:string,2:string,3:array,4:float,5:int} */
@@ -1679,12 +1685,12 @@ final class AdminBetBatch
         if (!$lottery) throw new \InvalidArgumentException('请选择有效彩种');
         if ($issue==='') throw new \InvalidArgumentException('请选择期号');
         $draw=preg_replace('/\D/','',(string)($data['draw']??''));
-        if (strlen($draw)!==3) throw new \InvalidArgumentException('机器人改码需要 3 位预开奖号码');
+        if (strlen($draw)!==3) throw new \InvalidArgumentException('自动改码需要 3 位预开奖号码');
         $userIds=$data['user_ids']??null;
         if (is_string($userIds)) $userIds=explode(',',$userIds);
-        if (!is_array($userIds)) throw new \InvalidArgumentException('请选择要调整的机器人');
+        if (!is_array($userIds)) throw new \InvalidArgumentException('请选择要自动改码的机器人');
         $userIds=array_values(array_unique(array_filter(array_map('intval',$userIds),static fn(int $id):bool=>$id>0)));
-        if ($userIds===[]) throw new \InvalidArgumentException('请选择要调整的机器人');
+        if ($userIds===[]) throw new \InvalidArgumentException('请选择要自动改码的机器人');
         $targetProfit=(float)($data['target_profit']??NAN);
         if (!is_finite($targetProfit)) throw new \InvalidArgumentException('请输入有效的正负目标盈亏');
         return [$lottery,$issue,$draw,$userIds,$targetProfit,(int)($data['node_id']??0)];
