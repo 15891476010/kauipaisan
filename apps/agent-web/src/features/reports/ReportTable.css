@@ -1,0 +1,129 @@
+/* 报表使用原生自动表格布局，列宽为像素基准，金额保持完整。 */
+.agent-reports-card {
+  width: 100%;
+  min-height: 110px;
+  margin: 0;
+  padding: 15px;
+  background: #fff;
+}
+.agent-reports-loading {
+  display: grid;
+  min-height: 84px;
+  place-items: center;
+}
+.agent-reports-table-scroll {
+  width: 100%;
+  overflow-x: auto;
+}
+.agent-reports-table {
+  width: 100%;
+  border: 1px solid #8f8f8f;
+  border-collapse: separate;
+  border-spacing: 0;
+  border-radius: 4px 4px 0 0;
+  table-layout: auto;
+  text-align: center;
+  font: 14px/21px Arial, Helvetica, sans-serif;
+  color: #000;
+}
+.agent-reports-table .report-account-col {
+  width: 120px;
+  min-width: 120px;
+}
+.agent-reports-table .report-metric-col {
+  width: 90px;
+  min-width: 90px;
+}
+.agent-app .agent-reports-table th,
+.agent-app .agent-reports-table td {
+  vertical-align: middle;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+.agent-reports-table th + th,
+.agent-reports-table td + td {
+  border-left: 1px solid #8f8f8f;
+}
+.agent-reports-table thead th {
+  height: 25px;
+  padding: 5px 0 0;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.5;
+  color: rgba(0, 0, 0, .85);
+}
+.agent-reports-table thead tr + tr th {
+  border-top: 1px solid #afafaf;
+}
+/* 第二层表头的首格紧邻跨行账号列，同样需要左边框。 */
+.agent-reports-table thead tr + tr th:first-child {
+  border-left: 1px solid #8f8f8f;
+}
+.agent-reports-table tbody td {
+  padding: 8px 5px;
+  border-top: 1px solid #afafaf;
+  font-weight: 700;
+}
+.agent-reports-table .member-group {
+  background: #ffffca;
+}
+.agent-reports-table .platform-group {
+  background: #ffd7eb;
+}
+.agent-reports-table .agent-group {
+  background: #ffddaa;
+}
+.agent-reports-table .report-total-profit {
+  background: #ffc184;
+}
+.agent-reports-table .report-name-column {
+  background: #fff;
+}
+.agent-reports-table tbody tr:not(.report-total-row):nth-child(odd) td:first-child {
+  background: #d4fff1;
+}
+.agent-reports-table tbody tr:not(.report-total-row):nth-child(even) td:first-child {
+  background: #fff;
+}
+.agent-app .agent-reports-table tbody tr.report-total-row td {
+  background: #d2f7f7;
+}
+.agent-reports-table .report-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 109px;
+  font-weight: 400;
+}
+.agent-reports-table .report-total-row .report-label {
+  justify-content: center;
+}
+.agent-reports-table .report-branch-name {
+  color: #1890ff;
+}
+.agent-app .agent-reports-table .report-branch-name button {
+  display: inline;
+  width: auto;
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #1890ff;
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+.agent-reports-table .report-row-index {
+  margin-right: 3px;
+}
+.agent-reports-table .report-issue-count {
+  margin: 0 3px;
+  color: #b80000;
+  font: 400 14px/21px Arial, Helvetica, sans-serif;
+}
+.agent-app .agent-reports-table .report-decimal {
+  color: #afafaf;
+  font-weight: 700;
+}
