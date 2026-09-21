@@ -295,7 +295,7 @@ final class RobotScheduler
             // without this, big members can never build a ticket large
             // enough to reach the pool's daily volume target.
             $memberBand=($dirMax-$dirMin)/max(0.0001,$pool['factor']);
-            $capMult=$wantWin===false?8:1;
+            $capMult=$wantWin===false?2:1;
             $this->perCodeMax=max(1.0,(float)floor($memberBand/9000*$capMult));
         } elseif(!$pending && $target!==null && ($profitMin!==0.0 || $profitMax!==0.0) && $profitMax>$profitMin){
             $dealerProfit=$this->weeklyDealerProfit((int)$robot['user_id'],$scheduleTime);
@@ -325,6 +325,15 @@ final class RobotScheduler
             return ['status'=>'skipped','message'=>'机器人今日剩余分数不足一批，已核对当前奖期并完成可结算注单','skip_until'=>$this->nextBusinessDay($dailyAnchor),'daily_exhausted'=>true];
         }
         $maxAmount=min($maxAmount,$remaining);$minAmount=min($minAmount,$maxAmount);
+        // A ticket intended to win stays small: a straight win pays ~900× the
+        // per-code unit, so hundreds of yuan already yields a believable
+        // thousands-yuan hit.  This both keeps wins looking like ordinary
+        // small tickets and lets the daily pool band converge with many small
+        // adjustments instead of a few million-yuan swings.
+        if($wantWin===true&&!$pending){
+            $maxAmount=min($maxAmount,600.0);
+            $minAmount=min($minAmount,$maxAmount);
+        }
         // Fill today's quota evenly across the remaining window instead of
         // drawing from the flat configured range: each ticket is sized near
         // remaining/slotsLeft with a ±25% jitter, so the daily volume is
