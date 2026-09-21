@@ -122,7 +122,11 @@ final class RobotScheduler
         // Keep a configured historical start date meaningful: the robot
         // replays one scheduled slot at a time until it catches up.  The
         // daily budget below is evaluated against that simulated day.
-        $robot['_catchup'] = $nextRunAt <= $now;
+        // A slot is only "catch-up" when it is meaningfully behind the wall
+        // clock.  Live slots (fired within minutes of schedule) must take
+        // the real-time path — catch-up defers every slot to the next draw
+        // and would otherwise throttle a live robot to one bet per issue.
+        $robot['_catchup'] = $nextRunAt <= $now - 300;
         $robot['_scheduled_at'] = $nextRunAt;
         return $robot;
     }
