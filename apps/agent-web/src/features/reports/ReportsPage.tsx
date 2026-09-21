@@ -9,6 +9,7 @@ import { useSearchParams } from 'react-router-dom';
 import { hasAgentPermission } from '../../routePermissions';
 import { getAgentMonthlyReport, getAgentReport, getAgentReportIssues, type AgentMonthlyReportRow, type AgentReportContext, type AgentReportIssue, type AgentReportLevel, type AgentReportMemberRow, type AgentReportMetrics } from '../../api/user';
 import { apiErrorMessage } from '../../utils/request';
+import { reportNumber as show } from './reportNumber';
 
 type ReportMode = 'summary' | 'monthly';
 type QuickRange = 'today' | 'yesterday' | 'week' | 'lastWeek';
@@ -35,7 +36,6 @@ function dateRange(type: 'today'|'yesterday'|'week'|'lastWeek') {
   if(type==='week') return[localDate(monday),localDate(now)];
   const start=new Date(monday);start.setDate(start.getDate()-7);const end=new Date(monday);end.setDate(end.getDate()-1);return[localDate(start),localDate(end)];
 }
-const show=(value:string|number)=>Number.isFinite(Number(value))?String(Number(value)):'0';
 
 export const ReportsPage = memo(function ReportsPage({lottery,permissions}:{lottery:string;permissions:string[]}) {
   const {message}=AntdApp.useApp(); const today=localDate(new Date());

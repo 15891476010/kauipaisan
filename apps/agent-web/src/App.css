@@ -4643,6 +4643,10 @@ body {
 .agent-reports-table tbody tr.report-total-row td {
   background: #cfe6fb;
 }
+.agent-app .agent-reports-table .report-decimal {
+  color: #666;
+  font-weight: 600;
+}
 @media (max-width: 900px) {
   .agent-reports-location {
     padding: 0 10px;
