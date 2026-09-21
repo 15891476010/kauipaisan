@@ -1,0 +1,136 @@
+.agent-app .agent-reports-table .report-total-breakdown {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: auto;
+  min-height: 120px;
+  padding: 5px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: #000;
+  font: inherit;
+  cursor: pointer;
+}
+.report-total-breakdown > span { display: block; height: 22px; line-height: 22px; }
+.report-total-breakdown > .report-breakdown-equals { height: 20px; line-height: 20px; }
+.agent-app .agent-reports-table .report-total-breakdown:hover {
+  background: #fff;
+  border-color: #afafaf;
+}
+.agent-app .agent-reports-table .report-total-breakdown:focus-visible {
+  outline: 2px solid #afafaf;
+  outline-offset: 1px;
+}
+.report-breakdown-positive { color: #006400; }
+.report-breakdown-nonpositive { color: #ff8c00; }
+.report-breakdown-missing { color: #777; }
+.report-breakdown-detail {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: nowrap;
+}
+.report-breakdown-detail > label,
+.report-breakdown-detail > span {
+  flex-shrink: 0;
+  margin: 0 5px;
+  color: #000;
+  font: 20px/30px Arial, Helvetica, sans-serif;
+}
+.report-breakdown-detail > div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+  min-width: 120px;
+  border: 1px solid #afafaf;
+  text-align: center;
+}
+.report-breakdown-detail > div.report-breakdown-negative {
+  background: #ffe4e4;
+}
+.report-breakdown-detail label {
+  width: auto;
+  min-width: 120px;
+  padding: 5px;
+  border-bottom: 1px dashed #afafaf;
+  color: #000;
+  font: 14px/21px Arial, Helvetica, sans-serif;
+  font-weight: 400;
+  white-space: nowrap;
+}
+.report-breakdown-detail > div > span {
+  padding: 5px;
+  color: #000;
+  font: 700 14px/21px Arial, Helvetica, sans-serif;
+}
+.report-breakdown-detail > div > span .report-decimal {
+  color: #afafaf;
+}
+.report-breakdown-detail .report-breakdown-positive,
+.report-breakdown-detail .report-breakdown-nonpositive {
+  color: #000;
+}
+.report-breakdown-title {
+  position: relative;
+  display: block;
+  margin-left: 38px;
+  color: rgba(0,0,0,.85);
+  font: 500 16px/22.4px Arial, Helvetica, sans-serif;
+}
+.report-breakdown-title .anticon {
+  position: absolute;
+  left: -38px;
+  top: 0;
+  display: block;
+  color: #1890ff;
+  font-size: 22px;
+  font-weight: 400;
+  line-height: 0;
+}
+.report-breakdown-modal .ant-modal-container {
+  border-radius: 0;
+  padding: 32px 32px 24px;
+  color: rgba(0, 0, 0, .65);
+  font: 14px/21px Arial, Helvetica, sans-serif;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, .15);
+}
+.report-breakdown-modal .ant-modal-header {
+  height: 22.4px;
+  margin-bottom: 8px;
+  border-bottom: 0;
+}
+.report-breakdown-modal .ant-modal-title {
+  height: 22.4px;
+  line-height: 22.4px;
+}
+.report-breakdown-modal .ant-modal-body {
+  margin-left: 38px;
+  width: calc(100% - 38px);
+  color: rgba(0, 0, 0, .65);
+  font: 14px/21px Arial, Helvetica, sans-serif;
+}
+.report-breakdown-modal .ant-modal-footer {
+  margin-top: 24px;
+  border-top: 0;
+  color: rgba(0, 0, 0, .65);
+  font: 14px/21px Arial, Helvetica, sans-serif;
+}
+.report-breakdown-modal .ant-modal-footer .ant-btn-primary {
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid #fff;
+  border-radius: 0;
+  background: #fdd9d9;
+  display: inline-block;
+  margin-left: 0;
+  box-shadow: none;
+  color: #000;
+  font: 14px/28px Arial, Helvetica, sans-serif;
+}
+.report-breakdown-detail .report-decimal { color: #afafaf; }
+.report-breakdown-modal .ant-modal-footer .ant-btn-primary > span { display: inline-block; }
+.report-breakdown-note { color: #777; margin-bottom: 0; }

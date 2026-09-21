@@ -151,6 +151,10 @@ final class AgentReport
             }
             $betCount=(int)($row['import_bet_count']??$row['number_count']??0);
             $row['metrics']=['bet_count'=>max(1,$betCount),'amount'=>$amount,'win_amount'=>$win,'water'=>$rebate,'member_profit'=>$memberProfit,'viewer_amount'=>$computed['viewer_amount'],'share_amount'=>$computed['share_amount'],'share_profit'=>$computed['share_profit'],'offline_water'=>$computed['offline_water'],'agent_water'=>$computed['agent_water'],'agent_profit'=>$computed['agent_profit'],'platform_amount'=>$computed['platform_amount'],'platform_profit'=>$computed['platform_profit'],'levels'=>$levelBases];
+            // 导入摘要没有结算态，沿用其现有口径；只屏蔽明确未结算的实际注单组。
+            if (array_key_exists('settled', $row)) {
+                $row['metrics']=\app\service\ReportSettlementVisibility::apply($row['metrics'], (int)$row['settled']===1);
+            }
         }
         unset($row); return $rows;
     }
