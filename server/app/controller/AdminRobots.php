@@ -52,13 +52,13 @@ final class AdminRobots
 
     private function normalize(array $data, ?array $current=null): array
     {
-        $min=(float)($data['min_amount']??$current['min_amount']??1);
-        $max=(float)($data['max_amount']??$current['max_amount']??100);
+        $min=(float)($data['min_amount']??$current['min_amount']??50);
+        $max=(float)($data['max_amount']??$current['max_amount']??500);
         $precision=(int)($data['amount_precision']??$current['amount_precision']??0);
         // Values are minutes; the worker itself still checks once per second.
-        $intervalMin=(int)($data['interval_min']??$current['interval_min']??3);
-        $intervalMax=(int)($data['interval_max']??$current['interval_max']??5);
-        if($min<0||$max<$min||$max>10000) throw new \InvalidArgumentException('金额范围无效，最大金额不能超过10000分');
+        $intervalMin=(int)($data['interval_min']??$current['interval_min']??1);
+        $intervalMax=(int)($data['interval_max']??$current['interval_max']??1);
+        if($min<=0||$max<$min||$max>500) throw new \InvalidArgumentException('金额范围无效，机器人单批金额必须大于0且不能超过500分');
         if(!in_array($precision,[0,1,2],true)) throw new \InvalidArgumentException('金额精度只能是整数、1位或2位小数');
         if($intervalMin<1||$intervalMax<$intervalMin||$intervalMax>1440) throw new \InvalidArgumentException('随机间隔范围无效，必须为 1-1440 分钟');
         $start=(string)($data['start_at']??$current['start_at']??'');

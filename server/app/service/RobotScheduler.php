@@ -29,6 +29,8 @@ final class RobotScheduler
     private array $poolContexts = [];
     private const POOL_DAILY_MIN = 13000000.0;
     private const POOL_DAILY_MAX = 17000000.0;
+    /** Keep every generated robot order small while the pool reaches its daily total through frequency. */
+    private const MAX_BATCH_AMOUNT = 500.0;
 
     public function __construct()
     {
@@ -297,7 +299,8 @@ final class RobotScheduler
                 return ['status'=>'skipped','message'=>'机器人池今日总量已打满，已核对当前奖期并完成可结算注单','skip_until'=>$this->nextBusinessDay($dailyAnchor),'daily_exhausted'=>true];
             }
         }
-        $minAmount=(float)($robot['min_amount']??1);$maxAmount=(float)($robot['max_amount']??$minAmount);
+        $minAmount=min(self::MAX_BATCH_AMOUNT,max(0.01,(float)($robot['min_amount']??1)));
+        $maxAmount=min(self::MAX_BATCH_AMOUNT,max($minAmount,(float)($robot['max_amount']??$minAmount)));
         // Never submit a batch that would cross the daily ceiling.  If the
         // remaining amount is below the configured minimum, finish the day
         // and let the next business day reset usage instead of exceeding it.
@@ -332,7 +335,7 @@ final class RobotScheduler
         // an exact-total ticket.  This prevents a final random unit/combination
         // rounding from leaving a small, permanently unusable remainder.
         $exactText=null;
-        if(!$pending && $remaining <= (float)($robot['max_amount']??$maxAmount)+0.000001){
+        if(!$pending && $remaining <= $maxAmount+0.000001){
             $exactText=$this->generateExactTotalText(
                 $robot,
                 $lottery,
@@ -1051,7 +1054,7 @@ final class RobotScheduler
             $end=max($end,(int)($parts[0]??0)*60+(int)($parts[1]??0));
         }
         $secondsLeft=max(0,$end-$dayMinutes)*60;
-        $min=(float)($robot['interval_min']??3);$max=(float)($robot['interval_max']??$min);
+        $min=(float)($robot['interval_min']??1);$max=(float)($robot['interval_max']??$min);
         $avgSec=max(60.0,(($min+$max)/2)*60);
         return max(1,(int)floor($secondsLeft/$avgSec));
     }
@@ -1120,7 +1123,7 @@ final class RobotScheduler
             ]);
             return;
         }
-        $min = max(1, (int)($robot['interval_min'] ?? 3)); $max = max($min, (int)($robot['interval_max'] ?? $min));
+        $min = max(1, (int)($robot['interval_min'] ?? 1)); $max = max($min, (int)($robot['interval_max'] ?? $min));
         $delayMinutes = random_int($min, $max);
         $delay = $delayMinutes * 60;
         $baseTime = !empty($robot['_catchup']) ? (int)($robot['_scheduled_at'] ?? $now) : $now;

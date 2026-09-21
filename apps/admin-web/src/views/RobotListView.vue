@@ -65,12 +65,12 @@ const form = reactive({
   password: "",
   organization_id: 0,
   score: 0,
-  min_amount: 1,
-  max_amount: 100,
+  min_amount: 50,
+  max_amount: 500,
   amount_precision: 0,
   start_at: "",
-  interval_min: 3,
-  interval_max: 5,
+  interval_min: 1,
+  interval_max: 1,
   weight_fu: 1,
   weight_ti: 1,
   weight_futi: 1,
@@ -227,12 +227,12 @@ function resetForm() {
     password: "",
     organization_id: 0,
     score: 0,
-    min_amount: 1,
-    max_amount: 100,
+    min_amount: 50,
+    max_amount: 500,
     amount_precision: 0,
     start_at: new Date().toISOString().slice(0, 16),
-    interval_min: 3,
-    interval_max: 5,
+    interval_min: 1,
+    interval_max: 1,
     weight_fu: 1,
     weight_ti: 1,
     weight_futi: 1,
@@ -722,14 +722,14 @@ onUnmounted(stopLogPolling);
             <el-input-number
               v-model="form.min_amount"
               :min="0"
-              :max="10000"
+              :max="500"
               :precision="2"
               controls-position="right"
             /><span>至</span
             ><el-input-number
               v-model="form.max_amount"
               :min="0"
-              :max="10000"
+              :max="500"
               :precision="2"
               controls-position="right"
             /><el-select v-model="form.amount_precision" style="width: 115px"
@@ -739,7 +739,7 @@ onUnmounted(stopLogPolling);
             /></el-select>
           </div>
           <div class="field-tip">
-            金额范围是每次任务整批注单总金额，系统会按组合注数折算单注金额。
+            金额范围是每次任务整批注单总金额，最高 500；系统通过增加打单笔数达到每日总投。
           </div></el-form-item
         ><el-form-item label="彩种"
           ><div class="lottery-options">
