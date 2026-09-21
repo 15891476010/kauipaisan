@@ -230,18 +230,32 @@ final class RobotScheduler
                 ? ['issue'=>(string)$robot['pending_ticket_target_issue'],'draw'=>(string)($robot['pending_ticket_target_draw']??'')]
                 : null)
             : $this->historicalTarget($lottery, !empty($robot['_catchup']) ? (int)$robot['_scheduled_at'] : null);
-        // A catch-up slot belonging to today's still-pending issue cannot be
-        // placed yet — the draw that decides the ticket direction only exists
-        // once the issue opens.  Defer until the open time instead of spinning
-        // on "机器人目标开奖期号无效" every interval.
+        // Once historical replay reaches today's pending issue, switch back to
+        // real-time random betting. Waiting for that issue to open would leave
+        // the robot idle for the rest of the active betting window.
         if($target===null && !empty($robot['_catchup'])){
             $pendingIssue=Db::name('lottery_histories')->where('lottery_id',(int)$lottery['id'])
                 ->where('is_opened',0)->where('open_time','>',date('Y-m-d H:i:s',$scheduleTime))
                 ->order('open_time asc')->order('id asc')->find();
-            $until=is_array($pendingIssue)&&!empty($pendingIssue['open_time'])
-                ? strtotime((string)$pendingIssue['open_time'])+60
-                : $this->nextBusinessDay($scheduleTime);
-            return ['status'=>'skipped','message'=>'目标期号尚未开奖，顺延至开奖后回补','lottery'=>(string)$lottery['name'],'skip_until'=>$until];
+            if($this->pendingIssueIsToday($pendingIssue,$now)){
+                $robot['_catchup']=false;
+                unset($robot['_scheduled_at']);
+                $scheduleTime=$now;
+                $scheduledAt=null;
+                $hourState=$this->hourlyWeightState($robot,$scheduleTime);
+                if(!$hourState['allowed']){
+                    $retry=(int)($hourState['retry_at']??($scheduleTime+60));
+                    $message=$retry>($scheduleTime+60)
+                        ? '当前小时段权重为0，已跳过至 '.date('Y-m-d H:i:s',$retry)
+                        : '当前小时段暂不可下注，已跳过';
+                    return ['status'=>'skipped','message'=>$message,'skip_until'=>$hourState['retry_at']];
+                }
+            }else{
+                $until=is_array($pendingIssue)&&!empty($pendingIssue['open_time'])
+                    ? strtotime((string)$pendingIssue['open_time'])+60
+                    : $this->nextBusinessDay($scheduleTime);
+                return ['status'=>'skipped','message'=>'目标期号尚未开奖，顺延至开奖后回补','lottery'=>(string)$lottery['name'],'skip_until'=>$until];
+            }
         }
         // The robot's configured score is a daily hard ceiling.  It is the
         // fixed score allocation on the robot member account (cash plus
@@ -866,6 +880,13 @@ final class RobotScheduler
     private function nextBusinessDay(int $timestamp): int
     {
         return strtotime(date('Y-m-d 00:00:00',$timestamp))+86400;
+    }
+
+    private function pendingIssueIsToday(?array $pendingIssue,int $now): bool
+    {
+        if(!is_array($pendingIssue)||empty($pendingIssue['open_time']))return false;
+        $openAt=strtotime((string)$pendingIssue['open_time']);
+        return $openAt!==false&&date('Y-m-d',$openAt)===date('Y-m-d',$now);
     }
 
     /** Find the first already-opened issue after a historical bet timestamp. */
