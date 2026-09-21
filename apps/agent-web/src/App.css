@@ -3802,51 +3802,121 @@ body {
   vertical-align: -2px;
 }
 .agent-settings-password-panel {
-  width: 800px;
-  min-height: 360px;
+  width: 1000px;
+  min-height: 294px;
   margin: 0 auto;
-  padding: 34px 40px;
+  padding: 0;
+  background: transparent;
+}
+.agent-settings-password-columns {
+  display: flex;
+  width: 960px;
+  height: 200px;
+  align-items: center;
+  justify-content: center;
+  margin: 10px 20px 0;
+  padding: 15px;
+  box-sizing: border-box;
   background: #fff;
 }
-.agent-settings-password-form {
+.agent-settings-password-column {
   display: flex;
-  width: 440px;
+  width: 284px;
+  height: 170px;
   flex-direction: column;
-  gap: 18px;
-  margin: 0 auto;
-}
-.agent-settings-password-form label {
-  display: flex;
   align-items: center;
-  gap: 14px;
+  justify-content: center;
+  padding: 0 10px;
+  border-right: 1px dashed #00008b;
+  box-sizing: border-box;
 }
-.agent-settings-password-form label > span {
-  width: 78px;
-  color: #333;
-  text-align: right;
+.agent-settings-password-middle {
+  width: 362px;
 }
-.agent-settings-password-form .ant-input-affix-wrapper {
-  flex: 1;
-  height: 34px;
-  border-color: #c8c8c8;
+.agent-settings-password-column:last-child {
+  border-right: 0;
+}
+.agent-settings-password-column > label {
+  margin-bottom: 10px;
+  color: #111;
+  font-size: 16px;
+  font-weight: 700;
+}
+.agent-settings-password-column .ant-input {
+  width: 170px;
+  height: 32px;
+  border-color: #d9d9d9;
   border-radius: 4px;
 }
-.agent-settings-password-form .ant-input-affix-wrapper:hover,
-.agent-settings-password-form .ant-input-affix-wrapper-focused {
-  border-color: #167416;
-  box-shadow: 0 0 0 1px rgba(22, 116, 22, 0.12);
+.agent-settings-password-middle .ant-input {
+  width: 247px;
 }
-.agent-settings-password-form small {
-  margin-left: 92px;
-  color: #777;
+.agent-settings-password-rules {
+  display: flex;
+  width: 247px;
+  flex-direction: column;
+  margin-top: 8px;
+  color: #8d5d00;
+  font-size: 14px;
+  line-height: 20px;
 }
-.agent-settings-password-form .ant-btn {
-  width: 100px;
-  margin-left: 92px;
-  border-color: #006400;
-  background: #006400;
+.agent-settings-password-rules > span {
+  display: block;
+  width: max-content;
+  white-space: nowrap;
 }
-
+.agent-settings-password-warning::before {
+  content: "注：";
+  margin-right: 8px;
+  color: #f00;
+  font-size: 16px;
+  font-weight: 700;
+}
+.agent-settings-password-warning {
+  display: inline-flex;
+  width: 504px;
+  height: 36px;
+  align-items: center;
+  margin: 15px 0 5px 20px;
+  padding: 0 12px;
+  border: 1px solid #d5d54b;
+  border-radius: 18px;
+  box-sizing: border-box;
+  background: #ffffa1;
+  font-size: 14px;
+}
+.agent-settings-password-warning > label {
+  margin-right: 0;
+  color: #000;
+  white-space: nowrap;
+}
+.agent-settings-password-warning .red {
+  color: #000;
+}
+.agent-settings-password-submit {
+  display: flex;
+  width: 1000px;
+  height: 28px;
+  justify-content: center;
+  margin: 10px 0;
+}
+.agent-settings-password-submit .ant-btn {
+  width: 80px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid #fff;
+  border-radius: 0;
+  background: #fdd9d9;
+  color: #000;
+  font: 14px/28px Arial, Helvetica, sans-serif;
+  box-shadow: none;
+}
+.agent-settings-password-submit .ant-btn:hover,
+.agent-settings-password-submit .ant-btn:focus {
+  border-color: #fff;
+  background: #fdd9d9;
+  color: #000;
+}
 /* 拦货搜索区与下级管理筛选区保持同一套居中、分组边框布局。 */
 .interception-filters {
   display: flex;

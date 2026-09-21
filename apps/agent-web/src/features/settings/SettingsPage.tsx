@@ -9,7 +9,7 @@ import { hasAgentPermission } from '../../routePermissions';
 const emptyProfile: AgentSettingProfile = { username: '', display_name: '', remark: '', share_limit: '0', follow_share: 0, total_credit: '0', allocated_credit: '0', available_credit: '0', organization_level: '', interception_editable: 0, interception_notice: '' };
 const showNumber = (value: string | null | undefined) => { const number = Number(value); return Number.isFinite(number) ? String(number) : '---'; };
 
-export function SettingsPage({ lottery }: { lottery: string }) {
+export function SettingsPage({ lottery, isSubaccount = false }: { lottery: string; isSubaccount?: boolean }) {
   const { message } = AntdApp.useApp();
   const [profile, setProfile] = useState(emptyProfile);
   const [rows, setRows] = useState<AgentSettingOdds[]>([]);
@@ -18,7 +18,7 @@ export function SettingsPage({ lottery }: { lottery: string }) {
   const [synced, setSynced] = useState<Record<string,boolean>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState<'account' | 'password'>('account');
+  const [activeTab, setActiveTab] = useState<'account' | 'password'>(() => isSubaccount ? 'password' : 'account');
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -58,13 +58,15 @@ export function SettingsPage({ lottery }: { lottery: string }) {
   const submitPassword = async () => {
     if (!oldPassword) return void message.warning('请输入当前密码');
     if (newPassword.length < 6) return void message.warning('新密码不能少于6位');
+    if (!/[A-Za-z]/.test(newPassword) || !/\d/.test(newPassword)) return void message.warning('密码必须是数字和字母组合');
     if (newPassword === profile.username) return void message.warning('密码不能跟账号相同');
+    if (['a12345', 'ab1234', 'abc123', 'a1b2c3', 'aaa111', '123qwe'].includes(newPassword.toLowerCase())) return void message.warning('该密码过于简单，请更换密码');
     if (newPassword !== confirmPassword) return void message.warning('两次输入的新密码不一致');
     setPasswordSaving(true);
     try {
       await changeAgentPassword({ old_password: oldPassword, password: newPassword, confirm_password: confirmPassword });
       setOldPassword(''); setNewPassword(''); setConfirmPassword('');
-      void message.success('密码修改成功'); setActiveTab('account');
+      void message.success('密码修改成功'); setActiveTab(isSubaccount ? 'password' : 'account');
     } catch (reason: unknown) { void message.error(apiErrorMessage(reason, '密码修改失败')); }
     finally { setPasswordSaving(false); }
   };
@@ -72,10 +74,14 @@ export function SettingsPage({ lottery }: { lottery: string }) {
   return <section className="agent-settings-page">
     <div className="agent-settings-location">
       <div className="agent-settings-path"><strong>位置</strong><DoubleRightOutlined /><span>设置</span><DoubleRightOutlined /><span>{activeTab === 'account' ? '账号设置' : '修改密码'}</span></div>
-      <nav className="agent-settings-tabs"><button type="button" className={activeTab === 'account' ? 'active' : ''} onClick={() => setActiveTab('account')}>账号设置</button><button type="button" className={activeTab === 'password' ? 'active' : ''} onClick={() => setActiveTab('password')}>修改密码</button></nav>
+      <nav className="agent-settings-tabs">{!isSubaccount && <button type="button" className={activeTab === 'account' ? 'active' : ''} onClick={() => setActiveTab('account')}>账号设置</button>}<button type="button" className={activeTab === 'password' ? 'active' : ''} onClick={() => setActiveTab('password')}>修改密码</button></nav>
     </div>
     {loading ? <div className="agent-settings-loading"><Spin /></div> : <>
-      {activeTab === 'password' ? <div className="agent-settings-password-panel"><div className="agent-settings-password-form"><label><span>当前密码</span><Input.Password value={oldPassword} onChange={(event) => setOldPassword(event.target.value)} autoComplete="current-password" /></label><label><span>新密码</span><Input.Password value={newPassword} onChange={(event) => setNewPassword(event.target.value)} autoComplete="new-password" /></label><label><span>确认新密码</span><Input.Password value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" /></label><small>新密码至少 6 位，不能与账号相同，并需包含数字和字母。</small><Button type="primary" loading={passwordSaving} onClick={() => void submitPassword()}>保存密码</Button></div></div> : <>
+      {activeTab === 'password' ? <div className="agent-settings-password-panel"><div className="agent-settings-password-columns">
+        <div className="agent-settings-password-column"><label>原密码</label><div><Input type="password" value={oldPassword} onChange={(event) => setOldPassword(event.target.value)} autoComplete="current-password" maxLength={20} placeholder="请输入原密码" /></div></div>
+        <div className="agent-settings-password-column agent-settings-password-middle"><label>新密码</label><div className="agent-settings-password-field"><Input type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} autoComplete="new-password" maxLength={20} placeholder="请输入密码" /><div className="agent-settings-password-rules"><span>1. 新密码不能跟账号和原密码相同</span><span>2. 必须是数字和字母组合，至少6位以上</span></div></div></div>
+        <div className="agent-settings-password-column"><label>确认新密码</label><div><Input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" maxLength={20} placeholder="请确认新密码" /></div></div>
+      </div><div className="agent-settings-password-warning"><label>系统禁止不可用密码：</label><div><span className="red">a12345,ab1234,abc123,a1b2c3,aaa111,123qwe</span></div></div><div className="agent-settings-password-submit"><Button type="primary" loading={passwordSaving} onClick={() => void submitPassword()}>保 存</Button></div></div> : <>
       <div className="agent-settings-profile">
         <ProfileItem label="账号" value={profile.username || '---'} />
         <ProfileItem label="代号" value={profile.display_name || '---'} />
