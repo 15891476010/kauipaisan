@@ -141,6 +141,7 @@ export type BatchBetUser = {
   organization_id?: number;
   org_path?: string;
   number_count?: number;
+  is_robot?: boolean;
   stats?: BatchBetStats;
   numbers: BatchBetNumber[];
 };
@@ -216,7 +217,7 @@ export type RobotPlanItem = {
   user_id: number;
   username: string;
   display_name: string;
-  action: "flip" | "scale";
+  action: "win" | "lose";
   factor: number;
   old_amount: string;
   new_amount: string;
@@ -226,20 +227,22 @@ export type RobotPlanItem = {
   new_source?: string;
   details: RobotPlanDetail[];
 };
-export type RobotPlanStats = { bet: string; win: string; profit: string };
 export type RobotPlanResult = {
   draw: string;
-  denominator: string | null;
-  target_win: string;
-  achieved_win: string;
-  ratio: string | null;
-  stats: { selected: RobotPlanStats; unselected: RobotPlanStats; anchor: RobotPlanStats };
-  projected: {
-    anchor_profit_before: string;
-    anchor_profit_after: string;
-    selected_bet_after: string;
-    selected_win_after: string;
-  };
+  day: string;
+  node: { id: number; site_id: number; level: string; name: string };
+  target_profit: string;
+  target_min: string;
+  target_max: string;
+  daily_profit_before: string;
+  daily_profit_after: string;
+  daily_bet: string;
+  daily_win_before: string;
+  daily_win_after: string;
+  within_tolerance: boolean;
+  amount_unchanged: boolean;
+  plan_token: string;
+  selected_robot_ids: number[];
   items: RobotPlanItem[];
   warnings: string[];
 };
@@ -249,7 +252,7 @@ export const planBatchRobot = (payload: {
   draw: string;
   user_ids: number[];
   node_id?: number;
-  target_win: number;
+  target_profit: number;
 }) =>
   http.post<never, Envelope<RobotPlanResult>>(
     "/admin/bet-details/batch-robot-plan",
@@ -261,9 +264,10 @@ export const applyBatchRobot = (payload: {
   draw: string;
   user_ids: number[];
   node_id?: number;
-  target_win: number;
+  target_profit: number;
+  plan_token: string;
 }) =>
-  http.post<never, Envelope<{ changed: number; resettled: number; achieved_win: string }>>(
+  http.post<never, Envelope<{ changed: number; resettled: number; achieved_profit: string; amount_unchanged: boolean }>>(
     "/admin/bet-details/batch-robot-apply",
     payload,
   );

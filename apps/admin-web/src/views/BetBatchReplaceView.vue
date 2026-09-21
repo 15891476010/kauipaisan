@@ -26,6 +26,8 @@ const orgChain = ref<number[]>([])
 let previewTimer: ReturnType<typeof setTimeout> | undefined
 
 const selectedUsers = computed(() => users.value.filter(user => selectedUserKeys.value.includes(user.key)))
+const selectedRobotKeys = ref<string[]>([])
+const selectedRobots = computed(() => users.value.filter(user => selectedRobotKeys.value.includes(user.key) && user.is_robot))
 type DetailGroup = { key: string; user: BatchBetUser; record_id: number; source_text: string; numbers: BatchBetNumber[] }
 const detailGroups = computed<DetailGroup[]>(() => selectedUsers.value.flatMap(user => {
   const groups = new Map<number, DetailGroup>()
@@ -168,18 +170,13 @@ const chainStats = computed(() => orgChain.value
 const visibleUserStats = computed(() => visibleUser.value ? adjustedStats(visibleUser.value) : null)
 
 // ---- Robot adjust (机器人改码) ----------------------------------------------
-// 锚点 = 级联选择的最深节点；未选会员 = 锚点范围内未被勾选的会员。
+// 锚点 = 级联选择的最深节点；当天口径由服务端统计锚点内全部会员和机器人。
 const anchorTotals = computed(() => finalize(selectedNode.value ? nodeTotals(selectedNode.value) : sumStats(users.value)))
 const selectedStats = computed(() => finalize(sumStats(selectedUsers.value)))
 const anchorPoolUsers = computed(() => selectedNode.value ? subtreeUsers(selectedNode.value) : users.value)
 const unselectedUsers = computed(() => anchorPoolUsers.value.filter(user => !selectedUserKeys.value.includes(user.key)))
 const unselectedStats = computed(() => finalize(sumStats(unselectedUsers.value)))
-// 分母：未选会员净亏 = 未选总投 − 未选总中；比率 = 已选目标总中 ÷ 净亏。
-const robotDenominator = computed(() => {
-  const stats = unselectedStats.value
-  if (stats.win == null) return null
-  return stats.bet - stats.win
-})
+const robotOptions = computed(() => anchorPoolUsers.value.filter(user => user.is_robot))
 const groupRatio = (profit: number | null) => {
   const anchor = anchorTotals.value.profit
   if (profit == null || anchor == null || Math.abs(anchor) < 0.005) return null
@@ -188,7 +185,6 @@ const groupRatio = (profit: number | null) => {
 const payoutRate = (t: Totals) => t.bet > 0.005 && t.win != null ? t.win / t.bet * 100 : null
 const percent = (v: number | null) => v == null ? '—' : `${v.toFixed(1)}%`
 const robotDrawReady = computed(() => /^\d{3}$/.test(drawNo.value))
-const robotRatio = ref('')
 const robotAmount = ref('')
 const planLoading = ref(false)
 const planDialog = ref(false)
@@ -245,29 +241,18 @@ function planSegments(item: RobotPlanItem, field: 'old_source' | 'new_source'): 
 }
 function editFocus(el: { textarea?: HTMLTextAreaElement } | null) { el?.textarea?.focus() }
 function startEdit(group: DetailGroup) { editingRecordId.value = group.record_id }
-function onRatioInput() {
-  const d = robotDenominator.value
-  const r = Number(robotRatio.value)
-  if (d == null || !Number.isFinite(r)) { robotAmount.value = ''; return }
-  robotAmount.value = (d * r / 100).toFixed(2)
-}
-function onAmountInput() {
-  const d = robotDenominator.value
-  const amount = Number(robotAmount.value)
-  if (d == null || Math.abs(d) < 0.005 || !Number.isFinite(amount)) { robotRatio.value = ''; return }
-  robotRatio.value = (amount / d * 100).toFixed(2)
-}
 async function generatePlan() {
   const target = Number(robotAmount.value)
-  if (!Number.isFinite(target) || target < 0) { ElMessage.warning('请输入目标中奖金额或比率'); return }
-  if (!selectedUsers.value.length) { ElMessage.warning('请先选择要调整的会员'); return }
+  if (!Number.isFinite(target) || robotAmount.value.trim() === '') { ElMessage.warning('请输入正数或负数目标盈亏'); return }
+  if (!selectedNode.value || selectedNode.value.id <= 0) { ElMessage.warning('请先选择目标组织层级'); return }
+  if (!selectedRobots.value.length) { ElMessage.warning('请选择要改码的机器人'); return }
   planLoading.value = true
   try {
     const response = await planBatchRobot({
       lottery_id: lotteryId.value, issue_no: issueNo.value, draw: drawNo.value,
-      user_ids: selectedUsers.value.map(user => user.user_id),
+      user_ids: selectedRobots.value.map(user => user.user_id),
       node_id: selectedNode.value && selectedNode.value.id > 0 ? selectedNode.value.id : 0,
-      target_win: target,
+      target_profit: target,
     })
     planResult.value = response.data
     if (!response.data.items.length) ElMessage.warning('当前选择下没有需要修改的注单')
@@ -278,26 +263,17 @@ async function generatePlan() {
     planLoading.value = false
   }
 }
-// 中奖注额 = 中奖金额 ÷ 赔率（多码票里即"中奖号码分摊的单注金额"），
-// 让操作者直接看到中奖号码注了多少，而不是整单总注额。
-function winStake(item: RobotPlanItem, field: 'old_win' | 'new_win'): number | null {
-  let stake = 0; let any = false
-  for (const d of item.details) {
-    const win = Number(d[field]); const odds = d.win_odds == null ? 0 : Number(d.win_odds)
-    if (win > 0 && odds > 0) { stake += win / odds; any = true }
-  }
-  return any ? stake : null
-}
 async function applyPlan() {
   if (!planResult.value) return
-  await ElMessageBox.confirm(`将按方案修改 ${planResult.value.items.length} 张原始注单（已选会员中奖约 ¥${money(Number(planResult.value.achieved_win))}），是否执行？`, '确认执行机器人改单', { type: 'warning', confirmButtonText: '执行改单', cancelButtonText: '取消' })
+  await ElMessageBox.confirm(`将只修改 ${planResult.value.items.length} 张机器人注单的号码，金额保持不变；预计层级盈亏 ¥${money(Number(planResult.value.daily_profit_after))}。是否执行？`, '确认执行机器人改单', { type: 'warning', confirmButtonText: '执行改单', cancelButtonText: '取消' })
   applying.value = true
   try {
     const response = await applyBatchRobot({
       lottery_id: lotteryId.value, issue_no: issueNo.value, draw: drawNo.value,
-      user_ids: selectedUsers.value.map(user => user.user_id),
+      user_ids: selectedRobots.value.map(user => user.user_id),
       node_id: selectedNode.value && selectedNode.value.id > 0 ? selectedNode.value.id : 0,
-      target_win: Number(robotAmount.value),
+      target_profit: Number(robotAmount.value),
+      plan_token: planResult.value.plan_token,
     })
     ElMessage.success(`机器人改单完成，共修改 ${response.data.changed} 张主单`)
     planDialog.value = false
@@ -318,9 +294,10 @@ function selectOrg(depth: number, value: number | string | undefined) {
   // Edited sources stay keyed by record so navigating the tree never loses
   // work; only the member selection follows the new position.
   selectedUserKeys.value = []
+  selectedRobotKeys.value = []
   ensureActiveUser()
 }
-function changeSite(value: number) { activeSite.value = value; orgChain.value = []; selectedUserKeys.value = [] }
+function changeSite(value: number) { activeSite.value = value; orgChain.value = []; selectedUserKeys.value = []; selectedRobotKeys.value = [] }
 
 // ---- Loading / preview ------------------------------------------------------
 const initialRecordIds = computed(() => {
@@ -466,16 +443,16 @@ onMounted(() => loadOptions({ issue: String(route.query.issue_no || ''), recordI
         <div v-if="selectedUsers.length" class="user-tabs"><button v-for="user in selectedUsers" :key="user.key" type="button" class="user-tab" :class="{ active: user.key === activeUserKey }" @click="activeUserKey = user.key">{{ user.display_name || user.username }}<em v-if="changedCountFor(user.key)"> {{ changedCountFor(user.key) }}</em></button></div>
       </section>
 
-      <section v-if="selectedUsers.length" class="robot-panel">
-        <div class="section-title"><div><h2>机器人改码</h2><span class="hint">按未选会员净亏的比率自动调整已选会员注单：只改三位号码和金额，玩法形态不变，执行前先出方案预览</span></div></div>
+      <section v-if="selectedNode && selectedNode.id > 0" class="robot-panel">
+        <div class="section-title"><div><h2>机器人改码</h2><span class="hint">统计所选层级当天全部会员和机器人，只修改已选机器人号码，任何投注金额都保持不变</span></div></div>
         <div v-if="!robotDrawReady" class="select-tip">输入 3 位预开奖号码后可用</div>
         <template v-else>
           <div class="robot-row">
-            <span class="total-chip">未选会员净亏 ¥{{ robotDenominator == null ? '—' : money(robotDenominator) }}</span>
-            <div class="filter-item"><label>比率</label><el-input v-model="robotRatio" placeholder="如 100" style="width:120px" :disabled="robotDenominator == null || robotDenominator <= 0" @input="onRatioInput"><template #append>%</template></el-input></div>
-            <div class="filter-item"><label>目标中奖金额</label><el-input v-model="robotAmount" placeholder="已选会员要中的总金额" style="width:170px" @input="onAmountInput" /></div>
-            <el-button type="warning" :loading="planLoading" :disabled="!(Number(robotAmount) >= 0 && robotAmount !== '')" @click="generatePlan">生成改单方案</el-button>
-            <span v-if="robotDenominator != null && robotDenominator <= 0" class="robot-tip">未选会员当前没有净亏，可直接输入目标中奖金额</span>
+            <span class="level-tag">{{ selectedNode.label }} {{ selectedNode.name }}</span>
+            <el-select v-model="selectedRobotKeys" multiple collapse-tags collapse-tags-tooltip filterable placeholder="请选择要改码的机器人" style="min-width:320px"><el-option v-for="user in robotOptions" :key="user.key" :label="memberLabel(user)" :value="user.key" /></el-select>
+            <div class="filter-item"><label>层级目标盈亏</label><el-input v-model="robotAmount" placeholder="正数赢，负数输" style="width:170px" /></div>
+            <el-button type="warning" :loading="planLoading" :disabled="robotAmount.trim() === '' || !selectedRobots.length" @click="generatePlan">生成改单方案</el-button>
+            <span class="robot-tip">口径：当天总中−总投，结果允许在目标上下 30% 内</span>
           </div>
         </template>
       </section>
@@ -503,23 +480,24 @@ onMounted(() => loadOptions({ issue: String(route.query.issue_no || ''), recordI
       <el-dialog v-model="planDialog" title="机器人改单方案预览" width="84%" :close-on-click-modal="false">
         <template v-if="planResult">
           <div class="plan-summary">
-            <span class="total-chip">未选净亏 ¥{{ planResult.denominator == null ? '—' : money(Number(planResult.denominator)) }}</span>
-            <span class="total-chip">已选当前总中 ¥{{ money(Number(planResult.stats.selected.win)) }}</span>
-            <span class="total-chip preview">目标总中 ¥{{ money(Number(planResult.target_win)) }}</span>
-            <span class="total-chip preview">方案达成 ¥{{ money(Number(planResult.achieved_win)) }}{{ planResult.ratio != null ? `（比率 ${planResult.ratio}%）` : '' }}</span>
-            <span class="total-chip">已选总投改后 ¥{{ money(Number(planResult.projected.selected_bet_after)) }}</span>
-            <span class="total-chip" :class="profitClass(Number(planResult.projected.anchor_profit_after))">节点盈亏 ¥{{ money(Number(planResult.projected.anchor_profit_before)) }} → ¥{{ money(Number(planResult.projected.anchor_profit_after)) }}</span>
+            <span class="level-tag">{{ planResult.node.name }} · {{ planResult.day }}</span>
+            <span class="total-chip">当天总投 ¥{{ money(Number(planResult.daily_bet)) }}</span>
+            <span class="total-chip">当天总中 ¥{{ money(Number(planResult.daily_win_before)) }} → ¥{{ money(Number(planResult.daily_win_after)) }}</span>
+            <span class="total-chip preview">目标盈亏 ¥{{ money(Number(planResult.target_profit)) }}</span>
+            <span class="total-chip preview">允许区间 ¥{{ money(Number(planResult.target_min)) }} 至 ¥{{ money(Number(planResult.target_max)) }}</span>
+            <span class="total-chip" :class="profitClass(Number(planResult.daily_profit_after))">层级盈亏 ¥{{ money(Number(planResult.daily_profit_before)) }} → ¥{{ money(Number(planResult.daily_profit_after)) }}</span>
+            <span class="total-chip">金额保持不变</span>
           </div>
           <el-alert v-for="(warning, index) in planResult.warnings" :key="index" :title="warning" type="warning" :closable="false" class="plan-warning" />
           <el-table :data="planResult.items" max-height="430" size="small" border>
-            <el-table-column label="会员" min-width="110"><template #default="{ row }">{{ row.display_name || row.username }}</template></el-table-column>
-            <el-table-column label="方式" width="76"><template #default="{ row }"><el-tag :type="row.action === 'flip' ? 'warning' : 'info'" size="small">{{ row.action === 'flip' ? '翻号' : '调额' }}</el-tag></template></el-table-column>
-            <el-table-column label="原始注单" min-width="230"><template #default="{ row }"><div class="plan-src"><template v-for="(seg, i) in planSegments(row, 'old_source')" :key="i"><mark v-if="seg.hit">{{ seg.text }}</mark><template v-else>{{ seg.text }}</template></template></div><div v-if="row.action === 'flip' && row.new_source" class="plan-src new">→ <template v-for="(seg, i) in planSegments(row, 'new_source')" :key="i"><mark v-if="seg.hit">{{ seg.text }}</mark><template v-else>{{ seg.text }}</template></template></div></template></el-table-column>
-            <el-table-column label="金额（总注）" width="190"><template #default="{ row }"><div>¥{{ row.old_amount }} → ¥{{ row.new_amount }}<em v-if="row.factor !== 1" class="factor"> ×{{ row.factor }}</em></div><div v-if="winStake(row, 'new_win') != null" class="plan-stake">中奖注额 ¥{{ money(winStake(row, 'old_win') ?? 0) }} → ¥{{ money(winStake(row, 'new_win')!) }}</div></template></el-table-column>
+            <el-table-column label="机器人" min-width="110"><template #default="{ row }">{{ row.display_name || row.username }}</template></el-table-column>
+            <el-table-column label="方式" width="86"><template #default="{ row }"><el-tag :type="row.action === 'win' ? 'warning' : 'info'" size="small">{{ row.action === 'win' ? '改为中奖' : '改为不中奖' }}</el-tag></template></el-table-column>
+            <el-table-column label="原始注单" min-width="230"><template #default="{ row }"><div class="plan-src"><template v-for="(seg, i) in planSegments(row, 'old_source')" :key="i"><mark v-if="seg.hit">{{ seg.text }}</mark><template v-else>{{ seg.text }}</template></template></div><div v-if="row.new_source" class="plan-src new">→ <template v-for="(seg, i) in planSegments(row, 'new_source')" :key="i"><mark v-if="seg.hit">{{ seg.text }}</mark><template v-else>{{ seg.text }}</template></template></div></template></el-table-column>
+            <el-table-column label="金额（不变）" width="150"><template #default="{ row }">¥{{ row.old_amount }}</template></el-table-column>
             <el-table-column label="中奖" width="160"><template #default="{ row }"><span :class="{ won: Number(row.new_win) > 0 }">¥{{ row.old_win }} → ¥{{ row.new_win }}</span></template></el-table-column>
           </el-table>
         </template>
-        <template #footer><el-button @click="planDialog = false">取消</el-button><el-button type="danger" :loading="applying" @click="applyPlan">确认执行改单</el-button></template>
+        <template #footer><el-button @click="planDialog = false">取消</el-button><el-button type="danger" :loading="applying" :disabled="!planResult?.within_tolerance" @click="applyPlan">确认执行改单</el-button></template>
       </el-dialog>
     </template>
   </div>
