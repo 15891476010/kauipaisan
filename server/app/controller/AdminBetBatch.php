@@ -4,6 +4,7 @@ namespace app\controller;
 
 use app\service\BetSettlement;
 use app\service\CreditLedger;
+use app\service\OrganizationHierarchy;
 use app\service\QuickEntryParser;
 use app\service\ThirdPartyQuickEntryClient;
 use app\service\ThirdPartyQuickEntryConfig;
@@ -167,7 +168,7 @@ final class AdminBetBatch
         if ($siteId!==null) $query->where('d.site_id',$siteId);
         // The full row set stays unfiltered: per-member and per-node totals
         // must cover every bettor of this issue even before users are picked.
-        return $query->field('d.id,d.user_id,d.site_id,d.number_text,d.amount,d.odds AS detail_odds,d.win_amount AS detail_win,d.status AS detail_status,d.source_text,s.actual_odds,s.play_type AS detail_play_type,r.id AS record_id,r.amount AS record_amount,r.bet_count AS record_bet_count,r.status AS record_status,r.win_amount AS record_win,r.board_code,r.source_text AS record_source_text,r.formatted_text AS record_formatted_text,r.submission_id,r.placed_at,u.username,u.display_name,u.organization_id,st.name AS site_name')
+        return $query->field('d.id,d.user_id,d.site_id,d.number_text,d.amount,d.odds AS detail_odds,d.win_amount AS detail_win,d.status AS detail_status,d.source_text,s.actual_odds,s.play_type AS detail_play_type,r.id AS record_id,r.amount AS record_amount,r.bet_count AS record_bet_count,r.status AS record_status,r.win_amount AS record_win,r.board_code,r.source_text AS record_source_text,r.formatted_text AS record_formatted_text,r.submission_id,r.placed_at,r.lottery_name,u.username,u.display_name,u.organization_id,st.name AS site_name')
             ->order('d.site_id asc')->order('d.user_id asc')->order('d.id asc')->select()->toArray();
     }
 
@@ -825,6 +826,7 @@ final class AdminBetBatch
                 'record_id'=>$recordId,'user_id'=>(int)$row['user_id'],'site_id'=>(int)$row['site_id'],
                 'username'=>(string)($row['username']??''),'display_name'=>(string)($row['display_name']??''),
                 'organization_id'=>(int)($row['organization_id']??0),'board_code'=>(string)($row['board_code']??'A'),
+                'lottery_name'=>trim((string)($row['lottery_name']??''))!==''?(string)$row['lottery_name']:(string)($lottery['name']??''),
                 'source'=>(string)($row['record_source_text']??''),'formatted'=>(string)($row['record_formatted_text']??''),
                 'status'=>(string)($row['record_status']??'pending'),'amount'=>(float)($row['record_amount']??0),
                 'win'=>(float)($row['record_win']??0),'submission_id'=>(int)($row['submission_id']??0),
@@ -1314,12 +1316,36 @@ final class AdminBetBatch
         ];
     }
 
+    /** Return the report's agent_profit for one aggregated member book. */
+    private function robotAgentMetrics(array $row,int $siteId,int $nodeId,array &$chainCache,array $nodeLevels,array $nodeParents,float $siteCap,float $waterRate): array
+    {
+        $snapshot=null;$lineOrgId=0;
+        $decoded=json_decode((string)($row['ledger_json']??''),true);
+        if(is_array($decoded)) {
+            $snapshot=[];
+            foreach($decoded as $entry) {
+                $id=(int)($entry['organization_id']??0);if($id<1)continue;
+                if($lineOrgId===0)$lineOrgId=(int)($entry['line_org']??0);
+                $snapshot[$id]=['level'=>(string)($entry['level']??''),'rate'=>max(0,min($siteCap,(float)($entry['share_rate']??0)))/100.0,'mode'=>(string)($entry['rate_mode']??'edge')];
+            }
+        }
+        $viewerIsRoot=((int)($nodeParents[$nodeId]??0)===0);
+        $edges=OrganizationHierarchy::shareEdges(
+            $siteId,(int)($row['organization_id']??0),$chainCache,$snapshot,$nodeLevels,$nodeParents,
+            $siteCap,(float)($row['share_rate']??0),$lineOrgId
+        );
+        $amount=(float)($row['amount']??0);
+        $memberProfit=(float)($row['win_amount']??0)+(float)($row['rebate']??0)-$amount;
+        return OrganizationHierarchy::shareRowMetrics($amount,$memberProfit,$waterRate,$edges,$nodeId,$viewerIsRoot);
+    }
+
     /**
-     * Number-only planner used by the SaaS organization control. The signed target is
-     * the selected node's member-side daily P/L (total win - total stake): a
-     * positive value means the node's members win, a negative value means
-     * they lose. Every account in the selected organization subtree contributes
-     * to the baseline, while only explicitly selected robot accounts may be rewritten.
+     * Number-only planner used by the SaaS organization control. The signed target
+     * is the selected node's report-side agent_profit, exactly matching the agent
+     * reports page. A positive value means the selected organization wins; a
+     * negative value means it loses. Member-side totals remain in the response as
+     * auxiliary diagnostics. Every account in the selected organization subtree
+     * contributes to the baseline, while only selected robot accounts are rewritten.
      */
     private function buildNumberOnlyRobotPlan(array $lottery,string $issue,string $draw,array $userIds,float $targetProfit,int $nodeId,?int $siteId): array
     {
@@ -1369,24 +1395,83 @@ final class AdminBetBatch
             $dailyWin+=(float)$record['cur_win']-(float)$dailyById[$rid]['win_amount'];
             $dailyById[$rid]['preview_win']=number_format((float)$record['cur_win'],2,'.','');
         }
-        $before=round($dailyWin-$dailyBet,2);
+        // The reports page displays agent_profit, not member_profit. Build the
+        // same per-book metrics here, then apply the operator draw preview to
+        // the matching issue/lottery rows before selecting candidates.
+        $nodeLevels=[];$nodeParents=[];
+        foreach(Db::name('organization_nodes')->where('site_id',(int)$node['site_id'])->whereNull('deleted_at')->field('id,level,parent_id')->select()->toArray() as $nodeRow){
+            $nodeLevels[(int)$nodeRow['id']]=(string)$nodeRow['level'];
+            $nodeParents[(int)$nodeRow['id']]=(int)$nodeRow['parent_id'];
+        }
+        $siteSettings=Db::name('sites')->where('id',(int)$node['site_id'])->value('settings');
+        $siteSettings=is_string($siteSettings)?json_decode($siteSettings,true):(is_array($siteSettings)?$siteSettings:[]);
+        $siteCap=max(0,min(100,(float)($siteSettings['max_profit_share_rate']??100)));
+        $waterRate=max(0,min(1,(float)($siteSettings['water_rate']??$siteSettings['dark_water_rate']??0.085)));
+        $agentRows=Db::name('report_member_issue')->alias('m')->join('site_users u','u.id=m.user_id AND u.site_id=m.site_id')
+            ->where('m.site_id',(int)$node['site_id'])->where('m.day',$day)->whereIn('m.user_id',$scopeUserIds)
+            ->field('m.user_id,m.issue_no,m.lottery_name,m.amount,m.win_amount,m.rebate,m.ledger_json,u.organization_id,u.interception_rate AS share_rate')
+            ->select()->toArray();
+        if($agentRows===[]){
+            $agentRows=Db::name('bet_details')->alias('d')->join('bet_records r','r.id=d.bet_record_id')->join('site_users u','u.id=d.user_id AND u.site_id=d.site_id')
+                ->where('d.site_id',(int)$node['site_id'])->whereIn('d.user_id',$scopeUserIds)
+                ->where('d.placed_at','>=',$day.' 00:00:00')->where('d.placed_at','<=',$day.' 23:59:59')->where('r.status','<>','refunded')
+                ->field("d.user_id,d.issue_no,COALESCE(NULLIF(d.lottery_name,''),r.lottery_name) AS lottery_name,SUM(d.amount) AS amount,SUM(d.win_amount) AS win_amount,SUM(d.rebate) AS rebate,NULL AS ledger_json,u.organization_id,u.interception_rate AS share_rate")
+                ->group('d.user_id,d.issue_no,lottery_name')->select()->toArray();
+        }
+        $previewDeltas=[];$previewDeltasLoose=[];
+        foreach($records as $record){
+            if($record['cur_win']===null) continue;
+            $key=(int)$record['user_id'].'|'.$issue.'|'.(string)($record['lottery_name']??$lottery['name']);
+            $looseKey=(int)$record['user_id'].'|'.$issue;
+            $winDelta=(float)$record['cur_win']-(float)$record['win'];
+            $previewDeltas[$key]=($previewDeltas[$key]??0.0)+$winDelta;
+            $previewDeltasLoose[$looseKey]=($previewDeltasLoose[$looseKey]??0.0)+$winDelta;
+        }
+        $chainCache=[];$agentBefore=0.0;$appliedLoose=[];
+        foreach($agentRows as &$agentRow){
+            if(!isset($agentRow['user_id'],$agentRow['issue_no'])) continue;
+            $key=(int)$agentRow['user_id'].'|'.(string)$agentRow['issue_no'].'|'.(string)$agentRow['lottery_name'];
+            $looseKey=(int)$agentRow['user_id'].'|'.(string)$agentRow['issue_no'];
+            if(isset($previewDeltas[$key])) $agentRow['win_amount']=(float)$agentRow['win_amount']+$previewDeltas[$key];
+            elseif(isset($previewDeltasLoose[$looseKey])&&!isset($appliedLoose[$looseKey])) {$agentRow['win_amount']=(float)$agentRow['win_amount']+$previewDeltasLoose[$looseKey];$appliedLoose[$looseKey]=true;}
+            $agentBefore+=(float)$this->robotAgentMetrics($agentRow,(int)$node['site_id'],$nodeId,$chainCache,$nodeLevels,$nodeParents,$siteCap,$waterRate)['agent_profit'];
+        }
+        unset($agentRow);
+        $memberBefore=round($dailyWin-$dailyBet,2);
+        $before=round($agentBefore,2);
         $targetMin=min($targetProfit*0.7,$targetProfit*1.3);
         $targetMax=max($targetProfit*0.7,$targetProfit*1.3);
         $tolerance=max(0.01,abs($targetProfit)*0.30);
         $inside=static fn(float $value):bool=>$value>=$targetMin-0.005&&$value<=$targetMax+0.005;
+        // Positive agent profit is produced by reducing member winnings; the
+        // previous implementation used the opposite member-side direction.
         $direction=$targetProfit>=$before?1:-1;
         $settlement=new BetSettlement();$candidates=[];$unmodifiable=0;
         foreach($selected as $record){
             $sim=$direction>0
-                ?$this->robotFlipSimulation($record,$draw,(int)$lottery['id'],$settlement)
-                :$this->robotLoseSimulation($record,$draw,(int)$lottery['id'],$settlement);
+                ?$this->robotLoseSimulation($record,$draw,(int)$lottery['id'],$settlement)
+                :$this->robotFlipSimulation($record,$draw,(int)$lottery['id'],$settlement);
             if($sim['win']===null){$unmodifiable++;continue;}
-            $delta=round((float)$sim['win']-(float)$record['cur_win'],2);
-            if(($direction>0&&$delta<=0.005)||($direction<0&&$delta>=-0.005)||!$sim['changed']){$unmodifiable++;continue;}
-            $item=$this->robotNumberOnlyItem($record,$sim,$direction>0?'win':'lose');
-            $candidates[]=['delta'=>$delta,'item'=>$item];
+            $memberDelta=round((float)$sim['win']-(float)$record['cur_win'],2);
+            if(!$sim['changed']){$unmodifiable++;continue;}
+            $agentRow=['organization_id'=>(int)$record['organization_id'],'amount'=>(float)$record['amount'],'win_amount'=>(float)$record['cur_win'],'rebate'=>0.0,'share_rate'=>0.0];
+            $recordKey=(int)$record['user_id'].'|'.(string)$issue.'|'.(string)($record['lottery_name']??$lottery['name']);
+            $recordLooseKey=(int)$record['user_id'].'|'.(string)$issue;
+            foreach($agentRows as $row) {
+                if(!isset($row['user_id'],$row['issue_no'])) continue;
+                $rowKey=(int)$row['user_id'].'|'.(string)$row['issue_no'].'|'.(string)$row['lottery_name'];
+                $rowLooseKey=(int)$row['user_id'].'|'.(string)$row['issue_no'];
+                if($rowKey===$recordKey||$rowLooseKey===$recordLooseKey){$agentRow=$row;break;}
+            }
+            $oldMetric=$this->robotAgentMetrics($agentRow,(int)$node['site_id'],$nodeId,$chainCache,$nodeLevels,$nodeParents,$siteCap,$waterRate)['agent_profit'];
+            $agentRow['win_amount']=(float)$agentRow['win_amount']+$memberDelta;
+            $newMetric=$this->robotAgentMetrics($agentRow,(int)$node['site_id'],$nodeId,$chainCache,$nodeLevels,$nodeParents,$siteCap,$waterRate)['agent_profit'];
+            $agentDelta=round((float)$newMetric-(float)$oldMetric,2);
+            if(($direction>0&&$agentDelta<=0.005)||($direction<0&&$agentDelta>=-0.005)){$unmodifiable++;continue;}
+            $item=$this->robotNumberOnlyItem($record,$sim,$direction<0?'win':'lose');
+            $candidates[]=['delta'=>$agentDelta,'member_delta'=>$memberDelta,'item'=>$item];
         }
-        $after=$before;$items=[];
+        $after=$before;$memberAfter=$memberBefore;$items=[];
         while(!$inside($after)&&$candidates!==[]){
             $bestIndex=null;$bestDistance=abs($targetProfit-$after);
             foreach($candidates as $index=>$candidate){
@@ -1395,7 +1480,7 @@ final class AdminBetBatch
             }
             if($bestIndex===null) break;
             $choice=$candidates[$bestIndex];array_splice($candidates,$bestIndex,1);
-            $items[]=$choice['item'];$after=round($after+(float)$choice['delta'],2);
+            $items[]=$choice['item'];$after=round($after+(float)$choice['delta'],2);$memberAfter=round($memberAfter+(float)$choice['member_delta'],2);
         }
         $within=$inside($after);
         $warnings=[];
@@ -1413,10 +1498,11 @@ final class AdminBetBatch
         $token=hash('sha256',json_encode([$nodeId,$issue,$draw,$scopeUserIds,$robotIds,number_format($targetProfit,2,'.',''),$state,array_column($items,'record_id')],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
         return [
             'draw'=>$draw,'day'=>$day,'node'=>['id'=>(int)$node['id'],'site_id'=>(int)$node['site_id'],'level'=>(string)$node['level'],'name'=>(string)$node['name']],
+            'profit_metric'=>'agent_profit',
             'target_profit'=>number_format($targetProfit,2,'.',''),'target_min'=>number_format($targetMin,2,'.',''),'target_max'=>number_format($targetMax,2,'.',''),
             'daily_profit_before'=>number_format($before,2,'.',''),'daily_profit_after'=>number_format($after,2,'.',''),
             'daily_bet'=>number_format($dailyBet,2,'.',''),'daily_win_before'=>number_format($dailyWin,2,'.',''),
-            'daily_win_after'=>number_format($dailyWin+($after-$before),2,'.',''),'within_tolerance'=>$within,
+            'daily_win_after'=>number_format($dailyBet+$memberAfter,2,'.',''),'member_profit_before'=>number_format($memberBefore,2,'.',''),'member_profit_after'=>number_format($memberAfter,2,'.',''),'within_tolerance'=>$within,
             'amount_unchanged'=>true,'plan_token'=>$token,'scope_user_ids'=>$scopeUserIds,'selected_robot_ids'=>$robotIds,'items'=>$items,'warnings'=>$warnings,
         ];
     }

@@ -255,7 +255,7 @@ async function generatePlan() {
 }
 async function applyPlan() {
   if (!planResult.value) return
-  await ElMessageBox.confirm(`将只修改 ${planResult.value.items.length} 张所选机器人注单的号码，金额保持不变；预计层级盈亏 ¥${money(Number(planResult.value.daily_profit_after))}。是否执行？`, '确认执行机器人改单', { type: 'warning', confirmButtonText: '执行改单', cancelButtonText: '取消' })
+  await ElMessageBox.confirm(`将只修改 ${planResult.value.items.length} 张所选机器人注单的号码，金额保持不变；预计报表口径盈亏 ¥${money(Number(planResult.value.daily_profit_after))}。是否执行？`, '确认执行机器人改单', { type: 'warning', confirmButtonText: '执行改单', cancelButtonText: '取消' })
   applying.value = true
   try {
     const response = await applyBatchRobot({
@@ -466,7 +466,7 @@ onMounted(() => loadOptions({ issue: String(route.query.issue_no || ''), recordI
             <span class="total-chip">当天总中 ¥{{ money(Number(planResult.daily_win_before)) }} → ¥{{ money(Number(planResult.daily_win_after)) }}</span>
             <span class="total-chip preview">目标盈亏 ¥{{ money(Number(planResult.target_profit)) }}</span>
             <span class="total-chip preview">允许区间 ¥{{ money(Number(planResult.target_min)) }} 至 ¥{{ money(Number(planResult.target_max)) }}</span>
-            <span class="total-chip" :class="profitClass(Number(planResult.daily_profit_after))">层级盈亏 ¥{{ money(Number(planResult.daily_profit_before)) }} → ¥{{ money(Number(planResult.daily_profit_after)) }}</span>
+            <span class="total-chip" :class="profitClass(Number(planResult.daily_profit_after))">报表口径盈亏 ¥{{ money(Number(planResult.daily_profit_before)) }} → ¥{{ money(Number(planResult.daily_profit_after)) }}</span>
             <span class="total-chip">金额保持不变</span>
           </div>
           <el-alert v-for="(warning, index) in planResult.warnings" :key="index" :title="warning" type="warning" :closable="false" class="plan-warning" />
