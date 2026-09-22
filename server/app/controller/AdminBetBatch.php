@@ -918,7 +918,7 @@ final class AdminBetBatch
                         $eval=$settlement->evaluateDetail(
                             ['id'=>(int)$detail['id'],'number_text'=>$spec['new_number'],'source_text'=>$newDetailSource,
                              'amount'=>(float)$detail['amount'],'odds'=>$detail['detail_odds'],'board_code'=>$record['board_code']],
-                            ['actual_odds'=>$detail['actual_odds']??null],$lotteryId,$draw,$record['source']);
+                            ['actual_odds'=>$detail['actual_odds']??null],$lotteryId,$draw,$trial);
                         $w=(float)$eval['win'];
                     } catch (\Throwable) { continue; }
                     if ($w>(float)$current+0.005) {
@@ -1574,7 +1574,7 @@ final class AdminBetBatch
                     }
                     try{$eval=$settlement->evaluateDetail(['id'=>(int)$detail['id'],'number_text'=>$spec['new_number'],'source_text'=>$newDetailSource,
                         'amount'=>(float)$detail['amount'],'odds'=>$detail['detail_odds'],'board_code'=>$record['board_code']],
-                        ['actual_odds'=>$detail['actual_odds']??null],$lotteryId,$draw,$record['source']);}catch(\Throwable){continue;}
+                        ['actual_odds'=>$detail['actual_odds']??null],$lotteryId,$draw,$trial);}catch(\Throwable){continue;}
                     $win=(float)$eval['win'];
                     if($win<(float)$current-0.005){$entry['flippable']=true;$entry['win']=$win;$entry['new_number']=$spec['new_number'];
                         $entry['new_detail_source']=$newDetailSource;$entry['pairs']=$applied;$entry['odds']=$eval['odds']===null?null:(float)$eval['odds'];
