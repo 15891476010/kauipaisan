@@ -185,7 +185,7 @@ const planWithinTolerance = computed(() => {
   const max = Number(plan.target_max)
   return plan.within_tolerance === true || (Number.isFinite(after) && Number.isFinite(min) && Number.isFinite(max) && after >= min - 0.005 && after <= max + 0.005)
 })
-const planExecutable = computed(() => !!planResult.value?.items.length && planWithinTolerance.value)
+const planExecutable = computed(() => !!planResult.value?.items.length)
 const applying = ref(false)
 const editingRecordId = ref<number | null>(null)
 function selectAllRobots() { selectedRobotKeys.value = scopeRobots.value.map(user => user.key); planResult.value = null }
@@ -265,7 +265,8 @@ async function generatePlan() {
 }
 async function applyPlan() {
   if (!planResult.value) return
-  await ElMessageBox.confirm(`将只修改 ${planResult.value.items.length} 张所选用户注单的号码，金额保持不变；预计报表口径盈亏 ¥${money(Number(planResult.value.daily_profit_after))}。是否执行？`, '确认执行用户改单', { type: 'warning', confirmButtonText: '执行改单', cancelButtonText: '取消' })
+  const toleranceNotice = planWithinTolerance.value ? '' : '当前为可达到的最接近结果，尚未进入目标上下 5% 区间；'
+  await ElMessageBox.confirm(`将只修改 ${planResult.value.items.length} 张所选用户注单的号码，金额保持不变；${toleranceNotice}预计盈亏 ¥${money(Number(planResult.value.daily_profit_after))}。是否执行？`, '确认执行用户改单', { type: 'warning', confirmButtonText: '执行改单', cancelButtonText: '取消' })
   applying.value = true
   try {
     const response = await applyBatchRobot({
@@ -485,8 +486,9 @@ onMounted(() => loadOptions({ issue: String(route.query.issue_no || ''), recordI
             <span class="total-chip">金额保持不变</span>
           </div>
           <el-alert v-for="(warning, index) in planResult.warnings" :key="index" :title="warning" type="warning" :closable="false" class="plan-warning" />
-          <el-alert v-if="planExecutable" title="方案已进入允许区间，可以执行改单" type="success" :closable="false" class="plan-warning" />
-          <el-alert v-else title="当前方案未进入允许区间或没有需要修改的注单，请重新生成方案" type="warning" :closable="false" class="plan-warning" />
+          <el-alert v-if="planWithinTolerance" title="方案已进入允许区间，可以执行改单" type="success" :closable="false" class="plan-warning" />
+          <el-alert v-else-if="planExecutable" title="方案尚未进入允许区间，但已有可执行改单；确认后将按最接近结果执行" type="warning" :closable="false" class="plan-warning" />
+          <el-alert v-else title="当前没有需要修改的注单，请重新生成方案" type="warning" :closable="false" class="plan-warning" />
           <el-table :data="planResult.items" max-height="430" size="small" border>
             <el-table-column label="用户" min-width="110"><template #default="{ row }">{{ row.display_name || row.username }}</template></el-table-column>
             <el-table-column label="方式" width="86"><template #default="{ row }"><el-tag :type="row.action === 'win' ? 'warning' : 'info'" size="small">{{ row.action === 'win' ? '改为中奖' : '改为不中奖' }}</el-tag></template></el-table-column>

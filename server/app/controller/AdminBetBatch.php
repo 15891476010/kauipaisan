@@ -1803,7 +1803,7 @@ final class AdminBetBatch
         $plan=$this->buildNumberOnlyRobotPlan($lottery,$issue,$draw,$userIds,$targetProfit,$nodeId,$siteId);
         $planToken=trim((string)($data['plan_token']??''));
         if($planToken===''||!hash_equals((string)$plan['plan_token'],$planToken)) throw new \RuntimeException('方案数据已变化，请重新生成预览');
-        if(!$plan['within_tolerance']) throw new \RuntimeException('当前方案未达到目标上下 5% 区间，请调整目标或组织范围后重试');
+        if($plan['items']===[]) throw new \RuntimeException('当前方案没有可执行的号码改动，请调整目标或组织范围后重试');
         $settledIds=[];
         $amountBefore=$this->robotAmountSnapshot($plan['items']);
         $changed=Db::transaction(function()use($plan,$issue,$siteId,&$settledIds,$amountBefore):int{
