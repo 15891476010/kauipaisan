@@ -177,6 +177,15 @@ const robotAmount = ref('')
 const planLoading = ref(false)
 const planDialog = ref(false)
 const planResult = ref<RobotPlanResult | null>(null)
+const planWithinTolerance = computed(() => {
+  const plan = planResult.value
+  if (!plan) return false
+  const after = Number(plan.daily_profit_after)
+  const min = Number(plan.target_min)
+  const max = Number(plan.target_max)
+  return plan.within_tolerance === true || (Number.isFinite(after) && Number.isFinite(min) && Number.isFinite(max) && after >= min - 0.005 && after <= max + 0.005)
+})
+const planExecutable = computed(() => !!planResult.value?.items.length && planWithinTolerance.value)
 const applying = ref(false)
 const editingRecordId = ref<number | null>(null)
 function selectAllRobots() { selectedRobotKeys.value = scopeRobots.value.map(user => user.key); planResult.value = null }
@@ -476,6 +485,8 @@ onMounted(() => loadOptions({ issue: String(route.query.issue_no || ''), recordI
             <span class="total-chip">金额保持不变</span>
           </div>
           <el-alert v-for="(warning, index) in planResult.warnings" :key="index" :title="warning" type="warning" :closable="false" class="plan-warning" />
+          <el-alert v-if="planExecutable" title="方案已进入允许区间，可以执行改单" type="success" :closable="false" class="plan-warning" />
+          <el-alert v-else title="当前方案未进入允许区间或没有需要修改的注单，请重新生成方案" type="warning" :closable="false" class="plan-warning" />
           <el-table :data="planResult.items" max-height="430" size="small" border>
             <el-table-column label="用户" min-width="110"><template #default="{ row }">{{ row.display_name || row.username }}</template></el-table-column>
             <el-table-column label="方式" width="86"><template #default="{ row }"><el-tag :type="row.action === 'win' ? 'warning' : 'info'" size="small">{{ row.action === 'win' ? '改为中奖' : '改为不中奖' }}</el-tag></template></el-table-column>
@@ -484,7 +495,7 @@ onMounted(() => loadOptions({ issue: String(route.query.issue_no || ''), recordI
             <el-table-column label="中奖" width="160"><template #default="{ row }"><span :class="{ won: Number(row.new_win) > 0 }">¥{{ row.old_win }} → ¥{{ row.new_win }}</span></template></el-table-column>
           </el-table>
         </template>
-        <template #footer><el-button @click="planDialog = false">取消</el-button><el-button type="danger" :loading="applying" :disabled="!planResult?.within_tolerance" @click="applyPlan">确认执行改单</el-button></template>
+        <template #footer><el-button @click="planDialog = false">取消</el-button><el-button type="danger" :loading="applying" :disabled="!planExecutable" @click="applyPlan">确认执行改单</el-button></template>
       </el-dialog>
     </template>
   </div>
