@@ -406,6 +406,42 @@ final class AdminBetBatch
             foreach (Db::name('robot_accounts')->whereIn('user_id',$allUserIds)->column('user_id') as $robotUserId)
                 $robotUserIds[(int)$robotUserId]=true;
             foreach ($users as $userKey=>$user) $users[$userKey]['is_robot']=isset($robotUserIds[(int)$user['user_id']]);
+
+            // Each organization row must show that node's own report-side
+            // profit, not the same member win-minus-bet subtotal repeated at
+            // every ancestor. The member subtotal remains available in users
+            // for the separate “范围内会员” row.
+            $userShareRates=Db::name('site_users')->whereIn('id',$allUserIds)->column('interception_rate','id');
+            $nodeLevels=[];$nodeParents=[];
+            foreach($tree as $treeNode){
+                $nodeLevels[(int)$treeNode['id']]=(string)$treeNode['level'];
+                $nodeParents[(int)$treeNode['id']]=(int)$treeNode['parent_id'];
+            }
+            $siteMetricConfig=[];$chainCaches=[];
+            foreach($siteIds as $metricSiteId){
+                $settings=Db::name('sites')->where('id',(int)$metricSiteId)->value('settings');
+                $settings=is_string($settings)?json_decode($settings,true):(is_array($settings)?$settings:[]);
+                $siteMetricConfig[(int)$metricSiteId]=[
+                    'cap'=>max(0,min(100,(float)($settings['max_profit_share_rate']??100))),
+                    'water'=>max(0,min(1,(float)($settings['water_rate']??$settings['dark_water_rate']??0.085))),
+                ];
+                $chainCaches[(int)$metricSiteId]=[];
+            }
+            foreach($tree as $treeKey=>&$treeNode){
+                $nodePath=(string)$treeNode['path'];$metricSiteId=(int)$treeNode['site_id'];$calculated=0.0;$metricUnknown=false;
+                foreach($users as $userKey=>$user){
+                    if((int)$user['site_id']!==$metricSiteId||$nodePath===''||!str_starts_with((string)($user['org_path']??''),$nodePath))continue;
+                    $stats=$user['stats']??null;
+                    if(!is_array($stats)||$stats['win']===null){$metricUnknown=true;continue;}
+                    $row=['organization_id'=>(int)$user['organization_id'],'amount'=>(float)$stats['bet'],'win_amount'=>(float)$stats['win'],
+                        'rebate'=>0.0,'ledger_json'=>null,'share_rate'=>(float)($userShareRates[(int)$user['user_id']]??0)];
+                    $config=$siteMetricConfig[$metricSiteId];
+                    $metrics=$this->robotAgentMetrics($row,$metricSiteId,(int)$treeNode['id'],$chainCaches[$metricSiteId],$nodeLevels,$nodeParents,$config['cap'],$config['water']);
+                    $calculated+=(float)$metrics['agent_profit'];
+                }
+                $treeNode['calculated_profit']=$metricUnknown?null:number_format($calculated,2,'.','');
+            }
+            unset($treeNode);
         }
         return $this->reply(['lotteries'=>$lotteries,'lottery'=>$lottery,'issue_no'=>$issue,'issues'=>$issues,'draw'=>$draw,'tree'=>$tree,'selected_record_ids'=>$selectedRecordIds,'selected_user_ids'=>$selectedUserIds,'users'=>array_values($users)]);
     }

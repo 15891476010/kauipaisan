@@ -150,6 +150,7 @@ const subtreeUsers = (node: BatchBetNode) => node.id === pseudoId.value
   ? users.value.filter(user => user.site_id === node.site_id && (!user.organization_id || !nodePathById.value.has(user.organization_id)))
   : users.value.filter(user => user.site_id === node.site_id && !!user.org_path && node.path !== '' && user.org_path.startsWith(node.path))
 function nodeTotals(node: BatchBetNode) { return finalize(sumStats(subtreeUsers(node))) }
+function nodeCalculatedProfit(node: BatchBetNode) { return node.calculated_profit == null ? null : Number(node.calculated_profit) }
 function nodeLabel(node: BatchBetNode) { return `${node.label} ${node.name}` }
 function memberLabel(user: BatchBetUser) { return `${user.display_name || user.username}（${user.username}，${user.number_count ?? user.numbers.length}条）` }
 // Every selected level keeps its own stats row — picking a deeper node adds a
@@ -157,7 +158,7 @@ function memberLabel(user: BatchBetUser) { return `${user.display_name || user.u
 const chainStats = computed(() => orgChain.value
   .map(id => tree.value.find(node => node.id === id) ?? rootNodes.value.find(node => node.id === id))
   .filter((node): node is BatchBetNode => !!node)
-  .map(node => ({ node, totals: finalize(nodeTotals(node)) })))
+  .map(node => ({ node, totals: finalize(nodeTotals(node)), levelProfit: nodeCalculatedProfit(node) })))
 const visibleUserStats = computed(() => visibleUser.value ? adjustedStats(visibleUser.value) : null)
 
 // ---- Organization-scope number adjustment ---------------------------------
@@ -412,7 +413,7 @@ onMounted(() => loadOptions({ issue: String(route.query.issue_no || ''), recordI
           <span class="level-tag">{{ row.node.label }} {{ row.node.name }}</span>
           <span class="total-chip">总投 ¥{{ money(row.totals.bet) }}</span>
           <span class="total-chip">总中 ¥{{ money(row.totals.win) }}</span>
-          <span class="total-chip" :class="profitClass(row.totals.profit)">盈亏 ¥{{ money(row.totals.profit) }}</span>
+          <span class="total-chip" :class="profitClass(row.levelProfit)">层级盈亏 ¥{{ money(row.levelProfit) }}</span>
           <template v-if="row.totals.touched"><span class="total-chip preview">预览总投 ¥{{ money(row.totals.pBet) }}</span><span class="total-chip preview">预览总中 ¥{{ money(row.totals.pWin) }}</span><span class="total-chip preview" :class="profitClass(row.totals.pProfit)">预览盈亏 ¥{{ money(row.totals.pProfit) }}</span></template>
         </div>
         <div v-if="selectedUsers.length" class="totals-row">

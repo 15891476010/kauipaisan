@@ -154,6 +154,7 @@ export type BatchBetNode = {
   label: string;
   name: string;
   path: string;
+  calculated_profit?: string | null;
 };
 export type BatchBetPreviewResult = {
   record_id: number;
