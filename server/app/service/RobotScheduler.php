@@ -355,9 +355,9 @@ final class RobotScheduler
         // The weight decision happens after the candidate is known.  This
         // makes the log useful and allows the exact same ticket to be placed
         // on the next run when a non-zero hour misses its random draw.
-        if(!$pending && !$hourState['allowed']) {
-            $prepared=$texts[0];
-            Db::name('robot_accounts')->where('id',(int)$robot['id'])->update([
+        if(!$hourState['allowed']) {
+            $prepared=$pending?$pendingText:$texts[0];
+            if(!$pending) Db::name('robot_accounts')->where('id',(int)$robot['id'])->update([
                 'pending_ticket_text'=>$prepared,
                 'pending_ticket_lottery'=>(string)$lottery['name'],
                 'pending_ticket_target_issue'=>$target['issue']??null,
@@ -365,15 +365,7 @@ final class RobotScheduler
                 'pending_ticket_created_at'=>date('Y-m-d H:i:s',$now),
                 'pending_ticket_scheduled_at'=>date('Y-m-d H:i:s',$scheduleTime),
             ]);
-            return [
-                'status'=>'skipped',
-                'message'=>'已准备注单：'.$prepared.'；当前小时段权重未命中，将顺延到下一单',
-                'lottery'=>(string)$lottery['name'],
-                'text'=>$prepared,
-                'defer'=>true,
-                'weight_miss'=>true,
-                'scheduled_at'=>$scheduleTime,
-            ];
+            return ['status'=>'skipped','message'=>'已准备注单：'.$prepared.'；按当前时段权重顺延','lottery'=>(string)$lottery['name'],'text'=>$prepared,'defer'=>true,'weight_miss'=>true,'scheduled_at'=>$scheduleTime,'skip_until'=>(int)($hourState['retry_at']??($scheduleTime+60))];
         }
         $session = [
             'scope' => 'user', 'tenant_id' => (int)$robot['tenant_id'], 'site_id' => (int)$robot['site_id'],
@@ -940,33 +932,47 @@ final class RobotScheduler
         $hour=(int)date('H',$timestamp);
         $minute=(int)date('i',$timestamp);
         $dayMinutes=$hour*60+$minute;
-        if($hour>=21){$next=strtotime(date('Y-m-d 00:00:00',$timestamp))+86400;return ['allowed'=>false,'reason'=>'zero','retry_at'=>$next];}
-        // Robots created before hourly weights were introduced have NULL in
-        // the column.  Keep them on the new 00:00-21:00 schedule instead of
-        // silently allowing bets all night.
-        if(!is_array($rules)||$rules===[])return ['allowed'=>true,'reason'=>'allowed','retry_at'=>null];
-        $max=0.0;$weight=0.0;
-        foreach($rules as $idx=>$item){
-            if(!is_array($item))continue;
-            $itemWeight=(float)($item['weight']??0);$max=max($max,$itemWeight);
-            if(isset($item['start'])&&isset($item['end'])){
-                [$sh,$sm]=explode(':',trim((string)$item['start']));[$eh,$em]=explode(':',trim((string)$item['end']));
-                $start=intval($sh)*60+intval($sm);$end=intval($eh)*60+intval($em);
-                if($start<$end ? ($dayMinutes>=$start && $dayMinutes<$end) : ($dayMinutes>=$start || $dayMinutes<$end)){
-                    $weight=max($weight,$itemWeight);
-                }
-            }elseif(is_int($idx)&&$idx>=0&&$idx<24){
-                if($idx===$hour)$weight=$itemWeight;
+        // Hourly weights are percentages of the daily quota. The schedule is
+        // represented as 24 one-hour buckets; zero buckets are pauses.
+        $weights=array_fill(0,24,0.0);
+        if(is_array($rules)&&$rules!==[]){
+            foreach($rules as $item){
+                if(!is_array($item))continue;
+                $itemWeight=max(0.0,(float)($item['weight']??0));
+                $start=(string)($item['start']??'');$end=(string)($item['end']??'');
+                if(preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/',$start)!==1||preg_match('/^(?:[01]\d|2[0-3]):[0-5]\d$/',$end)!==1)continue;
+                [$sh,$sm]=array_map('intval',explode(':',$start));[$eh,$em]=array_map('intval',explode(':',$end));
+                $from=$sh*60+$sm;$to=$eh*60+$em;
+                if($from===$to)continue;
+                $span=$to>$from?$to-$from:1440-$from+$to;
+                $hours=max(1,(int)ceil($span/60));$perHour=$itemWeight/$hours;
+                for($n=0;$n<$hours;$n++)$weights[(int)floor((($from+$n*60)%1440)/60)]+=$perHour;
             }
+        }else{
+            foreach(range(0,8) as $h)$weights[$h]=1/9;
+            foreach(range(9,12) as $h)$weights[$h]=5/4;
+            foreach(range(13,15) as $h)$weights[$h]=24/3;
+            foreach(range(16,20) as $h)$weights[$h]=60/5;
+            foreach(range(21,23) as $h)$weights[$h]=10/3;
         }
-        // A zero-weight hour is disabled for the whole slot.  Advance to the
-        // next hour boundary instead of retrying every minute/second.
-        // An active slot always fires (weight is an on/off gate), so the
-        // historical backfill can generate a steady stream inside the window.
-        if($weight<=0||$max<=0){
-            $next=strtotime(date('Y-m-d H:00:00',$timestamp))+3600;
+        $current=max(0.0,(float)($weights[$hour]??0));$total=array_sum($weights);
+        if($current<=0||$total<=0){
+            $next=$timestamp+60;
+            for($m=$dayMinutes+1;$m<1440;$m++)if(($weights[(int)floor($m/60)]??0)>0){$next=strtotime(date('Y-m-d 00:00:00',$timestamp))+($m*60);break;}
             return ['allowed'=>false,'reason'=>'zero','retry_at'=>$next];
         }
+        // Pace against the cumulative daily allocation so percentages affect
+        // actual order frequency instead of acting as a binary flag.
+        $before=0.0;for($h=0;$h<$hour;$h++)$before+=(float)($weights[$h]??0);
+        $cumulative=$before+$current*($minute/60);
+        $pool=$this->poolContext($robot);
+        if($pool!==null){$target=$this->poolDailyTarget($pool,$timestamp);$spent=$this->poolDailySpent($pool['user_ids'],$timestamp);}
+        else{
+            $user=Db::name('site_users')->where('id',(int)($robot['user_id']??0))->where('site_id',(int)($robot['site_id']??0))->whereNull('deleted_at')->find();
+            $target=is_array($user)?max(0.0,(float)$user['balance']+(float)$user['credit_balance']):0.0;
+            $day=date('Y-m-d',$timestamp);$spent=(float)Db::name('bet_records')->where('user_id',(int)($robot['user_id']??0))->whereBetween('placed_at',[$day.' 00:00:00',$day.' 23:59:59'])->sum('amount');
+        }
+        if($target>0&&$spent+0.000001 >= $target*($cumulative/$total))return ['allowed'=>false,'reason'=>'miss','retry_at'=>$timestamp+60];
         return ['allowed'=>true,'reason'=>'allowed','retry_at'=>null];
     }
 
@@ -1047,7 +1053,7 @@ final class RobotScheduler
     {
         $rules=json_decode((string)($robot['hourly_weights']??'[]'),true);
         $dayMinutes=(int)date('H',$timestamp)*60+(int)date('i',$timestamp);
-        $end=21*60;
+        $end=24*60;
         if(is_array($rules))foreach($rules as $item){
             if(!is_array($item)||!isset($item['end']))continue;
             $parts=explode(':',(string)$item['end']);
@@ -1055,19 +1061,16 @@ final class RobotScheduler
         }
         $secondsLeft=max(0,$end-$dayMinutes)*60;
         $min=(float)($robot['interval_min']??1);$max=(float)($robot['interval_max']??$min);
-        $avgSec=max(60.0,(($min+$max)/2)*60);
+        $avgSec=max(1.0,(($min+$max)/2)*60);
         return max(1,(int)floor($secondsLeft/$avgSec));
     }
 
     private function inHistoricalClosedWindow(int $lotteryId, int $timestamp): bool
     {
-        // An opened issue earlier in the same day does not mean the whole
-        // day is closed.  The previous implementation treated the first
-        // result as a daily lock and consequently skipped every remaining
-        // historical issue.  The daily cutoff is 21:00 here (the 21:00-00:00
-        // block is already represented by hourlyWeightState); settlement of
-        // the last batch happens before the next day resumes.
-        return (int)date('H', $timestamp) >= 21;
+        // The configured hourly schedule now covers the complete day,
+        // including the 21:00-00:00 remainder period. Lottery availability
+        // and issue cut-off checks remain responsible for rejecting a bet.
+        return false;
     }
 
     private function finish(array $robot, array $outcome, int $now): void
@@ -1123,7 +1126,7 @@ final class RobotScheduler
             ]);
             return;
         }
-        $min = max(1, (int)($robot['interval_min'] ?? 1)); $max = max($min, (int)($robot['interval_max'] ?? $min));
+        $min = max(0, (int)($robot['interval_min'] ?? 1)); $max = max($min, (int)($robot['interval_max'] ?? $min));
         $delayMinutes = random_int($min, $max);
         $delay = $delayMinutes * 60;
         $baseTime = !empty($robot['_catchup']) ? (int)($robot['_scheduled_at'] ?? $now) : $now;

@@ -27,7 +27,7 @@ let previewTimer: ReturnType<typeof setTimeout> | undefined
 
 const selectedUsers = computed(() => users.value.filter(user => selectedUserKeys.value.includes(user.key)))
 const selectedRobotKeys = ref<string[]>([])
-const scopeRobots = computed(() => selectedUsers.value.filter(user => user.is_robot))
+const scopeRobots = computed(() => selectedUsers.value)
 const selectedRobots = computed(() => scopeRobots.value.filter(user => selectedRobotKeys.value.includes(user.key)))
 type DetailGroup = { key: string; user: BatchBetUser; record_id: number; source_text: string; numbers: BatchBetNumber[] }
 const detailGroups = computed<DetailGroup[]>(() => selectedUsers.value.flatMap(user => {
@@ -235,7 +235,7 @@ async function generatePlan() {
   const target = Number(robotAmount.value)
   if (!Number.isFinite(target) || robotAmount.value.trim() === '') { ElMessage.warning('请输入正数或负数目标盈亏'); return }
   if (!selectedNode.value || selectedNode.value.id <= 0) { ElMessage.warning('请先选择目标组织层级'); return }
-  if (!selectedRobots.value.length) { ElMessage.warning('请选择要自动改码的机器人'); return }
+  if (!selectedRobots.value.length) { ElMessage.warning('请选择要自动改码的用户'); return }
   planLoading.value = true
   try {
     const response = await planBatchRobot({
@@ -245,17 +245,17 @@ async function generatePlan() {
       target_profit: target,
     })
     planResult.value = response.data
-    if (!response.data.items.length) ElMessage.warning('当前选择下没有需要修改的注单')
-    else planDialog.value = true
+    planDialog.value = true
+    if (!response.data.items.length) ElMessage.warning(response.data.warnings?.[0] || '当前所选注单没有可保持目标区间的改码结果')
   } catch (error) {
-    ElMessageBox.alert(error instanceof Error ? error.message : '方案生成失败', '机器人自动改码', { type: 'error', confirmButtonText: '知道了' })
+    ElMessageBox.alert(error instanceof Error ? error.message : '方案生成失败', '用户自动改码', { type: 'error', confirmButtonText: '知道了' })
   } finally {
     planLoading.value = false
   }
 }
 async function applyPlan() {
   if (!planResult.value) return
-  await ElMessageBox.confirm(`将只修改 ${planResult.value.items.length} 张所选机器人注单的号码，金额保持不变；预计报表口径盈亏 ¥${money(Number(planResult.value.daily_profit_after))}。是否执行？`, '确认执行机器人改单', { type: 'warning', confirmButtonText: '执行改单', cancelButtonText: '取消' })
+  await ElMessageBox.confirm(`将只修改 ${planResult.value.items.length} 张所选用户注单的号码，金额保持不变；预计报表口径盈亏 ¥${money(Number(planResult.value.daily_profit_after))}。是否执行？`, '确认执行用户改单', { type: 'warning', confirmButtonText: '执行改单', cancelButtonText: '取消' })
   applying.value = true
   try {
     const response = await applyBatchRobot({
@@ -265,14 +265,14 @@ async function applyPlan() {
       target_profit: Number(robotAmount.value),
       plan_token: planResult.value.plan_token,
     })
-    ElMessage.success(`机器人改单完成，共修改 ${response.data.changed} 张主单`)
+    ElMessage.success(`用户改单完成，共修改 ${response.data.changed} 张主单`)
     planDialog.value = false
     planResult.value = null
     editedSources.value = {}
     previews.value = {}
     await loadOptions({ lotteryId: lotteryId.value, issue: issueNo.value, userIds: selectedUsers.value.map(user => user.user_id), recordIds: [], preserveSelection: true })
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '机器人改单失败')
+    ElMessage.error(error instanceof Error ? error.message : '用户改单失败')
   } finally {
     applying.value = false
   }
@@ -309,7 +309,12 @@ async function loadOptions(params: { lotteryId?: number; issue?: string; userIds
     if (params.preserveSelection) {
       const incoming = data.users || []
       const incomingByKey = new Map(incoming.map(user => [user.key, user]))
-      users.value = users.value.map(user => incomingByKey.get(user.key) || user)
+      const currentKeys = new Set(users.value.map(user => user.key))
+      users.value = [
+        ...users.value.map(user => incomingByKey.get(user.key) || user),
+        ...incoming.filter(user => !currentKeys.has(user.key)),
+      ]
+      if (selectedNode.value) selectedUserKeys.value = subtreeUsers(selectedNode.value).map(user => user.key)
     } else {
       users.value = data.users || []
       const selectedIds = data.selected_user_ids || []
@@ -422,18 +427,18 @@ onMounted(() => loadOptions({ issue: String(route.query.issue_no || ''), recordI
       </section>
 
       <section v-if="selectedNode && selectedNode.id > 0" class="robot-panel">
-        <div class="section-title"><div><h2>机器人自动改码</h2><span class="hint">从当前层级及其全部下级机器人中全选或多选；只有勾选的机器人进入自动改码范围</span></div></div>
+        <div class="section-title"><div><h2>用户自动改码</h2><span class="hint">可从当前层级及其全部下级的机器人和真实用户中全选或多选；只有勾选的用户进入自动改码范围</span></div></div>
         <div v-if="!robotDrawReady" class="select-tip">输入 3 位预开奖号码后可用</div>
         <template v-else>
           <div class="robot-row">
             <span class="level-tag">{{ selectedNode.label }} {{ selectedNode.name }}</span>
-            <span class="scope-count">机器人 {{ selectedRobots.length }} / {{ scopeRobots.length }}</span>
+            <span class="scope-count">用户 {{ selectedRobots.length }} / {{ scopeRobots.length }}</span>
             <el-button size="small" :disabled="!scopeRobots.length || selectedRobots.length === scopeRobots.length" @click="selectAllRobots">全选</el-button>
             <el-button size="small" :disabled="!selectedRobots.length" @click="clearSelectedRobots">清空</el-button>
-            <el-select :model-value="selectedRobotKeys" multiple collapse-tags collapse-tags-tooltip filterable placeholder="请选择要自动改码的机器人" style="min-width:360px;flex:1" @update:model-value="changeSelectedRobots"><el-option v-for="user in scopeRobots" :key="user.key" :label="memberLabel(user)" :value="user.key" /></el-select>
+            <el-select :model-value="selectedRobotKeys" multiple collapse-tags collapse-tags-tooltip filterable placeholder="请选择要自动改码的用户" style="min-width:360px;flex:1" @update:model-value="changeSelectedRobots"><el-option v-for="user in scopeRobots" :key="user.key" :label="memberLabel(user)" :value="user.key" /></el-select>
             <div class="filter-item"><label>层级目标盈亏</label><el-input v-model="robotAmount" placeholder="正数赢，负数输" style="width:170px" /></div>
             <el-button type="warning" :loading="planLoading" :disabled="robotAmount.trim() === '' || !selectedRobots.length" @click="generatePlan">生成改单方案</el-button>
-            <span class="robot-tip">口径：当天总中−总投，结果允许在目标上下 30% 内</span>
+            <span class="robot-tip">口径：当天总中−总投，结果允许在目标上下 5% 内</span>
           </div>
         </template>
       </section>
@@ -458,7 +463,7 @@ onMounted(() => loadOptions({ issue: String(route.query.issue_no || ''), recordI
 
       <section class="replace-panel"><div class="section-title"><div><h2>保存原始注单</h2><span class="hint">保存后原主单号不变，系统按修改后的原始文本重建全部下单明细</span></div><el-button type="primary" :icon="Check" :loading="saving" :disabled="!changedGroups.length" @click="submit">保存并重算</el-button></div></section>
 
-      <el-dialog v-model="planDialog" title="机器人改单方案预览" width="84%" :close-on-click-modal="false">
+      <el-dialog v-model="planDialog" title="用户改单方案预览" width="84%" :close-on-click-modal="false">
         <template v-if="planResult">
           <div class="plan-summary">
             <span class="level-tag">{{ planResult.node.name }} · {{ planResult.day }}</span>
@@ -471,7 +476,7 @@ onMounted(() => loadOptions({ issue: String(route.query.issue_no || ''), recordI
           </div>
           <el-alert v-for="(warning, index) in planResult.warnings" :key="index" :title="warning" type="warning" :closable="false" class="plan-warning" />
           <el-table :data="planResult.items" max-height="430" size="small" border>
-            <el-table-column label="机器人" min-width="110"><template #default="{ row }">{{ row.display_name || row.username }}</template></el-table-column>
+            <el-table-column label="用户" min-width="110"><template #default="{ row }">{{ row.display_name || row.username }}</template></el-table-column>
             <el-table-column label="方式" width="86"><template #default="{ row }"><el-tag :type="row.action === 'win' ? 'warning' : 'info'" size="small">{{ row.action === 'win' ? '改为中奖' : '改为不中奖' }}</el-tag></template></el-table-column>
             <el-table-column label="原始注单" min-width="230"><template #default="{ row }"><div class="plan-src"><template v-for="(seg, i) in planSegments(row, 'old_source')" :key="i"><mark v-if="seg.hit">{{ seg.text }}</mark><template v-else>{{ seg.text }}</template></template></div><div v-if="row.new_source" class="plan-src new">→ <template v-for="(seg, i) in planSegments(row, 'new_source')" :key="i"><mark v-if="seg.hit">{{ seg.text }}</mark><template v-else>{{ seg.text }}</template></template></div></template></el-table-column>
             <el-table-column label="金额（不变）" width="150"><template #default="{ row }">¥{{ row.old_amount }}</template></el-table-column>

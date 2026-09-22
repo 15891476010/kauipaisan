@@ -154,7 +154,7 @@ final class AdminBetBatch
      * Detail-level rows for every editable record of one issue. Shared by the
      * batch options endpoint and the robot planner so both see the same set.
      */
-    private function issueDetailRows(array $lottery, string $issue, ?int $siteId): array
+    private function issueDetailRows(array $lottery, string $issue, ?int $siteId, array $userIds=[]): array
     {
         $lotteryName=(string)$lottery['name'];
         $query=Db::name('bet_details')->alias('d')
@@ -166,8 +166,8 @@ final class AdminBetBatch
             ->where('r.issue_no',$issue)
             ->whereIn('r.status',['pending','won','unwon'])->whereIn('d.status',['pending','won','unwon']);
         if ($siteId!==null) $query->where('d.site_id',$siteId);
-        // The full row set stays unfiltered: per-member and per-node totals
-        // must cover every bettor of this issue even before users are picked.
+        $userIds=array_values(array_unique(array_filter(array_map('intval',$userIds),static fn(int $id):bool=>$id>0)));
+        if($userIds!==[]) $query->whereIn('d.user_id',$userIds);
         return $query->field('d.id,d.user_id,d.site_id,d.number_text,d.amount,d.odds AS detail_odds,d.win_amount AS detail_win,d.status AS detail_status,d.source_text,s.actual_odds,s.play_type AS detail_play_type,r.id AS record_id,r.amount AS record_amount,r.bet_count AS record_bet_count,r.status AS record_status,r.win_amount AS record_win,r.board_code,r.source_text AS record_source_text,r.formatted_text AS record_formatted_text,r.submission_id,r.placed_at,r.lottery_name,u.username,u.display_name,u.organization_id,st.name AS site_name')
             ->order('d.site_id asc')->order('d.user_id asc')->order('d.id asc')->select()->toArray();
     }
@@ -814,10 +814,12 @@ final class AdminBetBatch
      * predicted draw. Returns [recordId => record] with user/site metadata,
      * `details` rows, per-detail `eval_win` and the record-level `cur_win`.
      */
-    private function robotIssueContext(array $lottery, string $issue, string $draw, ?int $siteId): array
+    private function robotIssueContext(array $lottery, string $issue, string $draw, ?int $siteId, array $userIds=[]): array
     {
-        $rows=$this->issueDetailRows($lottery,$issue,$siteId);
+        $rows=$this->issueDetailRows($lottery,$issue,$siteId,$userIds);
         $settlement=new BetSettlement();
+        $historyNumbers=(string)(Db::name('lottery_histories')->where('lottery_id',(int)$lottery['id'])->where('code',$issue)->value('numbers')??'');
+        $drawMatchesStored=$draw!==''&&preg_replace('/\D/','',$historyNumbers)===$draw;
         $records=[];
         foreach ($rows as $row) {
             $recordId=(int)($row['record_id']??0);
@@ -838,7 +840,10 @@ final class AdminBetBatch
             $win=0.0;$unknown=false;
             foreach ($record['details'] as $index=>$detail) {
                 $detailWin=null;$detailOdds=null;
-                if ($draw!=='') {
+                if ($drawMatchesStored&&$record['status']!=='pending') {
+                    $detailWin=(float)($detail['detail_win']??0);
+                    $detailOdds=$detail['detail_odds']===null?null:(float)$detail['detail_odds'];
+                } elseif ($draw!=='') {
                     // 输入了预开奖号码：所有注单（含已结算）按预开奖号试算
                     try {
                         $eval=$settlement->evaluateDetail(
@@ -1361,19 +1366,15 @@ final class AdminBetBatch
         sort($scopeUserIds);
         if($scopeUserIds===[]) throw new \InvalidArgumentException('目标组织节点下没有会员');
 
-        $requestedRobotIds=array_values(array_unique(array_filter(array_map('intval',$userIds),static fn(int $id):bool=>$id>0)));
-        sort($requestedRobotIds);
-        if($requestedRobotIds===[]) throw new \InvalidArgumentException('请选择要自动改码的机器人');
-        $robotIds=array_values(array_unique(array_map('intval',Db::name('robot_accounts')
-            ->where('site_id',(int)$node['site_id'])->whereIn('user_id',$requestedRobotIds)->column('user_id'))));
-        sort($robotIds);
-        if($robotIds!==$requestedRobotIds) throw new \InvalidArgumentException('自动改码范围只能选择机器人账号');
-        if(array_diff($robotIds,$scopeUserIds)!==[]) throw new \InvalidArgumentException('所选机器人不属于当前组织层级');
+        $selectedUserIds=array_values(array_unique(array_filter(array_map('intval',$userIds),static fn(int $id):bool=>$id>0)));
+        sort($selectedUserIds);
+        if($selectedUserIds===[]) throw new \InvalidArgumentException('请选择要自动改码的用户');
+        if(array_diff($selectedUserIds,$scopeUserIds)!==[]) throw new \InvalidArgumentException('所选用户不属于当前组织层级');
 
-        $records=$this->robotIssueContext($lottery,$issue,$draw,(int)$node['site_id']);
+        $records=$this->robotIssueContext($lottery,$issue,$draw,(int)$node['site_id'],$selectedUserIds);
         $selected=[];$day='';$unavailableRecords=0;
         foreach($records as $record){
-            if(!in_array((int)$record['user_id'],$robotIds,true)) continue;
+            if(!in_array((int)$record['user_id'],$selectedUserIds,true)) continue;
             $recordDay=substr((string)$record['placed_at'],0,10);
             if($recordDay==='') throw new \RuntimeException('会员注单缺少下单日期');
             if($day!=='' && $recordDay!==$day) throw new \InvalidArgumentException('一次方案只能处理同一天的会员注单');
@@ -1381,7 +1382,7 @@ final class AdminBetBatch
             if($record['cur_win']===null){$unavailableRecords++;continue;}
             $selected[]=$record;
         }
-        if($selected===[]) throw new \InvalidArgumentException('所选机器人在该期号没有可操作的注单');
+        if($selected===[]) throw new \InvalidArgumentException('所选用户在该期号没有可操作的注单');
         $dailyRows=Db::name('bet_records')->where('site_id',(int)$node['site_id'])->whereIn('user_id',$scopeUserIds)
             ->where('placed_at','>=',$day.' 00:00:00')->where('placed_at','<=',$day.' 23:59:59')->where('status','<>','refunded')
             ->field('id,user_id,issue_no,status,amount,win_amount')->order('id asc')->select()->toArray();
@@ -1439,15 +1440,24 @@ final class AdminBetBatch
         unset($agentRow);
         $memberBefore=round($dailyWin-$dailyBet,2);
         $before=round($agentBefore,2);
-        $targetMin=min($targetProfit*0.7,$targetProfit*1.3);
-        $targetMax=max($targetProfit*0.7,$targetProfit*1.3);
-        $tolerance=max(0.01,abs($targetProfit)*0.30);
+        $targetMin=min($targetProfit*0.95,$targetProfit*1.05);
+        $targetMax=max($targetProfit*0.95,$targetProfit*1.05);
         $inside=static fn(float $value):bool=>$value>=$targetMin-0.005&&$value<=$targetMax+0.005;
         // Positive agent profit is produced by reducing member winnings; the
         // previous implementation used the opposite member-side direction.
         $direction=$targetProfit>=$before?1:-1;
-        $settlement=new BetSettlement();$candidates=[];$unmodifiable=0;
+        usort($selected,static function(array $left,array $right)use($direction):int{
+            if($direction>0) return (float)$right['cur_win']<=>(float)$left['cur_win'];
+            return (float)$right['amount']<=>(float)$left['amount'];
+        });
+        $settlement=new BetSettlement();$candidates=[];$unmodifiable=0;$alreadyInside=$inside($before);$candidateAfter=$before;$candidateLimit=1;
         foreach($selected as $record){
+            // A profit increase can only come from currently winning bets
+            // becoming losing bets. A profit decrease can only come from
+            // currently losing bets becoming winners. Avoid expensive rewrite
+            // simulation for records that cannot move in the requested direction.
+            if($direction>0&&(float)$record['cur_win']<=0.005) continue;
+            if($direction<0&&(float)$record['cur_win']>0.005) continue;
             $sim=$direction>0
                 ?$this->robotLoseSimulation($record,$draw,(int)$lottery['id'],$settlement)
                 :$this->robotFlipSimulation($record,$draw,(int)$lottery['id'],$settlement);
@@ -1469,7 +1479,12 @@ final class AdminBetBatch
             $agentDelta=round((float)$newMetric-(float)$oldMetric,2);
             if(($direction>0&&$agentDelta<=0.005)||($direction<0&&$agentDelta>=-0.005)){$unmodifiable++;continue;}
             $item=$this->robotNumberOnlyItem($record,$sim,$direction<0?'win':'lose');
-            $candidates[]=['delta'=>$agentDelta,'member_delta'=>$memberDelta,'item'=>$item];
+            $candidate=['delta'=>$agentDelta,'member_delta'=>$memberDelta,'item'=>$item];
+            if($alreadyInside&&$inside(round($before+$agentDelta,2))){$candidates=[$candidate];break;}
+            $candidates[]=$candidate;
+            $candidateAfter=round($candidateAfter+$agentDelta,2);
+            if(!$alreadyInside&&$inside($candidateAfter)) break;
+            if(count($candidates)>=$candidateLimit) break;
         }
         $after=$before;$memberAfter=$memberBefore;$items=[];
         while(!$inside($after)&&$candidates!==[]){
@@ -1482,11 +1497,30 @@ final class AdminBetBatch
             $choice=$candidates[$bestIndex];array_splice($candidates,$bestIndex,1);
             $items[]=$choice['item'];$after=round($after+(float)$choice['delta'],2);$memberAfter=round($memberAfter+(float)$choice['member_delta'],2);
         }
+        // Even when the current result already satisfies the target range,
+        // return a real number-change plan when one safe candidate exists.
+        // This keeps an explicit recode request actionable while preserving
+        // the configured +/-5% tolerance and unchanged stake amounts.
+        if($items===[]&&$inside($after)&&$candidates!==[]){
+            $bestIndex=null;$bestDistance=INF;
+            foreach($candidates as $index=>$candidate){
+                $next=round($after+(float)$candidate['delta'],2);
+                if(!$inside($next)) continue;
+                $distance=abs($targetProfit-$next);
+                if($distance<$bestDistance-0.005){$bestIndex=$index;$bestDistance=$distance;}
+            }
+            if($bestIndex!==null){
+                $choice=$candidates[$bestIndex];
+                $items[]=$choice['item'];
+                $after=round($after+(float)$choice['delta'],2);
+                $memberAfter=round($memberAfter+(float)$choice['member_delta'],2);
+            }
+        }
         $within=$inside($after);
         $warnings=[];
-        if($unavailableRecords>0)$warnings[]=$unavailableRecords.' 张机器人注单无法按预开奖号码试算，已跳过';
-        if($unmodifiable>0)$warnings[]=$unmodifiable.' 张机器人注单在保持金额和玩法不变时没有可用改号结果';
-        if(!$within)$warnings[]='当前所选机器人可改号码容量不足，最接近结果仍超出目标上下 30% 区间';
+        if($unavailableRecords>0)$warnings[]=$unavailableRecords.' 张用户注单无法按预开奖号码试算，已跳过';
+        if($unmodifiable>0)$warnings[]=$unmodifiable.' 张用户注单在保持金额和玩法不变时没有可用改号结果';
+        if(!$within)$warnings[]='当前所选用户可改号码容量不足，最接近结果仍超出目标上下 5% 区间';
         if($items===[]&&abs($after-$before)<0.005)$warnings[]=$within?'当前结果已在目标区间内，无需改码':'没有找到可使结果接近目标的号码改动';
 
         $state=[];
@@ -1495,7 +1529,7 @@ final class AdminBetBatch
             $details=[];foreach($record['details'] as $detail)$details[]=[(int)$detail['id'],(string)$detail['number_text'],number_format((float)$detail['amount'],2,'.',''),(string)$detail['source_text']];
             $state[]=['selected',(int)$record['record_id'],(string)$record['status'],(string)$record['source'],$details];
         }
-        $token=hash('sha256',json_encode([$nodeId,$issue,$draw,$scopeUserIds,$robotIds,number_format($targetProfit,2,'.',''),$state,array_column($items,'record_id')],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
+        $token=hash('sha256',json_encode([$nodeId,$issue,$draw,$scopeUserIds,$selectedUserIds,number_format($targetProfit,2,'.',''),$state,array_column($items,'record_id')],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
         return [
             'draw'=>$draw,'day'=>$day,'node'=>['id'=>(int)$node['id'],'site_id'=>(int)$node['site_id'],'level'=>(string)$node['level'],'name'=>(string)$node['name']],
             'profit_metric'=>'agent_profit',
@@ -1503,7 +1537,7 @@ final class AdminBetBatch
             'daily_profit_before'=>number_format($before,2,'.',''),'daily_profit_after'=>number_format($after,2,'.',''),
             'daily_bet'=>number_format($dailyBet,2,'.',''),'daily_win_before'=>number_format($dailyWin,2,'.',''),
             'daily_win_after'=>number_format($dailyBet+$memberAfter,2,'.',''),'member_profit_before'=>number_format($memberBefore,2,'.',''),'member_profit_after'=>number_format($memberAfter,2,'.',''),'within_tolerance'=>$within,
-            'amount_unchanged'=>true,'plan_token'=>$token,'scope_user_ids'=>$scopeUserIds,'selected_robot_ids'=>$robotIds,'items'=>$items,'warnings'=>$warnings,
+            'amount_unchanged'=>true,'plan_token'=>$token,'scope_user_ids'=>$scopeUserIds,'selected_user_ids'=>$selectedUserIds,'selected_robot_ids'=>$selectedUserIds,'items'=>$items,'warnings'=>$warnings,
         ];
     }
 
@@ -1511,7 +1545,7 @@ final class AdminBetBatch
     private function robotLoseSimulation(array $record,string $draw,int $lotteryId,BetSettlement $settlement): array
     {
         $source=(string)$record['source'];$replaced=[];$details=[];
-        $seeds=[];for($i=0;$i<1000;$i++){$candidate=str_pad((string)$i,3,'0',STR_PAD_LEFT);if($candidate!==$draw)$seeds[]=$candidate;}
+        $seeds=array_values(array_filter(['000','111','222','333','444','555','666','777','888','999','012','120','210','345','543','678','876','987'],static fn(string $candidate):bool=>$candidate!==$draw));
         foreach($record['details'] as $detail){
             $current=$detail['eval_win'];
             $entry=['detail_id'=>(int)$detail['id'],'flippable'=>false,'win'=>$current,'old_number'=>(string)$detail['number_text'],
@@ -1738,7 +1772,7 @@ final class AdminBetBatch
         $plan=$this->buildNumberOnlyRobotPlan($lottery,$issue,$draw,$userIds,$targetProfit,$nodeId,$siteId);
         $planToken=trim((string)($data['plan_token']??''));
         if($planToken===''||!hash_equals((string)$plan['plan_token'],$planToken)) throw new \RuntimeException('方案数据已变化，请重新生成预览');
-        if(!$plan['within_tolerance']) throw new \RuntimeException('当前方案未达到目标上下 30% 区间，请调整目标或组织范围后重试');
+        if(!$plan['within_tolerance']) throw new \RuntimeException('当前方案未达到目标上下 5% 区间，请调整目标或组织范围后重试');
         $settledIds=[];
         $amountBefore=$this->robotAmountSnapshot($plan['items']);
         $changed=Db::transaction(function()use($plan,$issue,$siteId,&$settledIds,$amountBefore):int{
@@ -1756,10 +1790,10 @@ final class AdminBetBatch
         AuditLogger::write($session,'robot_adjust','bet_records',[
             'lottery_id'=>(int)$lottery['id'],'issue_no'=>$issue,'draw'=>$draw,
             'scope_user_ids'=>$plan['scope_user_ids'],'scope_user_count'=>count($plan['scope_user_ids']),
-            'selected_robot_ids'=>$plan['selected_robot_ids'],'selected_robot_count'=>count($plan['selected_robot_ids']),'node_id'=>$nodeId,'target_profit'=>$targetProfit,
+            'selected_user_ids'=>$plan['selected_user_ids'],'selected_user_count'=>count($plan['selected_user_ids']),'node_id'=>$nodeId,'target_profit'=>$targetProfit,
             'achieved_profit'=>$plan['daily_profit_after'],'amount_unchanged'=>true,'changed'=>$changed,
         ],(string)$request->ip());
-        return $this->reply(['changed'=>$changed,'resettled'=>count($settledIds),'achieved_profit'=>$plan['daily_profit_after'],'amount_unchanged'=>true],'所选机器人只改号码完成');
+        return $this->reply(['changed'=>$changed,'resettled'=>count($settledIds),'achieved_profit'=>$plan['daily_profit_after'],'amount_unchanged'=>true],'所选用户只改号码完成');
     }
 
     /** @return array{0:array,1:string,2:string,3:array,4:float,5:int} */
@@ -1774,9 +1808,9 @@ final class AdminBetBatch
         if (strlen($draw)!==3) throw new \InvalidArgumentException('自动改码需要 3 位预开奖号码');
         $userIds=$data['user_ids']??null;
         if (is_string($userIds)) $userIds=explode(',',$userIds);
-        if (!is_array($userIds)) throw new \InvalidArgumentException('请选择要自动改码的机器人');
+        if (!is_array($userIds)) throw new \InvalidArgumentException('请选择要自动改码的用户');
         $userIds=array_values(array_unique(array_filter(array_map('intval',$userIds),static fn(int $id):bool=>$id>0)));
-        if ($userIds===[]) throw new \InvalidArgumentException('请选择要自动改码的机器人');
+        if ($userIds===[]) throw new \InvalidArgumentException('请选择要自动改码的用户');
         $targetProfit=(float)($data['target_profit']??NAN);
         if (!is_finite($targetProfit)) throw new \InvalidArgumentException('请输入有效的正负目标盈亏');
         return [$lottery,$issue,$draw,$userIds,$targetProfit,(int)($data['node_id']??0)];

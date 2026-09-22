@@ -60,7 +60,7 @@ final class AdminRobots
         $intervalMax=(int)($data['interval_max']??$current['interval_max']??1);
         if($min<=0||$max<$min||$max>500) throw new \InvalidArgumentException('金额范围无效，机器人单批金额必须大于0且不能超过500分');
         if(!in_array($precision,[0,1,2],true)) throw new \InvalidArgumentException('金额精度只能是整数、1位或2位小数');
-        if($intervalMin<1||$intervalMax<$intervalMin||$intervalMax>1440) throw new \InvalidArgumentException('随机间隔范围无效，必须为 1-1440 分钟');
+        if($intervalMin<0||$intervalMax<$intervalMin||$intervalMax>1440) throw new \InvalidArgumentException('随机间隔范围无效，必须为 0-1440 分钟');
         $start=(string)($data['start_at']??$current['start_at']??'');
         $start=str_replace('T',' ',$start);
         if($start===''||strtotime($start)===false) throw new \InvalidArgumentException('请填写有效的打单开始时间');
@@ -124,13 +124,18 @@ final class AdminRobots
             if($weight<0||$weight>100)throw new \InvalidArgumentException('小时段权重必须在 0-100 之间');
             return ['start'=>$start,'end'=>$end,'weight'=>number_format($weight,2,'.','')];
         },$hourlyWeights),static fn($item)=>is_array($item)));
-        // New robots always have the complete 00:00-21:00 schedule.  For
+        // New robots always have the complete 00:00-24:00 schedule.  For
         // legacy rows that predate this field, materialise equal defaults on
         // the next save so the UI and scheduler use the same model.
         if($hourlyWeights===[]){
             $hourlyWeights=[];
-            for($hour=0;$hour<21;$hour++) $hourlyWeights[]=['start'=>sprintf('%02d:00',$hour),'end'=>sprintf('%02d:00',$hour+1),'weight'=>number_format(100/21,2,'.','')];
-            $hourlyWeights[20]['weight']=number_format(100-array_sum(array_map(static fn($item)=>(float)$item['weight'],$hourlyWeights,)),2,'.','');
+            foreach(range(0,7) as $hour) $hourlyWeights[]=['start'=>sprintf('%02d:00',$hour),'end'=>sprintf('%02d:00',$hour+1),'weight'=>'0.11'];
+            $hourlyWeights[]=['start'=>'08:00','end'=>'09:00','weight'=>'0.12'];
+            foreach(range(9,12) as $hour) $hourlyWeights[]=['start'=>sprintf('%02d:00',$hour),'end'=>sprintf('%02d:00',$hour+1),'weight'=>'1.25'];
+            foreach(range(13,15) as $hour) $hourlyWeights[]=['start'=>sprintf('%02d:00',$hour),'end'=>sprintf('%02d:00',$hour+1),'weight'=>number_format(24/3,2,'.','')];
+            foreach(range(16,20) as $hour) $hourlyWeights[]=['start'=>sprintf('%02d:00',$hour),'end'=>sprintf('%02d:00',$hour+1),'weight'=>number_format(60/5,2,'.','')];
+            foreach(range(21,22) as $hour) $hourlyWeights[]=['start'=>sprintf('%02d:00',$hour),'end'=>sprintf('%02d:00',$hour+1),'weight'=>'3.33'];
+            $hourlyWeights[]=['start'=>'23:00','end'=>'00:00','weight'=>'3.34'];
         }
         $hourlyTotal=array_sum(array_map(static fn($item)=>(float)$item['weight'],$hourlyWeights));
         if($hourlyWeights!==[] && abs($hourlyTotal-100)>0.01)throw new \InvalidArgumentException('每日小时段权重总和必须为100%');

@@ -69,8 +69,8 @@ const form = reactive({
   max_amount: 500,
   amount_precision: 0,
   start_at: "",
-  interval_min: 1,
-  interval_max: 1,
+  interval_min: 0,
+  interval_max: 0,
   weight_fu: 1,
   weight_ti: 1,
   weight_futi: 1,
@@ -158,28 +158,30 @@ function syncMonthlyRules() {
   });
 }
 function syncHourlyWeights() {
-  form.hourly_weights = Array.from({ length: 21 }, (_, hour) => {
-    const start = `${String(hour).padStart(2, "0")}:00`;
-    const end = `${String(hour + 1).padStart(2, "0")}:00`;
-    return (
-      form.hourly_weights.find((item) => item.start === start) || {
-        start,
-        end,
-        weight: Number((100 / 21).toFixed(2)),
-      }
-    );
+  const defaults = Array.from({ length: 24 }, (_, hour) => {
+    let weight = 0;
+    if (hour <= 8) weight = 1 / 9;
+    else if (hour >= 9 && hour <= 12) weight = 5 / 4;
+    else if (hour >= 13 && hour <= 15) weight = 24 / 3;
+    else if (hour >= 16 && hour <= 20) weight = 60 / 5;
+    else if (hour >= 21) weight = 10 / 3;
+    return {
+      start: String(hour).padStart(2, "0") + ":00",
+      end: String((hour + 1) % 24).padStart(2, "0") + ":00",
+      weight: Number(weight.toFixed(2)),
+    };
+  });
+  form.hourly_weights = defaults.map((fallback) => {
+    const existing = form.hourly_weights.find((item) => item.start === fallback.start);
+    return existing ? { ...fallback, ...existing } : fallback;
   });
   const total = form.hourly_weights.reduce(
     (sum, item) => sum + Number(item.weight || 0),
     0,
   );
   if (total !== 100)
-    form.hourly_weights[form.hourly_weights.length - 1].weight = Number(
-      (
-        Number(form.hourly_weights[form.hourly_weights.length - 1].weight) +
-        100 -
-        total
-      ).toFixed(2),
+    form.hourly_weights[23].weight = Number(
+      (Number(form.hourly_weights[23].weight) + 100 - total).toFixed(2),
     );
 }
 function normalizeHourlyWeight(index: number) {
@@ -231,8 +233,8 @@ function resetForm() {
     max_amount: 500,
     amount_precision: 0,
     start_at: new Date().toISOString().slice(0, 16),
-    interval_min: 1,
-    interval_max: 1,
+    interval_min: 0,
+    interval_max: 0,
     weight_fu: 1,
     weight_ti: 1,
     weight_futi: 1,
@@ -681,19 +683,19 @@ onUnmounted(stopLogPolling);
           ><div class="inline-fields">
             <el-input-number
               v-model="form.interval_min"
-              :min="1"
+              :min="0"
               :max="1440"
               controls-position="right"
             /><span>至</span
             ><el-input-number
               v-model="form.interval_max"
-              :min="1"
+              :min="0"
               :max="1440"
               controls-position="right"
             />
           </div>
           <div class="field-tip">
-            历史补单每秒执行一条，但模拟投注时间会按这里设置的随机分钟数推进。
+            设置为 0-0 表示上一单完成后立即下下一单；历史补单仍按每秒一条执行。
           </div></el-form-item
         ><el-form-item label="每日下单时段权重"
           ><div class="hourly-rules">
@@ -714,8 +716,7 @@ onUnmounted(stopLogPolling);
             </div>
           </div>
           <div class="field-tip">
-            每天仅在 00:00-21:00 下单，共 21 个小时段；权重总和自动保持
-            100%，数字越大该时段下单频率越高。
+            全天 24 小时按设定权重打单；权重总和自动保持 100%，数字越大该时段下单频率越高。
           </div></el-form-item
         ><el-form-item label="单批总金额"
           ><div class="inline-fields">
