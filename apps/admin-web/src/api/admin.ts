@@ -240,6 +240,9 @@ export type RobotPlanResult = {
   daily_bet: string;
   daily_win_before: string;
   daily_win_after: string;
+  member_profit_before: string;
+  member_profit_after: string;
+  profit_metric?: 'agent_profit' | 'member_profit';
   within_tolerance: boolean;
   amount_unchanged: boolean;
   plan_token: string;

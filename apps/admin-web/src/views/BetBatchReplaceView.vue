@@ -479,10 +479,11 @@ onMounted(() => loadOptions({ issue: String(route.query.issue_no || ''), recordI
           <div class="plan-summary">
             <span class="level-tag">{{ planResult.node.name }} · {{ planResult.day }}</span>
             <span class="total-chip">当天总投 ¥{{ money(Number(planResult.daily_bet)) }}</span>
-            <span class="total-chip">当天总中 ¥{{ money(Number(planResult.daily_win_before)) }} → ¥{{ money(Number(planResult.daily_win_after)) }}</span>
+            <span class="total-chip">会员总中 ¥{{ money(Number(planResult.daily_win_before)) }} → ¥{{ money(Number(planResult.daily_win_after)) }}</span>
+            <span class="total-chip">会员盈亏 ¥{{ money(Number(planResult.member_profit_before)) }} → ¥{{ money(Number(planResult.member_profit_after)) }}</span>
             <span class="total-chip preview">目标盈亏 ¥{{ money(Number(planResult.target_profit)) }}</span>
             <span class="total-chip preview">允许区间 ¥{{ money(Number(planResult.target_min)) }} 至 ¥{{ money(Number(planResult.target_max)) }}</span>
-            <span class="total-chip" :class="profitClass(Number(planResult.daily_profit_after))">报表口径盈亏 ¥{{ money(Number(planResult.daily_profit_before)) }} → ¥{{ money(Number(planResult.daily_profit_after)) }}</span>
+            <span class="total-chip" :class="profitClass(Number(planResult.daily_profit_after))">所选层级盈亏 ¥{{ money(Number(planResult.daily_profit_before)) }} → ¥{{ money(Number(planResult.daily_profit_after)) }}</span>
             <span class="total-chip">金额保持不变</span>
           </div>
           <el-alert v-for="(warning, index) in planResult.warnings" :key="index" :title="warning" type="warning" :closable="false" class="plan-warning" />
