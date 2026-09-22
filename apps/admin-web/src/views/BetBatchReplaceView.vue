@@ -449,7 +449,7 @@ onMounted(() => loadOptions({ issue: String(route.query.issue_no || ''), recordI
             <el-select :model-value="selectedRobotKeys" multiple collapse-tags collapse-tags-tooltip filterable placeholder="请选择要自动改码的用户" style="min-width:360px;flex:1" @update:model-value="changeSelectedRobots"><el-option v-for="user in scopeRobots" :key="user.key" :label="memberLabel(user)" :value="user.key" /></el-select>
             <div class="filter-item"><label>层级目标盈亏</label><el-input v-model="robotAmount" placeholder="正数赢，负数输" style="width:170px" /></div>
             <el-button type="warning" :loading="planLoading" :disabled="robotAmount.trim() === '' || !selectedRobots.length" @click="generatePlan">生成改单方案</el-button>
-            <span class="robot-tip">口径：当天总中−总投，结果允许在目标上下 5% 内</span>
+            <span class="robot-tip">口径：所选层级自身盈亏（本级占成盈亏＋下级收入/赚水），结果允许在目标上下 5% 内</span>
           </div>
         </template>
       </section>

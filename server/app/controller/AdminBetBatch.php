@@ -437,7 +437,7 @@ final class AdminBetBatch
                         'rebate'=>0.0,'ledger_json'=>null,'share_rate'=>(float)($userShareRates[(int)$user['user_id']]??0)];
                     $config=$siteMetricConfig[$metricSiteId];
                     $metrics=$this->robotAgentMetrics($row,$metricSiteId,(int)$treeNode['id'],$chainCaches[$metricSiteId],$nodeLevels,$nodeParents,$config['cap'],$config['water']);
-                    $calculated+=(float)$metrics['agent_profit'];
+                    $calculated+=$this->robotSelectedOrganizationProfit($metrics,(int)$treeNode['id'],$nodeParents);
                 }
                 $treeNode['calculated_profit']=$metricUnknown?null:number_format($calculated,2,'.','');
             }
@@ -1115,7 +1115,12 @@ final class AdminBetBatch
         }
         // 独胆 / N胆
         if (preg_match('/^(\d)胆$/u',$t,$m)===1)
-            return ['new'=>$digits[0].'胆','pairs'=>[['old'=>$t,'new'=>$digits[0].'胆']]];
+            return ['new'=>$digits[0].'胆','pairs'=>[['old'=>$t,'new'=>$digits[0].'胆','alts'=>[
+                ['old'=>'独胆'.$m[1],'new'=>'独胆'.$digits[0]],
+                ['old'=>$m[1].'独胆','new'=>$digits[0].'独胆'],
+                ['old'=>'胆'.$m[1],'new'=>'胆'.$digits[0]],
+                ['old'=>'独'.$m[1],'new'=>'独'.$digits[0]],
+            ]]]];
         if (preg_match('/^\d$/',$t)===1 && preg_match('/独胆|(?<!\d)胆/u',$dsource)===1)
             return ['new'=>$digits[0],'pairs'=>[
                 ['old'=>$t.'独胆','new'=>$digits[0].'独胆','alts'=>[
@@ -1381,9 +1386,25 @@ final class AdminBetBatch
     }
 
     /**
+     * Profit attributable to the selected organization itself.
+     *
+     * For the root, shareRowMetrics already folds the root's own share profit
+     * into agent_profit. For a non-root viewer, agent_profit is the income
+     * from subordinate lines plus this level's water; the viewer's own
+     * occupied-share profit is exposed separately as share_profit. The
+     * batch planner controls the node's complete P/L, so combine both once.
+     */
+    private function robotSelectedOrganizationProfit(array $metrics,int $nodeId,array $nodeParents): float
+    {
+        $agent=(float)($metrics['agent_profit']??0);
+        if ((int)($nodeParents[$nodeId]??0)!==0) $agent+=(float)($metrics['share_profit']??0);
+        return $agent;
+    }
+
+    /**
      * Number-only planner used by the SaaS organization control. The signed target
-     * is the selected node's report-side agent_profit, exactly matching the agent
-     * reports page. A positive value means the selected organization wins; a
+     * is the selected node's complete organization P/L: report-side agent_profit
+     * plus its own occupied-share profit for non-root nodes. A positive value means the selected organization wins; a
      * negative value means it loses. Member-side totals remain in the response as
      * auxiliary diagnostics. Every account in the selected organization subtree
      * contributes to the baseline, while only selected robot accounts are rewritten.
@@ -1432,8 +1453,8 @@ final class AdminBetBatch
             $dailyWin+=(float)$record['cur_win']-(float)$dailyById[$rid]['win_amount'];
             $dailyById[$rid]['preview_win']=number_format((float)$record['cur_win'],2,'.','');
         }
-        // The reports page displays agent_profit, not member_profit. Build the
-        // same per-book metrics here, then apply the operator draw preview to
+        // Build the same per-book report metrics here, then apply the operator
+        // draw preview to
         // the matching issue/lottery rows before selecting candidates.
         $nodeLevels=[];$nodeParents=[];
         foreach(Db::name('organization_nodes')->where('site_id',(int)$node['site_id'])->whereNull('deleted_at')->field('id,level,parent_id')->select()->toArray() as $nodeRow){
@@ -1471,12 +1492,12 @@ final class AdminBetBatch
             $looseKey=(int)$agentRow['user_id'].'|'.(string)$agentRow['issue_no'];
             if(isset($previewDeltas[$key])) $agentRow['win_amount']=(float)$agentRow['win_amount']+$previewDeltas[$key];
             elseif(isset($previewDeltasLoose[$looseKey])&&!isset($appliedLoose[$looseKey])) {$agentRow['win_amount']=(float)$agentRow['win_amount']+$previewDeltasLoose[$looseKey];$appliedLoose[$looseKey]=true;}
-            $agentBefore+=(float)$this->robotAgentMetrics($agentRow,(int)$node['site_id'],$nodeId,$chainCache,$nodeLevels,$nodeParents,$siteCap,$waterRate)['agent_profit'];
+            $agentBefore+=$this->robotSelectedOrganizationProfit($this->robotAgentMetrics($agentRow,(int)$node['site_id'],$nodeId,$chainCache,$nodeLevels,$nodeParents,$siteCap,$waterRate),$nodeId,$nodeParents);
         }
         unset($agentRow);
         $memberBefore=round($dailyWin-$dailyBet,2);
         // 输入目标属于当前选中的组织层级。会员总中/盈亏只是反推变量，
-        // 最终必须用与代理报表完全相同的 agent_profit 判断是否达标。
+        // 最终按当前层级完整自身盈亏（本级占成盈亏 + 下级收入/赚水）判断。
         $before=round($agentBefore,2);
         $targetMin=min($targetProfit*0.95,$targetProfit*1.05);
         $targetMax=max($targetProfit*0.95,$targetProfit*1.05);
@@ -1501,9 +1522,9 @@ final class AdminBetBatch
                 $rowLooseKey=(int)$row['user_id'].'|'.(string)$row['issue_no'];
                 if($rowKey===$recordKey||$rowLooseKey===$recordLooseKey){$agentRow=$row;break;}
             }
-            $oldMetric=$this->robotAgentMetrics($agentRow,(int)$node['site_id'],$nodeId,$chainCache,$nodeLevels,$nodeParents,$siteCap,$waterRate)['agent_profit'];
+            $oldMetric=$this->robotSelectedOrganizationProfit($this->robotAgentMetrics($agentRow,(int)$node['site_id'],$nodeId,$chainCache,$nodeLevels,$nodeParents,$siteCap,$waterRate),$nodeId,$nodeParents);
             $agentRow['win_amount']=(float)$agentRow['win_amount']+$memberDelta;
-            $newMetric=$this->robotAgentMetrics($agentRow,(int)$node['site_id'],$nodeId,$chainCache,$nodeLevels,$nodeParents,$siteCap,$waterRate)['agent_profit'];
+            $newMetric=$this->robotSelectedOrganizationProfit($this->robotAgentMetrics($agentRow,(int)$node['site_id'],$nodeId,$chainCache,$nodeLevels,$nodeParents,$siteCap,$waterRate),$nodeId,$nodeParents);
             $agentDelta=round((float)$newMetric-(float)$oldMetric,2);
             if(abs($agentDelta)<=0.005){$zeroImpact++;continue;}
             if(($direction>0&&$agentDelta<=0.005)||($direction<0&&$agentDelta>=-0.005))continue;
@@ -1560,7 +1581,7 @@ final class AdminBetBatch
         $token=hash('sha256',json_encode([$nodeId,$issue,$draw,$scopeUserIds,$selectedUserIds,number_format($targetProfit,2,'.',''),$state,array_column($items,'record_id')],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
         return [
             'draw'=>$draw,'day'=>$day,'node'=>['id'=>(int)$node['id'],'site_id'=>(int)$node['site_id'],'level'=>(string)$node['level'],'name'=>(string)$node['name']],
-            'profit_metric'=>'agent_profit',
+            'profit_metric'=>'organization_profit',
             'target_profit'=>number_format($targetProfit,2,'.',''),'target_min'=>number_format($targetMin,2,'.',''),'target_max'=>number_format($targetMax,2,'.',''),
             'daily_profit_before'=>number_format($before,2,'.',''),'daily_profit_after'=>number_format($after,2,'.',''),
             'daily_bet'=>number_format($dailyBet,2,'.',''),'daily_win_before'=>number_format($dailyWin,2,'.',''),
