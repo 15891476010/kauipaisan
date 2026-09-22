@@ -1440,9 +1440,19 @@ final class AdminBetBatch
             $selected[]=$record;
         }
         if($selected===[]) throw new \InvalidArgumentException('所选用户在该期号没有可操作的注单');
-        $dailyRows=Db::name('bet_records')->where('site_id',(int)$node['site_id'])->whereIn('user_id',$scopeUserIds)
-            ->where('placed_at','>=',$day.' 00:00:00')->where('placed_at','<=',$day.' 23:59:59')->where('status','<>','refunded')
-            ->field('id,user_id,issue_no,status,amount,win_amount')->order('id asc')->select()->toArray();
+        // Scope member totals to the selected lottery. Some historical records
+        // have a null bet_records.lottery_name, so resolve their lottery through
+        // the detail/stop-drop mapping used by issueDetailRows.
+        $dailyLotteryRecordIds=Db::name('bet_details')->alias('d')
+            ->join('bet_records r','r.id=d.bet_record_id')
+            ->leftJoin('user_stop_drops s','s.bet_detail_id=d.id')
+            ->where('d.site_id',(int)$node['site_id'])->whereIn('d.user_id',$scopeUserIds)
+            ->where('d.placed_at','>=',$day.' 00:00:00')->where('d.placed_at','<=',$day.' 23:59:59')
+            ->whereRaw('(s.lottery = ? OR (s.id IS NULL AND r.source_text LIKE ?))',[(string)$lottery['name'],'参考站总货概览主单%'])
+            ->column('r.id');
+        $dailyLotteryRecordIds=array_values(array_unique(array_map('intval',$dailyLotteryRecordIds)));
+        $dailyRows=$dailyLotteryRecordIds===[]?[]:Db::name('bet_records')->where('site_id',(int)$node['site_id'])->whereIn('id',$dailyLotteryRecordIds)
+            ->where('status','<>','refunded')->field('id,user_id,issue_no,status,amount,win_amount')->order('id asc')->select()->toArray();
         $dailyBet=0.0;$dailyWin=0.0;$dailyById=[];
         foreach($dailyRows as $row){$dailyBet+=(float)$row['amount'];$dailyWin+=(float)$row['win_amount'];$dailyById[(int)$row['id']]=$row;}
         // The operator-entered draw overrides stored settlement for this issue
@@ -1466,12 +1476,12 @@ final class AdminBetBatch
         $siteCap=max(0,min(100,(float)($siteSettings['max_profit_share_rate']??100)));
         $waterRate=max(0,min(1,(float)($siteSettings['water_rate']??$siteSettings['dark_water_rate']??0.085)));
         $agentRows=Db::name('report_member_issue')->alias('m')->join('site_users u','u.id=m.user_id AND u.site_id=m.site_id')
-            ->where('m.site_id',(int)$node['site_id'])->where('m.day',$day)->whereIn('m.user_id',$scopeUserIds)
+            ->where('m.site_id',(int)$node['site_id'])->where('m.day',$day)->where('m.issue_no',$issue)->whereIn('m.user_id',$scopeUserIds)
             ->field('m.user_id,m.issue_no,m.lottery_name,m.amount,m.win_amount,m.rebate,m.ledger_json,u.organization_id,u.interception_rate AS share_rate')
             ->select()->toArray();
         if($agentRows===[]){
             $agentRows=Db::name('bet_details')->alias('d')->join('bet_records r','r.id=d.bet_record_id')->join('site_users u','u.id=d.user_id AND u.site_id=d.site_id')
-                ->where('d.site_id',(int)$node['site_id'])->whereIn('d.user_id',$scopeUserIds)
+                ->where('d.site_id',(int)$node['site_id'])->where('d.issue_no',$issue)->whereIn('d.user_id',$scopeUserIds)
                 ->where('d.placed_at','>=',$day.' 00:00:00')->where('d.placed_at','<=',$day.' 23:59:59')->where('r.status','<>','refunded')
                 ->field("d.user_id,d.issue_no,COALESCE(NULLIF(d.lottery_name,''),r.lottery_name) AS lottery_name,SUM(d.amount) AS amount,SUM(d.win_amount) AS win_amount,SUM(d.rebate) AS rebate,NULL AS ledger_json,u.organization_id,u.interception_rate AS share_rate")
                 ->group('d.user_id,d.issue_no,lottery_name')->select()->toArray();
