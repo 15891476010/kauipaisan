@@ -1439,28 +1439,26 @@ final class AdminBetBatch
         }
         unset($agentRow);
         $memberBefore=round($dailyWin-$dailyBet,2);
-        $before=round($agentBefore,2);
+        // 层级目标按界面约定使用“当天总中－总投”。组织层级只决定
+        // 统计/改单范围，不能用占成报表的 agent_profit 代替；下级零占成时
+        // agent_profit 基本只剩固定水钱，单纯改号码永远无法推动该数值。
+        $before=$memberBefore;
         $targetMin=min($targetProfit*0.95,$targetProfit*1.05);
         $targetMax=max($targetProfit*0.95,$targetProfit*1.05);
         $inside=static fn(float $value):bool=>$value>=$targetMin-0.005&&$value<=$targetMax+0.005;
-        // Positive agent profit is produced by reducing member winnings; the
-        // previous implementation used the opposite member-side direction.
+        // 正目标差额需要增加会员中奖，负目标差额需要减少会员中奖。
         $direction=$targetProfit>=$before?1:-1;
         usort($selected,static function(array $left,array $right)use($direction):int{
-            if($direction>0) return (float)$right['cur_win']<=>(float)$left['cur_win'];
-            return (float)$right['amount']<=>(float)$left['amount'];
+            if($direction>0) return (float)$right['amount']<=>(float)$left['amount'];
+            return (float)$right['cur_win']<=>(float)$left['cur_win'];
         });
-        $settlement=new BetSettlement();$candidates=[];$unmodifiable=0;$alreadyInside=$inside($before);$candidateAfter=$before;$candidateLimit=1;
+        $settlement=new BetSettlement();$candidates=[];$unmodifiable=0;$alreadyInside=$inside($before);
         foreach($selected as $record){
-            // A profit increase can only come from currently winning bets
-            // becoming losing bets. A profit decrease can only come from
-            // currently losing bets becoming winners. Avoid expensive rewrite
-            // simulation for records that cannot move in the requested direction.
-            if($direction>0&&(float)$record['cur_win']<=0.005) continue;
-            if($direction<0&&(float)$record['cur_win']>0.005) continue;
+            if($direction>0&&(float)$record['cur_win']>0.005) continue;
+            if($direction<0&&(float)$record['cur_win']<=0.005) continue;
             $sim=$direction>0
-                ?$this->robotLoseSimulation($record,$draw,(int)$lottery['id'],$settlement)
-                :$this->robotFlipSimulation($record,$draw,(int)$lottery['id'],$settlement);
+                ?$this->robotFlipSimulation($record,$draw,(int)$lottery['id'],$settlement)
+                :$this->robotLoseSimulation($record,$draw,(int)$lottery['id'],$settlement);
             if($sim['win']===null){$unmodifiable++;continue;}
             $memberDelta=round((float)$sim['win']-(float)$record['cur_win'],2);
             if(!$sim['changed']){$unmodifiable++;continue;}
@@ -1477,14 +1475,11 @@ final class AdminBetBatch
             $agentRow['win_amount']=(float)$agentRow['win_amount']+$memberDelta;
             $newMetric=$this->robotAgentMetrics($agentRow,(int)$node['site_id'],$nodeId,$chainCache,$nodeLevels,$nodeParents,$siteCap,$waterRate)['agent_profit'];
             $agentDelta=round((float)$newMetric-(float)$oldMetric,2);
-            if(($direction>0&&$agentDelta<=0.005)||($direction<0&&$agentDelta>=-0.005)){$unmodifiable++;continue;}
-            $item=$this->robotNumberOnlyItem($record,$sim,$direction<0?'win':'lose');
-            $candidate=['delta'=>$agentDelta,'member_delta'=>$memberDelta,'item'=>$item];
-            if($alreadyInside&&$inside(round($before+$agentDelta,2))){$candidates=[$candidate];break;}
+            if(($direction>0&&$memberDelta<=0.005)||($direction<0&&$memberDelta>=-0.005)){$unmodifiable++;continue;}
+            $item=$this->robotNumberOnlyItem($record,$sim,$direction>0?'win':'lose');
+            $candidate=['delta'=>$memberDelta,'member_delta'=>$memberDelta,'agent_delta'=>$agentDelta,'item'=>$item];
+            if($alreadyInside&&$inside(round($before+$memberDelta,2))){$candidates=[$candidate];break;}
             $candidates[]=$candidate;
-            $candidateAfter=round($candidateAfter+$agentDelta,2);
-            if(!$alreadyInside&&$inside($candidateAfter)) break;
-            if(count($candidates)>=$candidateLimit) break;
         }
         $after=$before;$memberAfter=$memberBefore;$items=[];
         while(!$inside($after)&&$candidates!==[]){
@@ -1519,7 +1514,7 @@ final class AdminBetBatch
         $within=$inside($after);
         $warnings=[];
         if($unavailableRecords>0)$warnings[]=$unavailableRecords.' 张用户注单无法按预开奖号码试算，已跳过';
-        if($unmodifiable>0)$warnings[]=$unmodifiable.' 张用户注单在保持金额和玩法不变时没有可用改号结果';
+        if($unmodifiable>0&&$items===[])$warnings[]=$unmodifiable.' 张用户注单在保持金额和玩法不变时没有可用改号结果';
         if(!$within)$warnings[]='当前所选用户可改号码容量不足，最接近结果仍超出目标上下 5% 区间';
         if($items===[]&&abs($after-$before)<0.005)$warnings[]=$within?'当前结果已在目标区间内，无需改码':'没有找到可使结果接近目标的号码改动';
 
@@ -1532,7 +1527,7 @@ final class AdminBetBatch
         $token=hash('sha256',json_encode([$nodeId,$issue,$draw,$scopeUserIds,$selectedUserIds,number_format($targetProfit,2,'.',''),$state,array_column($items,'record_id')],JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
         return [
             'draw'=>$draw,'day'=>$day,'node'=>['id'=>(int)$node['id'],'site_id'=>(int)$node['site_id'],'level'=>(string)$node['level'],'name'=>(string)$node['name']],
-            'profit_metric'=>'agent_profit',
+            'profit_metric'=>'member_profit',
             'target_profit'=>number_format($targetProfit,2,'.',''),'target_min'=>number_format($targetMin,2,'.',''),'target_max'=>number_format($targetMax,2,'.',''),
             'daily_profit_before'=>number_format($before,2,'.',''),'daily_profit_after'=>number_format($after,2,'.',''),
             'daily_bet'=>number_format($dailyBet,2,'.',''),'daily_win_before'=>number_format($dailyWin,2,'.',''),
