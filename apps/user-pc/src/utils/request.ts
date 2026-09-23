@@ -14,11 +14,21 @@ export const request: AxiosInstance = axios.create({
 
 let unauthorizedDispatched = false;
 let refreshPromise: Promise<string | null> | null = null;
+let latestUserActivity = Date.now();
+
+const markUserActivity = () => { latestUserActivity = Date.now(); };
+if (typeof window !== "undefined") {
+  for (const eventName of ["pointerdown", "keydown", "touchstart", "wheel", "scroll"]) {
+    window.addEventListener(eventName, markUserActivity, { passive: true });
+  }
+  window.addEventListener("focus", markUserActivity);
+}
 
 function handleUnauthorized() {
   localStorage.removeItem("user_token");
   localStorage.removeItem("user_name");
   localStorage.removeItem("user_must_change_password");
+  sessionStorage.removeItem("agreement_accepted_for_login");
   sessionStorage.removeItem("agreement_accepted_token");
   if (unauthorizedDispatched) return;
   unauthorizedDispatched = true;
@@ -68,6 +78,7 @@ async function retryAfterRefresh(error: AxiosError<ApiEnvelope<unknown>>): Promi
 request.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   const token = localStorage.getItem("user_token");
   config.headers.set("X-User-Domain", window.location.host);
+  config.headers.set("X-Session-Activity", String(latestUserActivity));
   if (token && !config.headers?.Authorization) config.headers.set("Authorization", `Bearer ${token}`);
   return config;
 });

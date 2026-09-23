@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { App as AntdApp } from "antd";
 import { HashRouter, Route, Routes } from "react-router-dom";
 import { Agreement, defaultAgreement, type AgreementData } from "./features/agreement/Agreement";
 import { Login } from "./features/auth/Login";
 import { Main } from "./features/main/Main";
 import { getAgreement, logoutSession } from "./api/user";
+
+const AGREEMENT_SESSION_KEY = "agreement_accepted_for_login";
 
 function clearUserAuthQuery() {
   const url = new URL(window.location.href);
@@ -20,15 +22,17 @@ export default function App() {
   const [mustChangePassword, setMustChangePassword] = useState(() => localStorage.getItem("user_must_change_password") === "1");
   const [agreementVisible, setAgreementVisible] = useState(() => {
     const token = localStorage.getItem("user_token");
-    return Boolean(token && localStorage.getItem("user_name") && localStorage.getItem("user_must_change_password") !== "1" && sessionStorage.getItem("agreement_accepted_token") !== token);
+    return Boolean(token && localStorage.getItem("user_name") && localStorage.getItem("user_must_change_password") !== "1" && sessionStorage.getItem(AGREEMENT_SESSION_KEY) !== "1");
   });
   const [agreement, setAgreement] = useState<AgreementData>(defaultAgreement);
+  const unauthorizedModalOpen = useRef(false);
 
   const clearSession = () => {
     clearUserAuthQuery();
     localStorage.removeItem("user_name");
     localStorage.removeItem("user_token");
     localStorage.removeItem("user_must_change_password");
+    sessionStorage.removeItem(AGREEMENT_SESSION_KEY);
     sessionStorage.removeItem("agreement_accepted_token");
     setAgreementVisible(false);
     setMustChangePassword(false);
@@ -37,6 +41,8 @@ export default function App() {
 
   useEffect(() => {
     const handleUnauthorized = () => {
+      if (unauthorizedModalOpen.current) return;
+      unauthorizedModalOpen.current = true;
       modal.confirm({
         title: "登录已过期",
         content: "请重新登录",
@@ -45,6 +51,7 @@ export default function App() {
         maskClosable: false,
         closable: false,
         onOk: () => {
+          unauthorizedModalOpen.current = false;
           clearSession();
           window.location.hash = "#/kb";
         },
@@ -77,8 +84,8 @@ export default function App() {
     if (autoToken) localStorage.setItem("user_token", autoToken);
     const userName = localStorage.getItem("user_name") || "站点管理员";
     localStorage.setItem("user_name", userName);
-    if (lineSwitch) sessionStorage.setItem("agreement_accepted_token", token);
-    else sessionStorage.removeItem("agreement_accepted_token");
+    if (lineSwitch) sessionStorage.setItem(AGREEMENT_SESSION_KEY, "1");
+    else sessionStorage.removeItem(AGREEMENT_SESSION_KEY);
     setName(userName);
     setAgreementVisible(!lineSwitch && localStorage.getItem("user_must_change_password") !== "1");
   }, []);
@@ -93,8 +100,7 @@ export default function App() {
             agreement={agreement}
             onReject={logout}
             onAccept={() => {
-              const token = localStorage.getItem("user_token");
-              if (token) sessionStorage.setItem("agreement_accepted_token", token);
+              sessionStorage.setItem(AGREEMENT_SESSION_KEY, "1");
               setAgreementVisible(false);
             }}
           />
@@ -109,6 +115,7 @@ export default function App() {
                 onLogin={(n) => {
                   localStorage.setItem("user_name", n);
                   const required = localStorage.getItem("user_must_change_password") === "1";
+                  sessionStorage.removeItem(AGREEMENT_SESSION_KEY);
                   sessionStorage.removeItem("agreement_accepted_token");
                   setAgreement(defaultAgreement);
                   setName(n);

@@ -632,21 +632,22 @@ export function QuickEntryPage({
                 clearGeneratedPreview();
               }}
               onPaste={(event) => {
-                const pasted = event.clipboardData
-                  .getData("text")
-                  .slice(0, 10000);
+                const pasted = event.clipboardData.getData("text");
                 event.preventDefault();
+                const separator = text && pasted && !text.endsWith("\n") ? "\n" : "";
+                const appended = `${text}${separator}${pasted}`.slice(0, 10000);
                 // A paste is an explicit entry action. Recognize it immediately
                 // on mobile even when “立即识别” is off; that switch controls
                 // recognition while editing, not whether paste works.
                 suppressResultRecognition.current = true;
-                setText(pasted);
+                setReplaceUndoText(null);
+                setText(appended);
                 setRecognitionError("");
                 clearGeneratedPreview();
                 window.setTimeout(() => {
-                  void generateText(pasted, options[0] && timing.canBet).then((preview) => {
+                  void generateText(appended, options[0] && timing.canBet).then((preview) => {
                     if (preview && options[0] && timing.canBet)
-                      void submitBet(pasted, preview);
+                      void submitBet(appended, preview);
                   });
                 }, 0);
               }}

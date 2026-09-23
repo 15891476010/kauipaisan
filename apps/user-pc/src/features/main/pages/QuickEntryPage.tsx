@@ -442,19 +442,19 @@ export function QuickEntryPage({
                 clearGeneratedPreview();
               }}
               onPaste={(event) => {
-                const pasted = event.clipboardData
-                  .getData("text")
-                  .slice(0, 10000);
+                const pasted = event.clipboardData.getData("text");
                 event.preventDefault();
+                const separator = text && pasted && !text.endsWith("\n") ? "\n" : "";
+                const appended = `${text}${separator}${pasted}`.slice(0, 10000);
                 if (options[0] && options[1])
                   suppressResultRecognition.current = true;
-                setText(pasted);
+                setText(appended);
                 setRecognitionError("");
                 clearGeneratedPreview();
                 if (options[0] && timing.canBet)
                   window.setTimeout(() => {
-                    void generateText(pasted).then((preview) => {
-                      if (preview) void submitBet(pasted, preview);
+                    void generateText(appended).then((preview) => {
+                      if (preview) void submitBet(appended, preview);
                     });
                   }, 0);
               }}

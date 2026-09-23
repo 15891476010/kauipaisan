@@ -3,6 +3,15 @@ import { ElMessageBox } from 'element-plus'
 
 let expiredPrompt = false
 let refreshPromise: Promise<string | null> | null = null
+let latestUserActivity = Date.now()
+
+const markUserActivity = () => { latestUserActivity = Date.now() }
+if (typeof window !== 'undefined') {
+  for (const eventName of ['pointerdown', 'keydown', 'touchstart', 'wheel', 'scroll']) {
+    window.addEventListener(eventName, markUserActivity, { passive: true })
+  }
+  window.addEventListener('focus', markUserActivity)
+}
 
 function configToken(config: any): string {
   return String(config?.headers?.Authorization || config?.headers?.authorization || '')
@@ -69,6 +78,7 @@ const http = axios.create({ baseURL: import.meta.env.VITE_API_BASE_URL || '/api/
 http.interceptors.request.use((config) => {
   const token = localStorage.getItem('admin_token')
   if (token) config.headers.Authorization = `Bearer ${token}`
+  config.headers['X-Session-Activity'] = String(latestUserActivity)
   return config
 })
 http.interceptors.response.use(

@@ -27,8 +27,9 @@ final class Auth
         AuditLogger::write($context, $action, $resource, $payload, (string)$request->ip());
     }
     private function reply(mixed $data = null, string $message = 'ok', int $code = 0): \think\response\Json { return json(['code'=>$code,'message'=>$message,'data'=>$data,'request_id'=>bin2hex(random_bytes(8))]); }
-    private function tokenTtl(): int { return max(7200, min(604800, (int)env('TOKEN_TTL',7200))); }
-    private function token(int $userId, string $scope, array $context=[]): string { $token=bin2hex(random_bytes(32)); Cache::set('token:'.$token,array_merge(['user_id'=>$userId,'scope'=>$scope],$context),$this->tokenTtl()); return $token; }
+    /** All admin, agent and user tokens expire after two hours without a real API action. */
+    private function tokenTtl(): int { return 7200; }
+    private function token(int $userId, string $scope, array $context=[]): string { $token=bin2hex(random_bytes(32)); Cache::set('token:'.$token,array_merge(['user_id'=>$userId,'scope'=>$scope,'last_activity_at'=>time(),'last_client_activity'=>''],$context),$this->tokenTtl()); return $token; }
     private function sessionToken(Request $request, int $userId, string $scope, array $context, string $accountType): string {
         $token=$this->token($userId,$scope,$context);
         AccountPresence::login($request,$token,array_merge(['user_id'=>$userId,'scope'=>$scope],$context),$accountType,$userId);
@@ -205,25 +206,18 @@ final class Auth
         if (!is_array($session)) return $this->reply(null,'未登录或登录已过期',401);
         AccountPresence::resume($request,$token,$session);
         AccountPresence::touch($token,$session,true);
-        // Refresh the session TTL on every heartbeat. This keeps active users
-        // signed in even when the cache backend or an old environment file
-        // applies a short initial expiration.
-        Cache::set('token:'.$token,$session,$this->tokenTtl());
         return $this->reply(['online'=>true,'server_time'=>date(DATE_ATOM)]);
     }
     /** Re-issue a bearer token without asking the user to log in again. */
     public function refresh(Request $request): \think\response\Json {
         $oldToken=trim(str_ireplace('Bearer ','',(string)$request->header('authorization')));
         if ($oldToken==='') return $this->reply(null,'未登录或登录已过期',401);
-        $row=Db::name('account_sessions')->where('token_hash',hash('sha256',$oldToken))->whereNull('logged_out_at')->find();
         $session=Cache::get('token:'.$oldToken);
-        if (!is_array($session) && is_array($row)) {
-            $encoded=(string)($row['session_data']??'');
-            $session=$encoded!==''?json_decode($encoded,true):null;
-        }
-        if (!is_array($session) && is_array($row)) $session=$this->sessionFromPresenceRow($row);
         if (!is_array($session) || !isset($session['scope'],$session['user_id'])) return $this->reply(null,'未登录或登录已过期',401);
+        $lastActivityAt=(int)($session['last_activity_at']??0);
+        if($lastActivityAt>0&&time()-$lastActivityAt>=7200){Cache::delete('token:'.$oldToken);return $this->reply(null,'未登录或登录已过期',401);}
         $newToken=$this->token((int)$session['user_id'],(string)$session['scope'],$session);
+        $row=Db::name('account_sessions')->where('token_hash',hash('sha256',$oldToken))->whereNull('logged_out_at')->find();
         $accountType=(string)($row['account_type']??'');
         if ($accountType==='') $accountType=(string)($session['scope']==='user'?'site_user':($session['scope']==='admin'?(($session['admin_role']??'platform')==='site'?'site_admin':'platform_admin'):($session['account_table']??'agent_admin')));
         AccountPresence::login($request,$newToken,$session,$accountType,(int)$session['user_id']);
@@ -324,7 +318,7 @@ final class Auth
         if($password!==$confirm)return $this->reply(null,'两次输入的新密码不一致',422);
         try{PasswordPolicy::assertValid($password,(string)$account['username'],(string)$account['password']);}catch(\InvalidArgumentException $error){return $this->reply(null,$error->getMessage(),422);}
         Db::name($table)->where('id',$account['id'])->update(['password'=>password_hash($password,PASSWORD_DEFAULT),'must_change_password'=>0,'updated_at'=>date('Y-m-d H:i:s')]);
-        $session['must_change_password']=0;Cache::set('token:'.$token,$session,(int)env('TOKEN_TTL',7200));
+        $session['must_change_password']=0;Cache::set('token:'.$token,$session,$this->tokenTtl());
         return $this->reply(null,'密码修改成功');
     }
     public function menus(Request $request): \think\response\Json { $token=trim(str_ireplace('Bearer ','',(string)$request->header('authorization'))); $session=$token !== '' ? Cache::get('token:'.$token) : []; return $this->reply($this->menuTree(!is_array($session) || ($session['admin_role'] ?? 'platform') === 'platform')); }

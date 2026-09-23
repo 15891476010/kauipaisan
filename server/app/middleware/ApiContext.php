@@ -22,12 +22,24 @@ final class ApiContext
         if ($token === '') return null;
         $key = 'token:'.$token;
         $session = Cache::get($key);
-        if (is_array($session)) return $session;
+        if (is_array($session)) {
+            $lastActivityAt = (int)($session['last_activity_at'] ?? 0);
+            if ($lastActivityAt > 0 && time() - $lastActivityAt >= 7200) {
+                Cache::delete($key);
+                return null;
+            }
+            if ($lastActivityAt < 1) {
+                $session['last_activity_at'] = time();
+                $session['last_client_activity'] = '';
+                Cache::set($key, $session, 7200);
+            }
+            return $session;
+        }
         if (strtolower((string)env('CACHE_DRIVER','')) !== 'redis') return null;
         try {
             $legacy = Cache::store('file')->get($key);
             if (is_array($legacy)) {
-                Cache::set($key, $legacy, (int)env('TOKEN_TTL',7200));
+                Cache::set($key, $legacy, 7200);
                 return $legacy;
             }
         } catch (\Throwable $e) {
@@ -43,7 +55,7 @@ final class ApiContext
             // This API uses bearer tokens instead of cookies, so wildcard
             // origins are safe and keep it reachable from any frontend host.
             'Access-Control-Allow-Origin' => '*',
-            'Access-Control-Allow-Headers' => 'Content-Type, Authorization, X-Agent-Domain, X-User-Domain, X-Requested-With',
+            'Access-Control-Allow-Headers' => 'Content-Type, Authorization, X-Agent-Domain, X-User-Domain, X-Session-Activity, X-Requested-With',
             'Access-Control-Allow-Methods' => 'GET, POST, PUT, DELETE, PATCH, OPTIONS',
             'Access-Control-Allow-Private-Network' => 'true',
             'Access-Control-Max-Age' => '86400',
@@ -78,7 +90,7 @@ final class ApiContext
                 $permissions=OrganizationHierarchy::subaccountPermissions((int)$activeSubaccount['organization_id'],$activeSubaccount['permissions']??null);
                 $lotteryPermissions=json_decode((string)($activeSubaccount['lottery_permissions']??''),true);if(!is_array($lotteryPermissions))$lotteryPermissions=[];
                 $refreshed=array_merge($agentSession,['organization_id'=>(int)$activeSubaccount['organization_id'],'permissions'=>$permissions,'lottery_permissions'=>$lotteryPermissions,'report_limit_enabled'=>(int)($activeSubaccount['report_limit_enabled']??0),'report_from_issue'=>$activeSubaccount['report_from_issue']??null,'report_to_issue'=>$activeSubaccount['report_to_issue']??null]);
-                if($refreshed!==$agentSession&&$token!=='')Cache::set('token:'.$token,$refreshed,(int)env('TOKEN_TTL',7200));$agentSession=$refreshed;
+                if($refreshed!==$agentSession&&$token!=='')Cache::set('token:'.$token,$refreshed,7200);$agentSession=$refreshed;
                 $required = $this->agentPermission($path, $request);
                 if ($required === '__owner__' || ($required !== '' && !$this->hasAgentPermission($permissions,$required))) return $this->cors(json(['code'=>403,'message'=>'当前子账号没有此功能权限','data'=>null,'request_id'=>bin2hex(random_bytes(8))],403));
             }
@@ -87,7 +99,7 @@ final class ApiContext
                 if(!$active){if($token!=='')Cache::delete('token:'.$token);return $this->cors(json(['code'=>401,'message'=>'当前组织账号已停用或删除','data'=>null,'request_id'=>bin2hex(random_bytes(8))],401));}
                 $permissions=OrganizationHierarchy::effectivePermissions((int)$active['organization_id'],OrganizationHierarchy::decodePermissions($active['permissions']??null));
                 $refreshed=array_merge($agentSession,['organization_id'=>(int)$active['organization_id'],'organization_level'=>(string)$active['organization_level'],'permissions'=>$permissions]);
-                if($refreshed!==$agentSession&&$token!=='')Cache::set('token:'.$token,$refreshed,(int)env('TOKEN_TTL',7200));$agentSession=$refreshed;
+                if($refreshed!==$agentSession&&$token!=='')Cache::set('token:'.$token,$refreshed,7200);$agentSession=$refreshed;
                 $required=$this->agentPermission($path,$request);
                 if($required!==''&&$required!=='__owner__'&&!$this->hasAgentPermission($permissions,$required))return $this->cors(json(['code'=>403,'message'=>'上级未分配此功能权限','data'=>null,'request_id'=>bin2hex(random_bytes(8))],403));
             }
@@ -96,7 +108,7 @@ final class ApiContext
                 $organizationLevel=(string)($agentSession['organization_level']??($legacyNode['level']??'director'));
                 $permissions=AgentAuthorization::sitePermissions((int)($agentSession['site_id']??0),$organizationLevel);
                 $refreshed=array_merge($agentSession,['organization_level'=>$organizationLevel,'permissions'=>$permissions]);
-                if($refreshed!==$agentSession&&$token!=='')Cache::set('token:'.$token,$refreshed,(int)env('TOKEN_TTL',7200));
+                if($refreshed!==$agentSession&&$token!=='')Cache::set('token:'.$token,$refreshed,7200);
                 $required=$this->agentPermission($path,$request);
                 if($required!==''&&$required!=='__owner__'&&!$this->hasAgentPermission($permissions,$required))return $this->cors(json(['code'=>403,'message'=>'SaaS 平台未向本站点开放此功能','data'=>null,'request_id'=>bin2hex(random_bytes(8))],403));
             }
@@ -104,11 +116,18 @@ final class ApiContext
         $authorization = (string)$request->header('authorization');
         $token = trim(str_ireplace('Bearer ', '', $authorization));
         $activeSession = $this->tokenSession($token);
-        // Keep the token alive while it is actively used. TOKEN_TTL is the
-        // inactivity timeout (7200 seconds by default), so each authenticated
-        // request, including heartbeat, slides the expiry window forward.
-        if (is_array($activeSession) && $token !== '') {
-            Cache::set('token:' . $token, $activeSession, (int)env('TOKEN_TTL', 7200));
+        // Only a new browser interaction slides the inactivity window. Repeated
+        // polling carries the same value and therefore cannot keep a session alive.
+        $isSessionMaintenance = str_ends_with($path, '/auth/refresh');
+        $clientActivity = trim((string)$request->header('x-session-activity'));
+        $lastClientActivity = (string)($activeSession['last_client_activity'] ?? '');
+        $hasNewUserActivity = ctype_digit($clientActivity)
+            && (int)$clientActivity > 0
+            && ($lastClientActivity === '' || (int)$clientActivity > (int)$lastClientActivity);
+        if (is_array($activeSession) && $token !== '' && !$isSessionMaintenance && $hasNewUserActivity) {
+            $activeSession['last_activity_at'] = time();
+            $activeSession['last_client_activity'] = $clientActivity;
+            Cache::set('token:' . $token, $activeSession, 7200);
         }
         if (is_array($activeSession) && !empty($activeSession['must_change_password'])) {
             $allowed = str_ends_with($path, '/auth/password') || str_ends_with($path, '/auth/logout') || str_ends_with($path, '/auth/heartbeat') || str_ends_with($path, '/agreement') || str_ends_with($path, '/profile') || str_ends_with($path, '/announcement') || str_ends_with($path, '/lotteries');
