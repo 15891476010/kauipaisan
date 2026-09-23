@@ -59,10 +59,11 @@ onMounted(()=>void load())
       <el-table-column label="层级" width="110"><template #default="{row}"><el-tag effect="plain">{{ row.level_label || row.level }}</el-tag></template></el-table-column>
       <el-table-column label="分数额度" min-width="150" align="right"><template #default="{row}"><div>{{ row.credit_limit || '0.00' }}</div><small class="balance-hint">可用 {{ row.balance || '0.00' }}</small></template></el-table-column>
       <el-table-column label="占成比例" min-width="120" align="right"><template #default="{row}">{{ Number(row.share_rate || 0).toFixed(4) }}%</template></el-table-column>
+      <el-table-column label="在线状态" width="100"><template #default="{row}"><el-tag :type="Number(row.online)===1?'success':'info'" effect="dark">{{ Number(row.online)===1?'在线':'离线' }}</el-tag></template></el-table-column>
       <el-table-column label="最后登录时间" min-width="170"><template #default="{row}">{{ row.last_login_at || '-' }}</template></el-table-column>
       <el-table-column label="登录地点" min-width="180"><template #default="{row}">{{ row.last_login_location || '-' }}</template></el-table-column>
       <el-table-column label="登录 IP" min-width="150"><template #default="{row}">{{ row.last_login_ip || '-' }}</template></el-table-column>
-      <el-table-column label="状态" width="90"><template #default="{row}"><el-tag :type="row.status===1?'success':'info'">{{ row.status===1?'启用':'停用' }}</el-tag></template></el-table-column>
+      <el-table-column label="账号状态" width="100"><template #default="{row}"><el-tag :type="row.status===1?'success':'info'">{{ row.status===1?'启用':'停用' }}</el-tag></template></el-table-column>
       <el-table-column label="操作" fixed="right" width="250"><template #default="{row}"><div class="row-actions"><el-button v-if="row.level==='director'&&row.parent_id===0" link type="primary" :icon="Wallet" @click="openDirectorConfig(row)">分数占成</el-button><el-button link type="primary" @click="openEdit(row)">编辑</el-button><el-button link type="danger" @click="removeNode(row)">删除</el-button></div></template></el-table-column>
     </el-table>
 
