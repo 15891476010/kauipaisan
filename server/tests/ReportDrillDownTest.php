@@ -97,10 +97,10 @@ try {
     check($byId[$emptyAgent]['issue_count'] === 0 && $byId[$emptyAgent]['summary']['amount'] === '0', 'Empty branch must show zero');
     check($data['summary']['amount'] === '415' && $data['issue_count'] === 18, 'Root totals or distinct issue count are incorrect');
     check($data['row_label'] === '大股东 / 代理', 'Mixed direct child levels must be reflected in the name column');
-    // Column groups follow the viewing level: the two levels directly
-    // below the current node plus the current level itself.
-    check(array_column($data['report_levels'], 'key') === ['small_shareholder','shareholder','director'], 'Director column levels are wrong');
-    check(array_column($data['report_levels'], 'relation') === ['downline','downline','self'], 'Director column relations are wrong');
+    // Columns follow the business hierarchy. Physical skipped-level branches
+    // must not add agent/general-agent columns to a director report.
+    check(array_column($data['report_levels'], 'key') === ['shareholder','director'], 'Director column levels are wrong');
+    check(array_column($data['report_levels'], 'relation') === ['downline','self'], 'Director column relations are wrong');
     check(array_column($data['breadcrumbs'], 'id') === [$root], 'Root breadcrumb leaked another organization');
 
     $path = [$root];

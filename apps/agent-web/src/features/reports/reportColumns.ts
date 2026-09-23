@@ -28,7 +28,7 @@ const labelFor = (level: AgentReportLevel) => level.key === 'small_shareholder' 
 export function reportColumnGroups(reportLevels: AgentReportLevel[]): ReportColumnGroup[] {
   const self = reportLevels.find((level) => level.relation === 'self')
     ?? { key: 'agent', label: '代理', relation: 'self' as const };
-  const downline = reportLevels.filter((level) => level.relation === 'downline').at(-1);
+  const downlines = reportLevels.filter((level) => level.relation === 'downline');
   const upline = reportLevels.find((level) => level.relation === 'upline');
   const memberColumns = [
     metric('笔数', 'bet_count'), metric('总投', 'amount'), metric('总中', 'win_amount'),
@@ -38,15 +38,14 @@ export function reportColumnGroups(reportLevels: AgentReportLevel[]): ReportColu
   const groups: ReportColumnGroup[] = [
     { key: 'member', label: '会员', relation: 'member', className: 'member-group', columns: memberColumns },
   ];
-  if (downline) groups.push({
+  downlines.forEach((downline) => groups.push({
     key: downline.key, label: labelFor(downline), relation: 'downline', className: 'platform-group',
     columns: [
-      // 参考站下级组的总投为扣除下级占成后交到本级的金额。
-      metric('总投', 'viewer_amount'),
+      levelMetric('总投', downline.key, 'amount'),
       levelMetric('总赚水', downline.key, 'water'),
       levelMetric('盈亏', downline.key, 'profit'),
     ],
-  });
+  }));
   const shareColumns = [metric('占成金额', 'share_amount'), metric('占成盈亏', 'share_profit')];
   const waterColumns = self.key === 'director'
     ? [metric('承担赚水', 'agent_water')]

@@ -1362,7 +1362,7 @@ final class AdminBetBatch
         ];
     }
 
-    /** Return the report's agent_profit for one aggregated member book. */
+    /** Return the same report projection used by the agent report page. */
     private function robotAgentMetrics(array $row,int $siteId,int $nodeId,array &$chainCache,array $nodeLevels,array $nodeParents,float $siteCap,float $waterRate): array
     {
         $snapshot=null;$lineOrgId=0;
@@ -1382,13 +1382,13 @@ final class AdminBetBatch
         );
         $amount=(float)($row['amount']??0);
         $memberProfit=(float)($row['win_amount']??0)+(float)($row['rebate']??0)-$amount;
-        return OrganizationHierarchy::shareRowMetrics($amount,$memberProfit,$waterRate,$edges,$nodeId,$viewerIsRoot);
+        return OrganizationHierarchy::reportRowMetrics($amount,$memberProfit,$waterRate,$edges,$nodeId,$viewerIsRoot);
     }
 
     /**
      * Profit attributable to the selected organization itself.
      *
-     * For the root, shareRowMetrics already folds the root's own share profit
+     * For the root, reportRowMetrics already folds the root's own share profit
      * into agent_profit. For a non-root viewer, agent_profit is the income
      * from subordinate lines plus this level's water; the viewer's own
      * occupied-share profit is exposed separately as share_profit. The

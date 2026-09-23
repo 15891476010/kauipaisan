@@ -145,6 +145,8 @@ try {
     $request->setMethod('GET');
 
     $data = decoded((new AgentReport())->index($request));
+    $levelKeys=array_column($data['report_levels']??[],'key');
+    check($levelKeys===['shareholder','director'],'Director must show only shareholder and director business columns');
     $byMember = [];
     foreach ([$agentA, $agentB, $agentC] as $target) {
         $memberRequest = (new Request())->withHeader(['authorization'=>'Bearer '.$token])->withGet(['from'=>$today, 'to'=>$today, 'organization_id'=>$target]);
@@ -165,8 +167,9 @@ try {
     check(($a['share_profit'] ?? null) === '549', 'A: viewer share profit must be 549 (600 − 51 water), got '.var_export($a['share_profit'] ?? null, true));
     check(($a['agent_profit'] ?? null) === '85', 'A: agent income must be 85 (water on its own承接), got '.var_export($a['agent_profit'] ?? null, true));
     check(($a['offline_water'] ?? null) === '85', 'A: offline water must be 85 (8.5%×own承接1000), got '.var_export($a['offline_water'] ?? null, true));
-    check(($a['levels']['general_agent']['amount'] ?? null) === '400', 'A: upline residual turnover must be 400 (1000−600), got '.var_export($a['levels']['general_agent']['amount'] ?? null, true));
-    check(($a['levels']['general_agent']['profit'] ?? null) === '366', 'A: upline residual profit must be 366 (400 − 34 water), got '.var_export($a['levels']['general_agent']['profit'] ?? null, true));
+    check(($a['levels']['director']['amount'] ?? null) === '400', 'A: actual director upline residual turnover must be 400 (1000−600), got '.var_export($a['levels']['director']['amount'] ?? null, true));
+    check(($a['levels']['director']['profit'] ?? null) === '366', 'A: actual director upline residual profit must be 366 (400 − 34 water), got '.var_export($a['levels']['director']['profit'] ?? null, true));
+    check(!isset($a['levels']['general_agent']), 'A: skipped general-agent level must not be fabricated');
     check(!isset($a['levels']['agent']), 'A: the viewer level must not appear in level columns');
     check(!isset($a['levels']['shareholder']) && !isset($a['levels']['small_shareholder']), 'A: shareholder levels must be absent (not in chain)');
 
@@ -194,22 +197,23 @@ try {
     // column shows its own book.
     $summary = $data['summary'] ?? [];
     check(($summary['amount'] ?? null) === '3000', 'Summary amount must be 3000 not doubled, got '.var_export($summary['amount'] ?? null, true));
-    check(($summary['viewer_amount'] ?? null) === '900', 'Summary 承接总投 must be 900 (400+500+0), got '.var_export($summary['viewer_amount'] ?? null, true));
+    check(($summary['viewer_amount'] ?? null) === '960', 'Summary 承接总投 must be 960 (400+560+0) after successive residual shares, got '.var_export($summary['viewer_amount'] ?? null, true));
     check(($summary['levels']['agent']['share_amount'] ?? null) === '1900', 'Summary agent 占成金额 must be 1900 (600+300+1000), got '.var_export($summary['levels']['agent']['share_amount'] ?? null, true));
     check(($summary['levels']['agent']['share_profit'] ?? null) === '1738.5', 'Summary agent 占成盈亏 must be 1738.5 (549+274.5+915), got '.var_export($summary['levels']['agent']['share_profit'] ?? null, true));
-    check(($summary['levels']['agent']['profit'] ?? null) === '-2413', 'Summary agent 盈亏 must be -2413 (−583−915−915), got '.var_export($summary['levels']['agent']['profit'] ?? null, true));
+    check(($summary['levels']['agent']['profit'] ?? null) === '-2779', 'Summary agent 盈亏 must include the top director taking every remaining share; got '.var_export($summary['levels']['agent']['profit'] ?? null, true));
     check(($summary['levels']['general_agent']['amount'] ?? null) === '700', 'Summary 总代理 承接总投 must be 700, got '.var_export($summary['levels']['general_agent']['amount'] ?? null, true));
     check(($summary['levels']['general_agent']['water'] ?? null) === '59.5', 'Summary 总代理 赚水 must be 59.5 (8.5%×own承接700), got '.var_export($summary['levels']['general_agent']['water'] ?? null, true));
-    check(($summary['levels']['general_agent']['profit'] ?? null) === '-225.5', 'Summary 总代理 盈亏 must be -225.5 (−viewer income 183−42.5), got '.var_export($summary['levels']['general_agent']['profit'] ?? null, true));
+    check(($summary['levels']['general_agent']['share_amount'] ?? null) === '140', 'Summary 总代理 占成金额 must be 20% of the 700 remaining after its agent, got '.var_export($summary['levels']['general_agent']['share_amount'] ?? null, true));
+    check(($summary['levels']['general_agent']['share_profit'] ?? null) === '128.1', 'Summary 总代理 占成盈亏 must follow its successive 140 share, got '.var_export($summary['levels']['general_agent']['share_profit'] ?? null, true));
+    check(($summary['levels']['general_agent']['profit'] ?? null) === '-688.1', 'Summary 总代理 盈亏 must conserve against the director owning the final residual, got '.var_export($summary['levels']['general_agent']['profit'] ?? null, true));
     check(!isset($summary['levels']['shareholder']), 'Summary must not contain levels absent from every chain');
 
-    // The director's own columns: 占成金额 0 (root holds no share row), 离线
-    // 反水 0, 总赚水 = 8.5%×本级承接 = 34+42.5 = 76.5 (own water only, not
-    // the subtree sum).
-    check(($summary['share_amount'] ?? null) === '0', 'Viewer share amount must be 0 (root holds no share), got '.var_export($summary['share_amount'] ?? null, true));
+    // The highest director owns every fraction left after lower levels.
+    check(($summary['share_amount'] ?? null) === '960', 'Director share amount must be all remaining share (400+560+0), got '.var_export($summary['share_amount'] ?? null, true));
     check(($summary['offline_water'] ?? null) === '0', 'Director offline water must be 0, got '.var_export($summary['offline_water'] ?? null, true));
-    check(($summary['agent_water'] ?? null) === '76.5', 'Director 总赚水 must be 76.5 (8.5%×own承接 400+500), got '.var_export($summary['agent_water'] ?? null, true));
-    check(($summary['agent_profit'] ?? null) === '1723.5', 'Director 总盈亏 must be 1723.5 (583+225.5+915), got '.var_export($summary['agent_profit'] ?? null, true));
+    check(($summary['agent_water'] ?? null) === '81.6', 'Director 总赚水 must be 81.6 (8.5%×own residual 400+560), got '.var_export($summary['agent_water'] ?? null, true));
+    check(($summary['agent_profit'] ?? null) === '1637.1', 'Director 总盈亏 must include only lines with a positive final residual (949+688.1+0), got '.var_export($summary['agent_profit'] ?? null, true));
+    check(($summary['platform_amount'] ?? null) === '0', 'No turnover may escape above the highest director, got '.var_export($summary['platform_amount'] ?? null, true));
 } finally {
     Db::rollback();
     Cache::delete('token:'.$token);

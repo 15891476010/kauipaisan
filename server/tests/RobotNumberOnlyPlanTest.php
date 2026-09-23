@@ -35,6 +35,12 @@ $makeUser=static function(string $name,bool $robot,int $nodeId)use($tenantId,$si
         'lottery_configs'=>'[]','status'=>'stopped','created_at'=>$now,'updated_at'=>$now]);
     return $userId;
 };
+$makeShare=static function(int $childId,int $parentId,float $rate)use($tenantId,$siteId,$now):void{
+    Db::name('organization_profit_shares')->insert([
+        'tenant_id'=>$tenantId,'site_id'=>$siteId,'parent_organization_id'=>$parentId,'child_organization_id'=>$childId,
+        'max_share_rate'=>100,'share_rate'=>$rate,'status'=>1,'created_at'=>$now,'updated_at'=>$now,
+    ]);
+};
 $makeRecord=static function(int $userId,string $number,string $amount)use($tenantId,$siteId,$lotteryName,$issue,$now):array{
     $source='福'.$number.'直'.$amount.'元';
     $recordId=(int)Db::name('bet_records')->insertGetId(['tenant_id'=>$tenantId,'site_id'=>$siteId,'user_id'=>$userId,'lottery_name'=>$lotteryName,
@@ -55,6 +61,10 @@ try{
     $directorId=$makeNode('director','director',0);
     $shareholderAId=$makeNode('shareholder_a','shareholder',$directorId);
     $shareholderBId=$makeNode('shareholder_b','shareholder',$directorId);
+    // Each branch shareholder occupies half of the book reaching it; the
+    // highest director owns the remaining half on that branch.
+    $makeShare($shareholderAId,$directorId,50);
+    $makeShare($shareholderBId,$directorId,50);
     $member=$makeUser($prefix.'_member',false,$shareholderAId);
     $robot=$makeUser($prefix.'_robot',true,$shareholderAId);
     $otherRobot=$makeUser($prefix.'_other_robot',true,$shareholderAId);
@@ -71,45 +81,46 @@ try{
     $snapshot=new ReflectionMethod($controller,'robotAmountSnapshot');$snapshot->setAccessible(true);
     $lotteryRow=['id'=>$lotteryId,'name'=>$lotteryName];
 
-    $directorPlan=$build->invoke($controller,$lotteryRow,$issue,$draw,[$robot],8000.0,$directorId,null);
+    $directorPlan=$build->invoke($controller,$lotteryRow,$issue,$draw,[$robot],500.0,$directorId,null);
     numberOnlyCheck($directorPlan['scope_user_ids']===[$member,$robot,$otherRobot,$siblingRobot],'选择总监应包含两个股东分支下的全部会员');
     numberOnlyCheck($directorPlan['selected_robot_ids']===[$robot],'方案应只保留前端勾选的机器人');
-    numberOnlyCheck((float)$directorPlan['daily_profit_before']===-118.0,'总监基线应包含整棵子树');
+    numberOnlyCheck((float)$directorPlan['daily_profit_before']===74.74,'总监基线应按两个分支最终剩余50%计算整棵子树');
 
-    $positive=$build->invoke($controller,$lotteryRow,$issue,$draw,[$robot],8000.0,$shareholderAId,null);
-    numberOnlyCheck($positive['within_tolerance']===true,'正目标应落在上下30%区间');
+    $positive=$build->invoke($controller,$lotteryRow,$issue,$draw,[$robot],550.0,$shareholderAId,null);
+    numberOnlyCheck($positive['within_tolerance']===true,'正目标应落在上下5%区间');
     numberOnlyCheck($positive['scope_user_ids']===[$member,$robot,$otherRobot],'选择大股东应只包含该股东子树');
     numberOnlyCheck($positive['selected_robot_ids']===[$robot],'多选结果必须决定自动改码机器人范围');
     numberOnlyCheck(!in_array($siblingRecord,array_column($positive['items'],'record_id'),true),'大股东方案不得包含兄弟分支注单');
     numberOnlyCheck(!in_array($memberRecord,array_column($positive['items'],'record_id'),true),'普通会员注单不得进入机器人改码方案');
     numberOnlyCheck(!in_array($otherRobotRecord,array_column($positive['items'],'record_id'),true),'未勾选机器人注单不得进入改码方案');
-    numberOnlyCheck((float)$positive['daily_profit_before']===-113.0,'大股东基线应包含该分支全部会员和机器人');
-    numberOnlyCheck(count($positive['items'])===1&&$positive['items'][0]['action']==='win','正目标应只翻一张已选机器人输单');
-    numberOnlyCheck((int)$positive['items'][0]['record_id']===$loseRecord,'正目标应选择已勾选机器人的输单');
+    numberOnlyCheck((float)$positive['daily_profit_before']===99.55,'大股东基线应按到达本级金额的50%计算该分支全部会员和机器人');
+    numberOnlyCheck(count($positive['items'])===1&&$positive['items'][0]['action']==='lose','正目标应把一张已选机器人的会员赢单改为不中奖');
+    numberOnlyCheck((int)$positive['items'][0]['record_id']===$winRecord,'正目标应选择已勾选机器人的当前赢单');
     numberOnlyCheck((float)$positive['items'][0]['old_amount']===(float)$positive['items'][0]['new_amount'],'方案金额必须不变');
 
-    $negative=$build->invoke($controller,$lotteryRow,$issue,$draw,[$robot],-1000.0,$shareholderAId,null);
-    numberOnlyCheck($negative['within_tolerance']===true,'负目标应落在上下30%区间');
-    numberOnlyCheck(count($negative['items'])===1&&$negative['items'][0]['action']==='lose','负目标应把机器人赢单改为不中奖');
-    numberOnlyCheck((int)$negative['items'][0]['record_id']===$winRecord,'负目标应选择当前赢单');
+    $negative=$build->invoke($controller,$lotteryRow,$issue,$draw,[$robot],-4400.0,$shareholderAId,null);
+    numberOnlyCheck($negative['within_tolerance']===true,'负目标应落在上下5%区间');
+    numberOnlyCheck(count($negative['items'])===1&&$negative['items'][0]['action']==='win','负目标应把机器人会员输单改为中奖');
+    numberOnlyCheck((int)$negative['items'][0]['record_id']===$loseRecord,'负目标应选择当前输单');
 
     $before=$snapshot->invoke($controller,$positive['items']);$settled=[];
     $apply->invokeArgs($controller,[$positive['items'][0],$issue,null,&$settled]);
     $after=$snapshot->invoke($controller,$positive['items']);
     numberOnlyCheck(hash_equals($before,$after),'bet_records/bet_details/user_stop_drops/bet_submissions 金额哈希必须完全一致');
-    numberOnlyCheck((string)Db::name('bet_details')->where('id',$loseDetail)->value('number_text')===$draw,'只应把已选机器人号码改为预开奖号');
+    numberOnlyCheck((string)Db::name('bet_details')->where('bet_record_id',$winRecord)->value('number_text')!==$draw,'只应把已选机器人中奖单改为不中奖号码');
+    numberOnlyCheck((string)Db::name('bet_details')->where('id',$loseDetail)->value('number_text')==='456','未选中的机器人输单号码必须保持不变');
     numberOnlyCheck((string)Db::name('bet_details')->where('id',$memberDetail)->value('number_text')==='789','普通会员号码必须保持不变');
     numberOnlyCheck((string)Db::name('bet_details')->where('bet_record_id',$otherRobotRecord)->value('number_text')==='456','未勾选机器人号码必须保持不变');
     numberOnlyCheck((string)Db::name('bet_details')->where('bet_record_id',$siblingRecord)->value('number_text')==='456','兄弟分支号码必须保持不变');
 
-    $fresh=$build->invoke($controller,$lotteryRow,$issue,$draw,[$robot],8000.0,$shareholderAId,null);
+    $fresh=$build->invoke($controller,$lotteryRow,$issue,$draw,[$robot],550.0,$shareholderAId,null);
     numberOnlyCheck(!hash_equals((string)$positive['plan_token'],(string)$fresh['plan_token']),'号码变化后旧方案令牌必须失效');
 
-    $ordinaryRejected=false;
-    try{$build->invoke($controller,$lotteryRow,$issue,$draw,[$member],8000.0,$shareholderAId,null);}catch(Throwable){$ordinaryRejected=true;}
-    numberOnlyCheck($ordinaryRejected,'普通会员账号必须被后端拒绝');
+    $ordinary=$build->invoke($controller,$lotteryRow,$issue,$draw,[$member],550.0,$shareholderAId,null);
+    numberOnlyCheck($ordinary['selected_user_ids']===[$member],'被勾选的真实用户必须可以进入改单范围');
+    numberOnlyCheck(!in_array($otherRobotRecord,array_column($ordinary['items'],'record_id'),true),'选择真实用户时未勾选机器人不得进入改单方案');
     $siblingRejected=false;
-    try{$build->invoke($controller,$lotteryRow,$issue,$draw,[$siblingRobot],8000.0,$shareholderAId,null);}catch(Throwable){$siblingRejected=true;}
+    try{$build->invoke($controller,$lotteryRow,$issue,$draw,[$siblingRobot],550.0,$shareholderAId,null);}catch(Throwable){$siblingRejected=true;}
     numberOnlyCheck($siblingRejected,'兄弟组织机器人必须被后端拒绝');
     Db::rollback();
     echo "RobotNumberOnlyPlanTest passed; fixtures rolled back\n";

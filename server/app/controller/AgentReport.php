@@ -108,12 +108,10 @@ final class AgentReport
         }
         $currentOrganizationId=(int)($session['organization_id']??0);
         $viewerIsRoot=($nodeParents[$currentOrganizationId]??1)===0;
-        $viewerLevel=(string)($nodeLevels[$currentOrganizationId]??'');
-        // Canonical order is root-first; the upline column carries the level
-        // directly above the viewer's level.
-        $canonicalOrder=OrganizationHierarchy::LEVELS;
-        $viewerPos=$viewerLevel!==''?array_search($viewerLevel,$canonicalOrder,true):false;
-        $uplineLevelKey=($viewerPos!==false&&$viewerPos>0)?$canonicalOrder[$viewerPos-1]:'';
+        // Lines may skip canonical levels. Use the real parent rather than
+        // inventing a zero-share intermediate level that only shows turnover.
+        $viewerParentId=(int)($nodeParents[$currentOrganizationId]??0);
+        $uplineLevelKey=$viewerParentId>0?(string)($nodeLevels[$viewerParentId]??''):'';
         foreach($rows as &$row) {
             $amount=(float)$row['amount']; $win=(float)$row['win_amount']; $rebate=(float)$row['rebate'];
             // Occupation follows the reference model: every organization
@@ -142,7 +140,7 @@ final class AgentReport
                 }
             }
             $edges=OrganizationHierarchy::shareEdges($siteId,(int)($row['organization_id']??0),$chainCache,$snapshot,$nodeLevels,$nodeParents,$siteCap,(float)($row['share_rate']??0),$lineOrgId);
-            $computed=OrganizationHierarchy::shareRowMetrics($amount,$memberProfit,$waterRate,$edges,$currentOrganizationId,$viewerIsRoot);
+            $computed=OrganizationHierarchy::reportRowMetrics($amount,$memberProfit,$waterRate,$edges,$currentOrganizationId,$viewerIsRoot);
             $levelBases=$computed['levels'];
             if((int)$computed['viewer_idx']>=0&&!$viewerIsRoot&&$uplineLevelKey!==''){
                 // The residual book arriving at the viewer is shown under the
@@ -354,20 +352,25 @@ final class AgentReport
         $current=$currentId>0?Db::name('organization_nodes')->where('id',$currentId)->where('site_id',$siteId)->whereNull('deleted_at')->find():null;
         if(!$current) $current=OrganizationHierarchy::rootForSite($siteId);
         if(!$current) return [];
-        // Metric column groups follow the reference report layout: the
-        // level directly below the viewer, the viewer's own level, and the
-        // parent level for context. A top director has no parent, so it
-        // shows the second level down instead — 总监→小股东/大股东/总监,
-        // 大股东→小股东/大股东/总监, 小股东→总代理/小股东/大股东,
-        // 总代理→代理/总代理/小股东, 代理→代理/总代理.
+        // Report columns follow the business-level layout, not physical
+        // parent links. A director always sees the shareholder column even
+        // when imported lines skip directly to a lower organization. Skipped
+        // lower levels still affect the director residual calculation but do
+        // not create extra director-level columns.
         $order=array_keys(OrganizationHierarchy::LABELS);
         $cur=(int)array_search((string)$current['level'],$order,true);
         $levels=[];
-        $belowCount=$cur===0?2:1;
-        for($r=min($cur+$belowCount,count($order)-1);$r>$cur;$r--)
-            $levels[]=['key'=>$order[$r],'label'=>OrganizationHierarchy::LABELS[$order[$r]]??$order[$r],'relation'=>'downline'];
+        $downlineLevel=$order[$cur+1]??'';
+        if($downlineLevel!=='')
+            $levels[]=['key'=>$downlineLevel,'label'=>OrganizationHierarchy::LABELS[$downlineLevel],'relation'=>'downline'];
         $levels[]=['key'=>$order[$cur],'label'=>OrganizationHierarchy::LABELS[$order[$cur]]??$order[$cur],'relation'=>'self'];
-        if($cur>0)$levels[]=['key'=>$order[$cur-1],'label'=>OrganizationHierarchy::LABELS[$order[$cur-1]]??$order[$cur-1],'relation'=>'upline'];
+        $parentId=(int)($current['parent_id']??0);
+        if($parentId>0){
+            $parent=Db::name('organization_nodes')->where('id',$parentId)->where('site_id',$siteId)->whereNull('deleted_at')->find();
+            $parentLevel=(string)($parent['level']??'');
+            if($parentLevel!==''&&isset(OrganizationHierarchy::LABELS[$parentLevel]))
+                $levels[]=['key'=>$parentLevel,'label'=>OrganizationHierarchy::LABELS[$parentLevel],'relation'=>'upline'];
+        }
         return $levels;
     }
 

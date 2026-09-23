@@ -226,6 +226,61 @@ final class OrganizationHierarchy
         return ['levels'=>$levels,'share_amount'=>$shareAmount,'share_profit'=>$shareProfit,'viewer_rate'=>$viewerRate,'viewer_idx'=>$viewerIdx,'viewer_amount'=>$viewerAmount,'offline_water'=>$offlineWater,'agent_water'=>$agentWater,'agent_profit'=>$agentProfit,'upline_amount'=>$uplineAmount,'upline_profit'=>$uplineProfit,'platform_amount'=>$platformAmount,'platform_profit'=>$platformProfit];
     }
 
+    /**
+     * Report-only compatibility projection. Settlement, ledgers and number
+     * adjustment continue to use shareRowMetrics() unchanged.
+     *
+     * Live configured rates apply successively to the amount remaining from
+     * the level below. For example 90% then 90% occupies 90% and 9%, leaving
+     * 1% for the top director. Settled snapshot edges have already been
+     * normalized to their booked direct fractions by shareEdges(), so they
+     * must not be multiplied by the residual a second time. The top director
+     * always owns the final residual, regardless of its stale stored rate. A
+     * level with no share must not show turnover, water or profit merely
+     * because traffic passed through it.
+     *
+     * @param array<int,array{id:int,level:string,parent_id:int,rate:float}> $edges leaf→root
+     * @return array<string,mixed>
+     */
+    public static function reportRowMetrics(float $amount,float $memberProfit,float $waterRate,array $edges,int $viewerOrgId,bool $viewerIsRoot): array
+    {
+        $reportEdges=$edges;$rootIdx=-1;$residual=1.0;
+        $isSnapshot=false;
+        foreach($reportEdges as $edge){if(array_key_exists('mode',$edge)){$isSnapshot=true;break;}}
+        foreach($reportEdges as $i=>$edge){
+            $isRoot=(int)($edge['parent_id']??0)===0&&(string)($edge['level']??'')==='director';
+            if($isRoot){$rootIdx=$i;continue;}
+            $configured=max(0.0,min(1.0,(float)($edge['rate']??0.0)));
+            $direct=$isSnapshot?min($residual,$configured):$residual*$configured;
+            $reportEdges[$i]['rate']=$direct;
+            $residual=max(0.0,$residual-$direct);
+        }
+        $rootRate=$residual;
+        if($rootIdx>=0)$reportEdges[$rootIdx]['rate']=$rootRate;
+
+        $metrics=self::shareRowMetrics($amount,$memberProfit,$waterRate,$reportEdges,$viewerOrgId,$viewerIsRoot);
+        $ratesByLevel=[];$viewerRate=null;
+        foreach($reportEdges as $edge){
+            $level=(string)($edge['level']??'');$rate=max(0.0,(float)($edge['rate']??0.0));
+            if($level!=='')$ratesByLevel[$level]=$rate;
+            if((int)($edge['id']??0)===$viewerOrgId)$viewerRate=$rate;
+        }
+        if($viewerIsRoot&&$viewerRate===null)$viewerRate=$rootRate;
+        foreach((array)($metrics['levels']??[]) as $level=>$values){
+            if(($ratesByLevel[$level]??0.0)>0.0)continue;
+            $metrics['levels'][$level]=['amount'=>0.0,'water'=>0.0,'profit'=>0.0,'share_amount'=>0.0,'share_profit'=>0.0];
+        }
+        if($viewerRate!==null&&$viewerRate<=0.0){
+            foreach(['viewer_amount','share_amount','share_profit','offline_water','agent_water','agent_profit'] as $key)$metrics[$key]=0.0;
+        }
+        if($viewerIsRoot){
+            // For report presentation the highest director is the terminal
+            // owner, so no amount or P/L remains outside the organization.
+            $metrics['platform_amount']=0.0;$metrics['platform_profit']=0.0;
+        }
+        return $metrics;
+    }
+
     public static function accountContext(array $account): array
     {
         $node=Db::name('organization_nodes')->where('id',(int)$account['organization_id'])->where('site_id',(int)$account['site_id'])->where('status',1)->whereNull('deleted_at')->find();
