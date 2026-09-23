@@ -10,7 +10,7 @@ const emptyResult: AgentOrganizationList = {
   root_organization_id: 0, breadcrumbs: [], site_max_share_rate: "100", nodes: [], members: [], accounts: [], catalog: { levels: [], permissions: [] },
 };
 const memberPageSize = 40;
-type MemberRow = { id: number; username: string; display_name: string; credit_balance: string; available_balance: string; status: number; last_login_at?: string | null; last_login_location?: string | null; agent_name?: string | null };
+type MemberRow = { id: number; username: string; display_name: string; credit_balance: string; available_balance: string; status: number; online?: number; last_login_at?: string | null; last_login_ip?: string | null; last_login_location?: string | null; agent_name?: string | null };
 
 export function SubordinatesPage({ agentName }: { agentName: string }) {
   const { modal } = AntdApp.useApp();
@@ -27,19 +27,31 @@ export function SubordinatesPage({ agentName }: { agentName: string }) {
   const [memberTotal, setMemberTotal] = useState(0);
   const [memberPage, setMemberPage] = useState(1);
   const [membersLoading, setMembersLoading] = useState(false);
+  const [presenceRefresh, setPresenceRefresh] = useState(0);
 
-  const load = useCallback(async (organizationId?: number) => {
-    setLoading(true);
+  const load = useCallback(async (organizationId?: number, silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const response = await getAgentOrganizations(organizationId ? { organization_id: organizationId } : undefined);
       setData(response.data.data || emptyResult);
       setPage(1);
     } catch {
       setData((current) => ({ ...current, nodes: [], members: [] }));
-    } finally { setLoading(false); }
+    } finally { if (!silent) setLoading(false); }
   }, []);
 
   useEffect(() => { void load(contextId); }, [load, contextId]);
+
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState !== "visible") return;
+      void load(contextId, true);
+      setPresenceRefresh((value) => value + 1);
+    };
+    const timer = window.setInterval(refresh, 30_000);
+    window.addEventListener("focus", refresh);
+    return () => { window.clearInterval(timer); window.removeEventListener("focus", refresh); };
+  }, [load, contextId]);
 
   useEffect(() => {
     if (view !== "members") return;
@@ -63,7 +75,7 @@ export function SubordinatesPage({ agentName }: { agentName: string }) {
       setMemberTotal(0);
     }).finally(() => { if (active) setMembersLoading(false); });
     return () => { active = false; };
-  }, [view, applied, contextId, memberPage]);
+  }, [view, applied, contextId, memberPage, presenceRefresh]);
 
   const isMemberMode = data.current.level === "agent";
   const canManageCurrent = data.current.can_manage !== false;
@@ -110,7 +122,7 @@ export function SubordinatesPage({ agentName }: { agentName: string }) {
     });
   }
 
-  const memberTable = (rows: MemberRow[], offset: number, update: boolean, onEdit: (row: MemberRow) => void, parent: (row: MemberRow) => string) => <table className="member-table"><thead><tr><th>编号</th><th>账号名</th><th>上级</th><th>类型</th><th>占成比例</th><th>信用额度</th><th>最近登录时间</th><th>最后登录地点</th><th>状态</th><th>内容</th></tr></thead><tbody>{rows.map((member, index) => <tr key={member.id}><td>{offset + index + 1}</td><td>{update ? <button className="member-link" type="button" onClick={() => onEdit(member)}>{member.username}(会员)</button> : <span>{member.username}(会员)</span>}</td><td><button className="member-link" type="button" onClick={() => modal.info({ title: "上级代理", content: parent(member), okText: "关闭" })}>查看</button></td><td>会员</td><td>代理: 0/0</td><td>{member.credit_balance}</td><td>{member.last_login_at || "-"}</td><td>{member.last_login_location || "-"}</td><td>{member.status === 1 ? "启用" : "停用"}</td><td><div className="member-actions">{update && <button className="member-link" type="button" onClick={() => onEdit(member)}>修改</button>}<button className="member-link" type="button" onClick={() => modal.info({ title: `${member.username} 资料`, content: <div className="member-detail"><p>用户名：{member.username}</p><p>代号：{member.display_name}</p><p>上级代理:{parent(member)}</p><p>信用额度：{member.credit_balance}</p><p>可用余额：{member.available_balance}</p></div>, okText: "关闭" })}>查看</button></div></td></tr>)}</tbody></table>;
+  const memberTable = (rows: MemberRow[], offset: number, update: boolean, onEdit: (row: MemberRow) => void, parent: (row: MemberRow) => string) => <table className="member-table"><thead><tr><th>编号</th><th>账号名</th><th>上级</th><th>类型</th><th>占成比例</th><th>信用额度</th><th>在线状态</th><th>最近登录时间</th><th>登录 IP</th><th>最后登录地点</th><th>状态</th><th>内容</th></tr></thead><tbody>{rows.map((member, index) => <tr key={member.id}><td>{offset + index + 1}</td><td>{update ? <button className="member-link" type="button" onClick={() => onEdit(member)}>{member.username}(会员)</button> : <span>{member.username}(会员)</span>}</td><td><button className="member-link" type="button" onClick={() => modal.info({ title: "上级代理", content: parent(member), okText: "关闭" })}>查看</button></td><td>会员</td><td>代理: 0/0</td><td>{member.credit_balance}</td><td><Tag color={member.online === 1 ? "green" : "default"}>{member.online === 1 ? "在线" : "离线"}</Tag></td><td>{member.last_login_at || "-"}</td><td>{member.last_login_ip || "-"}</td><td>{member.last_login_location || "位置暂不可用"}</td><td>{member.status === 1 ? "启用" : "停用"}</td><td><div className="member-actions">{update && <button className="member-link" type="button" onClick={() => onEdit(member)}>修改</button>}<button className="member-link" type="button" onClick={() => modal.info({ title: `${member.username} 资料`, content: <div className="member-detail"><p>用户名：{member.username}</p><p>代号：{member.display_name}</p><p>上级代理:{parent(member)}</p><p>信用额度：{member.credit_balance}</p><p>可用余额：{member.available_balance}</p><p>在线状态：{member.online === 1 ? "在线" : "离线"}</p><p>登录 IP：{member.last_login_ip || "-"}</p><p>登录位置：{member.last_login_location || "位置暂不可用"}</p></div>, okText: "关闭" })}>查看</button></div></td></tr>)}</tbody></table>;
 
   return <section className="subordinate-page">
     <div className="subordinate-location">
@@ -128,7 +140,7 @@ export function SubordinatesPage({ agentName }: { agentName: string }) {
         <button className="member-search" type="submit"><SearchOutlined />搜索</button>{view === "accounts" && canCreate && <button className="member-create" type="button" onClick={openCreate}><PlusOutlined />新增下级</button>}
       </form>
       <div className="member-table-wrap">
-        {view === "members" ? memberTable(memberRows, (memberPage - 1) * memberPageSize, canMemberUpdate, openMemberEdit, (row) => row.agent_name || "未归属") : isMemberMode ? memberTable(pageMembers, (page - 1) * 40, canUpdate, (member) => openEdit(member as AgentOrganizationMember), () => data.current.name) : <table className="member-table"><thead><tr><th>编号</th><th>登录账号</th><th>下级名称</th><th>层级</th><th>分数额度</th><th>剩余分数</th><th>占成比例</th><th>最近登录时间</th><th>最后登录地点</th><th>状态</th><th>内容</th></tr></thead><tbody>{visibleNodes.map((row, index) => <tr key={row.id}><td>{index + 1}</td><td>{row.username || "-"}</td><td><button className="member-link" type="button" onClick={() => openBranch(row.id)}>{row.display_name || row.name}<small className="subordinate-child-count">{row.child_count || 0} 个下级</small></button></td><td><Tag color="blue">{row.level_label}</Tag></td><td>{row.credit_limit}</td><td>{row.balance || "0.00"}</td><td>{Number(row.share_rate || 0).toFixed(4)}%</td><td>{row.last_login_at || "-"}</td><td>{row.last_login_location || "-"}</td><td>{row.status === 1 ? "启用" : "停用"}</td><td><div className="member-actions">{canUpdate && <button className="member-link" type="button" onClick={() => openEdit(row)}>修改</button>}{canDelete && <button className="member-link member-link-danger" type="button" onClick={() => removeNode(row)}>删除</button>}{!canUpdate && !canDelete && <span>-</span>}</div></td></tr>)}</tbody></table>}
+        {view === "members" ? memberTable(memberRows, (memberPage - 1) * memberPageSize, canMemberUpdate, openMemberEdit, (row) => row.agent_name || "未归属") : isMemberMode ? memberTable(pageMembers, (page - 1) * 40, canUpdate, (member) => openEdit(member as AgentOrganizationMember), () => data.current.name) : <table className="member-table"><thead><tr><th>编号</th><th>登录账号</th><th>下级名称</th><th>层级</th><th>分数额度</th><th>剩余分数</th><th>占成比例</th><th>在线状态</th><th>最近登录时间</th><th>登录 IP</th><th>最后登录地点</th><th>状态</th><th>内容</th></tr></thead><tbody>{visibleNodes.map((row, index) => <tr key={row.id}><td>{index + 1}</td><td>{row.username || "-"}</td><td><button className="member-link" type="button" onClick={() => openBranch(row.id)}>{row.display_name || row.name}<small className="subordinate-child-count">{row.child_count || 0} 个下级</small></button></td><td><Tag color="blue">{row.level_label}</Tag></td><td>{row.credit_limit}</td><td>{row.balance || "0.00"}</td><td>{Number(row.share_rate || 0).toFixed(4)}%</td><td><Tag color={row.online === 1 ? "green" : "default"}>{row.online === 1 ? "在线" : "离线"}</Tag></td><td>{row.last_login_at || "-"}</td><td>{row.last_login_ip || "-"}</td><td>{row.last_login_location || "位置暂不可用"}</td><td>{row.status === 1 ? "启用" : "停用"}</td><td><div className="member-actions">{canUpdate && <button className="member-link" type="button" onClick={() => openEdit(row)}>修改</button>}{canDelete && <button className="member-link member-link-danger" type="button" onClick={() => removeNode(row)}>删除</button>}{!canUpdate && !canDelete && <span>-</span>}</div></td></tr>)}</tbody></table>}
         {!loading && !membersLoading && (view === "members" ? memberRows.length === 0 : isMemberMode ? pageMembers.length === 0 : visibleNodes.length === 0) && <div className="member-empty"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={view === "members" ? "暂无下级会员" : `暂无直属${isMemberMode ? "会员" : childLabel}`} /></div>}
       </div>
       {(view === "members" ? memberTotal > 0 : isMemberMode) && <div className="member-pagination"><span>总计：<b>{view === "members" ? memberTotal : visibleMembers.length}</b> 条数据</span><Pagination current={view === "members" ? memberPage : page} pageSize={memberPageSize} total={view === "members" ? memberTotal : visibleMembers.length} showSizeChanger={false} onChange={view === "members" ? setMemberPage : setPage} /></div>}

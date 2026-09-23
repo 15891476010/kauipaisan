@@ -13,9 +13,9 @@ final class AccountPresence
 
     public static function login(Request $request, string $token, array $session, string $accountType, int $accountId, ?string $loginAt=null): void
     {
+        $ip=self::clientIp($request);
+        $location=self::location($request,$ip);
         try {
-            $ip=self::clientIp($request);
-            $location=self::location($request,$ip);
             $now=date('Y-m-d H:i:s');
             Db::name('account_sessions')->insert([
                 'token_hash'=>hash('sha256',$token),
@@ -105,9 +105,9 @@ final class AccountPresence
             $row['online']=isset($online[$id])?1:0;
             $row['last_seen_at']=$session['last_seen_at']??null;
             $row['last_login_at']=$session['login_at']??($row['last_login_at']??null);
-            $row['last_login_ip']=$session['ip']??null;
-            $row['last_login_location']=$session['location']??null;
-            $row['last_login_device']=$session['device']??null;
+            $row['last_login_ip']=$session['ip']??($row['last_login_ip']??null);
+            $row['last_login_location']=$session['location']??($row['last_login_location']??null);
+            $row['last_login_device']=$session['device']??($row['last_login_device']??null);
         }
         unset($row);
     }
@@ -118,37 +118,49 @@ final class AccountPresence
             $value=trim((string)$request->header($header));
             if (filter_var($value,FILTER_VALIDATE_IP)) return mb_substr($value,0,45);
         }
-        return mb_substr((string)$request->ip(),0,45);
+        foreach (explode(',',(string)$request->header('x-forwarded-for')) as $candidate) {
+            $value=trim($candidate);
+            if (filter_var($value,FILTER_VALIDATE_IP)) return mb_substr($value,0,45);
+        }
+        $fallback=trim((string)$request->ip());
+        return filter_var($fallback,FILTER_VALIDATE_IP)?mb_substr($fallback,0,45):'未知 IP';
     }
 
     private static function location(Request $request, string $ip): string
     {
+        if (!filter_var($ip,FILTER_VALIDATE_IP)) return 'IP 地址不可用';
         if (!filter_var($ip,FILTER_VALIDATE_IP,FILTER_FLAG_NO_PRIV_RANGE|FILTER_FLAG_NO_RES_RANGE)) return '内网或本机地址';
-        $parts=[];
-        foreach (['cf-ipcountry','cf-region','cf-ipcity'] as $header) {
-            $value=trim(urldecode((string)$request->header($header)));
-            if ($value!=='' && !in_array($value,$parts,true)) $parts[]=$value;
+        try {
+            $parts=[];
+            foreach (['cf-ipcountry','cf-region','cf-ipcity'] as $header) {
+                $value=trim(urldecode((string)$request->header($header)));
+                if ($value!=='' && !in_array($value,$parts,true)) $parts[]=$value;
+            }
+            if ($parts) return mb_substr(implode(' ',$parts),0,180);
+            $cacheKey='ip-location:'.sha1($ip); $cached=Cache::get($cacheKey);
+            if (is_string($cached) && $cached!=='') return $cached;
+            $location='公网地址（位置暂不可用）';
+            if (function_exists('curl_init')) {
+                $configured=trim((string)env('IP_GEOLOCATION_URL',''));
+                $url=$configured!==''?str_replace('{ip}',rawurlencode($ip),$configured):'http://ip-api.com/json/'.rawurlencode($ip).'?lang=zh-CN&fields=status,country,regionName,city,district';
+                $token=trim((string)env('IP_GEOLOCATION_TOKEN',''));
+                if ($configured!=='' && !str_contains($url,'{ip}') && !str_contains($url,'ip=')) $url.=str_contains($url,'?')?'&ip='.rawurlencode($ip):'?ip='.rawurlencode($ip);
+                if ($token!=='') $url=str_replace('{token}',rawurlencode($token),$url);
+                $timeout=max(300,min(5000,(int)env('IP_GEOLOCATION_TIMEOUT_MS',1500)));
+                $curl=curl_init($url);
+                if ($curl!==false) {
+                    $headers=[];if($token!==''&&!str_contains($configured,'{token}'))$headers[]='Authorization: Bearer '.$token;
+                    curl_setopt_array($curl,[CURLOPT_RETURNTRANSFER=>true,CURLOPT_NOSIGNAL=>true,CURLOPT_CONNECTTIMEOUT_MS=>$timeout,CURLOPT_TIMEOUT_MS=>$timeout,CURLOPT_HTTPHEADER=>$headers]);
+                    $result=curl_exec($curl); curl_close($curl);
+                    $decoded=is_string($result)?json_decode($result,true):null;
+                    if (is_array($decoded)) { $values=self::addressParts($decoded);if($values)$location=implode(' ',$values); }
+                }
+            }
+            Cache::set($cacheKey,$location,str_contains($location,'暂不可用')?300:604800);
+            return mb_substr($location,0,180);
+        } catch (\Throwable $e) {
+            return '公网地址（位置暂不可用）';
         }
-        if ($parts) return mb_substr(implode(' ',$parts),0,180);
-        $cacheKey='ip-location:'.sha1($ip); $cached=Cache::get($cacheKey);
-        if (is_string($cached) && $cached!=='') return $cached;
-        $location='公网地址';
-        if (function_exists('curl_init')) {
-            $configured=trim((string)env('IP_GEOLOCATION_URL',''));
-            $url=$configured!==''?str_replace('{ip}',rawurlencode($ip),$configured):'http://ip-api.com/json/'.rawurlencode($ip).'?lang=zh-CN&fields=status,country,regionName,city,district';
-            $token=trim((string)env('IP_GEOLOCATION_TOKEN',''));
-            if ($configured!=='' && !str_contains($url,'{ip}') && !str_contains($url,'ip=')) $url.=str_contains($url,'?')?'&ip='.rawurlencode($ip):'?ip='.rawurlencode($ip);
-            if ($token!=='') $url=str_replace('{token}',rawurlencode($token),$url);
-            $timeout=max(300,min(5000,(int)env('IP_GEOLOCATION_TIMEOUT_MS',1500)));
-            $curl=curl_init($url);
-            $headers=[];if($token!==''&&!str_contains($configured,'{token}'))$headers[]='Authorization: Bearer '.$token;
-            curl_setopt_array($curl,[CURLOPT_RETURNTRANSFER=>true,CURLOPT_CONNECTTIMEOUT_MS=>$timeout,CURLOPT_TIMEOUT_MS=>$timeout,CURLOPT_HTTPHEADER=>$headers]);
-            $result=curl_exec($curl); curl_close($curl);
-            $decoded=is_string($result)?json_decode($result,true):null;
-            if (is_array($decoded)) { $values=self::addressParts($decoded);if($values)$location=implode(' ',$values); }
-        }
-        Cache::set($cacheKey,$location,604800);
-        return mb_substr($location,0,180);
     }
 
     /** @return array<int,string> */

@@ -107,6 +107,7 @@ export type AgentMember = {
   account_state?: "enabled" | "disabled" | "bet_paused";
   interception_rate?: string;
   type: string;
+  online?: number;
   last_login_at: string | null;
   last_login_ip?: string | null;
   last_login_location?: string | null;
