@@ -1819,6 +1819,143 @@ final class AdminBetBatch
     }
 
     /**
+     * Convert a member-side payout/loss goal into the organization-profit
+     * values shown by every level from the director to the selected node.
+     * This is a read-only estimate and uses the same share/water formulas as
+     * the batch planner. The requested payout is distributed across members
+     * by their current predicted payout (or stake when nobody currently wins).
+     */
+    public function memberTargetConversion(Request $request): \think\response\Json
+    {
+        $siteId=$this->scopedSiteId($request);
+        $data=$request->post();
+        $lotteryId=(int)($data['lottery_id']??0);
+        $issue=trim((string)($data['issue_no']??''));
+        $draw=preg_replace('/\D/','',(string)($data['draw']??''));
+        $nodeId=(int)($data['node_id']??0);
+        $mode=(string)($data['target_mode']??'');
+        $inputAmount=(float)($data['amount']??NAN);
+        $lottery=null;
+        foreach($this->lotteries($siteId) as $item) if((int)$item['id']===$lotteryId){$lottery=$item;break;}
+        if(!$lottery) throw new \InvalidArgumentException('请选择有效彩种');
+        if($issue==='') throw new \InvalidArgumentException('请选择期号');
+        if(strlen($draw)!==3) throw new \InvalidArgumentException('请先输入 3 位预开奖号码');
+        if($nodeId<1) throw new \InvalidArgumentException('请选择要换算的组织层级');
+        if(!in_array($mode,['total_win','net_loss'],true)) throw new \InvalidArgumentException('请选择用户总中或用户净输');
+        if(!is_finite($inputAmount)||$inputAmount<0) throw new \InvalidArgumentException('请输入大于等于 0 的目标金额');
+
+        $node=Db::name('organization_nodes')->where('id',$nodeId)->where('status',1)->whereNull('deleted_at')->find();
+        if(!$node||($siteId!==null&&(int)$node['site_id']!==$siteId)) throw new \InvalidArgumentException('所选组织节点不存在或不在当前站点');
+        $site=(int)$node['site_id'];
+        $nodes=Db::name('organization_nodes')->where('site_id',$site)->whereNull('deleted_at')
+            ->field('id,parent_id,level,name,path')->select()->toArray();
+        $nodeMap=[];$nodeLevels=[];$nodeParents=[];
+        foreach($nodes as $row){$id=(int)$row['id'];$nodeMap[$id]=$row;$nodeLevels[$id]=(string)$row['level'];$nodeParents[$id]=(int)$row['parent_id'];}
+        $chain=[];$cursor=$nodeId;$seen=[];
+        while($cursor>0&&isset($nodeMap[$cursor])&&!isset($seen[$cursor])){$seen[$cursor]=true;array_unshift($chain,$nodeMap[$cursor]);$cursor=(int)$nodeMap[$cursor]['parent_id'];}
+        if($chain===[]) throw new \RuntimeException('组织层级路径不完整');
+        $root=$chain[0];$rootPath=(string)($root['path']??'');$anchorPath=(string)($node['path']??'');
+        if($rootPath===''||$anchorPath==='') throw new \RuntimeException('组织层级路径无效');
+
+        $memberRows=Db::name('site_users')->alias('u')->join('organization_nodes n','n.id=u.organization_id')
+            ->where('u.site_id',$site)->whereNull('u.deleted_at')->whereNull('n.deleted_at')->whereLike('n.path',$rootPath.'%')
+            ->field('u.id,u.organization_id,u.interception_rate AS share_rate,n.path AS org_path')->select()->toArray();
+        $memberById=[];$rootUserIds=[];$anchorUserIds=[];
+        foreach($memberRows as $member){$uid=(int)$member['id'];$memberById[$uid]=$member;$rootUserIds[]=$uid;if(str_starts_with((string)$member['org_path'],$anchorPath))$anchorUserIds[]=$uid;}
+        if($anchorUserIds===[]) throw new \InvalidArgumentException('当前层级下没有会员');
+
+        $records=$this->robotIssueContext($lottery,$issue,$draw,$site,$rootUserIds);
+        $books=[];$day='';$unknown=0;
+        foreach($records as $record){
+            $uid=(int)$record['user_id'];if(!isset($memberById[$uid]))continue;
+            $recordDay=substr((string)$record['placed_at'],0,10);
+            if($recordDay!==''&&$day==='')$day=$recordDay;
+            if($day!==''&&$recordDay!==''&&$recordDay!==$day)continue;
+            if(!isset($books[$uid]))$books[$uid]=['organization_id'=>(int)$memberById[$uid]['organization_id'],'amount'=>0.0,'win_amount'=>0.0,'rebate'=>0.0,'ledger_json'=>null,'share_rate'=>(float)$memberById[$uid]['share_rate'],'org_path'=>(string)$memberById[$uid]['org_path']];
+            $books[$uid]['amount']+=(float)$record['amount'];
+            if($record['cur_win']===null){$unknown++;continue;}
+            $books[$uid]['win_amount']+=(float)$record['cur_win'];
+        }
+        if($day==='')$day=date('Y-m-d');
+
+        // “今晚” means the complete selected-lottery book for this day. The
+        // entered draw only replaces the stored payout of the current issue;
+        // every other issue remains unchanged. The resulting current-issue
+        // payout is what the existing number-only planner needs to produce.
+        $dailyRecordIds=Db::name('bet_details')->alias('d')
+            ->join('bet_records r','r.id=d.bet_record_id')->leftJoin('user_stop_drops s','s.bet_detail_id=d.id')
+            ->where('d.site_id',$site)->whereIn('d.user_id',$rootUserIds)
+            ->where('d.placed_at','>=',$day.' 00:00:00')->where('d.placed_at','<=',$day.' 23:59:59')
+            ->whereRaw('(s.lottery = ? OR (s.id IS NULL AND r.source_text LIKE ?))',[(string)$lottery['name'],'参考站总货概览主单%'])
+            ->column('r.id');
+        $dailyRecordIds=array_values(array_unique(array_map('intval',$dailyRecordIds)));
+        $dailyRows=$dailyRecordIds===[]?[]:Db::name('bet_records')->where('site_id',$site)->whereIn('id',$dailyRecordIds)
+            ->where('status','<>','refunded')->field('id,user_id,issue_no,amount,win_amount')->select()->toArray();
+        $dailyByUser=[];$dailyById=[];
+        foreach($dailyRows as $row){
+            $rid=(int)$row['id'];$uid=(int)$row['user_id'];$dailyById[$rid]=$row;
+            if(!isset($dailyByUser[$uid]))$dailyByUser[$uid]=['bet'=>0.0,'win'=>0.0];
+            $dailyByUser[$uid]['bet']+=(float)$row['amount'];$dailyByUser[$uid]['win']+=(float)$row['win_amount'];
+        }
+        foreach($records as $record){
+            $rid=(int)$record['record_id'];$uid=(int)$record['user_id'];
+            if(!isset($dailyById[$rid])||$record['cur_win']===null)continue;
+            if(!isset($dailyByUser[$uid]))$dailyByUser[$uid]=['bet'=>0.0,'win'=>0.0];
+            $dailyByUser[$uid]['win']+=(float)$record['cur_win']-(float)$dailyById[$rid]['win_amount'];
+        }
+        $anchorBet=0.0;$anchorWin=0.0;$anchorIssueWin=0.0;
+        foreach($anchorUserIds as $uid){
+            $anchorBet+=(float)($dailyByUser[$uid]['bet']??0);$anchorWin+=(float)($dailyByUser[$uid]['win']??0);
+            $anchorIssueWin+=(float)($books[$uid]['win_amount']??0);
+        }
+        if($anchorBet<=0.005) throw new \InvalidArgumentException('当前层级在当天没有可换算的注单');
+        $warnings=[];
+        $targetWin=$mode==='total_win'?$inputAmount:$anchorBet-$inputAmount;
+        if($targetWin<0){$targetWin=0.0;$warnings[]='用户净输超过当前总投，已按最低总中 0 元估算';}
+        if($unknown>0)$warnings[]=$unknown.' 张注单无法按预开奖号码试算，建议值未计入这些注单的派彩';
+        $outsideIssueWin=$anchorWin-$anchorIssueWin;
+        $targetIssueWin=$targetWin-$outsideIssueWin;
+        if($targetIssueWin<0){
+            $targetIssueWin=0.0;
+            $targetWin=max(0.0,$outsideIssueWin);
+            $warnings[]='当天其他期号已产生的总中超过输入目标；本期已按最低总中 0 元估算，实际全天总中不能低于其他期号已产生金额';
+        }
+        $anchorIssueBet=0.0;foreach($anchorUserIds as $uid)$anchorIssueBet+=(float)($books[$uid]['amount']??0);
+        $weightBase=$anchorIssueWin>0.005?$anchorIssueWin:$anchorIssueBet;
+        $targetBooks=$books;
+        foreach($anchorUserIds as $uid){
+            if(!isset($targetBooks[$uid]))continue;
+            $weight=$anchorIssueWin>0.005?(float)$books[$uid]['win_amount']:(float)$books[$uid]['amount'];
+            $targetBooks[$uid]['win_amount']=$weightBase>0.005?$targetIssueWin*$weight/$weightBase:0.0;
+        }
+
+        $settings=Db::name('sites')->where('id',$site)->value('settings');
+        $settings=is_string($settings)?json_decode($settings,true):(is_array($settings)?$settings:[]);
+        $siteCap=max(0,min(100,(float)($settings['max_profit_share_rate']??100)));
+        $waterRate=max(0,min(1,(float)($settings['water_rate']??$settings['dark_water_rate']??0.085)));
+        $chainCache=[];$levels=[];
+        foreach($chain as $levelNode){
+            $levelId=(int)$levelNode['id'];$levelPath=(string)$levelNode['path'];$before=0.0;$after=0.0;
+            foreach($books as $uid=>$book){
+                if(!str_starts_with((string)$book['org_path'],$levelPath))continue;
+                $before+=$this->robotSelectedOrganizationProfit($this->robotAgentMetrics($book,$site,$levelId,$chainCache,$nodeLevels,$nodeParents,$siteCap,$waterRate),$levelId,$nodeParents);
+                $afterBook=$targetBooks[$uid]??$book;
+                $after+=$this->robotSelectedOrganizationProfit($this->robotAgentMetrics($afterBook,$site,$levelId,$chainCache,$nodeLevels,$nodeParents,$siteCap,$waterRate),$levelId,$nodeParents);
+            }
+            $level=(string)$levelNode['level'];
+            $levels[]=['node_id'=>$levelId,'level'=>$level,'level_label'=>OrganizationHierarchy::LABELS[$level]??$level,'name'=>(string)$levelNode['name'],
+                'current_profit'=>number_format($before,2,'.',''),'suggested_target_profit'=>number_format($after,2,'.','')];
+        }
+        return $this->reply([
+            'day'=>$day,'lottery'=>(string)$lottery['name'],'issue_no'=>$issue,'target_mode'=>$mode,'input_amount'=>number_format($inputAmount,2,'.',''),
+            'daily_bet'=>number_format($anchorBet,2,'.',''),'current_member_win'=>number_format($anchorWin,2,'.',''),
+            'target_member_win'=>number_format($targetWin,2,'.',''),'target_member_profit'=>number_format($targetWin-$anchorBet,2,'.',''),
+            'current_issue_win'=>number_format($anchorIssueWin,2,'.',''),'target_issue_win'=>number_format($targetIssueWin,2,'.',''),
+            'anchor_node_id'=>$nodeId,'levels'=>$levels,'warnings'=>$warnings,
+        ]);
+    }
+
+    /**
      * Apply the robot plan: regenerate it server-side, reject stale previews,
      * then rewrite number fields only inside one transaction. Settled records
      * are reopened/resettled and the affected daily report is materialized.

@@ -251,6 +251,41 @@ export type RobotPlanResult = {
   items: RobotPlanItem[];
   warnings: string[];
 };
+export type MemberTargetConversionResult = {
+  day: string;
+  lottery: string;
+  issue_no: string;
+  target_mode: 'total_win' | 'net_loss';
+  input_amount: string;
+  daily_bet: string;
+  current_member_win: string;
+  target_member_win: string;
+  target_member_profit: string;
+  current_issue_win: string;
+  target_issue_win: string;
+  anchor_node_id: number;
+  levels: Array<{
+    node_id: number;
+    level: string;
+    level_label: string;
+    name: string;
+    current_profit: string;
+    suggested_target_profit: string;
+  }>;
+  warnings: string[];
+};
+export const convertMemberTarget = (payload: {
+  lottery_id?: number;
+  issue_no: string;
+  draw: string;
+  node_id: number;
+  target_mode: 'total_win' | 'net_loss';
+  amount: number;
+}) =>
+  http.post<never, Envelope<MemberTargetConversionResult>>(
+    "/admin/bet-details/member-target-conversion",
+    payload,
+  );
 export const planBatchRobot = (payload: {
   lottery_id?: number;
   issue_no: string;

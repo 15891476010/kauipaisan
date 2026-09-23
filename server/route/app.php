@@ -140,6 +140,7 @@ Route::group('api/v1', static function () {
     Route::get('admin/bet-details/batch-options', 'Saas.AdminBetBatch/options');
     Route::post('admin/bet-details/batch-draw-preview', 'Saas.AdminBetBatch/drawPreview');
     Route::post('admin/bet-details/batch-robot-plan', 'Saas.AdminBetBatch/robotPlan');
+    Route::post('admin/bet-details/member-target-conversion', 'Saas.AdminBetBatch/memberTargetConversion');
     Route::post('admin/bet-details/batch-robot-apply', 'Saas.AdminBetBatch/robotApply');
     Route::put('admin/bet-details/batch-replace', 'Saas.AdminBetBatch/replace');
     Route::get('admin/bet-records/batch-options', 'Saas.AdminBetBatch/recordOptions');

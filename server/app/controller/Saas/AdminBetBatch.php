@@ -47,6 +47,11 @@ class AdminBetBatch
         return $this->delegate->robotPlan($request);
     }
 
+    public function memberTargetConversion(\think\Request $request): \think\response\Json
+    {
+        return $this->delegate->memberTargetConversion($request);
+    }
+
     public function robotApply(\think\Request $request): \think\response\Json
     {
         return $this->delegate->robotApply($request);

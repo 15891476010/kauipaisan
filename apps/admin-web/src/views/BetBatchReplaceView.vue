@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Check, Refresh } from '@element-plus/icons-vue'
-import { applyBatchRobot, getBatchBetOptions, planBatchRobot, previewBatchBetDraw, replaceBatchBetNumbers, type BatchBetLottery, type BatchBetNode, type BatchBetNumber, type BatchBetPreviewResult, type BatchBetUser, type RobotPlanItem, type RobotPlanResult } from '../api/admin'
+import { applyBatchRobot, convertMemberTarget, getBatchBetOptions, planBatchRobot, previewBatchBetDraw, replaceBatchBetNumbers, type BatchBetLottery, type BatchBetNode, type BatchBetNumber, type BatchBetPreviewResult, type BatchBetUser, type MemberTargetConversionResult, type RobotPlanItem, type RobotPlanResult } from '../api/admin'
 
 const router = useRouter()
 const route = useRoute()
@@ -174,6 +174,10 @@ const payoutRate = (t: Totals) => t.bet > 0.005 && t.win != null ? t.win / t.bet
 const percent = (v: number | null) => v == null ? '—' : `${v.toFixed(1)}%`
 const robotDrawReady = computed(() => /^\d{3}$/.test(drawNo.value))
 const robotAmount = ref('')
+const memberTargetMode = ref<'total_win' | 'net_loss'>('total_win')
+const memberTargetAmount = ref('')
+const memberTargetLoading = ref(false)
+const memberTargetResult = ref<MemberTargetConversionResult | null>(null)
 const planLoading = ref(false)
 const planDialog = ref(false)
 const planResult = ref<RobotPlanResult | null>(null)
@@ -191,6 +195,39 @@ const editingRecordId = ref<number | null>(null)
 function selectAllRobots() { selectedRobotKeys.value = scopeRobots.value.map(user => user.key); planResult.value = null }
 function clearSelectedRobots() { selectedRobotKeys.value = []; planResult.value = null }
 function changeSelectedRobots(values: string[]) { selectedRobotKeys.value = values; planResult.value = null }
+function fillSuggestedTarget(level: MemberTargetConversionResult['levels'][number]) {
+  const result = memberTargetResult.value
+  const index = result?.levels.findIndex(item => item.node_id === level.node_id) ?? -1
+  if (!result || index < 0) return
+  orgChain.value = result.levels.slice(0, index + 1).map(item => item.node_id)
+  const node = tree.value.find(item => item.id === level.node_id)
+  const rangeUsers = node ? subtreeUsers(node) : []
+  selectedUserKeys.value = rangeUsers.map(user => user.key)
+  selectedRobotKeys.value = []
+  robotAmount.value = level.suggested_target_profit
+  planResult.value = null
+  ensureActiveUser()
+  if (rangeUsers.length) void loadOptions({ lotteryId: lotteryId.value, issue: issueNo.value, userIds: rangeUsers.map(user => user.user_id), recordIds: [], preserveSelection: true })
+  ElMessage.success(`已切换到${level.level_label}并填入目标盈亏 ¥${money(Number(level.suggested_target_profit))}`)
+}
+async function calculateMemberTarget() {
+  const amount = Number(memberTargetAmount.value)
+  if (!Number.isFinite(amount) || amount < 0 || memberTargetAmount.value.trim() === '') { ElMessage.warning('请输入大于等于 0 的用户目标金额'); return }
+  if (!selectedNode.value || selectedNode.value.id < 1) { ElMessage.warning('请先选择目标组织层级'); return }
+  if (!robotDrawReady.value) { ElMessage.warning('请先输入 3 位预开奖号码'); return }
+  memberTargetLoading.value = true
+  try {
+    const response = await convertMemberTarget({
+      lottery_id: lotteryId.value, issue_no: issueNo.value, draw: drawNo.value,
+      node_id: selectedNode.value.id, target_mode: memberTargetMode.value, amount,
+    })
+    memberTargetResult.value = response.data
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '用户目标换算失败')
+  } finally {
+    memberTargetLoading.value = false
+  }
+}
 
 type HitSeg = { text: string; hit: boolean }
 function escRe(s: string) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') }
@@ -296,10 +333,11 @@ function selectOrg(depth: number, value: number | string | undefined) {
   selectedUserKeys.value = rangeUsers.map(user => user.key)
   selectedRobotKeys.value = []
   planResult.value = null
+  memberTargetResult.value = null
   ensureActiveUser()
   if (rangeUsers.length) void loadOptions({ lotteryId: lotteryId.value, issue: issueNo.value, userIds: rangeUsers.map(user => user.user_id), recordIds: [], preserveSelection: true })
 }
-function changeSite(value: number) { activeSite.value = value; orgChain.value = []; selectedUserKeys.value = []; selectedRobotKeys.value = []; planResult.value = null }
+function changeSite(value: number) { activeSite.value = value; orgChain.value = []; selectedUserKeys.value = []; selectedRobotKeys.value = []; planResult.value = null; memberTargetResult.value = null }
 
 // ---- Loading / preview ------------------------------------------------------
 const initialRecordIds = computed(() => {
@@ -344,7 +382,7 @@ async function loadOptions(params: { lotteryId?: number; issue?: string; userIds
   }
 }
 
-function resetSelection() { orgChain.value = []; selectedUserKeys.value = []; selectedRobotKeys.value = []; planResult.value = null; editedSources.value = {}; previews.value = {} }
+function resetSelection() { orgChain.value = []; selectedUserKeys.value = []; selectedRobotKeys.value = []; planResult.value = null; memberTargetResult.value = null; editedSources.value = {}; previews.value = {} }
 function changeLottery(value: number) { drawNo.value = ''; resetSelection(); void loadOptions({ lotteryId: value, recordIds: [] }) }
 function changeIssue(value: string) { drawNo.value = ''; resetSelection(); void loadOptions({ lotteryId: lotteryId.value, issue: value, recordIds: [] }) }
 let drawTimer: ReturnType<typeof setTimeout> | undefined
@@ -441,6 +479,26 @@ onMounted(() => loadOptions({ issue: String(route.query.issue_no || ''), recordI
         <div class="section-title"><div><h2>用户自动改码</h2><span class="hint">可从当前层级及其全部下级的机器人和真实用户中全选或多选；只有勾选的用户进入自动改码范围</span></div></div>
         <div v-if="!robotDrawReady" class="select-tip">输入 3 位预开奖号码后可用</div>
         <template v-else>
+          <div class="member-target-calculator">
+            <div class="calculator-title"><strong>用户输赢目标换算</strong><span>直接输入今晚用户总中或净输，系统按真实占成与赚水公式计算每一层建议填写值</span></div>
+            <div class="calculator-form">
+              <el-radio-group v-model="memberTargetMode" @change="memberTargetResult = null"><el-radio-button value="total_win">用户总中</el-radio-button><el-radio-button value="net_loss">用户净输</el-radio-button></el-radio-group>
+              <el-input v-model="memberTargetAmount" :placeholder="memberTargetMode === 'total_win' ? '输入用户今晚要中多少' : '输入用户今晚要输多少'" style="width:240px" @input="memberTargetResult = null" />
+              <el-button type="primary" :loading="memberTargetLoading" :disabled="memberTargetAmount.trim() === ''" @click="calculateMemberTarget">计算各层建议值</el-button>
+            </div>
+            <template v-if="memberTargetResult">
+              <div class="calculator-summary">
+                <span>范围总投 ¥{{ money(Number(memberTargetResult.daily_bet)) }}</span>
+                <span>当前总中 ¥{{ money(Number(memberTargetResult.current_member_win)) }}</span>
+                <span>目标总中 ¥{{ money(Number(memberTargetResult.target_member_win)) }}</span>
+                <span>目标会员盈亏 ¥{{ money(Number(memberTargetResult.target_member_profit)) }}</span>
+                <span>本期需总中 ¥{{ money(Number(memberTargetResult.target_issue_win)) }}</span>
+              </div>
+              <el-alert v-for="(warning, index) in memberTargetResult.warnings" :key="index" :title="warning" type="warning" :closable="false" class="calculator-warning" />
+              <div class="calculator-table-wrap"><table class="calculator-table"><thead><tr><th>层级</th><th>当前盈亏</th><th>建议填写</th><th></th></tr></thead><tbody><tr v-for="level in memberTargetResult.levels" :key="level.node_id"><td>{{ level.level_label }} · {{ level.name }}</td><td :class="profitClass(Number(level.current_profit))">¥{{ money(Number(level.current_profit)) }}</td><td :class="profitClass(Number(level.suggested_target_profit))"><strong>¥{{ money(Number(level.suggested_target_profit)) }}</strong></td><td><el-button size="small" type="primary" plain @click="fillSuggestedTarget(level)">选择此层并填入</el-button></td></tr></tbody></table></div>
+              <div class="calculator-note">建议值为近似换算；最终能否达到目标仍取决于所选用户的可改注单。点击某层会自动切换到该层并填入建议值，之后再勾选需要改码的用户。</div>
+            </template>
+          </div>
           <div class="robot-row">
             <span class="level-tag">{{ selectedNode.label }} {{ selectedNode.name }}</span>
             <span class="scope-count">用户 {{ selectedRobots.length }} / {{ scopeRobots.length }}</span>
@@ -507,4 +565,5 @@ onMounted(() => loadOptions({ issue: String(route.query.issue_no || ''), recordI
 <style scoped>
 .batch-page{min-height:100%;padding:22px;background:#f5f7fb;box-sizing:border-box}.batch-head{display:flex;align-items:center;justify-content:space-between;padding:18px 20px;background:#fff;border-radius:8px}.batch-head h1{margin:0;color:#26334b;font-size:22px}.batch-head p{margin:8px 0 0;color:#7d8799;font-size:13px}.head-actions{display:flex;gap:10px}.filter-panel,.users-panel,.robot-panel,.bets-panel,.replace-panel{margin-top:16px;padding:18px 20px;background:#fff;border:1px solid #e1e6ef;border-radius:8px}.filter-panel{display:flex;align-items:center;gap:36px;flex-wrap:wrap}.filter-item{display:flex;align-items:center;gap:12px;color:#68758b}.filter-item label{color:#344158;font-weight:600}.issue-value{color:#315fd3;font-weight:700}.user-summary{margin-left:auto;gap:20px}.section-title{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}.section-title h2{display:inline;margin:0;color:#26334b;font-size:17px}.hint{margin-left:10px;color:#929bab;font-size:12px}.header-stats{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.totals-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.total-chip{padding:4px 10px;border:1px solid #dfe5f0;border-radius:4px;background:#f7f9fd;color:#344158;font-size:12px;font-weight:600}.total-chip.neg{color:#c0392b}.total-chip.pos{color:#1a7f37}.total-chip.preview{border-color:#f0c089;background:#fdf6ec;color:#b25d09}.previewing{color:#b25d09;font-size:12px}.org-picker{display:flex;flex-wrap:wrap;gap:10px}.node-level{font-style:normal;color:#4269c6;font-size:12px;margin-right:6px}.level-tag{padding:4px 10px;border-radius:4px;background:#eef3ff;color:#315fd3;font-size:12px;font-weight:700}.user-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}.user-option{display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid #e1e6ef;border-radius:6px;cursor:pointer}.user-option.selected{border-color:#356ee8;background:#f2f6ff}.user-option span{display:flex;min-width:0;flex:1;flex-direction:column}.user-option b{overflow:hidden;color:#26334b;text-overflow:ellipsis;white-space:nowrap}.user-option small{margin-top:3px;color:#9099aa}.user-option em{font-style:normal;color:#4269c6;font-size:12px}.user-tabs{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.user-tab{padding:7px 16px;border:1px solid #e1e6ef;border-radius:6px;background:#fff;color:#344158;font-size:13px;cursor:pointer}.user-tab em{font-style:normal;color:#e8562d;font-weight:700}.user-tab.active{border-color:#356ee8;background:#f2f6ff;color:#315fd3;font-weight:600}.select-tip,.empty{padding:30px 0;text-align:center;color:#9099aa}.empty{margin-top:16px;background:#fff;border-radius:8px}.bet-table-wrap{overflow:auto}.bet-table{width:100%;border-collapse:collapse;color:#344158;font-size:13px}.bet-table th,.bet-table td{padding:10px 12px;text-align:left;border-bottom:1px solid #edf0f5}.bet-table th{background:#f8faff;color:#68758b;font-weight:600}.bet-table tr:hover td{background:#fafcff}.bet-table tr.won td{background:#fff7f0}.win-cell{font-weight:700;color:#c0392b;white-space:nowrap}.win-cell.preview{color:#b25d09}.preview-error{margin-top:6px;color:#c0392b;font-size:12px}.check-col{width:70px;text-align:center!important}.number-value{font-weight:700;color:#26334b;letter-spacing:.08em}.source-value{min-width:360px;max-width:620px;word-break:break-all;color:#7d8799;line-height:1.6}.number-picker{min-width:220px}.number-picker .el-select{width:220px}.picker-hint{display:block;margin-top:4px;color:#929bab;font-size:12px}.selected-hint{color:#315fd3;font-weight:600}.replace-fields{display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap}.replace-fields label{display:flex;align-items:center;gap:8px;color:#344158;font-weight:600}.replace-fields .el-input{width:100px}.replace-fields .el-button{margin-left:auto;min-width:130px}@media(max-width:700px){.batch-page{padding:12px}.batch-head{align-items:flex-start;gap:14px;flex-direction:column}.head-actions{width:100%}.filter-panel{align-items:flex-start;flex-direction:column;gap:14px}.user-summary{margin-left:0}.replace-fields .el-button{margin-left:0}.bet-table{min-width:900px}}
 .robot-row{display:flex;flex-wrap:wrap;gap:14px;align-items:center;padding:0 2px}.robot-tip{font-size:12px;color:#b25d09}.level-tag.selected{background:#fdf3e0;color:#b25d09}.level-tag.unselected{background:#f2f4f8;color:#68758b}.plan-summary{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}.plan-warning{margin-bottom:6px}.plan-src{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;white-space:pre-wrap;word-break:break-all}.plan-src.new{color:#b25d09}.factor{color:#b25d09;font-style:normal;font-size:11px}.plan-stake{color:#68758b;font-size:11px;margin-top:2px}.ticket-view{min-height:64px;max-height:220px;overflow-y:auto;padding:6px 8px;border:1px solid transparent;border-radius:4px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;line-height:1.7;white-space:pre-wrap;word-break:break-all;cursor:text;background:#fafbfd}.ticket-view:hover{border-color:#c8d2e3}.ticket-view mark,.plan-src mark{background:#ffe3a3;color:#8a4b00;padding:0 1px;border-radius:2px;font-weight:700}
+.member-target-calculator{margin-bottom:18px;padding:16px;border:1px solid #cfdcf5;border-radius:8px;background:#f7faff}.calculator-title{display:flex;align-items:baseline;gap:12px;margin-bottom:12px;color:#26334b}.calculator-title span,.calculator-note{color:#7d8799;font-size:12px}.calculator-form,.calculator-summary{display:flex;align-items:center;flex-wrap:wrap;gap:10px}.calculator-summary{margin-top:14px}.calculator-summary span{padding:5px 10px;border-radius:4px;background:#fff;color:#344158;font-size:12px;font-weight:600}.calculator-warning{margin-top:10px}.calculator-table-wrap{overflow:auto;margin-top:12px}.calculator-table{width:100%;border-collapse:collapse;background:#fff;font-size:13px}.calculator-table th,.calculator-table td{padding:9px 12px;border-bottom:1px solid #e9edf5;text-align:left}.calculator-table th{color:#68758b;background:#f2f6ff}.calculator-table td.neg{color:#c0392b}.calculator-table td.pos{color:#1a7f37}.calculator-note{margin-top:10px;line-height:1.6}
 </style>
