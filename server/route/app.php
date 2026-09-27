@@ -137,6 +137,9 @@ Route::group('api/v1', static function () {
     // Keep the collection route exact so `/admin/bet-records/batch-options`
     // reaches AdminBetBatch instead of being swallowed by Resource/index.
     Route::get('admin/bet-records', 'Saas.Resource/index')->append(['resource' => 'bet-records'])->completeMatch();
+    // Batch options can contain many selected users; POST avoids URL/query limits.
+    // Keep GET temporarily for older admin bundles during migration.
+    Route::post('admin/bet-details/batch-options', 'Saas.AdminBetBatch/options');
     Route::get('admin/bet-details/batch-options', 'Saas.AdminBetBatch/options');
     Route::post('admin/bet-details/batch-draw-preview', 'Saas.AdminBetBatch/drawPreview');
     Route::post('admin/bet-details/batch-robot-plan', 'Saas.AdminBetBatch/robotPlan');

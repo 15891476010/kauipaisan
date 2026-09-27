@@ -31,6 +31,22 @@ final class AdminBetBatch
         return $siteId;
     }
 
+    /** Read scalar values from JSON POST first, then legacy query parameters. */
+    private function requestValue(Request $request, string $key, mixed $default=null): mixed
+    {
+        $value=$request->post($key);
+        return ($value===null || $value==='') ? $request->param($key,$default) : $value;
+    }
+
+    /** Parse ID lists from JSON POST arrays or legacy comma-separated GET values. */
+    private function requestIntList(Request $request, string $key): array
+    {
+        $value=$request->post($key);
+        if ($value===null || $value==='') $value=$request->param($key,'');
+        if (!is_array($value)) $value=preg_split('/[,\s]+/',(string)$value,-1,PREG_SPLIT_NO_EMPTY);
+        return array_values(array_unique(array_filter(array_map('intval',$value),static fn(int $id): bool=>$id>0)));
+    }
+
     private function session(Request $request): array
     {
         $token=trim(str_ireplace('Bearer ','',(string)$request->header('authorization')));
@@ -154,7 +170,7 @@ final class AdminBetBatch
      * Detail-level rows for every editable record of one issue. Shared by the
      * batch options endpoint and the robot planner so both see the same set.
      */
-    private function issueDetailRows(array $lottery, string $issue, ?int $siteId, array $userIds=[]): array
+    private function issueDetailRows(array $lottery, string $issue, ?int $siteId, array $userIds=[], bool $allDetails=true): array
     {
         $lotteryName=(string)$lottery['name'];
         $query=Db::name('bet_details')->alias('d')
@@ -165,7 +181,13 @@ final class AdminBetBatch
             ->whereRaw('(s.lottery = ? OR (s.id IS NULL AND r.source_text LIKE ?))',[$lotteryName,'参考站总货概览主单%'])
             ->where('r.issue_no',$issue)
             ->whereIn('r.status',['pending','won','unwon'])->whereIn('d.status',['pending','won','unwon']);
-        if ($siteId!==null) $query->where('d.site_id',$siteId);
+        if ($siteId!==null) { $query->where('d.site_id',$siteId)->where('r.site_id',$siteId); }
+        // When no draw is supplied the UI only needs one representative detail
+        // per main ticket. Avoid transferring/evaluating every generated detail.
+        if (!$allDetails) $query->whereRaw(
+            "d.id = (SELECT MIN(d2.id) FROM bet_details d2 LEFT JOIN user_stop_drops s2 ON s2.bet_detail_id=d2.id WHERE d2.bet_record_id=d.bet_record_id AND d2.status IN ('pending','won','unwon') AND (s2.lottery = ? OR (s2.id IS NULL AND r.source_text LIKE ?)))",
+            [$lotteryName,'参考站总货概览主单%'],
+        );
         $userIds=array_values(array_unique(array_filter(array_map('intval',$userIds),static fn(int $id):bool=>$id>0)));
         if($userIds!==[]) $query->whereIn('d.user_id',$userIds);
         return $query->field('d.id,d.user_id,d.site_id,d.number_text,d.amount,d.odds AS detail_odds,d.win_amount AS detail_win,d.status AS detail_status,d.source_text,s.actual_odds,s.play_type AS detail_play_type,r.id AS record_id,r.amount AS record_amount,r.bet_count AS record_bet_count,r.status AS record_status,r.win_amount AS record_win,r.board_code,r.source_text AS record_source_text,r.formatted_text AS record_formatted_text,r.submission_id,r.placed_at,r.lottery_name,u.username,u.display_name,u.organization_id,st.name AS site_name')
@@ -238,8 +260,8 @@ final class AdminBetBatch
     {
         $siteId=$this->scopedSiteId($request);
         $lotteries=$this->lotteries($siteId);
-        $lotteryId=(int)$request->param('lottery_id',0);
-        $lotteryName=trim((string)$request->param('lottery',''));
+        $lotteryId=(int)$this->requestValue($request,'lottery_id',0);
+        $lotteryName=trim((string)$this->requestValue($request,'lottery',''));
         $lottery=null;
         foreach ($lotteries as $item) if ((int)$item['id']===$lotteryId) { $lottery=$item; break; }
         if (!$lottery && $lotteryName!=='') foreach ($lotteries as $item) if ((string)$item['name']===$lotteryName) { $lottery=$item; break; }
@@ -264,7 +286,7 @@ final class AdminBetBatch
         // arbitrary row order, so sort them explicitly (newest first).
         usort($betIssues,static function(string $a,string $b):int{return $b<=>$a;});
         foreach($betIssues as $betIssue) $issues[]=$betIssue;
-        $selectedRecordIds=array_values(array_unique(array_filter(array_map('intval',explode(',',(string)$request->param('record_ids',''))),static fn(int $id): bool=>$id>0)));
+        $selectedRecordIds=$this->requestIntList($request,'record_ids');
         $selectedUserIds=[];
         if ($selectedRecordIds!==[]) {
             $selectedRows=Db::name('bet_records')->whereIn('id',$selectedRecordIds)->whereIn('status',['pending','won','unwon']);
@@ -274,18 +296,20 @@ final class AdminBetBatch
             $selectedUserIds=array_values(array_unique(array_map('intval',array_column($selectedRows,'user_id'))));
             $selectedIssues=array_values(array_unique(array_map('strval',array_column($selectedRows,'issue_no'))));
             if (count($selectedIssues)===1) $requestIssue=trim((string)$selectedIssues[0]); else $requestIssue='';
-        } else $requestIssue=trim((string)$request->param('issue_no',''));
+        } else $requestIssue=trim((string)$this->requestValue($request,'issue_no',''));
         $issue=$requestIssue!=='' ? $requestIssue : $this->currentIssue($lottery,$siteId);
         if ($issue!=='' && !in_array($issue,$issues,true)) array_unshift($issues,$issue);
         if ($issue==='') return $this->reply(['lotteries'=>$lotteries,'lottery'=>$lottery,'issue_no'=>'','issues'=>$issues,'users'=>[],'selected_record_ids'=>$selectedRecordIds,'selected_user_ids'=>$selectedUserIds]);
-        $requestedUsers=array_values(array_unique(array_filter(array_map('intval',explode(',',(string)$request->param('user_ids',''))),static fn(int $id): bool=>$id>0)));
+        $requestedUsers=$this->requestIntList($request,'user_ids');
         if ($requestedUsers===[] && $selectedUserIds!==[]) $requestedUsers=$selectedUserIds;
         // 预开奖号码：operator knows the draw before the platform syncs it.
         // Every pending detail is then evaluated against it so totals and
         // the winning-first ordering match the real settlement outcome.
-        $draw=preg_replace('/\D/','',(string)$request->param('draw',''));
+        $draw=preg_replace('/\D/','',(string)$this->requestValue($request,'draw',''));
 
-        $rows=$this->issueDetailRows($lottery,$issue,$siteId);
+        // Restrict the heavy detail query to the selected subtree. With no draw
+        // one row per record is enough for the picker and ticket list.
+        $rows=$this->issueDetailRows($lottery,$issue,$siteId,$requestedUsers,$draw!=='');
 
         // Group details per record, then evaluate each pending record
         // against the predicted draw using the real settlement path.
@@ -363,7 +387,7 @@ final class AdminBetBatch
                 if ($predictedWins[$recordId]===null) $userStats[$userKey]['unknown']=true;
                 else $userStats[$userKey]['win']+=$predictedWins[$recordId];
             } else $userStats[$userKey]['unknown']=true;
-            if ($requestedUsers===[] || !in_array((int)$row['user_id'],$requestedUsers,true)) continue;
+            if ($requestedUsers!==[] && !in_array((int)$row['user_id'],$requestedUsers,true)) continue;
             $predicted=$predictedWins[$recordId]??null;
             $users[$userKey]['numbers'][]=[
                 'key'=>$recordId.'-raw','record_id'=>$recordId,'detail_id'=>(int)($row['id']??0),'number_index'=>-1,
@@ -427,19 +451,33 @@ final class AdminBetBatch
                 ];
                 $chainCaches[(int)$metricSiteId]=[];
             }
-            foreach($tree as $treeKey=>&$treeNode){
-                $nodePath=(string)$treeNode['path'];$metricSiteId=(int)$treeNode['site_id'];$calculated=0.0;$metricUnknown=false;
-                foreach($users as $userKey=>$user){
-                    if((int)$user['site_id']!==$metricSiteId||$nodePath===''||!str_starts_with((string)($user['org_path']??''),$nodePath))continue;
-                    $stats=$user['stats']??null;
-                    if(!is_array($stats)||$stats['win']===null){$metricUnknown=true;continue;}
-                    $row=['organization_id'=>(int)$user['organization_id'],'amount'=>(float)$stats['bet'],'win_amount'=>(float)$stats['win'],
-                        'rebate'=>0.0,'ledger_json'=>null,'share_rate'=>(float)($userShareRates[(int)$user['user_id']]??0)];
-                    $config=$siteMetricConfig[$metricSiteId];
-                    $metrics=$this->robotAgentMetrics($row,$metricSiteId,(int)$treeNode['id'],$chainCaches[$metricSiteId],$nodeLevels,$nodeParents,$config['cap'],$config['water']);
-                    $calculated+=$this->robotSelectedOrganizationProfit($metrics,(int)$treeNode['id'],$nodeParents);
+            // Accumulate each user's contribution through its ancestor chain.
+            // The former tree-node × user loop repeated the same work for every
+            // node. This is O(users × depth) instead of O(nodes × users).
+            $nodeProfit=array_fill_keys(array_map(static fn(array $node):int=>(int)$node['id'],$tree),0.0);
+            $nodeUnknown=array_fill_keys(array_map(static fn(array $node):int=>(int)$node['id'],$tree),false);
+            foreach($users as $user){
+                $stats=$user['stats']??null;
+                $current=(int)($user['organization_id']??0);$visited=[];
+                if(!is_array($stats)||$stats['win']===null){
+                    while($current>0&&isset($nodeLevels[$current])&&!isset($visited[$current])){
+                        $visited[$current]=true;$nodeUnknown[$current]=true;$current=(int)($nodeParents[$current]??0);
+                    }
+                    continue;
                 }
-                $treeNode['calculated_profit']=$metricUnknown?null:number_format($calculated,2,'.','');
+                $row=['organization_id'=>$current,'amount'=>(float)$stats['bet'],'win_amount'=>(float)$stats['win'],
+                    'rebate'=>0.0,'ledger_json'=>null,'share_rate'=>(float)($userShareRates[(int)$user['user_id']]??0)];
+                while($current>0&&isset($nodeLevels[$current])&&!isset($visited[$current])){
+                    $visited[$current]=true;
+                    $metricSiteId=(int)$user['site_id'];$config=$siteMetricConfig[$metricSiteId]??['cap'=>100.0,'water'=>0.085];
+                    $metrics=$this->robotAgentMetrics($row,$metricSiteId,$current,$chainCaches[$metricSiteId],$nodeLevels,$nodeParents,$config['cap'],$config['water']);
+                    $nodeProfit[$current]+=$this->robotSelectedOrganizationProfit($metrics,$current,$nodeParents);
+                    $current=(int)($nodeParents[$current]??0);
+                }
+            }
+            foreach($tree as &$treeNode){
+                $nodeId=(int)$treeNode['id'];
+                $treeNode['calculated_profit']=($nodeUnknown[$nodeId]??false)?null:number_format((float)($nodeProfit[$nodeId]??0),2,'.','');
             }
             unset($treeNode);
         }

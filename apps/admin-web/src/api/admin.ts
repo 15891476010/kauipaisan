@@ -182,9 +182,9 @@ export type BatchBetOptions = {
   users: BatchBetUser[];
 };
 export const getBatchBetOptions = (params?: { lottery_id?: number; lottery?: string; issue_no?: string; draw?: string; user_ids?: number[]; record_ids?: number[] }) =>
-  http.get<never, Envelope<BatchBetOptions>>(
+  http.post<never, Envelope<BatchBetOptions>>(
     "/admin/bet-details/batch-options",
-    { params: { ...params, user_ids: params?.user_ids?.join(','), record_ids: params?.record_ids?.join(',') } },
+    params ?? {},
   );
 export const previewBatchBetDraw = (payload: { lottery_id?: number; issue_no: string; draw: string; records: { record_id: number; source_text: string }[] }) =>
   http.post<never, Envelope<{ results: BatchBetPreviewResult[] }>>(
