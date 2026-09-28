@@ -570,6 +570,11 @@ final class UserBusiness
     private function collapseSingleGroupSelection(array $tokens,string $source,string $playType): array
     {
         if (count($tokens)<=1) return $tokens;
+        // Only group plays may be compacted.  A dan sentence such as
+        // `福胆0 1 ... 9各100倍` contains the three-digit stake `100`;
+        // treating that number as a group selection corrupts the detail
+        // into `100 独胆`.
+        if (preg_match('/^(?:组三|组六|组选|组3|组6|五组|组)/u', trim($playType))!==1) return $tokens;
         // Multi-code 组三/组六 is stored by some provider responses as a
         // semantic prefix plus a digit selection (for example `三 23456`),
         // while the source keeps the authoritative `23456组三五码` wording.

@@ -269,6 +269,12 @@ final class AdminBetBatch
         if (!$lottery) return $this->reply(['lotteries'=>[],'lottery'=>null,'issue_no'=>'','issues'=>[],'users'=>[]]);
         $issues=array_values(array_map('strval',Db::name('lottery_histories')->where('lottery_id',(int)$lottery['id'])->where('is_opened',0)->order('open_time asc')->order('id asc')->limit(100)->column('code')));
         $lotteryName=(string)$lottery['name'];
+        // When the caller already selected an issue, the history list is
+        // sufficient. Do not rescan every bet/detail row just to rediscover
+        // the same issue list. On the initial picker load, keep the complete
+        // list but constrain it to the requested users when available.
+        $requestIssueHint=trim((string)$this->requestValue($request,'issue_no',''));
+        $requestedUsersHint=$this->requestIntList($request,'user_ids');
         $betIssueQuery=Db::name('bet_records')->alias('r')->join('bet_details d','d.bet_record_id=r.id')->leftJoin('user_stop_drops s','s.bet_detail_id=d.id')
             ->whereRaw('(s.lottery = ? OR (s.id IS NULL AND r.source_text LIKE ?))',[$lotteryName,'参考站总货概览主单%'])
             ->whereIn('r.status',['pending','won','unwon'])->whereIn('d.status',['pending','won','unwon'])
@@ -278,8 +284,9 @@ final class AdminBetBatch
             // 28xxx) would leak into the dropdown and can never be settled.
             ->whereRaw('r.issue_no IN (SELECT code FROM lottery_histories WHERE lottery_id = ?)',[(int)$lottery['id']]);
         if ($siteId!==null) $betIssueQuery->where('r.site_id',$siteId);
+        if ($requestedUsersHint!==[]) $betIssueQuery->whereIn('r.user_id',$requestedUsersHint);
         $betIssues=[];
-        foreach ($betIssueQuery->distinct(true)->column('r.issue_no') as $betIssue) {
+        if ($requestIssueHint==='') foreach ($betIssueQuery->distinct(true)->column('r.issue_no') as $betIssue) {
             $betIssue=(string)$betIssue; if ($betIssue!=='' && !in_array($betIssue,$issues,true)) $betIssues[]=$betIssue;
         }
         // History rows arrive in draw order; bet-derived issues come back in
@@ -300,7 +307,7 @@ final class AdminBetBatch
         $issue=$requestIssue!=='' ? $requestIssue : $this->currentIssue($lottery,$siteId);
         if ($issue!=='' && !in_array($issue,$issues,true)) array_unshift($issues,$issue);
         if ($issue==='') return $this->reply(['lotteries'=>$lotteries,'lottery'=>$lottery,'issue_no'=>'','issues'=>$issues,'users'=>[],'selected_record_ids'=>$selectedRecordIds,'selected_user_ids'=>$selectedUserIds]);
-        $requestedUsers=$this->requestIntList($request,'user_ids');
+        $requestedUsers=$requestedUsersHint;
         if ($requestedUsers===[] && $selectedUserIds!==[]) $requestedUsers=$selectedUserIds;
         // 预开奖号码：operator knows the draw before the platform syncs it.
         // Every pending detail is then evaluated against it so totals and
@@ -389,10 +396,15 @@ final class AdminBetBatch
             } else $userStats[$userKey]['unknown']=true;
             if ($requestedUsers!==[] && !in_array((int)$row['user_id'],$requestedUsers,true)) continue;
             $predicted=$predictedWins[$recordId]??null;
+            $rawSource=trim((string)($row['record_source_text']??''));
+            if($rawSource==='') $rawSource=(string)($row['source_text']??'');
+            // The UI edits one main ticket at a time. Return one canonical raw
+            // source instead of repeating record_source_text and
+            // record_formatted_text for every row; the latter was never used by
+            // the batch editor and made a 5k-ticket response several MB larger.
             $users[$userKey]['numbers'][]=[
                 'key'=>$recordId.'-raw','record_id'=>$recordId,'detail_id'=>(int)($row['id']??0),'number_index'=>-1,
-                'value'=>'原始注单','amount'=>number_format((float)($row['record_amount']??0),2,'.',''),'source_text'=>(string)($row['source_text']??''),
-                'record_source_text'=>(string)($row['record_source_text']??''),'record_formatted_text'=>(string)($row['record_formatted_text']??''),
+                'value'=>'原始注单','amount'=>number_format((float)($row['record_amount']??0),2,'.',''),'source_text'=>$rawSource,
                 'record_status'=>$record['status'],'predicted_win'=>$predicted===null?null:number_format($predicted,2,'.',''),
                 'win_tokens'=>$winTokens[$recordId]??[],
             ];
@@ -1401,7 +1413,7 @@ final class AdminBetBatch
     }
 
     /** Return the same report projection used by the agent report page. */
-    private function robotAgentMetrics(array $row,int $siteId,int $nodeId,array &$chainCache,array $nodeLevels,array $nodeParents,float $siteCap,float $waterRate): array
+    private function robotAgentMetricContext(array $row,int $siteId,int $nodeId,array &$chainCache,array $nodeLevels,array $nodeParents,float $siteCap,float $waterRate): array
     {
         $snapshot=null;$lineOrgId=0;
         $decoded=json_decode((string)($row['ledger_json']??''),true);
@@ -1420,7 +1432,13 @@ final class AdminBetBatch
         );
         $amount=(float)($row['amount']??0);
         $memberProfit=(float)($row['win_amount']??0)+(float)($row['rebate']??0)-$amount;
-        return OrganizationHierarchy::reportRowMetrics($amount,$memberProfit,$waterRate,$edges,$nodeId,$viewerIsRoot);
+        return ['amount'=>$amount,'member_profit'=>$memberProfit,'edges'=>$edges,'viewer_is_root'=>$viewerIsRoot];
+    }
+
+    private function robotAgentMetrics(array $row,int $siteId,int $nodeId,array &$chainCache,array $nodeLevels,array $nodeParents,float $siteCap,float $waterRate): array
+    {
+        $context=$this->robotAgentMetricContext($row,$siteId,$nodeId,$chainCache,$nodeLevels,$nodeParents,$siteCap,$waterRate);
+        return OrganizationHierarchy::reportRowMetrics($context['amount'],$context['member_profit'],$waterRate,$context['edges'],$nodeId,$context['viewer_is_root']);
     }
 
     /**
@@ -1543,6 +1561,17 @@ final class AdminBetBatch
             $agentBefore+=$this->robotSelectedOrganizationProfit($this->robotAgentMetrics($agentRow,(int)$node['site_id'],$nodeId,$chainCache,$nodeLevels,$nodeParents,$siteCap,$waterRate),$nodeId,$nodeParents);
         }
         unset($agentRow);
+        // Candidate simulation below needs the matching aggregate row for each
+        // selected record. Index once by exact/loose user+issue key instead of
+        // scanning every aggregate row for every record (O(records*rows)).
+        $agentRowsByKey=[];$agentRowsByLooseKey=[];
+        foreach($agentRows as $aggregateRow){
+            if(!isset($aggregateRow['user_id'],$aggregateRow['issue_no'])) continue;
+            $aggregateKey=(int)$aggregateRow['user_id'].'|'.(string)$aggregateRow['issue_no'].'|'.(string)($aggregateRow['lottery_name']??'');
+            $aggregateLooseKey=(int)$aggregateRow['user_id'].'|'.(string)$aggregateRow['issue_no'];
+            $agentRowsByKey[$aggregateKey]=$aggregateRow;
+            if(!isset($agentRowsByLooseKey[$aggregateLooseKey])) $agentRowsByLooseKey[$aggregateLooseKey]=$aggregateRow;
+        }
         $memberBefore=round($dailyWin-$dailyBet,2);
         // 输入目标属于当前选中的组织层级。会员总中/盈亏只是反推变量，
         // 最终按当前层级完整自身盈亏（本级占成盈亏 + 下级收入/赚水）判断。
@@ -1554,6 +1583,12 @@ final class AdminBetBatch
         // 会改变符号和敏感度。每张可改注单都按报表公式重新计算实际影响。
         $direction=$targetProfit>=$before?1:-1;
         $settlement=new BetSettlement();$candidates=[];$unmodifiable=0;$zeroImpact=0;$alreadyInside=$inside($before);
+        // The organization projection is linear in member profit while the
+        // account chain, turnover and share rates stay fixed. Build the
+        // baseline and its per-unit member-profit coefficient once per
+        // aggregate report row, then apply the coefficient to each candidate
+        // instead of running the full hierarchy calculation twice per ticket.
+        $agentMetricCache=[];
         foreach($selected as $record){
             $sim=(float)$record['cur_win']>0.005
                 ?$this->robotLoseSimulation($record,$draw,(int)$lottery['id'],$settlement)
@@ -1564,16 +1599,19 @@ final class AdminBetBatch
             $agentRow=['organization_id'=>(int)$record['organization_id'],'amount'=>(float)$record['amount'],'win_amount'=>(float)$record['cur_win'],'rebate'=>0.0,'share_rate'=>0.0];
             $recordKey=(int)$record['user_id'].'|'.(string)$issue.'|'.(string)($record['lottery_name']??$lottery['name']);
             $recordLooseKey=(int)$record['user_id'].'|'.(string)$issue;
-            foreach($agentRows as $row) {
-                if(!isset($row['user_id'],$row['issue_no'])) continue;
-                $rowKey=(int)$row['user_id'].'|'.(string)$row['issue_no'].'|'.(string)$row['lottery_name'];
-                $rowLooseKey=(int)$row['user_id'].'|'.(string)$row['issue_no'];
-                if($rowKey===$recordKey||$rowLooseKey===$recordLooseKey){$agentRow=$row;break;}
+            $metricCacheKey='fallback:'.$recordKey;
+            if(isset($agentRowsByKey[$recordKey])){$agentRow=$agentRowsByKey[$recordKey];$metricCacheKey='exact:'.$recordKey;}
+            elseif(isset($agentRowsByLooseKey[$recordLooseKey])){$agentRow=$agentRowsByLooseKey[$recordLooseKey];$metricCacheKey='loose:'.$recordLooseKey;}
+            if(!isset($agentMetricCache[$metricCacheKey])){
+                $context=$this->robotAgentMetricContext($agentRow,(int)$node['site_id'],$nodeId,$chainCache,$nodeLevels,$nodeParents,$siteCap,$waterRate);
+                $baseMetrics=OrganizationHierarchy::reportRowMetrics($context['amount'],$context['member_profit'],$waterRate,$context['edges'],$nodeId,$context['viewer_is_root']);
+                $plusMetrics=OrganizationHierarchy::reportRowMetrics($context['amount'],$context['member_profit']+1.0,$waterRate,$context['edges'],$nodeId,$context['viewer_is_root']);
+                $base=$this->robotSelectedOrganizationProfit($baseMetrics,$nodeId,$nodeParents);
+                $plus=$this->robotSelectedOrganizationProfit($plusMetrics,$nodeId,$nodeParents);
+                $agentMetricCache[$metricCacheKey]=['base'=>$base,'slope'=>$plus-$base];
             }
-            $oldMetric=$this->robotSelectedOrganizationProfit($this->robotAgentMetrics($agentRow,(int)$node['site_id'],$nodeId,$chainCache,$nodeLevels,$nodeParents,$siteCap,$waterRate),$nodeId,$nodeParents);
-            $agentRow['win_amount']=(float)$agentRow['win_amount']+$memberDelta;
-            $newMetric=$this->robotSelectedOrganizationProfit($this->robotAgentMetrics($agentRow,(int)$node['site_id'],$nodeId,$chainCache,$nodeLevels,$nodeParents,$siteCap,$waterRate),$nodeId,$nodeParents);
-            $agentDelta=round((float)$newMetric-(float)$oldMetric,2);
+            $metric=$agentMetricCache[$metricCacheKey];
+            $agentDelta=round((float)$metric['slope']*$memberDelta,2);
             if(abs($agentDelta)<=0.005){$zeroImpact++;continue;}
             if(($direction>0&&$agentDelta<=0.005)||($direction<0&&$agentDelta>=-0.005))continue;
             $action=$memberDelta>0?'win':'lose';

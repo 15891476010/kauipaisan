@@ -72,6 +72,20 @@ export function QuickEntryPage({
   });
   const [resultHeight, setResultHeight] = useState(0);
   const [generating, setGenerating] = useState(false);
+  // Refs acquire synchronously, before React renders a disabled button.
+  const submittingRef = useRef(false);
+  const betFlowRef = useRef(false);
+  const [betBusy, setBetBusy] = useState(false);
+  const beginBetFlow = () => {
+    if (betFlowRef.current || submittingRef.current) return false;
+    betFlowRef.current = true;
+    setBetBusy(true);
+    return true;
+  };
+  const endBetFlow = () => {
+    betFlowRef.current = false;
+    setBetBusy(false);
+  };
   const [recognizedText, setRecognizedText] = useState("");
   const [recognitionError, setRecognitionError] = useState("");
   const [betNotices, setBetNotices] = useState<Array<{
@@ -308,6 +322,7 @@ export function QuickEntryPage({
   };
   const generate = () => void generateText(text);
   const canPlace = timing.canBet
+    && !betBusy
     && !generating
     && text.trim() !== ""
     && recognizedText === text
@@ -359,6 +374,7 @@ export function QuickEntryPage({
     preview: QuickPreview,
     showSuccess = true,
   ) => {
+    if (submittingRef.current) return false;
     if (!timing.canBet) {
       message.warning(timing.status || "当前时间段不可下注");
       return false;
@@ -375,6 +391,7 @@ export function QuickEntryPage({
       if (showSuccess) message.warning("请先生成有效投注内容");
       return false;
     }
+    submittingRef.current = true;
     try {
       showBetNotice("info", "下注中...");
       const response = await placeQuickEntry({
@@ -397,6 +414,9 @@ export function QuickEntryPage({
       // A successful submission starts a fresh ticket. Keep the generated
       // result and input area in sync by clearing the editor after the ticket
       // has been accepted (including auto-bet/paste submissions).
+      previewRequestId.current += 1;
+      setGenerating(false);
+      setRecognizedText("");
       setText("");
       setGeneratedLines([]);
       setGeneratedTotal({ count: 0, codeCount: 0, amount: "0.00" });
@@ -410,28 +430,53 @@ export function QuickEntryPage({
     } catch (error) {
       modal.error({ title: "下注失败", content: apiErrorMessage(error, "下注失败"), okText: "确认" });
       return false;
+    } finally {
+      submittingRef.current = false;
     }
   };
+  // Keep the entire confirmation/batch flow locked, including recognition
+  // between split tickets. Do not deduplicate by text or impose a cooldown.
+  const confirmBetFlow = (title: string, content: string, action: () => Promise<unknown>) => {
+    if (!beginBetFlow()) return;
+    let started = false;
+    const dialog = modal.confirm({
+      title,
+      content,
+      okText: "确认下注",
+      cancelText: "取消",
+      maskClosable: false,
+      onCancel: endBetFlow,
+      onOk: async () => {
+        if (started) return;
+        started = true;
+        dialog.update({ cancelButtonProps: { disabled: true }, keyboard: false, closable: false });
+        try {
+          await action();
+        } finally {
+          endBetFlow();
+        }
+      },
+    });
+  };
   const place = () => {
+    if (betFlowRef.current || submittingRef.current) return;
     if (!timing.canBet) {
       message.warning(timing.status || "当前时间段不可下注");
       return;
     }
     const blocks = splitTicketBlocks(text);
     if (blocks.length > 1) {
-      modal.confirm({
-        title: "确认分单下注",
-        content: `检测到 ${blocks.length} 张注单（空行分隔），将分别提交，确认吗？`,
-        okText: "确认下注",
-        cancelText: "取消",
-        onOk: async () => {
+      confirmBetFlow(
+        "确认分单下注",
+        `检测到 ${blocks.length} 张注单（空行分隔），将分别提交，确认吗？`,
+        async () => {
           for (const block of blocks) {
             const blockPreview = await generateText(block, false);
             if (!blockPreview || !blockPreview.lines.some((line) => line.status === "success")) return;
             if (!(await submitBet(block, blockPreview))) return;
           }
         },
-      });
+      );
       return;
     }
     const preview: QuickPreview = {
@@ -450,13 +495,11 @@ export function QuickEntryPage({
       modal.warning({ title: "无法下注", content: "请先生成有效投注内容", okText: "确认" });
       return;
     }
-    modal.confirm({
-      title: "确认下注",
-      content: `共 ${generatedTotal.codeCount} 码，共 ¥ ${displayAmount(preview.amount)}，确认提交吗？`,
-      okText: "确认下注",
-      cancelText: "取消",
-      onOk: () => submitBet(text, preview),
-    });
+    confirmBetFlow(
+      "确认下注",
+      `共 ${generatedTotal.codeCount} 码，共 ¥ ${displayAmount(preview.amount)}，确认提交吗？`,
+      () => submitBet(text, preview),
+    );
   };
   return (
     <>
@@ -480,6 +523,8 @@ export function QuickEntryPage({
       <div
       className={`entry${showMask ? " entry-locked" : ""}${generatedLines.length ? " has-results" : ""}${tab === "快速录入" && text.length > 0 ? " has-entry-content" : ""}`}
       style={{ "--quick-result-height": `${resultHeight}px` } as CSSProperties}
+      inert={betBusy}
+      aria-busy={betBusy}
       >
       {showMask && (
         <div className="entry-lock-overlay" aria-label="当前不可下注" />
@@ -632,6 +677,10 @@ export function QuickEntryPage({
                 clearGeneratedPreview();
               }}
               onPaste={(event) => {
+                if (betFlowRef.current || submittingRef.current) {
+                  event.preventDefault();
+                  return;
+                }
                 const pasted = event.clipboardData.getData("text");
                 event.preventDefault();
                 const separator = text && pasted && !text.endsWith("\n") ? "\n" : "";
@@ -644,11 +693,17 @@ export function QuickEntryPage({
                 setText(appended);
                 setRecognitionError("");
                 clearGeneratedPreview();
+                const autoPlace = options[0] && timing.canBet;
+                if (autoPlace && !beginBetFlow()) return;
                 window.setTimeout(() => {
-                  void generateText(appended, options[0] && timing.canBet).then((preview) => {
-                    if (preview && options[0] && timing.canBet)
-                      void submitBet(appended, preview);
-                  });
+                  void (async () => {
+                    try {
+                      const preview = await generateText(appended, autoPlace);
+                      if (preview && autoPlace) await submitBet(appended, preview);
+                    } finally {
+                      if (autoPlace) endBetFlow();
+                    }
+                  })();
                 }, 0);
               }}
               placeholder="请复制文本"
@@ -673,7 +728,7 @@ export function QuickEntryPage({
                   {generating ? "识别中" : "识 别"}
                 </button>
                 <button type="button" className="mobile-place" onClick={place} disabled={!canPlace}>
-                  下 注
+                  {betBusy ? "处理中..." : "下 注"}
                 </button>
                 <span className="mobile-entry-total">共 ¥ <b>{displayAmount(generatedTotal.amount)}</b></span>
               </div>
@@ -737,7 +792,7 @@ export function QuickEntryPage({
           </div>
           <div className="actions">
             <button type="button" className="desktop-entry-action" onClick={place} disabled={!canPlace}>
-              {timing.canBet ? "下 注" : timing.status || "暂不可下注"}
+              {betBusy ? "处理中..." : timing.canBet ? "下 注" : timing.status || "暂不可下注"}
             </button>
             <button
               type="button"

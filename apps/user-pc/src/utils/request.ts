@@ -9,7 +9,7 @@ export type ApiEnvelope<T> = {
 
 export const request: AxiosInstance = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || "/prod_api/v1",
-  timeout: 12000,
+  timeout: 120000,
 });
 
 let unauthorizedDispatched = false;

@@ -531,7 +531,7 @@ export function QuickResultTable({ lines, sourceText: _sourceText, onChange, onC
                       ))}
                     </div>
                     <div className="row-container">
-                      {Array.from({ length: Math.ceil(section.numbers.length / 4) }, (_, rowIndex) => section.numbers.slice(rowIndex * 8, rowIndex * 8 + 8)).map((row, rowIndex) => (
+                      {Array.from({ length: Math.ceil(section.numbers.length / 4) }, (_, rowIndex) => section.numbers.slice(rowIndex * 4, rowIndex * 4 + 4)).map((row, rowIndex) => (
                         <Fragment key={`${section}-row-${rowIndex}`}>
                           {Array.from({ length: 4 }, (_, index) => row[index] || null).map((number, index) => (
                             <div className={`row-label-container${number ? " has-amount" : ""}`} key={`${section.category}-${section.title}-${rowIndex}-${index}`}>
